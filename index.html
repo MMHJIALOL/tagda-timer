@@ -11,10 +11,10 @@
 <!-- The scrambler is the one thing the user actually waits on, so start
      fetching its module graph alongside the stylesheets, not after them. -->
 <link rel="modulepreload" href="vendor/cubing/cubing/scramble.js">
-<link rel="modulepreload" href="js/main.js?v=22">
-<link rel="stylesheet" href="css/tokens.css?v=22">
-<link rel="stylesheet" href="css/base.css?v=22">
-<link rel="stylesheet" href="css/components.css?v=22">
+<link rel="modulepreload" href="js/main.js?v=23">
+<link rel="stylesheet" href="css/tokens.css?v=23">
+<link rel="stylesheet" href="css/base.css?v=23">
+<link rel="stylesheet" href="css/components.css?v=23">
 <link rel="icon" href="assets/favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="assets/logo-192.png">
 <link rel="apple-touch-icon" href="assets/logo-180.png">
@@ -69,10 +69,10 @@
 
   <!-- ---------- TOP BAR ---------- -->
   <header id="topbar">
-    <div class="brand" id="brand" title="Tagda Timer">
+    <button class="brand" id="brand" title="Tagda Timer — click the cube">
       <img class="brand-mark" src="assets/logo-96.png" alt="" width="96" height="96" decoding="async">
       <span class="brand-text">Tagda <b>Timer</b></span>
-    </div>
+    </button>
 
     <div class="topbar-center">
       <div class="seg" id="event-seg">
@@ -255,6 +255,18 @@
     </div>
   </div>
 
+  <!-- ---------- MASCOT ---------- -->
+  <!-- Click the brand mark to let him out. Draggable, resizable, remembers
+       where you left him. -->
+  <div id="mascot" hidden>
+    <img id="mascot-img" src="assets/logo-512.png" alt="The Tagda cube" draggable="false">
+    <div id="mascot-bar">
+      <button id="mascot-smaller" title="Smaller">&minus;</button>
+      <button id="mascot-bigger" title="Bigger">+</button>
+      <button id="mascot-close" title="Put him away (Esc)">&times;</button>
+    </div>
+  </div>
+
   <!-- ---------- CREATOR CHIP ---------- -->
   <a id="creator-chip" href="https://instagram.com/cubingngagng" target="_blank" rel="noopener noreferrer" title="built by Ishaan — @cubingngagng">
     <svg class="ig" viewBox="0 0 24 24" aria-hidden="true">
@@ -319,7 +331,7 @@
   </div>
 </div>
 
-<script type="module" src="js/main.js?v=22"></script>
+<script type="module" src="js/main.js?v=23"></script>
 <script>
 (function () {
   var isFile = location.protocol === 'file:';

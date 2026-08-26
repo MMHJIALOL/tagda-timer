@@ -11,7 +11,7 @@ import { Background } from './bg.js';
 import { CubeView } from './cube.js';
 import { makeDraggable } from './drag.js';
 import { flash, shockwave, confetti, chime, callout, beep } from './fx.js';
-import { summarize, eff, DNF, bestSingle, bestAvg, trimmedIndices, byCase, sessionBests } from './stats.js';
+import { summarize, eff, DNF, bestSingle, bestAvg, trimmedIndices, byCase, sessionBests, rollingSeries } from './stats.js';
 import { renderMiniTrend } from './charts.js';
 import { loadSettings, saveSettings, applyTheme, applyBackground, themeColors } from './theme.js';
 import { popover, closePopover, popoverOpen } from './popover.js';
@@ -614,6 +614,12 @@ function renderHistory() {
   const trim5 = trimmedIndices(app.solves, 5);
   const atTop = list.scrollTop < 8;
 
+  // The running ao5 as it stood after each solve, so you can see the average
+  // moving without opening anything.
+  const ao5s = rollingSeries(app.solves, 5);
+  const valid = ao5s.filter(v => v !== null);
+  const bestAo5 = valid.length ? Math.min(...valid) : null;
+
   // newest first, cap the strip
   const start = Math.max(0, app.solves.length - 60);
   for (let i = app.solves.length - 1; i >= start; i--) {
@@ -627,9 +633,16 @@ function renderHistory() {
       trim5.best.has(i) ? 'best-in-avg' : '',
     ].filter(Boolean).join(' ');
 
+    const ao = ao5s[i];
+    const isBestAo5 = ao !== null && bestAo5 !== null && ao === bestAo5;
     const chip = el('div', { class: cls, role: 'listitem' },
       el('span', { class: 'idx', text: String(i + 1) }),
       el('span', { class: 't', text: v === DNF ? 'DNF' : fmt(v) + (s.penalty === '+2' ? '+' : '') }),
+      el('span', {
+        class: `ao5 ${isBestAo5 ? 'best' : ''}`,
+        title: ao === null ? 'needs five solves' : `ao5 after solve ${i + 1}${isBestAo5 ? ' — best of the session' : ''}`,
+        text: ao === null ? '·' : fmt(ao),
+      }),
     );
     chip.addEventListener('click', (e) => solveMenu(s, e.currentTarget));
     chip.addEventListener('contextmenu', (e) => { e.preventDefault(); solveMenu(s, e.currentTarget); });
@@ -1146,10 +1159,61 @@ function wireChrome() {
   };
   $('#btn-reset-orbit').addEventListener('click', (e) => { e.stopPropagation(); app.resetCubeOrbit(); });
 
-  $('#brand').addEventListener('click', () => {
-    document.body.classList.toggle('zen');
-    toast(document.body.classList.contains('zen') ? 'Zen mode — press Z to exit' : 'Zen mode off');
+  wireMascot();
+}
+
+/* =========================================================
+   Mascot — the brand cube, let loose on the page
+   ========================================================= */
+function wireMascot() {
+  const box = $('#mascot');
+  const img = $('#mascot-img');
+  if (!box) return;
+
+  const clampSize = (n) => Math.max(90, Math.min(460, Math.round(n)));
+  const applySize = () => {
+    const n = clampSize(app.settings.mascotSize);
+    box.style.width = `${n}px`;
+    box.style.height = `${n}px`;
+    mascotDrag?.apply();          // a bigger cube can end up off screen
+  };
+
+  const mascotDrag = makeDraggable(box, {
+    get: () => app.settings.mascotPos,
+    set: (pos) => { app.settings.mascotPos = pos; persist(); },
+    ignore: '#mascot-bar button',
   });
+
+  const show = (on) => {
+    box.hidden = !on;
+    app.settings.mascotOpen = on;
+    persist();
+    if (on) { applySize(); mascotDrag.apply(); }
+  };
+
+  $('#brand').addEventListener('click', () => show(box.hidden));
+  $('#mascot-close').addEventListener('click', (e) => { e.stopPropagation(); show(false); });
+  $('#mascot-bigger').addEventListener('click', (e) => {
+    e.stopPropagation();
+    app.settings.mascotSize = clampSize(app.settings.mascotSize * 1.25);
+    persist(); applySize();
+  });
+  $('#mascot-smaller').addEventListener('click', (e) => {
+    e.stopPropagation();
+    app.settings.mascotSize = clampSize(app.settings.mascotSize / 1.25);
+    persist(); applySize();
+  });
+  // Scroll over him to resize, which is what everyone tries first.
+  box.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    app.settings.mascotSize = clampSize(app.settings.mascotSize * (e.deltaY < 0 ? 1.1 : 1 / 1.1));
+    persist(); applySize();
+  }, { passive: false });
+
+  applySize();
+  if (app.settings.mascotOpen) show(true);
+  app.closeMascot = () => show(false);
+  void img;
 }
 
 /* =========================================================
@@ -1172,6 +1236,7 @@ function wireShortcuts() {
 
     if (k === 'Escape') {
       if (paletteOpen()) return closePalette();
+      if (!$('#mascot').hidden) return app.closeMascot();
       if (drawerOpen()) return closeDrawer();
       if (popoverOpen()) return closePopover();
       if (timer.cancel()) return;

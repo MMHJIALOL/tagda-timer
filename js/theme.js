@@ -86,6 +86,9 @@ export const DEFAULTS = {
   timesSize: 100,               // % — the solve list
   cubePos: null,                // {x,y} once the preview has been dragged
   cubeOrbit: null,              // {latitude,longitude,distance} once it has been spun
+  mascotOpen: false,            // the brand cube, loose on the page
+  mascotPos: null,
+  mascotSize: 200,
   showStats: true,
   statsCollapsed: true,
   showCube: true,
