@@ -1,0 +1,8 @@
+# Normalise text, but never rewrite the vendored cubing.js bundle: it is
+# content-hashed upstream and should ship byte-for-byte as mirrored.
+* text=auto
+vendor/** -text
+
+*.png binary
+*.ico binary
+*.obj binary

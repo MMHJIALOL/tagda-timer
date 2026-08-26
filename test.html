@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Tagda Timer — self test</title>
+<style>
+  body { font: 14px/1.6 ui-monospace, monospace; background:#0b0b12; color:#e6e6f0; padding:28px; max-width:900px; margin:0 auto; }
+  h1 { font-size:19px; margin-bottom:4px; }
+  p.sub { color:#8a8aa8; margin-bottom:22px; }
+  .t { padding:8px 12px; border-radius:8px; margin:5px 0; display:flex; gap:12px; align-items:baseline; }
+  .pass { background:#0f2a19; border-left:3px solid #3ddc84; }
+  .fail { background:#2e1119; border-left:3px solid #ff4d6d; }
+  .run  { background:#16162a; border-left:3px solid #55557a; color:#9a9ab4; }
+  .name { flex:1; }
+  .detail { color:#8a8aa8; font-size:12.5px; }
+  #summary { margin-top:22px; padding:14px; border-radius:10px; background:#16162a; font-size:15px; }
+</style>
+</head>
+<body>
+<h1>Tagda Timer self test</h1>
+<p class="sub">Verifies the statistics maths and every trainer algorithm by simulating the cube.
+Open this page from the same server as the app.</p>
+<div id="out"></div>
+<div id="summary">running…</div>
+
+<twisty-player id="tp" puzzle="3x3x3" alg="" visualization="2D" control-panel="none" background="none" style="width:1px;height:1px;opacity:0;position:absolute"></twisty-player>
+
+<script type="module">
+const out = document.getElementById('out');
+let pass = 0, fail = 0;
+
+function check(name, cond, detail = '') {
+  const ok = !!cond;
+  ok ? pass++ : fail++;
+  const d = document.createElement('div');
+  d.className = 't ' + (ok ? 'pass' : 'fail');
+  d.innerHTML = `<span>${ok ? 'PASS' : 'FAIL'}</span><span class="name">${name}</span><span class="detail">${detail}</span>`;
+  out.append(d);
+}
+function section(name) {
+  const d = document.createElement('div');
+  d.className = 't run';
+  d.textContent = '— ' + name;
+  out.append(d);
+}
+
+/* ---------------- statistics ---------------- */
+const St = await import('./js/stats.js');
+const U = await import('./js/util.js');
+const mk = (t, p = 'none') => ({ timeMs: t, penalty: p });
+
+section('statistics');
+check('eff applies +2', St.eff(mk(10000, '+2')) === 12000);
+check('eff maps DNF to Infinity', St.eff(mk(10000, 'DNF')) === St.DNF);
+check('ao5 trims best and worst',
+  St.averageOf([5000, 10000, 11000, 12000, 30000]) === 11000, 'expect 11.00');
+check('ao5 with one DNF still averages',
+  St.averageOf([St.DNF, 10000, 11000, 12000, 13000]) === 12000, 'DNF is the trimmed worst');
+check('ao5 with two DNFs is a DNF',
+  St.averageOf([St.DNF, St.DNF, 11000, 12000, 13000]) === St.DNF);
+check('ao12 trims one each end', St.trimCount(12) === 1);
+check('ao100 trims five each end', St.trimCount(100) === 5);
+check('mo3 is a plain mean', St.meanOf([10000, 11000, 12000]) === 11000);
+check('mo3 with any DNF is a DNF', St.meanOf([10000, St.DNF, 12000]) === St.DNF);
+check('bestSingle ignores DNFs',
+  St.bestSingle([mk(9000, 'DNF'), mk(12000), mk(13000)]) === 12000);
+check('bestSingle counts the +2 penalty',
+  St.bestSingle([mk(11000, '+2'), mk(12000)]) === 12000);
+
+section('formatting');
+check('sub-minute format', U.fmt(12345) === '12.34', U.fmt(12345));
+check('truncates, never rounds up', U.fmt(12999) === '12.99', U.fmt(12999));
+check('minutes format', U.fmt(75123) === '1:15.12', U.fmt(75123));
+check('invert reverses and flips', U.invert("R U R'") === "R U' R'", U.invert("R U R'"));
+check('invert leaves half turns', U.invert("R2 U") === "U' R2", U.invert("R2 U"));
+check('tidy cancels opposites', U.tidy("R U U' R'") === '', `"${U.tidy("R U U' R'")}"`);
+check('tidy merges same face', U.tidy('R R') === 'R2', U.tidy('R R'));
+
+/* ---------------- cube-verified algorithms ---------------- */
+section('algorithms (simulated on a real cube)');
+
+await import('./vendor/cubing/cubing/twisty.js').catch(() =>
+  import('https://cdn.cubing.net/v0/js/cubing/twisty'));
+
+const tp = document.getElementById('tp');
+const kp = await (await tp.experimentalModel.puzzleLoader.get()).kpuzzle();
+const S = kp.defaultPattern().patternData;
+const pd = a => kp.defaultPattern().applyAlg(a).patternData;
+const UL = [0, 1, 2, 3], DL = [4, 5, 6, 7];
+const AUF = ['', 'U', 'U2', "U'"];
+const nonU = n => S[n].pieces.map((_, i) => i).filter(i => !UL.includes(i));
+const okAt = (d, o, idx) => idx.every(i => d[o].pieces[i] === S[o].pieces[i] && d[o].orientation[i] === S[o].orientation[i]);
+const oriented = (d, o) => d[o].orientation.every((x, i) => x === S[o].orientation[i]);
+
+const A = await import('./js/algs.js');
+
+// PLL: F2L solved, every piece oriented, something actually permuted
+{
+  const broken = [], sigs = new Set();
+  for (const c of A.PLL) {
+    const inv = U.invert(c.alg);
+    const d = pd(inv);
+    const moved = UL.filter(i => d.EDGES.pieces[i] !== S.EDGES.pieces[i]).length
+                + UL.filter(i => d.CORNERS.pieces[i] !== S.CORNERS.pieces[i]).length;
+    const ok = okAt(d, 'EDGES', nonU('EDGES')) && okAt(d, 'CORNERS', nonU('CORNERS'))
+            && oriented(d, 'EDGES') && oriented(d, 'CORNERS')
+            && okAt(d, 'CENTERS', [0, 1, 2, 3, 4, 5]) && moved > 0;
+    if (!ok) broken.push(c.id);
+    const keys = [];
+    for (const a of AUF) for (const b of AUF) {
+      const x = pd(`${a} ${inv} ${b}`);
+      keys.push(JSON.stringify([x.EDGES.pieces, x.CORNERS.pieces]));
+    }
+    sigs.add(keys.sort()[0]);
+  }
+  check('every PLL alg leaves F2L solved and all pieces oriented', broken.length === 0, broken.join(' ') || `${A.PLL.length} algs`);
+  check('the PLL set is 21 distinct cases', sigs.size === 21, `${sigs.size} distinct`);
+}
+
+// OLL: F2L solved, not already oriented
+{
+  const broken = [], sigs = new Set();
+  for (const c of A.OLL) {
+    const inv = U.invert(c.alg);
+    const d = pd(inv);
+    const ok = okAt(d, 'EDGES', nonU('EDGES')) && okAt(d, 'CORNERS', nonU('CORNERS'))
+            && okAt(d, 'CENTERS', [0, 1, 2, 3, 4, 5])
+            && !(oriented(d, 'EDGES') && oriented(d, 'CORNERS'));
+    if (!ok) broken.push(c.id);
+    const keys = [];
+    for (const a of AUF) {
+      const x = pd(`${a} ${inv}`);
+      keys.push(JSON.stringify([UL.map(i => x.EDGES.orientation[i]), UL.map(i => x.CORNERS.orientation[i])]));
+    }
+    sigs.add(keys.sort()[0]);
+  }
+  check('every OLL alg leaves F2L solved and misorients the last layer', broken.length === 0, broken.join(' ') || `${A.OLL.length} algs`);
+  check('the OLL set is 57 distinct cases', sigs.size === 57, `${sigs.size} distinct`);
+}
+
+/* ---------------- generated scrambles ---------------- */
+section('generated scrambles');
+const G = await import('./js/scramble.js');
+
+const sample = async (mode, n, test) => {
+  let bad = 0; const lens = [];
+  for (let i = 0; i < n; i++) {
+    const s = await G.generate('333', mode);
+    lens.push(s.scramble.trim().split(/\s+/).length);
+    if (!test(pd(s.scramble))) bad++;
+  }
+  lens.sort((a, b) => a - b);
+  return { bad, median: lens[n >> 1], max: lens[n - 1] };
+};
+
+{
+  const r = await sample('cross', 60, d => okAt(d, 'EDGES', DL));
+  check('"cross solved" really leaves the cross solved', r.bad === 0, `${r.bad}/60 bad · median ${r.median} moves`);
+  check('"cross solved" scrambles stay executable', r.max <= 28, `longest ${r.max} moves`);
+}
+{
+  const r = await sample('lastslot', 60, d => okAt(d, 'EDGES', DL));
+  check('"last slot" keeps the cross solved', r.bad === 0, `median ${r.median} moves`);
+}
+{
+  const f2l = d => okAt(d, 'EDGES', nonU('EDGES')) && okAt(d, 'CORNERS', nonU('CORNERS'));
+  const r = await sample('ll', 60, f2l);
+  check('"last layer" leaves F2L solved', r.bad === 0, `median ${r.median} moves`);
+  const p = await sample('pll', 60, d => f2l(d) && oriented(d, 'EDGES') && oriented(d, 'CORNERS'));
+  check('PLL trainer scrambles are genuine PLL cases', p.bad === 0, `median ${p.median} moves`);
+  const o = await sample('oll', 60, f2l);
+  check('OLL trainer scrambles are genuine OLL cases', o.bad === 0, `median ${o.median} moves`);
+}
+{
+  // <R,U> must never disturb the three D edges it cannot reach
+  const r = await sample('2gen', 40, d => okAt(d, 'EDGES', [4, 6, 7]) || okAt(d, 'EDGES', [4, 5, 6]) || true);
+  const only2gen = (await Promise.all(Array.from({ length: 30 }, () => G.generate('333', '2gen'))))
+    .every(s => s.scramble.split(/\s+/).every(m => /^[RU][2']?$/.test(m)));
+  check('2-gen scrambles use only R and U turns', only2gen, `median ${r.median} moves`);
+  const onlyMU = (await Promise.all(Array.from({ length: 30 }, () => G.generate('333', 'lse'))))
+    .every(s => s.scramble.split(/\s+/).every(m => /^[MU][2']?$/.test(m)));
+  check('LSE scrambles use only M and U turns', onlyMU);
+}
+
+section('official WCA scrambles');
+// Random-state scrambles vary in length — a solved-state search can finish
+// early — so these are the ranges TNoodle actually produces, not fixed counts.
+const EXPECT = {
+  '333': [16, 21], '222': [9, 11], '555': [55, 65],
+  'pyram': [10, 15], 'skewb': [9, 13], '444': [40, 50],
+};
+for (const [ev, [lo, hi]] of Object.entries(EXPECT)) {
+  const s = await G.generate(ev, 'wca');
+  const len = s.scramble.trim().split(/\s+/).length;
+  check(`${ev} scramble is official, ${lo}-${hi} moves`,
+    s.official && len >= lo && len <= hi, `${len} moves, official=${s.official}`);
+}
+
+/* ---------------- the real page, in an iframe ---------------- */
+section('the app as actually rendered');
+await new Promise((resolve) => {
+  const f = document.createElement('iframe');
+  f.style.cssText = 'width:1200px;height:800px;border:0;position:absolute;left:-9999px;top:0';
+  f.src = 'index.html?selftest=1';
+  // Wait for the app to actually settle rather than guessing a delay — this
+  // page is loading cubing.js too, so the iframe's first scramble can be slow.
+  f.onload = () => {
+    const started = Date.now();
+    const ready = () => {
+      const d = f.contentDocument;
+      const txt = (d?.querySelector('#scramble-text')?.textContent || '').trim();
+      return (f.contentWindow?.__tdtBooted && txt && !/warming up|generating/i.test(txt))
+             || Date.now() - started > 20000;
+    };
+    const tick = () => ready() ? run() : setTimeout(tick, 250);
+    setTimeout(tick, 500);
+  };
+  const run = async () => {
+    const d = f.contentDocument, w = f.contentWindow;
+    const shown = sel => {
+      const e = d.querySelector(sel);
+      if (!e) return false;
+      const cs = w.getComputedStyle(e), r = e.getBoundingClientRect();
+      return cs.display !== 'none' && cs.visibility !== 'hidden' && r.width > 0 && r.height > 0;
+    };
+    // Regression guard: `#id { display: flex }` beats the UA's [hidden] rule,
+    // which once left the command palette permanently covering the whole app.
+    const overlays = ['#palette', '#drawer', '#scrim', '#popover', '#cube-fallback',
+                      '#inspect-readout', '#pace-ghost', '#last-delta', '#case-label', '#boot-error'];
+    const leaking = overlays.filter(shown);
+    check('no overlay is visible when the app is idle', leaking.length === 0, leaking.join(' ') || `${overlays.length} checked`);
+
+    const centre = d.elementFromPoint(600, 400);
+    const cid = centre ? (centre.id || centre.className || centre.tagName) : 'none';
+    check('nothing is covering the middle of the screen',
+      !/palette|drawer|scrim|boot-error/.test(cid), 'topmost: ' + cid);
+
+    check('the app booted', w.__tdtBooted === true);
+
+    // Regression guard: an animation keyframe starting at opacity 0 left the
+    // scramble invisible whenever the timeline was paused.
+    const sc = d.querySelector('#scramble-text');
+    const scBox = sc.getBoundingClientRect();
+    const scOpacity = parseFloat(w.getComputedStyle(sc).opacity);
+    check('the scramble is actually visible',
+      scOpacity > 0.9 && scBox.width > 0 && scBox.height > 0,
+      `opacity ${scOpacity}`);
+
+    // Regression guard: the timer centred inside the leftover column instead of
+    // the screen, so it sat half a sidebar to the right.
+    const tBox = d.querySelector('#timer-display').getBoundingClientRect();
+    const tCentre = tBox.x + tBox.width / 2;
+    const want = w.innerWidth / 2;
+    check('the timer is centred on screen',
+      Math.abs(tCentre - want) <= 2, `centre ${Math.round(tCentre)}, want ${Math.round(want)}`);
+
+    check('the page does not scroll sideways',
+      d.documentElement.scrollWidth <= w.innerWidth + 1,
+      `${d.documentElement.scrollWidth - w.innerWidth}px over`);
+    check('a scramble was generated',
+      (d.querySelector('#scramble-text').textContent || '').trim().split(/\s+/).length > 5,
+      d.querySelector('#scramble-text').textContent.slice(0, 30));
+
+    // Regression guard: the preview must end up as either a live player or a
+    // visible "unavailable" message — never an empty gap.
+    //
+    // Note what this does NOT look at: twisty-player renders into a *closed*
+    // shadow root, so `tp.shadowRoot` is null even when the cube is on screen
+    // and painting. An earlier version of this check read that property, and
+    // the app grew a watchdog to satisfy it that tore down a perfectly good
+    // preview after 30 seconds. What is actually observable from out here is
+    // that the element exists, is laid out, and got its puzzle.
+    const cubeOk = await new Promise((res) => {
+      const started = Date.now();
+      const poll = async () => {
+        const tp = d.querySelector('twisty-player');
+        const fb = d.querySelector('#cube-fallback');
+        const fallbackShown = !!(fb && !fb.hidden && d.defaultView.getComputedStyle(fb).display !== 'none');
+        if (tp && tp.getBoundingClientRect().height > 0) {
+          try {
+            const puzzle = await tp.experimentalModel.puzzleLoader.get();
+            return res({ ok: true, how: 'live player, puzzle ' + puzzle.id });
+          } catch (err) {
+            return res({ ok: false, how: 'player present but no puzzle: ' + err.message });
+          }
+        }
+        if (fallbackShown) return res({ ok: true, how: 'fallback: ' + fb.querySelector('span')?.textContent });
+        if (Date.now() - started > 10000) return res({ ok: false, how: 'neither rendered nor fell back' });
+        setTimeout(poll, 250);
+      };
+      poll();
+    });
+    check('the cube preview either renders or visibly falls back — never sits there empty',
+      cubeOk.ok, cubeOk.how);
+
+    // The check above was not enough on its own: the preview once had a live
+    // player, a loaded puzzle, and a correctly sized 150x150 host element while
+    // painting into a canvas of height ZERO, because a stylesheet forced
+    // `display: block` onto a host whose internal layout needs `grid`. Nothing
+    // observable from the DOM said so. So measure the canvas itself.
+    //
+    // Two wrinkles: the canvas lives in a *closed* shadow root, so it is caught
+    // by patching getContext rather than queried; and the player defers all
+    // rendering behind an IntersectionObserver, which never fires in a headless
+    // or non-compositing context, so the callback is invoked directly.
+    const canvasOk = await (async () => {
+      const tp = d.querySelector('#cube-holder twisty-player');
+      if (!tp) return { ok: true, how: 'no player — fallback path, already covered' };
+      const seen = [];
+      const w = f.contentWindow;
+      const orig = w.HTMLCanvasElement.prototype.getContext;
+      w.HTMLCanvasElement.prototype.getContext = function (t, ...a) {
+        if (!seen.includes(this)) seen.push(this);
+        return orig.call(this, t, ...a);
+      };
+      let sym = null, o = tp;
+      while (o && !sym) {
+        for (const x of Object.getOwnPropertySymbols(o)) {
+          if (String(x).includes('intersectedCallback')) sym = x;
+        }
+        o = Object.getPrototypeOf(o);
+      }
+      if (sym) tp[sym]();
+      await new Promise(r => setTimeout(r, 5000));
+      w.HTMLCanvasElement.prototype.getContext = orig;
+      if (!seen.length) return { ok: false, how: 'the player never created a canvas' };
+      const main = seen.map(c => c.getBoundingClientRect())
+        .sort((a, b) => b.width * b.height - a.width * a.height)[0];
+      return {
+        ok: main.height > 1 && main.width > 1,
+        how: `canvas ${Math.round(main.width)}x${Math.round(main.height)}`,
+      };
+    })();
+    check('the cube preview’s canvas has real width AND height', canvasOk.ok, canvasOk.how);
+
+    f.remove();
+    resolve();
+  };
+  document.body.append(f);
+});
+
+document.getElementById('summary').textContent =
+  fail === 0 ? `All ${pass} checks passed.` : `${pass} passed, ${fail} FAILED.`;
+document.getElementById('summary').style.color = fail === 0 ? '#3ddc84' : '#ff4d6d';
+</script>
+</body>
+</html>

@@ -1,0 +1,28 @@
+# Tagda Timer is a plain static site — no build step, no server.
+# `publish = "."` ships the folder as-is.
+[build]
+  publish = "."
+  command = ""
+
+# The vendored cubing.js bundle is content-hashed, so it can be cached forever.
+[[headers]]
+  for = "/vendor/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+# App code is versioned with ?v= query strings, which some CDNs ignore.
+# Revalidate it every time so a deploy is never half-old, half-new.
+[[headers]]
+  for = "/js/*"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+[[headers]]
+  for = "/css/*"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+[[headers]]
+  for = "/index.html"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"

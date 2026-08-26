@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="nebula">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Tagda Timer</title>
+<meta name="description" content="Tagda Timer — a modern WCA speedcubing timer.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&family=Chivo+Mono:wght@300;400;600;800&display=swap" rel="stylesheet">
+<!-- The scrambler is the one thing the user actually waits on, so start
+     fetching its module graph alongside the stylesheets, not after them. -->
+<link rel="modulepreload" href="vendor/cubing/cubing/scramble.js">
+<link rel="modulepreload" href="js/main.js?v=22">
+<link rel="stylesheet" href="css/tokens.css?v=22">
+<link rel="stylesheet" href="css/base.css?v=22">
+<link rel="stylesheet" href="css/components.css?v=22">
+<link rel="icon" href="assets/favicon.ico" sizes="any">
+<link rel="icon" type="image/png" href="assets/logo-192.png">
+<link rel="apple-touch-icon" href="assets/logo-180.png">
+<link rel="manifest" href="site.webmanifest">
+<meta name="theme-color" content="#07070c">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Tagda Timer">
+<meta property="og:description" content="A modern WCA speedcubing timer. Random-state scrambles, stored on your own machine.">
+<meta property="og:image" content="assets/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="assets/og.png"><rect width='100' height='100' rx='22' fill='%230b0b12'/><g fill='none' stroke='%237c5cff' stroke-width='7' stroke-linejoin='round'><path d='M50 14 82 30v40L50 86 18 70V30z'/><path d='M18 30l32 16 32-16M50 46v40'/></g></svg>">
+<style>
+#boot-error[hidden] { display: none !important; }
+#boot-error {
+  position: fixed; inset: 0; z-index: 999; place-items: center;
+  background: #07070c; color: #ececf5; padding: 24px;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+#boot-error .be-card {
+  max-width: 520px; padding: 30px 32px; border-radius: 18px;
+  background: #14141f; border: 1px solid #2a2a3d; line-height: 1.6;
+}
+#boot-error h1 { font-size: 1.25rem; margin-bottom: 12px; letter-spacing: -.02em; }
+#boot-error p { color: #9a9ab4; font-size: .93rem; margin-bottom: 12px; }
+#boot-error .be-fix { color: #ececf5; }
+#boot-error pre {
+  background: #0a0a12; border: 1px solid #2a2a3d; border-radius: 10px;
+  padding: 11px 14px; margin-bottom: 12px; overflow-x: auto;
+  font-family: ui-monospace, monospace; font-size: .88rem; color: #35e6c5;
+}
+#boot-error a { color: #7c5cff; text-decoration: underline; }
+</style>
+</head>
+<body>
+
+<!-- ============ BACKGROUND LAYERS ============ -->
+<div id="bg-root" aria-hidden="true">
+  <canvas id="bg-shader"></canvas>
+  <div id="bg-media"></div>
+  <div id="bg-veil"></div>
+  <div id="bg-vignette"></div>
+</div>
+
+<!-- ============ INSPECTION PERIMETER RING ============ -->
+<svg id="inspect-ring" aria-hidden="true" preserveAspectRatio="none">
+  <rect id="inspect-ring-rect" x="3" y="3" rx="14" ry="14"></rect>
+</svg>
+<div id="flash" aria-hidden="true"></div>
+
+<!-- ============ APP ============ -->
+<div id="app">
+
+  <!-- ---------- TOP BAR ---------- -->
+  <header id="topbar">
+    <div class="brand" id="brand" title="Tagda Timer">
+      <img class="brand-mark" src="assets/logo-96.png" alt="" width="96" height="96" decoding="async">
+      <span class="brand-text">Tagda <b>Timer</b></span>
+    </div>
+
+    <div class="topbar-center">
+      <div class="seg" id="event-seg">
+        <button class="seg-btn" id="btn-event" title="Change event  (E)">
+          <span id="event-label">3x3x3</span>
+          <svg class="chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+      </div>
+      <div class="seg" id="mode-seg">
+        <button class="seg-btn" id="btn-mode" title="Scramble mode / trainer  (M)">
+          <svg class="ico" viewBox="0 0 24 24"><path d="M4 7h16M4 12h10M4 17h7"/></svg>
+          <span id="mode-label">Random state</span>
+          <svg class="chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+      </div>
+      <div class="seg" id="session-seg">
+        <button class="seg-btn" id="btn-session" title="Sessions  (S)">
+          <svg class="ico" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+          <span id="session-label">Session 1</span>
+          <svg class="chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="topbar-right">
+      <button class="icon-btn" id="btn-stats" title="Statistics  (A)">
+        <svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>
+      </button>
+      <button class="icon-btn" id="btn-theme" title="Appearance  (T)">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.2v2.6M12 19.2v2.6M2.2 12h2.6M19.2 12h2.6M5.05 5.05l1.85 1.85M17.1 17.1l1.85 1.85M18.95 5.05L17.1 6.9M6.9 17.1l-1.85 1.85"/></svg>
+      </button>
+      <button class="icon-btn" id="btn-settings" title="Settings  (,)">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.1"/><path d="M19.4 15a1.6 1.6 0 00.32 1.77l.06.06a1.94 1.94 0 11-2.75 2.75l-.06-.06a1.6 1.6 0 00-1.77-.32 1.6 1.6 0 00-.97 1.47v.16a1.94 1.94 0 01-3.88 0v-.09a1.6 1.6 0 00-1.05-1.47 1.6 1.6 0 00-1.77.32l-.06.06a1.94 1.94 0 11-2.75-2.75l.06-.06a1.6 1.6 0 00.32-1.77 1.6 1.6 0 00-1.47-.97H3.4a1.94 1.94 0 010-3.88h.09a1.6 1.6 0 001.47-1.05 1.6 1.6 0 00-.32-1.77l-.06-.06a1.94 1.94 0 112.75-2.75l.06.06a1.6 1.6 0 001.77.32h.08a1.6 1.6 0 00.97-1.47V3.4a1.94 1.94 0 013.88 0v.09a1.6 1.6 0 00.97 1.47 1.6 1.6 0 001.77-.32l.06-.06a1.94 1.94 0 112.75 2.75l-.06.06a1.6 1.6 0 00-.32 1.77v.08a1.6 1.6 0 001.47.97h.16a1.94 1.94 0 010 3.88h-.09a1.6 1.6 0 00-1.47.97z"/></svg>
+      </button>
+      <button class="icon-btn" id="btn-help" title="Keyboard shortcuts  (?)">
+        <svg viewBox="0 0 24 24"><path d="M16.2 4.2L7.8 19.8" stroke-width="2.4"/><circle cx="12" cy="12" r="9.2" opacity=".3"/></svg>
+      </button>
+      <button class="icon-btn" id="btn-about" title="About  (B)">
+        <svg viewBox="0 0 24 24"><path d="M9.1 9a3 3 0 115.8 1c0 2-2.9 2.5-2.9 4.5"/><circle cx="12" cy="18.5" r=".9" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="9.2" opacity=".35"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- ---------- SCRAMBLE ---------- -->
+  <section id="scramble-zone" class="fade-layer">
+    <div class="scramble-label">Scramble</div>
+    <div id="scramble-wrap">
+      <div id="scramble-text" class="scramble" tabindex="-1">Warming up scrambler&hellip;</div>
+      <div id="scramble-tools">
+        <button class="ghost-btn" id="btn-prev-scramble" title="Previous scramble">
+          <svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg>
+        </button>
+        <button class="ghost-btn" id="btn-copy-scramble" title="Copy scramble  (Ctrl+C)">
+          <svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/></svg>
+        </button>
+        <button class="ghost-btn" id="btn-next-scramble" title="New scramble  (N)">
+          <svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
+        </button>
+      </div>
+    </div>
+    <div id="case-label" hidden></div>
+  </section>
+
+  <!-- ---------- MAIN ---------- -->
+  <main id="stage">
+
+    <!-- LEFT COLUMN: times on top, stats collapsed at the bottom -->
+    <aside id="sidebar" class="fade-layer">
+
+      <!-- Above the times list on purpose: expanding it then takes space from a
+           list that can scroll, instead of growing off the bottom of the
+           sidebar and colliding with the creator chip. -->
+      <section class="panel" id="panel-stats" data-collapsed="true">
+        <button class="panel-head as-btn" id="stats-toggle" aria-expanded="false" aria-controls="stats-body" title="Show statistics">
+          <span class="stats-title">Stats</span>
+          <svg class="chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+          <!-- Its own row, so three figures can never crowd the title out. -->
+          <span class="stats-peek" id="stats-peek">
+            <span><b>ao5</b><i id="peek-ao5">&mdash;</i></span>
+            <span><b>ao12</b><i id="peek-ao12">&mdash;</i></span>
+            <span><b>mo3</b><i id="peek-mo3">&mdash;</i></span>
+          </span>
+        </button>
+        <div id="stats-body">
+          <div id="stats-inner">
+          <div class="stat-grid" id="stat-grid">
+            <div class="stat" data-k="best"><span class="stat-k">best</span><span class="stat-v" id="s-best">&mdash;</span></div>
+            <div class="stat" data-k="mo3"><span class="stat-k">mo3</span><span class="stat-v" id="s-mo3">&mdash;</span></div>
+            <div class="stat" data-k="mean"><span class="stat-k">mean</span><span class="stat-v" id="s-mean">&mdash;</span></div>
+            <div class="stat" data-k="ao5"><span class="stat-k">ao5</span><span class="stat-v" id="s-ao5">&mdash;</span></div>
+            <div class="stat" data-k="ao12"><span class="stat-k">ao12</span><span class="stat-v" id="s-ao12">&mdash;</span></div>
+            <div class="stat" data-k="ao50"><span class="stat-k">ao50</span><span class="stat-v" id="s-ao50">&mdash;</span></div>
+            <div class="stat" data-k="ao100"><span class="stat-k">ao100</span><span class="stat-v" id="s-ao100">&mdash;</span></div>
+            <div class="stat wide" data-k="ao5"><span class="stat-k">consistency</span><span class="stat-v" id="cons-val">&mdash;</span>
+              <div class="cons-bar"><div class="cons-fill" id="cons-fill"></div></div>
+            </div>
+          </div>
+          <div class="bests-block">
+            <div class="bests-head">session best</div>
+            <div class="bests-grid" id="bests-grid">
+              <div class="bst" data-b="single"><span>single</span><b id="b-single">&mdash;</b></div>
+              <div class="bst" data-b="ao5"><span>ao5</span><b id="b-ao5">&mdash;</b></div>
+              <div class="bst" data-b="ao12"><span>ao12</span><b id="b-ao12">&mdash;</b></div>
+              <div class="bst" data-b="ao50"><span>ao50</span><b id="b-ao50">&mdash;</b></div>
+              <div class="bst" data-b="ao100"><span>ao100</span><b id="b-ao100">&mdash;</b></div>
+            </div>
+          </div>
+          <button class="mini-chart-wrap" id="mini-chart-btn" title="Open the full charts">
+            <svg id="mini-trend" viewBox="0 0 300 84" preserveAspectRatio="none"></svg>
+            <span class="mini-chart-cue">expand</span>
+          </button>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel" id="panel-times">
+        <div class="panel-head">
+          <span id="hist-title">Times</span>
+          <span class="panel-sub" id="stat-count">0 solves</span>
+        </div>
+        <div id="hist-list" role="list"></div>
+        <div class="times-foot">
+          <button class="ghost-btn sm" id="btn-open-history" title="All solves  (H)">
+            <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg> all
+          </button>
+          <button class="ghost-btn sm danger" id="btn-clear-session" title="Clear session  (Ctrl+Shift+Del)">
+            <svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg> clear
+          </button>
+        </div>
+      </section>
+
+    </aside>
+
+    <!-- CENTRE: timer -->
+    <section id="timer-zone">
+      <!-- Everything the eye reads as "the timer" lives in one box, so it can be
+           centred on the screen rather than on the space the header left over. -->
+      <div id="timer-core">
+        <div id="inspect-readout" hidden>
+          <div id="inspect-num">15</div>
+          <div id="inspect-hint">inspection</div>
+        </div>
+
+        <div id="timer-display" class="state-idle">
+          <span id="time-main">0.00</span><span id="time-penalty"></span>
+        </div>
+
+        <div id="pace-ghost" hidden>
+          <div id="pace-fill"></div>
+          <div id="pace-label">pace</div>
+        </div>
+
+        <!-- Arming feedback: fills over the hold time, latches green on ready. -->
+        <div id="hold-bar" hidden><div id="hold-fill"></div></div>
+
+        <div id="timer-hint">hold <kbd>space</kbd> to start</div>
+
+        <div id="last-delta" hidden></div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ---------- SCRAMBLE PREVIEW (flat, not a panel) ---------- -->
+  <div id="panel-cube" class="fade-layer">
+    <!-- Drag from here. The cube itself has to keep its own pointer events or
+         you cannot spin it to look at the back. -->
+    <div id="cube-grip" title="Drag to move the preview">
+      <svg viewBox="0 0 24 24"><path d="M7 9h10M7 15h10"/></svg>
+    </div>
+    <div id="cube-holder">
+      <div id="cube-fallback" hidden>
+        <svg viewBox="0 0 24 24" class="ico-big"><path d="M12 2l9 5v10l-9 5-9-5V7z"/><path d="M3 7l9 5 9-5M12 12v10"/></svg>
+        <span>preview unavailable</span>
+      </div>
+    </div>
+    <div class="view-toggle" id="view-toggle">
+      <button data-view="3D" class="on">3D</button>
+      <button data-view="2D">2D</button>
+      <button data-view="reset" id="btn-reset-orbit" title="Reset the cube angle">&#8635;</button>
+    </div>
+  </div>
+
+  <!-- ---------- CREATOR CHIP ---------- -->
+  <a id="creator-chip" href="https://instagram.com/cubingngagng" target="_blank" rel="noopener noreferrer" title="built by Ishaan — @cubingngagng">
+    <svg class="ig" viewBox="0 0 24 24" aria-hidden="true">
+      <rect x="3" y="3" width="18" height="18" rx="5.4"/><circle cx="12" cy="12" r="4.1"/><circle cx="17.4" cy="6.6" r="1.15" fill="currentColor" stroke="none"/>
+    </svg>
+    <span class="chip-txt"><i>built by</i> Ishaan <b>&middot;</b> @cubingngagng</span>
+  </a>
+</div>
+
+<!-- ============ OVERLAYS ============ -->
+<div id="scrim" hidden></div>
+
+<!-- generic popover host -->
+<div id="popover" hidden></div>
+
+<!-- drawer host (settings / theme / stats / history) -->
+<aside id="drawer" hidden>
+  <div class="drawer-head">
+    <h2 id="drawer-title">Settings</h2>
+    <button class="icon-btn" id="drawer-close" title="Close (Esc)">
+      <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    </button>
+  </div>
+  <div id="drawer-body"></div>
+</aside>
+
+<!-- command palette -->
+<div id="palette" hidden>
+  <div class="pal-box">
+    <div class="pal-input-row">
+      <svg viewBox="0 0 24 24" class="pal-ico"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+      <input id="pal-input" type="text" placeholder="Type a command, event, or trainer…" autocomplete="off" spellcheck="false">
+      <kbd class="pal-esc">esc</kbd>
+    </div>
+    <div id="pal-list"></div>
+  </div>
+</div>
+
+<!-- toasts -->
+<div id="toasts"></div>
+
+<!-- confetti -->
+<canvas id="confetti" aria-hidden="true"></canvas>
+
+<!-- Boot guard: if the app cannot start (most often because index.html was
+     opened straight off disk, where browsers refuse to load ES modules),
+     say so instead of showing a dead page. Deliberately a classic script and
+     inline styles, so it works even when nothing else does. -->
+<div id="boot-error" hidden>
+  <div class="be-card">
+    <h1>Tagda Timer didn&rsquo;t start</h1>
+    <p id="be-why"></p>
+    <!-- Only meaningful for someone running the folder locally. On a deployed
+         copy this advice is nonsense, so it is hidden unless the page really
+         was opened off disk. -->
+    <div id="be-local" hidden>
+      <p class="be-fix">Double-click <b>start.bat</b> in the project folder, or run:</p>
+      <pre>python serve.py</pre>
+      <p class="be-fix">then open <a href="http://localhost:5173">http://localhost:5173</a></p>
+    </div>
+    <p id="be-remote" class="be-fix" hidden>Reloading the page usually clears it. If it keeps happening, your browser may be blocking scripts or storage for this site.</p>
+  </div>
+</div>
+
+<script type="module" src="js/main.js?v=22"></script>
+<script>
+(function () {
+  var isFile = location.protocol === 'file:';
+  function fail(why) {
+    var box = document.getElementById('boot-error');
+    if (!box || !box.hasAttribute('hidden')) return;
+    document.getElementById('be-why').textContent = why;
+    document.getElementById(isFile ? 'be-local' : 'be-remote').removeAttribute('hidden');
+    box.removeAttribute('hidden');
+    box.style.display = 'grid';
+  }
+  window.__tdtBootFail = fail;
+  window.addEventListener('error', function (e) {
+    if (e.message && /module|import/i.test(e.message)) {
+      fail('A script could not be loaded: ' + e.message);
+    }
+  }, true);
+  setTimeout(function () {
+    if (window.__tdtBooted) return;
+    fail(isFile
+      ? 'You opened the file directly. Browsers block JavaScript modules on file:// addresses for security, so the timer cannot load. It needs to be served over http.'
+      : 'The app scripts did not finish loading. Check that the whole project folder is being served.');
+  }, 9000);
+})();
+</script>
+</body>
+</html>

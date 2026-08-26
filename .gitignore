@@ -1,0 +1,15 @@
+# The source model is 43 MB. GitHub warns past 50 MB and every clone and every
+# deploy would carry it, so the rendered PNGs in assets/ are what ship. Keep the
+# .obj locally; tools/render_logo.py regenerates the assets from it.
+*.obj
+
+# OS / editor noise
+Thumbs.db
+desktop.ini
+.DS_Store
+.vscode/
+.idea/
+
+# Python
+__pycache__/
+*.pyc

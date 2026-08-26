@@ -1,0 +1,192 @@
+/* ===========================================================
+   Tagda Timer — design tokens
+   Every visual value lives here as a CSS custom property so the
+   appearance editor can rewrite them live with zero re-render.
+   =========================================================== */
+
+:root {
+  /* --- palette (overwritten by theme presets + user edits) --- */
+  --bg:            #07070c;
+  --bg-2:          #101019;
+  --surface:       #14141f;
+  --surface-2:     #1b1b29;
+  --border:        #2a2a3d;
+  --text:          #ececf5;
+  --text-dim:      #9a9ab4;
+  --text-faint:    #5d5d78;
+  --accent:        #7c5cff;
+  --accent-2:      #35e6c5;
+  --ok:            #3ddc84;
+  --warn:          #ffb020;
+  --danger:        #ff4d6d;
+  --gold:          #ffd166;
+
+  /* --- timer state colours --- */
+  --t-idle:        var(--text);
+  --t-holding:     #ff4d6d;
+  --t-ready:       #3ddc84;
+  --t-running:     var(--text);
+
+  /* --- geometry --- */
+  --radius:        18px;
+  --radius-sm:     10px;
+  --border-w:      1px;
+  --panel-alpha:   0.55;
+  --panel-blur:    22px;
+  --shadow:        0 24px 60px -20px rgba(0,0,0,.75);
+
+  /* --- typography --- */
+  --font-ui:       'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono:     'JetBrains Mono', ui-monospace, 'Cascadia Mono', monospace;
+  --font-timer:    'JetBrains Mono', ui-monospace, monospace;
+  --timer-size:    clamp(3.6rem, 15vw, 11.5rem);
+  --timer-weight:  700;
+  --timer-track:   -0.045em;
+  --timer-glow:    0px;                 /* px blur of accent glow behind digits */
+
+  /* --- background layer --- */
+  --bg-blur:       0px;
+  --bg-dim:        0.35;
+  --bg-sat:        1;
+  --bg-scale:      1;
+
+  /* --- motion --- */
+  --dur-fast:      140ms;
+  --dur:           260ms;
+  --dur-slow:      620ms;
+  --ease:          cubic-bezier(.22,1,.36,1);
+  --ease-back:     cubic-bezier(.34,1.56,.64,1);
+  --motion:        1;                   /* 0 disables transforms via calc() */
+
+  /* --- density --- */
+  --gap:           16px;
+  --pad:           18px;
+
+  /* --- user-adjustable sizes (Appearance -> Sizes) ---
+     Each is a plain multiplier the size sliders rewrite live, applied on top
+     of the responsive clamp() that already sizes the element. That keeps the
+     layout fluid at every window size instead of pinning it to fixed pixels. */
+  --scramble-scale: 1;
+  --cube-scale:     1;
+  --sidebar-w:      236px;
+  --sidebar-text:   1;
+  --times-scale:    1;
+
+  /* Room reserved at the foot of the sidebar for the creator chip, which is
+     pinned to the bottom-left corner and would otherwise sit on top of the
+     stats panel. */
+  --chip-clearance: 36px;
+}
+
+/* ======================= PRESET THEMES ======================= */
+
+[data-theme="nebula"] { /* default — deep violet glass */
+  --bg:#07070c; --bg-2:#12102a; --surface:#151423; --surface-2:#1e1c33;
+  --border:#2e2b4a; --text:#ececf5; --text-dim:#9d9abe; --text-faint:#5f5c80;
+  --accent:#7c5cff; --accent-2:#35e6c5;
+}
+
+[data-theme="carbon"] { /* near-black, minimal, high contrast */
+  --bg:#050505; --bg-2:#0d0d0d; --surface:#111111; --surface-2:#181818;
+  --border:#262626; --text:#f2f2f2; --text-dim:#8f8f8f; --text-faint:#585858;
+  --accent:#ffffff; --accent-2:#7c7c7c; --panel-alpha:.7; --radius:12px;
+}
+
+[data-theme="vaporwave"] {
+  --bg:#12002e; --bg-2:#3d0a5c; --surface:#220a45; --surface-2:#2f0f5c;
+  --border:#5a2a8c; --text:#ffe9ff; --text-dim:#c79ce8; --text-faint:#8b64b0;
+  --accent:#ff5ed2; --accent-2:#4de8ff; --timer-glow:26px;
+}
+
+[data-theme="paper"] { /* light */
+  --bg:#f3f1ec; --bg-2:#e6e2d9; --surface:#ffffff; --surface-2:#f7f5f1;
+  --border:#d8d3c8; --text:#1b1a17; --text-dim:#6b675d; --text-faint:#9d9789;
+  --accent:#1b1a17; --accent-2:#c2410c; --panel-alpha:.72;
+  --shadow:0 18px 40px -22px rgba(0,0,0,.35); --bg-dim:.06;
+}
+
+[data-theme="terminal"] {
+  --bg:#000700; --bg-2:#031a05; --surface:#041205; --surface-2:#08210b;
+  --border:#12471a; --text:#b9ffc4; --text-dim:#57c46a; --text-faint:#2f7a3c;
+  --accent:#39ff6a; --accent-2:#b9ffc4; --radius:4px; --radius-sm:3px;
+  --font-ui:'JetBrains Mono', monospace; --timer-glow:18px;
+}
+
+[data-theme="speedcube"] { /* WCA sticker colours */
+  --bg:#0a0a0a; --bg-2:#141414; --surface:#131313; --surface-2:#1c1c1c;
+  --border:#2b2b2b; --text:#ffffff; --text-dim:#9a9a9a; --text-faint:#5e5e5e;
+  --accent:#ff5800; --accent-2:#00a651; --ok:#00a651; --danger:#c41e3a; --warn:#ffd500;
+}
+
+[data-theme="ice"] {
+  --bg:#04101c; --bg-2:#0a2036; --surface:#0b1c2e; --surface-2:#11293f;
+  --border:#1d4160; --text:#eaf6ff; --text-dim:#8fb6d4; --text-faint:#547e9c;
+  --accent:#4cc9ff; --accent-2:#a0f0ff; --timer-glow:20px;
+}
+
+/* ==================== reduced motion ==================== */
+[data-motion="off"] * ,
+[data-motion="off"] *::before,
+[data-motion="off"] *::after {
+  animation-duration: .001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: .001ms !important;
+}
+[data-motion="reduced"] { --dur-slow: 220ms; --dur: 140ms; }
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]) * {
+    animation-duration:.001ms !important; transition-duration:.001ms !important;
+  }
+}
+
+/* ==================== density ==================== */
+[data-density="compact"]   { --gap:10px; --pad:12px; --radius:12px; }
+[data-density="spacious"]  { --gap:24px; --pad:26px; --radius:24px; }
+
+/* ==================== panel style ====================
+   "widget" is the default frosted card. "flat" strips the card away entirely —
+   no fill, no border, no shadow, no blur — so the content sits directly on the
+   background, the way csTimer looks. Only the chrome goes; every size, gap and
+   position is untouched, so switching cannot reflow the app. */
+[data-panels="flat"] {
+  --pad: 4px;
+  --panel-alpha: 0;
+  --shadow: none;
+}
+[data-panels="flat"] .panel,
+[data-panels="flat"] #cube-fallback,
+[data-panels="flat"] .view-toggle,
+[data-panels="flat"] #creator-chip,
+[data-panels="flat"] .scramble,
+[data-panels="flat"] .seg-btn {
+  background: none;
+  border-color: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+/* the glossy highlight sweep is part of the card, not the content */
+[data-panels="flat"] .panel::after { display: none; }
+[data-panels="flat"] .times-foot { border-top-color: color-mix(in srgb, var(--border) 60%, transparent); }
+
+/* ==================== automatic contrast ====================
+   Set by js/contrast.js after sampling the actual background. A bright photo
+   or a white solid means the whole surface set has to flip, not just the text —
+   dark glass panels with dark type on a white photo are unreadable.
+
+   Deliberately after the theme presets so it wins on equal specificity, and
+   deliberately not touching --bg / --bg-2: those paint the dimming veil behind
+   the content, and the sampler has already accounted for them. */
+[data-bg-luma="light"] {
+  --surface:    #ffffff;
+  --surface-2:  #f2f2f6;
+  --border:     #d2d2dd;
+  --text:       #101018;
+  --text-dim:   #45455a;
+  --text-faint: #75758c;
+  --panel-alpha: .74;
+  --shadow:     0 18px 44px -22px rgba(0,0,0,.4);
+  --t-idle:     #101018;
+  --t-running:  #101018;
+}
