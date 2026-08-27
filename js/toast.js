@@ -4,7 +4,20 @@
 
 import { $, el } from './util.js';
 
-export function toast(message, { action, onAction, timeout = 4200, kind = '' } = {}) {
+/**
+ * Two lifetimes, and nothing else. A toast is confirming something you just did
+ * and already know about, so it has no business sitting over the timer.
+ *
+ * Deliberately named rather than numeric: call sites each picking their own
+ * "but this one is important" duration is how the whole set drifted out to five
+ * and six seconds, so there is no way to ask for a number from outside. Anything
+ * that genuinely needs an answer is a confirmToast below, and anything undoable
+ * stays undoable with Ctrl+Z long after the toast has gone.
+ */
+const SHORT_MS = 1000;
+const LONG_MS = 1500;      // { long: true } — a moment more for a celebration
+
+export function toast(message, { action, onAction, kind = '', long = false } = {}) {
   const host = $('#toasts');
   const node = el('div', { class: `toast ${kind}` }, el('span', { text: message }));
 
@@ -24,12 +37,19 @@ export function toast(message, { action, onAction, timeout = 4200, kind = '' } =
   }
 
   host.append(node);
-  timer = setTimeout(close, timeout);
+  timer = setTimeout(close, long ? LONG_MS : SHORT_MS);
   return close;
 }
 
-/** Small inline confirm rendered as a toast — avoids blocking dialogs. */
-export function confirmToast(message, confirmLabel = 'Confirm') {
+/**
+ * Small inline confirm rendered as a toast — avoids blocking dialogs.
+ *
+ * Unlike a toast this one is a question, so it waits: `timeout` is how long
+ * before it gives up and answers "no" for you. A snap decision you have already
+ * made in your hands (that was a misfire) wants a short one; anything
+ * destructive wants long enough to actually read.
+ */
+export function confirmToast(message, confirmLabel = 'Confirm', { timeout = 9000 } = {}) {
   return new Promise((resolve) => {
     const host = $('#toasts');
     const node = el('div', { class: 'toast bad' }, el('span', { text: message }));
@@ -39,6 +59,6 @@ export function confirmToast(message, confirmLabel = 'Confirm') {
       el('button', { class: 't-act', style: { color: 'var(--text-faint)' }, text: 'cancel', onclick: () => done(false) }),
     );
     host.append(node);
-    setTimeout(() => { if (node.isConnected) done(false); }, 9000);
+    setTimeout(() => { if (node.isConnected) done(false); }, timeout);
   });
 }

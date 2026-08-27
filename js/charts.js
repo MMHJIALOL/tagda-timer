@@ -15,6 +15,15 @@ const svgEl = (tag, attrs = {}) => {
 
 const path = (pts) => pts.length ? 'M' + pts.map(p => `${p[0].toFixed(2)} ${p[1].toFixed(2)}`).join(' L ') : '';
 
+/** Length of the polyline `path()` draws through these points. */
+function polylineLength(pts) {
+  let len = 0;
+  for (let i = 1; i < pts.length; i++) {
+    len += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
+  }
+  return len;
+}
+
 /* ---------------------------------------------------------
    Sparkline in the stats panel
    --------------------------------------------------------- */
@@ -52,7 +61,12 @@ export function renderMiniTrend(svg, solves) {
 
   const p = svgEl('path', { class: 'spark-line', d: path(line) });
   svg.append(p);
-  const len = p.getTotalLength?.() || 0;
+  // `path()` only ever emits straight segments, so summing them is exactly what
+  // getTotalLength() would return — without flushing layout for the whole page.
+  // That flush is charged for every row in the times strip, and the strip now
+  // runs back to the first solve of the session, so it was costing half a
+  // second per render on a long one.
+  const len = polylineLength(line);
   if (len) {
     p.style.strokeDasharray = len; p.style.strokeDashoffset = len;
     p.animate([{ strokeDashoffset: len }, { strokeDashoffset: 0 }],

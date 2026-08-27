@@ -873,3 +873,226 @@ body.focus #mascot { opacity: 0; pointer-events: none; transition: opacity 220ms
 .brand { cursor: pointer; background: none; border: 0; padding: 0; }
 .brand:hover .brand-mark { transform: scale(1.08) rotate(-6deg); }
 .brand-mark { transition: transform var(--dur) var(--ease-back); }
+
+/* ===========================================================
+   Custom scramble list · manual entry · Stackmat · share card
+   =========================================================== */
+
+/* ---------------- the "these are your own scrambles" bar ---------------- */
+#custom-bar {
+  display: inline-flex; align-items: center; gap: 8px;
+  margin-top: 10px; padding: 4px 6px 4px 11px;
+  border-radius: 999px;
+  font-family: var(--font-ui); font-size: .68rem;
+  letter-spacing: .1em; text-transform: uppercase; font-weight: 700;
+  color: var(--accent-2);
+  background: color-mix(in srgb, var(--accent-2) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent-2) 34%, transparent);
+}
+#custom-bar[hidden] { display: none; }
+#custom-bar.spent {
+  color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 12%, transparent);
+  border-color: color-mix(in srgb, var(--warn) 34%, transparent);
+}
+.cb-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: currentColor; box-shadow: 0 0 10px currentColor;
+}
+.cb-x {
+  width: 20px; height: 20px; border-radius: 50%; cursor: pointer;
+  display: grid; place-items: center; font-size: .95rem; line-height: 1;
+  color: inherit; background: none; border: 0;
+  transition: background var(--dur-fast) var(--ease);
+}
+.cb-x:hover { background: color-mix(in srgb, currentColor 22%, transparent); }
+
+/* The paste box and the list preview inside the drawer. */
+.scramble-box {
+  width: 100%; min-height: 220px; resize: vertical;
+  font-family: var(--font-mono); font-size: .78rem; line-height: 1.65;
+  white-space: pre; overflow-wrap: normal; overflow-x: auto;
+}
+.cs-preview {
+  margin-top: 12px; max-height: 320px; overflow: auto;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--bg) 55%, transparent);
+}
+.cs-line {
+  display: grid; grid-template-columns: 34px 1fr; gap: 8px;
+  padding: 6px 10px; font-family: var(--font-mono); font-size: .73rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+}
+.cs-line:last-child { border-bottom: 0; }
+.cs-line.done { opacity: .38; text-decoration: line-through; }
+.cs-line.now { background: color-mix(in srgb, var(--accent-2) 12%, transparent); }
+.cs-line.more { display: block; text-align: center; color: var(--text-faint); font-style: italic; }
+.cs-i { color: var(--text-faint); text-align: right; }
+.cs-s { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---------------- typed times ---------------- */
+#manual-entry {
+  display: flex; gap: 8px; align-items: center;
+  margin-top: 14px; width: min(520px, 88vw);
+}
+#manual-entry[hidden] { display: none; }
+#manual-input {
+  flex: 1; min-width: 0;
+  padding: 12px 16px; border-radius: 14px;
+  font-family: var(--font-mono); font-size: 1rem; font-weight: 600;
+  color: var(--text); text-align: center;
+  background: color-mix(in srgb, var(--surface) 72%, transparent);
+  border: 1px solid var(--border);
+  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  transition: border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
+}
+#manual-input::placeholder {
+  font-family: var(--font-ui); font-weight: 500; font-size: .82rem; color: var(--text-faint);
+}
+#manual-input:focus {
+  outline: none; border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 26%, transparent);
+}
+#manual-input.bad { animation: manualShake 320ms var(--ease); border-color: var(--danger); }
+@keyframes manualShake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-7px); }
+  40% { transform: translateX(6px); }
+  60% { transform: translateX(-4px); }
+  80% { transform: translateX(3px); }
+}
+
+/* ---------------- Stackmat status ---------------- */
+#stackmat-bar {
+  display: inline-flex; align-items: center; gap: 9px;
+  margin-top: 14px; padding: 7px 14px; border-radius: 999px;
+  font-family: var(--font-ui); font-size: .74rem; color: var(--text-dim);
+  background: color-mix(in srgb, var(--surface) 66%, transparent);
+  border: 1px solid var(--border);
+  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+}
+#stackmat-bar[hidden] { display: none; }
+.sm-dot {
+  width: 8px; height: 8px; border-radius: 50%; flex: none;
+  background: var(--text-faint);
+}
+.sm-dot.wait { background: var(--warn); animation: smPulse 1.4s ease-in-out infinite; }
+.sm-dot.live { background: var(--ok); box-shadow: 0 0 12px var(--ok); }
+@keyframes smPulse { 50% { opacity: .25; } }
+
+/* ---------------- share sheet ---------------- */
+.sh-wrap { position: fixed; inset: 0; z-index: 120; display: grid; place-items: center; }
+.sh-scrim {
+  position: absolute; inset: 0;
+  background: rgba(4, 4, 10, .72);
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  animation: shFade 200ms var(--ease);
+}
+@keyframes shFade { from { opacity: 0; } }
+.sh-box {
+  position: relative;
+  width: min(460px, 94vw); max-height: 92vh;
+  display: flex; flex-direction: column; gap: 14px;
+  padding: 18px; border-radius: 24px;
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  animation: shIn 300ms var(--ease-back);
+  overflow: auto;
+}
+@keyframes shIn { from { opacity: 0; transform: translateY(22px) scale(.97); } }
+.sh-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.sh-head h2 { font-size: 1rem; font-weight: 700; letter-spacing: -.01em; }
+.sh-ico {
+  width: 17px; height: 17px; fill: none; stroke: currentColor;
+  stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round;
+}
+.sh-stage {
+  border-radius: 18px; overflow: hidden;
+  border: 1px solid var(--border);
+  background: var(--bg);
+}
+.sh-canvas { display: block; width: 100%; height: auto; }
+.sh-acts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.sh-act {
+  display: flex; align-items: center; justify-content: center; gap: 7px;
+  padding: 11px 8px; border-radius: 13px; cursor: pointer;
+  font-family: var(--font-ui); font-size: .78rem; font-weight: 600;
+  color: var(--text);
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+  border: 1px solid var(--border);
+  transition: all var(--dur-fast) var(--ease);
+}
+.sh-act:hover { background: color-mix(in srgb, var(--text) 14%, transparent); transform: translateY(-1px); }
+.sh-act:disabled { opacity: .5; cursor: progress; transform: none; }
+.sh-act.primary { color: var(--on-accent); background: var(--accent); border-color: transparent; }
+.sh-act.primary:hover { filter: brightness(1.08); }
+.sh-share-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.sh-share-lbl {
+  font-size: .66rem; letter-spacing: .16em; text-transform: uppercase;
+  color: var(--text-faint); font-weight: 700;
+}
+.sh-links { display: flex; gap: 7px; flex-wrap: wrap; }
+.sh-link {
+  padding: 6px 12px; border-radius: 999px;
+  font-size: .74rem; font-weight: 600; color: var(--text-dim);
+  border: 1px solid var(--border);
+  transition: all var(--dur-fast) var(--ease);
+}
+.sh-link:hover {
+  color: var(--text); border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.sh-foot {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  padding-top: 4px; border-top: 1px solid var(--border);
+  font-size: .74rem;
+}
+.sh-cred { color: var(--text-dim); font-weight: 600; }
+.sh-cred:hover { color: var(--text); }
+.sh-cred.insta { color: var(--accent-2); }
+.sh-dot { color: var(--text-faint); }
+
+/* Manual entry and the Stackmat both replace the spacebar, so the hint that
+   talks about the spacebar has no business being on screen. */
+body[data-input="manual"] #timer-hint,
+body[data-input="stackmat"] #timer-hint { display: none; }
+/* Focus mode clears the page around the digits — but not the field you are
+   typing into, and not the connection status you are watching. */
+body.focus #manual-entry,
+body.focus #stackmat-bar { opacity: 1; }
+
+/* The bottom of the times strip, once it has scrolled all the way back to the
+   first solve of the session — so "nothing more is loading" is stated rather
+   than guessed at. */
+.hist-end {
+  padding: 12px 4px 8px;
+  text-align: center;
+  font-family: var(--font-ui);
+  font-size: .6rem; font-weight: 700;
+  letter-spacing: .16em; text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+/* The times strip now runs all the way back to solve #1, which on a long
+   session means thousands of rows in the DOM, and anything that forces a
+   layout then has to walk all of them. Containment keeps each row's internals
+   out of that walk.
+
+   Deliberately not `content-visibility: auto`, which would be the bigger win:
+   it brings size containment with it, and a row whose height comes from
+   `contain-intrinsic-size` renders squashed the moment a browser does not
+   accept the exact syntax used. A slower list beats a broken one. */
+.solve-chip {
+  contain: layout paint style;
+}
+
+/* The confetti canvas sits below the toasts, and a toast blurs whatever is
+   behind it — so a moving canvas means re-blurring its backdrop every frame,
+   right when the celebration is already the busiest thing on screen. The blur
+   is decoration; the celebration is the point. */
+body.celebrating .toast {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  background: var(--surface-2);
+}
