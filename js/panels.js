@@ -603,9 +603,17 @@ export function buildStats(app) {
     body.append(el('div', { class: 'chart-card' }, el('h4', { text: 'Distribution' }), histHost));
     renderHistogram(histHost, solves);
 
-    const heatHost = el('div');
-    body.append(el('div', { class: 'chart-card' }, el('h4', { text: 'Practice heatmap — all events' }), heatHost));
-    app.allSolves().then(all => renderHeatmap(heatHost, all));
+    /* The heatmap reads the whole store rather than this session, so it is the
+       one chart that can go stale while the panel is open: deleting solves
+       elsewhere in the drawer left the old grid on screen. Re-read on demand,
+       and hang the reloader off the host so anything that changes solves can
+       call it. */
+    const heatHost = el('div', { class: 'heat-host' });
+    body.append(el('div', { class: 'chart-card' },
+      el('h4', { text: 'Practice heatmap — all events, last 12 months' }), heatHost));
+    const drawHeat = () => app.allSolves().then(all => renderHeatmap(heatHost, all));
+    heatHost.refresh = drawHeat;
+    drawHeat();
 
     if (cases.length) {
       const caseHost = el('div');

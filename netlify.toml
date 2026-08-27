@@ -10,15 +10,21 @@
   [headers.values]
     Cache-Control = "public, max-age=31536000, immutable"
 
-# App code is versioned with ?v= query strings, which some CDNs ignore.
-# Revalidate it every time so a deploy is never half-old, half-new.
-[[headers]]
-  for = "/js/*"
-  [headers.values]
-    Cache-Control = "public, max-age=0, must-revalidate"
-
+# The stylesheets are all three referenced from index.html with a ?v=, and
+# browsers key the cache on the full URL including the query — so bumping ?v=
+# is already a guaranteed miss and revalidating on top of it bought nothing.
 [[headers]]
   for = "/css/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+# The scripts cannot have the same treatment, and it is worth writing down why:
+# only js/main.js is fetched with a ?v=. Every other module arrives through a
+# bare ES import ("./util.js"), which resolves to an unversioned URL, so a
+# deploy has no way to bust it. Marked immutable, those nineteen files would be
+# frozen in every returning visitor's browser for a year. They revalidate.
+[[headers]]
+  for = "/js/*"
   [headers.values]
     Cache-Control = "public, max-age=0, must-revalidate"
 
@@ -26,3 +32,10 @@
   for = "/index.html"
   [headers.values]
     Cache-Control = "public, max-age=0, must-revalidate"
+
+# Webfont files never change in place — if a face is ever replaced, give the
+# new file a new name rather than editing this.
+[[headers]]
+  for = "/assets/fonts/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"

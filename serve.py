@@ -5,7 +5,10 @@ Plain `python -m http.server` lets the browser cache files, so edits appear to
 do nothing until you hard-reload. This serves the same folder with caching
 switched off, and opens the timer for you.
 
-    python serve.py [port]
+    python serve.py [port] [--no-browser]
+
+--no-browser keeps it from opening a tab, for when something else is driving
+the browser (an editor preview pane, a test run).
 """
 
 import http.server
@@ -15,7 +18,9 @@ import sys
 import threading
 import webbrowser
 
-PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 5173
+ARGS = [a for a in sys.argv[1:] if not a.startswith("-")]
+OPEN_BROWSER = "--no-browser" not in sys.argv
+PORT = int(ARGS[0]) if ARGS else 5173
 ROOT = os.path.dirname(os.path.abspath(__file__))
 
 
@@ -73,7 +78,8 @@ def main():
     print("  Close this window to stop the server.")
     print()
 
-    threading.Timer(0.6, lambda: webbrowser.open(url)).start()
+    if OPEN_BROWSER:
+        threading.Timer(0.6, lambda: webbrowser.open(url)).start()
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:

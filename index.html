@@ -5,20 +5,22 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Tagda Timer</title>
 <meta name="description" content="Tagda Timer — a modern WCA speedcubing timer.">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<!-- Only the two faces the interface always uses are allowed to hold up the
-     first paint. Space Grotesk and Chivo Mono are optional timer faces picked
-     in Appearance, so they load without blocking anything. -->
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Chivo+Mono:wght@300;400;600;800&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+<!-- The webfonts are served from this origin (css/fonts.css). That removes two
+     DNS + TLS handshakes from in front of the first paint, and one variable
+     file per family replaces the five static weights each used to cost.
+     The two faces the interface always uses are preloaded so they are in
+     flight alongside the stylesheet rather than after it; the optional timer
+     faces are declared in the same file and fetched only if they get picked. -->
+<link rel="preload" href="assets/fonts/inter-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="assets/fonts/jetbrains-mono-latin.woff2" as="font" type="font/woff2" crossorigin>
 <!-- The scrambler is the one thing the user actually waits on, so start
      fetching its module graph alongside the stylesheets, not after them. -->
 <link rel="modulepreload" href="vendor/cubing/cubing/scramble.js">
-<link rel="modulepreload" href="js/main.js?v=29">
-<link rel="stylesheet" href="css/tokens.css?v=29">
-<link rel="stylesheet" href="css/base.css?v=29">
-<link rel="stylesheet" href="css/components.css?v=29">
+<link rel="modulepreload" href="js/main.js?v=30">
+<link rel="stylesheet" href="css/fonts.css?v=30">
+<link rel="stylesheet" href="css/tokens.css?v=30">
+<link rel="stylesheet" href="css/base.css?v=30">
+<link rel="stylesheet" href="css/components.css?v=30">
 <link rel="icon" href="assets/favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="assets/logo-192.png">
 <link rel="apple-touch-icon" href="assets/logo-180.png">
@@ -376,7 +378,7 @@
   </div>
 </div>
 
-<script type="module" src="js/main.js?v=29"></script>
+<script type="module" src="js/main.js?v=30"></script>
 <script>
 (function () {
   var isFile = location.protocol === 'file:';

@@ -189,13 +189,32 @@ export function applyTheme(s) {
     // here outranks the responsive media queries and broke the mobile layout.
     stage.dataset.sidebar = (s.showStats || s.showHistory) ? 'on' : 'off';
   }
+
+  // Last line on purpose: everything above may have moved the palette, and the
+  // accent overrides are written near the end of it.
+  invalidateThemeColors();
 }
+
+/* The palette is read from CSS on every inspection frame — the shader tint and
+   the ring both want it — and getComputedStyle() there is a forced style
+   recalc sixty-plus times a second for nine values that only ever change when
+   the theme does. So resolve it once and hold it until something moves.
+
+   Deliberately not a MutationObserver on <html>: the inspection heartbeat
+   writes --breathe on that same element every frame, which would invalidate
+   the cache on every frame and buy nothing. Both writers of the palette call
+   invalidateThemeColors() directly instead. */
+let _colors = null;
+
+/** Drop the cached palette. Call after anything that rewrites theme CSS vars. */
+export function invalidateThemeColors() { _colors = null; }
 
 /** Resolve the current accent colours for shaders / confetti. */
 export function themeColors() {
+  if (_colors) return _colors;
   const cs = getComputedStyle(document.documentElement);
   const get = (n, fb) => (cs.getPropertyValue(n).trim() || fb);
-  return {
+  _colors = {
     bg:      get('--bg', '#07070c'),
     bg2:     get('--bg-2', '#12102a'),
     accent:  get('--accent', '#7c5cff'),
@@ -206,6 +225,7 @@ export function themeColors() {
     warn:    get('--warn', '#ffb020'),
     text:    get('--text', '#fff'),
   };
+  return _colors;
 }
 
 /* ---------------------------------------------------------
@@ -216,6 +236,9 @@ export async function applyBackground(bg, s) {
   // Re-sample before anything else: the palette this resolves may itself be
   // about to flip, and the shaders read their colours from it.
   await applyContrast(s);
+  // applyContrast stamps data-bg-luma on <html>, which the stylesheet answers
+  // with a different palette — so the cached one is stale by definition here.
+  invalidateThemeColors();
   const c = themeColors();
   bg.speed = s.bgSpeed;
   bg.amount = s.bgAmount;

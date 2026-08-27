@@ -13,3 +13,6 @@ desktop.ini
 # Python
 __pycache__/
 *.pyc
+
+# Agent/editor workspace config
+.claude/
