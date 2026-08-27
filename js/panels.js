@@ -426,7 +426,7 @@ export function buildSettings(app) {
           { value: 0, label: 'Instant' },
           { value: 300, label: '300 ms' },
           { value: 500, label: '500 ms' },
-        ], S.holdTime, v => set('holdTime', +v)), 'how long to hold before it goes green'),
+        ], S.holdTime, v => set('holdTime', +v)), 'instant starts on the press; the others arm first and start on release'),
         row('Decimals', chips([{ value: 2, label: '0.00' }, { value: 3, label: '0.000' }], S.precision, v => set('precision', +v))),
         row('Hide time while solving', toggle(S.hideWhileRunning, v => set('hideWhileRunning', v)), 'stops you watching the clock'),
         row('Focus mode', toggle(S.focusMode, v => set('focusMode', v)), 'everything but the digits fades out'),
@@ -726,6 +726,9 @@ export function buildShortcuts() {
 const IG_HANDLE = 'cubingngagng';
 const IG_PROFILE = `https://instagram.com/${IG_HANDLE}`;
 const IG_REELS = `https://instagram.com/${IG_HANDLE}/reels/`;
+const GH_HANDLE = 'MMHJIALOL';
+const GH_PROFILE = `https://github.com/${GH_HANDLE}`;
+const AVATAR = 'assets/ishaan.jpg';
 
 export function buildAbout(app) {
   return (body) => {
@@ -764,7 +767,7 @@ export function buildAbout(app) {
     body.append(
       group('Ishaan',
         el('div', { class: 'about-hero' },
-          el('div', { class: 'about-avatar', text: 'I' }),
+          el('img', { class: 'about-avatar', src: AVATAR, alt: 'Ishaan', width: 52, height: 52, loading: 'lazy', decoding: 'async' }),
           el('div', {},
             el('div', { class: 'about-name', text: 'Ishaan' }),
             el('div', { class: 'about-handle', text: '@' + IG_HANDLE }))),
@@ -778,6 +781,7 @@ export function buildAbout(app) {
       group('Find me',
         arrow(link('Instagram', IG_PROFILE, '@' + IG_HANDLE)),
         arrow(link('Latest reels', IG_REELS, 'always opens on the newest one')),
+        arrow(link('GitHub', GH_PROFILE, '@' + GH_HANDLE)),
       ),
 
       group('Featured reel',

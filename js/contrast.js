@@ -11,7 +11,7 @@ import { Assets } from './db.js';
 /** Perceived brightness, 0 (black) to 1 (white). */
 const luma = (r, g, b) => (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
 
-function hexLuma(hex) {
+export function hexLuma(hex) {
   const m = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec((hex || '').trim());
   if (!m) return null;
   let h = m[1];
@@ -85,8 +85,29 @@ async function mediaLuma(s) {
     case 'gradient': return gradientLuma(s.bgGradient);
     case 'image':    return await blobLuma('bg-image', false);
     case 'video':    return await blobLuma('bg-video', true);
-    default:         return null;    // shaders are drawn from the theme's own palette
+    default:         return shaderLuma();
   }
+}
+
+/**
+ * Shaders have no bitmap to sample, but they are painted entirely out of the
+ * theme's own palette, so the palette is the sample. This used to return null,
+ * which meant the light themes never got the contrast pass at all and printed
+ * their body text against whatever the shader felt like.
+ *
+ * Weighted towards the base colour because that is most of the screen; the
+ * accents are highlights moving across it.
+ */
+function shaderLuma() {
+  const cs = getComputedStyle(document.documentElement);
+  const at = (n, w) => {
+    const v = hexLuma(cs.getPropertyValue(n).trim());
+    return v === null ? null : [v, w];
+  };
+  const parts = [at('--bg-2', 3), at('--accent', 1), at('--accent-2', 1)].filter(Boolean);
+  if (!parts.length) return null;
+  const total = parts.reduce((a, [, w]) => a + w, 0);
+  return parts.reduce((a, [v, w]) => a + v * w, 0) / total;
 }
 
 /**

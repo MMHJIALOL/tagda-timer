@@ -78,7 +78,7 @@
 }
 .btn:hover { transform: translateY(-1px); border-color: var(--text-faint); }
 .btn:active { transform: translateY(0) scale(.98); }
-.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 .btn.primary:hover { box-shadow: 0 8px 24px -8px var(--accent); }
 .btn.danger { background: color-mix(in srgb, var(--danger) 15%, transparent); border-color: color-mix(in srgb, var(--danger) 40%, transparent); color: var(--danger); }
 .btn.full { width: 100%; }
@@ -181,7 +181,15 @@
      internal wrapper takes its height from that grid; overriding the host to
      `block` collapsed the canvas to 150x0 — a correctly sized element with
      nothing painted in it, which is why the preview looked dead. */
-  filter: drop-shadow(0 8px 18px rgba(0,0,0,.45));
+  /* Graded to match the rendered logo, which is the look worth having: the
+     library gives no hook for sticker colours or materials — those are baked
+     into its own shaders — so the grade happens on the composited output
+     instead. Saturation and contrast turn its flat sticker colours into the
+     logo's glossy plastic, and the heavier shadow sits the cube on something
+     rather than floating it. */
+  filter: saturate(1.34) contrast(1.14) brightness(1.05)
+          drop-shadow(0 14px 22px rgba(0,0,0,.6))
+          drop-shadow(0 2px 3px rgba(0,0,0,.35));
 }
 #cube-fallback {
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
@@ -227,6 +235,24 @@
 /* ---------------- times list (left column) ---------------- */
 #panel-times { gap: 8px; }
 #panel-times .panel-head { flex: none; }
+
+/* Column labels for the solve list. Same grid, same gap and same horizontal
+   padding as .solve-chip below, so "ao5" lands over the ao5 column instead of
+   near it. */
+.hist-cols {
+  flex: none;
+  display: grid; grid-template-columns: 24px minmax(0, 1fr) auto;
+  align-items: center; gap: 7px;
+  /* #hist-list below bleeds out by half the pad and pads back in so its chips
+     can have a hover background that reaches the panel edge. Matching that here
+     is what makes the labels line up with the columns rather than sit 9px off. */
+  margin: 0 calc(var(--pad) * -0.5);
+  padding: 4px calc(var(--pad) * 0.5 + 8px) 3px;
+  font-size: .58rem; font-weight: 700; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--text-faint);
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+}
+.hist-cols span:last-child { text-align: right; }
 
 #hist-list {
   flex: 1; min-height: 0; overflow-y: auto;
@@ -772,9 +798,13 @@ input[type="range"]::-moz-range-thumb {
 .about-avatar {
   width: 52px; height: 52px; flex: none; border-radius: 16px;
   display: grid; place-items: center;
-  font-family: var(--font-ui); font-size: 1.5rem; font-weight: 800; color: #fff;
+  font-family: var(--font-ui); font-size: 1.5rem; font-weight: 800; color: var(--on-accent);
   background: linear-gradient(140deg, var(--accent), var(--accent-2));
   box-shadow: 0 10px 26px -12px var(--accent);
+  /* It is an <img> now; the gradient stays underneath as the placeholder for
+     the moment before it decodes, or forever if it fails to load. */
+  object-fit: cover;
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
 }
 .about-name { font-size: 1.18rem; font-weight: 700; letter-spacing: -.02em; }
 .about-handle { font-size: .82rem; color: var(--accent-2); font-weight: 550; }

@@ -6,7 +6,7 @@
    =========================================================== */
 
 import { KV, Assets } from './db.js';
-import { applyContrast } from './contrast.js';
+import { applyContrast, hexLuma } from './contrast.js';
 
 export const PRESETS = {
   nebula:    { name: 'Nebula',    dots: ['#7c5cff', '#35e6c5', '#12102a'] },
@@ -26,25 +26,35 @@ export const TIMER_FONTS = {
   'System':         "system-ui, -apple-system, sans-serif",
 };
 
+/** The reel pinned in the About panel until someone pastes another one. */
+export const FEATURED_REEL = 'https://www.instagram.com/reel/DZzyIGcBQjD/';
+
 /**
  * Bumped whenever a default changes in a way that must reach people who
  * already have settings saved. `saveSettings` writes the whole object, so an
  * existing profile carries the OLD default forever and simply editing
  * DEFAULTS would never reach anyone who has used the app before.
  */
-const SETTINGS_VERSION = 3;
+const SETTINGS_VERSION = 4;
 
 const MIGRATIONS = {
   // v2 — the pace ghost is now opt-in rather than on by default.
   2: (s) => { s.paceGhost = false; },
   // v3 — voice callouts removed; anyone on them lands on the tone.
   3: (s) => { if (s.callouts === 'voice') s.callouts = 'beep'; },
+  // v4 — the spacebar starts the solve on the press. Anyone still carrying the
+  // old 300 ms arming hold is moved across; a hold they chose themselves is
+  // left alone.
+  4: (s) => {
+    if (s.holdTime === 300 || s.holdTime === undefined) s.holdTime = 0;
+    if (!s.featuredReel) s.featuredReel = FEATURED_REEL;
+  },
 };
 
 export const DEFAULTS = {
   // behaviour
   inspection: true,
-  holdTime: 300,
+  holdTime: 0,                  // 0 = the press starts the solve, no arming hold
   callouts: 'beep',             // beep | off
   precision: 2,
   hideWhileRunning: false,
@@ -96,7 +106,7 @@ export const DEFAULTS = {
   cubeView: '3D',
   hintFacelets: true,
   autoContrast: true,           // flip to dark text when the background is bright
-  featuredReel: '',             // an Instagram reel URL pinned in the About panel
+  featuredReel: FEATURED_REEL,  // an Instagram reel URL pinned in the About panel
 
   // session
   event: '333',
@@ -152,6 +162,14 @@ export function applyTheme(s) {
 
   if (s.accent)  st.setProperty('--accent', s.accent);  else st.removeProperty('--accent');
   if (s.accent2) st.setProperty('--accent-2', s.accent2); else st.removeProperty('--accent-2');
+
+  // Anything printed *on* an accent — a primary button, a selection, the avatar
+  // initial — used to be white no matter what, which is invisible on Carbon's
+  // white accent and on any pale colour picked in the appearance editor.
+  // Read the accent that actually resolved and pick the side that reads.
+  st.removeProperty('--on-accent');
+  const accent = getComputedStyle(root).getPropertyValue('--accent').trim();
+  st.setProperty('--on-accent', (hexLuma(accent) ?? 0) > 0.6 ? '#0b0b12' : '#ffffff');
 
   document.body.classList.toggle('no-stats', !s.showStats);
   const stats = document.getElementById('panel-stats');

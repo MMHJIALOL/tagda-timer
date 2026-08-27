@@ -7,14 +7,18 @@
 <meta name="description" content="Tagda Timer — a modern WCA speedcubing timer.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&family=Chivo+Mono:wght@300;400;600;800&display=swap" rel="stylesheet">
+<!-- Only the two faces the interface always uses are allowed to hold up the
+     first paint. Space Grotesk and Chivo Mono are optional timer faces picked
+     in Appearance, so they load without blocking anything. -->
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Chivo+Mono:wght@300;400;600;800&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
 <!-- The scrambler is the one thing the user actually waits on, so start
      fetching its module graph alongside the stylesheets, not after them. -->
 <link rel="modulepreload" href="vendor/cubing/cubing/scramble.js">
-<link rel="modulepreload" href="js/main.js?v=23">
-<link rel="stylesheet" href="css/tokens.css?v=23">
-<link rel="stylesheet" href="css/base.css?v=23">
-<link rel="stylesheet" href="css/components.css?v=23">
+<link rel="modulepreload" href="js/main.js?v=28">
+<link rel="stylesheet" href="css/tokens.css?v=28">
+<link rel="stylesheet" href="css/base.css?v=28">
+<link rel="stylesheet" href="css/components.css?v=28">
 <link rel="icon" href="assets/favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="assets/logo-192.png">
 <link rel="apple-touch-icon" href="assets/logo-180.png">
@@ -194,6 +198,11 @@
           <span id="hist-title">Times</span>
           <span class="panel-sub" id="stat-count">0 solves</span>
         </div>
+        <!-- Says what the right-hand column is. It shares the solve chip's grid
+             exactly, so each label sits over the column it names. -->
+        <div class="hist-cols" aria-hidden="true">
+          <span></span><span>time</span><span>ao5</span>
+        </div>
         <div id="hist-list" role="list"></div>
         <div class="times-foot">
           <button class="ghost-btn sm" id="btn-open-history" title="All solves  (H)">
@@ -226,10 +235,19 @@
           <div id="pace-label">pace</div>
         </div>
 
-        <!-- Arming feedback: fills over the hold time, latches green on ready. -->
+        <!-- Arming feedback. Only ever shown when an arming hold is configured;
+             with the default instant start it never appears. -->
         <div id="hold-bar" hidden><div id="hold-fill"></div></div>
 
-        <div id="timer-hint">hold <kbd>space</kbd> to start</div>
+        <!-- The two averages you actually watch mid-session, where you are
+             already looking. -->
+        <div id="timer-avgs">
+          <span><b>ao5</b><i id="live-ao5">&mdash;</i></span>
+          <span class="sep" aria-hidden="true"></span>
+          <span><b>ao12</b><i id="live-ao12">&mdash;</i></span>
+        </div>
+
+        <div id="timer-hint">press <kbd>space</kbd> to start</div>
 
         <div id="last-delta" hidden></div>
       </div>
@@ -332,7 +350,7 @@
   </div>
 </div>
 
-<script type="module" src="js/main.js?v=23"></script>
+<script type="module" src="js/main.js?v=28"></script>
 <script>
 (function () {
   var isFile = location.protocol === 'file:';

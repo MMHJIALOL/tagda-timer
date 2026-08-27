@@ -80,7 +80,6 @@ async function init() {
   app.settings.sessionId = app.session.id;
   if (app.session.event) app.settings.event = app.session.event;
 
-  await refreshCounts();
   app.solves = await Solves.bySession(app.session.id);
 
   // timer
@@ -95,10 +94,27 @@ async function init() {
   wireChrome();
   wireShortcuts();
 
-  // visuals
-  // A background is decoration. A broken shader, a missing blob, a browser with
-  // WebGL switched off — none of that is a reason for the timer not to start.
-  await applyBackground(bg, app.settings).catch(err => console.warn('[bg] could not apply background', err));
+  // The scrambler is the only thing anyone actually waits for, so it starts
+  // before the decoration does rather than queueing behind it.
+  queue.onReady = () => { if (!app.scramble) nextScramble(); };
+  refreshQueue();
+  nextScramble();
+
+  renderAll();
+  syncTimerDisplay();
+  bootAnimation();
+
+  // Everything below is decoration or bookkeeping and is deliberately not
+  // awaited: the timer is usable the moment the lines above have run.
+
+  // Counting every solve in the database only feeds the badges in the session
+  // picker. It used to block the boot for as long as that read took.
+  refreshCounts().catch(() => {});
+
+  // A broken shader, a missing blob, a browser with WebGL switched off — none
+  // of that is a reason for the timer not to start.
+  applyBackground(bg, app.settings).catch(err => console.warn('[bg] could not apply background', err));
+
   cube.orbit = app.settings.cubeOrbit;
   cube.init().then(() => {
     cube.setHints(app.settings.hintFacelets);
@@ -107,13 +123,6 @@ async function init() {
     console.warn('[cube] failed to initialise', err);
     cube.showFallback('preview unavailable');
   });
-
-  queue.onReady = () => { if (!app.scramble) nextScramble(); };
-  refreshQueue();
-  nextScramble();
-
-  renderAll();
-  bootAnimation();
 
   window.addEventListener('resize', debounce(() => {
     applyTheme(app.settings);
@@ -138,10 +147,14 @@ function bootAnimation() {
   const parts = [$('#topbar'), $('#scramble-zone'), $('#timer-display'), $('#panel-times'), $('#panel-stats'), $('#panel-cube')];
   parts.forEach((p, i) => {
     if (!p) return;
+    // No blur here on purpose. Animating `filter` on six full-width elements
+    // forces a fresh offscreen composite every frame of the first second the
+    // page is alive — exactly when the scrambler and the cube module are
+    // competing for the same main thread. Opacity and transform are free.
     p.animate(
-      [{ opacity: 0, transform: 'translateY(14px) scale(.985)', filter: 'blur(6px)' },
-       { opacity: 1, transform: 'none', filter: 'blur(0)' }],
-      { duration: 620, delay: 60 + i * 65, easing: 'cubic-bezier(.22,1,.36,1)', fill: 'backwards' });
+      [{ opacity: 0, transform: 'translateY(12px) scale(.99)' },
+       { opacity: 1, transform: 'none' }],
+      { duration: 460, delay: 40 + i * 45, easing: 'cubic-bezier(.22,1,.36,1)', fill: 'backwards' });
   });
 }
 
@@ -335,7 +348,12 @@ function wireTimer() {
       bg.setSlow(0.08);
       ring.classList.remove('on');
       readout.hidden = true;
-      display.classList.toggle('hidden-digits', app.settings.hideWhileRunning || eventOf(app.settings.event).hideDuringSolve);
+      // The !! is load-bearing. `hideDuringSolve` is undefined on every event
+      // that does not set it, and classList.toggle() with an undefined second
+      // argument ignores it and *flips* the class — so on 3x3 the digits went
+      // dark on every other solve.
+      display.classList.toggle('hidden-digits',
+        !!(app.settings.hideWhileRunning || eventOf(app.settings.event).hideDuringSolve));
       pen.textContent = '';
       if (app.settings.paceGhost) startPace(pace, paceFill);
     } else if (st === 'idle') {
@@ -409,7 +427,17 @@ function updateHoldBar(state) {
   if (!bar || !fill) return;
   const holdMs = Math.max(0, app.settings.holdTime);
 
-  if (state === 'holding' && holdMs > 0) {
+  // With no arming delay the bar has nothing to report — it would snap to a
+  // full green line the moment your finger lands and sit there until you let
+  // go, which is the out-of-place green line under the digits. The digits
+  // themselves already go green on 'ready', which is the feedback that matters.
+  if (holdMs <= 0) {
+    bar.hidden = true;
+    bar.classList.remove('ready');
+    return;
+  }
+
+  if (state === 'holding') {
     bar.hidden = false;
     bar.classList.remove('ready');
     fill.style.transition = 'none';
@@ -520,6 +548,24 @@ async function onSolveFinished(res) {
   nextScramble();
 }
 
+/**
+ * Put the digits back to whatever the session now ends with.
+ *
+ * Deleting a solve used to leave its time sitting on screen — the one number
+ * that is no longer in the session is the one you are looking at. Anything that
+ * changes which solve is last calls this instead.
+ */
+function syncTimerDisplay() {
+  if (timer && timer.state !== 'idle' && timer.state !== 'cooldown') return;
+  const last = app.solves.at(-1);
+  const v = last ? eff(last) : null;
+  $('#time-main').style.opacity = '';
+  $('#time-main').textContent = last ? (v === DNF ? 'DNF' : fmt(v)) : '0.00';
+  $('#time-penalty').textContent = last && last.penalty === '+2' ? '+2'
+    : last && last.penalty === 'DNF' ? 'DNF' : '';
+  $('#last-delta').hidden = true;
+}
+
 function showDelta(solve, prevBest) {
   const node = $('#last-delta');
   const prev = app.solves.length >= 2 ? eff(app.solves.at(-2)) : null;
@@ -556,6 +602,7 @@ function renderAll() {
   renderStats();
   renderHistory();
   updateLabels();
+  updateHint();
 }
 
 let lastStats = {};
@@ -592,6 +639,17 @@ function renderStats() {
   $('#peek-ao5').textContent  = f(st.ao5);
   $('#peek-ao12').textContent = f(st.ao12);
   $('#peek-mo3').textContent  = f(st.mo3);
+
+  // ...and the two of them again under the timer, where you are already looking.
+  // Hidden outright until there is an average to print, rather than sitting
+  // there as a pair of dashes.
+  $('#live-ao5').textContent  = f(st.ao5);
+  $('#live-ao12').textContent = f(st.ao12);
+  const avgs = $('#timer-avgs');
+  if (avgs) {
+    avgs.hidden = st.ao5 === null || st.ao5 === undefined;
+    avgs.classList.toggle('solo', st.ao12 === null || st.ao12 === undefined);
+  }
 
   // Session bests are O(n x len) to compute, so only when they are on screen.
   if ($('#panel-stats')?.dataset.collapsed === 'false') {
@@ -653,6 +711,15 @@ function renderHistory() {
   if (atTop) list.scrollTop = 0;
 }
 
+/** The hint under the digits states what the spacebar actually does now. */
+function updateHint() {
+  const node = $('#timer-hint');
+  if (!node) return;
+  node.innerHTML = app.settings.holdTime > 0
+    ? 'hold <kbd>space</kbd>, release to start'
+    : 'tap <kbd>space</kbd>, release to start';
+}
+
 function updateLabels() {
   const ev = eventOf(app.settings.event);
   const mode = modeOf(app.settings.mode);
@@ -672,6 +739,7 @@ function solveMenu(solve, anchor) {
     solve.penalty = solve.penalty === p ? 'none' : p;
     await Solves.put(solve);
     renderAll();
+    syncTimerDisplay();
   };
   popover(anchor, [
     { title: `#${app.solves.indexOf(solve) + 1} · ${eff(solve) === DNF ? 'DNF' : fmt(eff(solve))}` },
@@ -733,6 +801,7 @@ async function deleteSolve(solve) {
   app.lastDeleted = solve;
   app.sessionCounts.set(app.session.id, app.solves.length);
   renderAll();
+  syncTimerDisplay();
   toast(`Deleted ${eff(solve) === DNF ? 'DNF' : fmt(eff(solve))}`, {
     action: 'undo',
     onAction: async () => {
@@ -741,6 +810,7 @@ async function deleteSolve(solve) {
       await Solves.put(solve);
       app.lastDeleted = null;
       renderAll();
+      syncTimerDisplay();
     },
   });
 }
@@ -753,6 +823,7 @@ async function undoDelete() {
   app.solves.sort((a, b) => a.createdAt - b.createdAt);
   await Solves.put(s);
   renderAll();
+  syncTimerDisplay();
   toast('Restored');
 }
 
@@ -773,6 +844,7 @@ app.switchSession = async (id) => {
   if (s.event) { app.settings.event = s.event; syncEventConfig(); }
   app.solves = await Solves.bySession(id);
   lastStats = {};
+  syncTimerDisplay();
   persist();
   refreshQueue(); nextScramble();
   renderAll();
@@ -812,6 +884,7 @@ async function clearSession() {
   app.sessionCounts.set(app.session.id, 0);
   lastStats = {};
   renderAll();
+  syncTimerDisplay();
   toast(`Cleared ${backup.length} solves`, {
     action: 'undo',
     timeout: 9000,
@@ -820,6 +893,7 @@ async function clearSession() {
       app.solves = backup;
       app.sessionCounts.set(app.session.id, backup.length);
       renderAll();
+      syncTimerDisplay();
     },
   });
 }
@@ -985,30 +1059,57 @@ const modalOpen = () => drawerOpen() || paletteOpen() || popoverOpen();
 
 function wireInput() {
   let spaceDown = false;
+  // Keys that stopped a running solve. Their keyup belongs to that same press
+  // and must be swallowed too, or it lands on whatever the key normally does.
+  const stopKeys = new Set();
 
+  /**
+   * Both listeners run in the CAPTURE phase, before anything else on the
+   * document, and stop the event dead when it was the key that ended a solve.
+   *
+   * Bubble-phase listeners could not do this. The shortcut handler is also on
+   * document, so stopping a solve with `d` used to stop the solve *and* mark it
+   * DNF, `h` opened the history, `f` went fullscreen — the timer had already
+   * moved to `cooldown` by the time the shortcut handler looked at the state,
+   * so its own guard let everything through. Killing the event here means one
+   * keystroke is one instruction: stop.
+   */
   document.addEventListener('keydown', (e) => {
-    if (isTyping() || e.metaKey || e.ctrlKey || e.altKey) return;
-    if (e.code === 'Space') {
+    if (timer.state === 'running') {
       e.preventDefault();
-      if (modalOpen()) return;
-      if (spaceDown) return;
-      spaceDown = true;
-      timer.down();
-    } else if (timer.state === 'running') {
-      // any key stops the timer
-      e.preventDefault();
-      timer.down();
+      e.stopImmediatePropagation();
+      if (!e.repeat) {
+        stopKeys.add(e.code || e.key);
+        spaceDown = false;
+        timer.down();                    // -> stop
+      }
+      return;
     }
-  });
+    if (isTyping() || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.code !== 'Space') return;
+    e.preventDefault();
+    if (modalOpen()) return;
+    if (spaceDown) return;
+    spaceDown = true;
+    timer.down();
+  }, true);
 
   document.addEventListener('keyup', (e) => {
-    if (e.code === 'Space') {
-      spaceDown = false;
-      if (isTyping() || modalOpen()) return;
+    const key = e.code || e.key;
+    if (stopKeys.has(key)) {
+      stopKeys.delete(key);
       e.preventDefault();
-      timer.up();
+      e.stopImmediatePropagation();
+      if (key === 'Space') spaceDown = false;
+      timer.up();                        // cooldown -> idle
+      return;
     }
-  });
+    if (e.code !== 'Space') return;
+    spaceDown = false;
+    if (isTyping() || modalOpen()) return;
+    e.preventDefault();
+    timer.up();
+  }, true);
 
   // Touch / pen always drive the timer — on a phone there is no other way to
   // start it. A mouse click does not, unless you ask for it: reaching for the
@@ -1027,7 +1128,11 @@ function wireInput() {
     target.addEventListener('pointercancel', up);
   }
 
-  window.addEventListener('blur', () => { spaceDown = false; if (timer.state !== 'running') timer.reset(); });
+  window.addEventListener('blur', () => {
+    spaceDown = false;
+    stopKeys.clear();
+    if (timer.state !== 'running') timer.reset();
+  });
 }
 
 /* =========================================================
@@ -1253,6 +1358,7 @@ function wireShortcuts() {
       last.penalty = last.penalty === p ? 'none' : p;
       await Solves.put(last);
       renderAll();
+      syncTimerDisplay();
       toast(last.penalty === 'none' ? 'Penalty cleared' : `${last.penalty} applied`);
     };
 
