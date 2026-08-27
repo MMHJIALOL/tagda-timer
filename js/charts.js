@@ -13,6 +13,30 @@ const svgEl = (tag, attrs = {}) => {
   return n;
 };
 
+/**
+ * A key for a chart that draws more than one thing.
+ *
+ * Not optional decoration: the trend plots the solve line, a rolling ao5, a
+ * rolling ao12 and the PB, and told apart only by colour and dash pattern that
+ * is four unlabelled squiggles. Anything with two or more series says which is
+ * which, in text, in the ink colours rather than the series colours.
+ */
+function legend(items) {
+  const row = document.createElement('div');
+  row.className = 'chart-legend';
+  for (const it of items) {
+    const key = document.createElement('span');
+    key.className = 'lg-item';
+    const swatch = document.createElement('span');
+    swatch.className = 'lg-swatch';
+    swatch.style.setProperty('--lg-color', it.color);
+    if (it.dash) swatch.dataset.dash = it.dash;
+    key.append(swatch, document.createTextNode(it.label));
+    row.append(key);
+  }
+  return row;
+}
+
 const path = (pts) => pts.length ? 'M' + pts.map(p => `${p[0].toFixed(2)} ${p[1].toFixed(2)}`).join(' L ') : '';
 
 /** Length of the polyline `path()` draws through these points. */
@@ -169,6 +193,12 @@ export function renderTrend(host, solves, onHover) {
   });
 
   host.append(svg);
+  const keys = [{ color: 'var(--accent)', label: 'solve' }];
+  if (solves.length >= 5)  keys.push({ color: 'var(--accent-2)', label: 'ao5', dash: 'dashed' });
+  if (solves.length >= 12) keys.push({ color: 'var(--warn)', label: 'ao12', dash: 'dotted' });
+  keys.push({ color: 'var(--gold)', label: 'PB', dash: 'dotted' });
+  if (vals.includes(DNF)) keys.push({ color: 'var(--danger)', label: 'DNF' });
+  host.append(legend(keys));
 }
 
 /* ---------------------------------------------------------
@@ -204,58 +234,206 @@ export function renderHistogram(host, solves) {
 
   const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
   const mx = L + ((mean - min) / span) * (W - L - R);
-  svg.append(svgEl('line', { x1: mx, x2: mx, y1: T, y2: H - B, stroke: 'var(--accent-2)', 'stroke-width': 1.4, 'stroke-dasharray': '3 3' }));
+  svg.append(svgEl('line', {
+    x1: mx, x2: mx, y1: T, y2: H - B,
+    stroke: 'var(--accent-2)', 'stroke-width': 1.4, 'stroke-dasharray': '3 3',
+  }));
 
   for (const [v, anchor] of [[min, 'start'], [max, 'end']]) {
     const t = svgEl('text', { class: 'axis-txt', x: v === min ? L : W - R, y: H - 5, 'text-anchor': anchor });
     t.textContent = fmt(v); svg.append(t);
   }
   host.append(svg);
+  // The tallest bar is the only number worth stating outright; the rest are
+  // read by comparison, and a label on every bar is noise.
+  host.append(legend([
+    { color: 'var(--accent)', label: `${bins} bins · busiest ${peak} solve${peak === 1 ? '' : 's'}` },
+    { color: 'var(--accent-2)', label: `mean ${fmt(mean)}`, dash: 'dashed' },
+  ]));
 }
 
 /* ---------------------------------------------------------
-   GitHub-style solve heatmap (last ~26 weeks)
+   Practice heatmap - a year of days, laid out by month
+
+   Reads like LeetCode's: weeks are columns, weekdays are rows, and a busier
+   day is a stronger cell. Month names run along the top with a hairline where
+   each new month opens, so the year is scannable month by month rather than as
+   one undifferentiated wall of squares.
    --------------------------------------------------------- */
-export function renderHeatmap(host, solves) {
+
+const DAY_MS = 86400000;
+const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+const startOfDay = (d) => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; };
+const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
+/** Whole days between two local midnights, immune to the DST hour. */
+const daysBetween = (a, b) => Math.round((b - a) / DAY_MS);
+
+/**
+ * Five levels, cut at quartiles of the days that actually have solves.
+ *
+ * Neither a fixed nor a log scale survives real data here: a session log runs
+ * from one solve to a few hundred on a big day, and any absolute scale pins
+ * almost every ordinary day into the same faint step - which is how "darker
+ * means more" stops meaning anything. Quartiles of the non-empty days spend
+ * all four levels on the range that actually exists.
+ */
+function levelScale(counts) {
+  const nz = [...counts.values()].filter(c => c > 0).sort((a, b) => a - b);
+  if (!nz.length) return () => 0;
+  const q = (f) => nz[Math.min(nz.length - 1, Math.floor(f * nz.length))];
+  const t1 = q(0.25), t2 = q(0.5), t3 = q(0.75);
+  return (c) => c === 0 ? 0 : c <= t1 ? 1 : c <= t2 ? 2 : c <= t3 ? 3 : 4;
+}
+
+/* Level 0 is a recessive tint of the text colour, so an empty day still reads
+   as a cell rather than a hole. Levels 1-4 are one hue at rising strength,
+   which is what a magnitude scale has to be - a second hue at the top end
+   would make it a category scale and stop it reading as an ordering. */
+const LEVEL_FILL    = ['var(--text)', 'var(--accent)', 'var(--accent)', 'var(--accent)', 'var(--accent)'];
+const LEVEL_OPACITY = [0.07, 0.3, 0.52, 0.76, 1];
+
+const longDate = (d) => d.toLocaleDateString(undefined,
+  { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+
+export function renderHeatmap(host, solves, { months = 12 } = {}) {
   host.innerHTML = '';
-  const WEEKS = 26, CELL = 11, GAP = 3;
+
+  const CELL = 11, GAP = 3, PITCH = CELL + GAP;
+  const GUTTER = 26;   // weekday labels
+  const HEAD = 16;     // month labels
+  const FOOT = 30;     // legend + summary
+
+  const today = startOfDay(new Date());
+  /* The grid runs to the Saturday of the current week, so today always has a
+     cell of its own. The old window ended on the *Sunday* of the current week,
+     which silently hid everything solved since - up to six days of it, today's
+     solves included. That is why a fresh session never lit anything up. */
+  const end = addDays(today, 6 - today.getDay());
+  const from = new Date(today);
+  from.setMonth(from.getMonth() - months);
+  from.setDate(from.getDate() + 1);
+  const start = addDays(from, -from.getDay());          // back to that week's Sunday
+  const weeks = Math.ceil((daysBetween(start, end) + 1) / 7);
+
   const counts = new Map();
-  for (const s of solves) counts.set(dayKey(s.createdAt), (counts.get(dayKey(s.createdAt)) || 0) + 1);
-  const max = Math.max(1, ...counts.values());
+  let total = 0;
+  for (const s of solves) {
+    const d = startOfDay(s.createdAt);
+    if (d < start || d > end) continue;
+    const k = dayKey(s.createdAt);
+    counts.set(k, (counts.get(k) || 0) + 1);
+    total++;
+  }
+  const levelOf = levelScale(counts);
 
-  const today = new Date(); today.setHours(0, 0, 0, 0);
-  const start = new Date(today);
-  start.setDate(start.getDate() - (WEEKS * 7 - 1) - today.getDay());
+  const W = GUTTER + weeks * PITCH, H = HEAD + 7 * PITCH + FOOT;
+  const svg = svgEl('svg', { viewBox: `0 0 ${W} ${H}`, class: 'heatmap' });
 
-  const W = WEEKS * (CELL + GAP), H = 7 * (CELL + GAP) + 14;
-  const svg = svgEl('svg', { viewBox: `0 0 ${W} ${H}` });
-  let streak = 0, cur = 0;
+  /* ---- month labels, and the hairline that opens each month ----
+     Work out where each month starts first, then label. Labelling inside the
+     column loop cannot know how much room a month has, and the window always
+     opens partway through one — so the leading month gets a column or two and
+     its name lands on top of the next month's. Knowing each month's span lets
+     the truncated one at the start go unlabelled, which is the one nobody
+     needs, rather than dropping whichever name happened to come second. */
+  const runs = [];
+  let prevMonth = -1;
+  for (let w = 0; w < weeks; w++) {
+    /* Attribute a column to the month it mostly sits in, so a week straddling
+       a boundary does not open the new month a week early. */
+    const mid = addDays(start, w * 7 + 3);
+    if (mid.getMonth() === prevMonth) continue;
+    prevMonth = mid.getMonth();
+    runs.push({ col: w, date: mid });
+  }
+  runs.forEach((run, i) => {
+    const span = (i + 1 < runs.length ? runs[i + 1].col : weeks) - run.col;
+    const x = GUTTER + run.col * PITCH;
+    if (span >= 2) {
+      const t = svgEl('text', { class: 'hm-month', x, y: HEAD - 5 });
+      t.textContent = MONTH_NAMES[run.date.getMonth()]
+        + (run.date.getMonth() === 0 ? ` ${String(run.date.getFullYear()).slice(2)}` : '');
+      svg.append(t);
+    }
+    // The divider is one pixel wide and never collides, so every month keeps
+    // its boundary even when there is no room for the word.
+    if (i > 0) svg.append(svgEl('line', {
+      class: 'hm-divider',
+      x1: x - GAP / 2, x2: x - GAP / 2,
+      y1: HEAD - 1, y2: HEAD + 7 * PITCH - GAP,
+    }));
+  });
 
-  for (let w = 0; w < WEEKS; w++) {
+  /* ---- weekday gutter ---- */
+  for (const [row, label] of [[1, 'Mon'], [3, 'Wed'], [5, 'Fri']]) {
+    const t = svgEl('text', {
+      class: 'hm-day', x: GUTTER - 7, y: HEAD + row * PITCH + CELL - 1, 'text-anchor': 'end',
+    });
+    t.textContent = label;
+    svg.append(t);
+  }
+
+  /* ---- cells ---- */
+  let activeDays = 0, longest = 0, run = 0, runToday = 0, runYesterday = 0;
+  for (let w = 0; w < weeks; w++) {
     for (let d = 0; d < 7; d++) {
-      const day = new Date(start);
-      day.setDate(start.getDate() + w * 7 + d);
-      if (day > today) continue;
+      const day = addDays(start, w * 7 + d);
+      if (day > today) continue;              // the rest of this week is not history yet
       const k = dayKey(day.getTime());
       const c = counts.get(k) || 0;
-      if (c > 0) { cur++; streak = Math.max(streak, cur); } else cur = 0;
-      const alpha = c === 0 ? 0.05 : 0.22 + 0.78 * Math.min(1, Math.log(1 + c) / Math.log(1 + max));
+      if (c > 0) { activeDays++; run++; longest = Math.max(longest, run); } else run = 0;
+      const back = daysBetween(day, today);
+      if (back === 0) runToday = run;
+      if (back === 1) runYesterday = run;
+
+      const lv = levelOf(c);
       const cell = svgEl('rect', {
-        class: 'hm-cell', x: w * (CELL + GAP), y: d * (CELL + GAP),
+        class: 'hm-cell', 'data-level': lv,
+        x: GUTTER + w * PITCH, y: HEAD + d * PITCH,
         width: CELL, height: CELL,
-        fill: c === 0 ? 'var(--text)' : 'var(--accent)',
-        'fill-opacity': alpha,
+        fill: LEVEL_FILL[lv], 'fill-opacity': LEVEL_OPACITY[lv],
       });
       const t = svgEl('title');
-      t.textContent = `${k}: ${c} solve${c === 1 ? '' : 's'}`;
+      t.textContent = c
+        ? `${c} solve${c === 1 ? '' : 's'} - ${longDate(day)}`
+        : `No solves - ${longDate(day)}`;
       cell.append(t);
       svg.append(cell);
     }
   }
-  const lbl = svgEl('text', { class: 'axis-txt', x: 0, y: H - 2 });
-  lbl.textContent = `${counts.size} active days · longest streak ${streak}`;
-  svg.append(lbl);
+  /* A streak is still alive on a day you have not solved yet, so an empty
+     today falls back to the run that ended yesterday rather than reading 0. */
+  const current = runToday || runYesterday;
+
+  /* ---- legend: a magnitude scale has to say which end is which ---- */
+  const legY = HEAD + 7 * PITCH + 12;
+  const legW = 5 * (CELL + 2);
+  const legX = W - legW - 34;
+  const less = svgEl('text', { class: 'hm-key', x: legX - 6, y: legY + CELL - 1, 'text-anchor': 'end' });
+  less.textContent = 'Less';
+  svg.append(less);
+  for (let lv = 0; lv < 5; lv++) {
+    svg.append(svgEl('rect', {
+      class: 'hm-cell', 'data-level': lv,
+      x: legX + lv * (CELL + 2), y: legY, width: CELL, height: CELL,
+      fill: LEVEL_FILL[lv], 'fill-opacity': LEVEL_OPACITY[lv],
+    }));
+  }
+  const more = svgEl('text', { class: 'hm-key', x: legX + legW + 2, y: legY + CELL - 1 });
+  more.textContent = 'More';
+  svg.append(more);
+
+  /* ---- summary, counted over exactly the range that is drawn ---- */
+  const sum = svgEl('text', { class: 'hm-key', x: GUTTER, y: legY + CELL - 1 });
+  sum.textContent = `${total.toLocaleString()} solves \u00b7 ${activeDays} active day${activeDays === 1 ? '' : 's'}`
+    + ` \u00b7 streak ${current}, best ${longest}`;
+  svg.append(sum);
+
   host.append(svg);
+  // Land on the present. A year of weeks overflows a narrow drawer, and the
+  // half anyone wants to see first is the recent end.
+  host.scrollLeft = host.scrollWidth;
 }
 
 /* ---------------------------------------------------------

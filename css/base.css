@@ -30,6 +30,13 @@ svg[viewBox] { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linec
 /* That icon rule is inherited by <text>, which then renders as a stroked
    outline with no fill — unreadable. Text inside an SVG is type, not an icon. */
 svg text { fill: currentColor; stroke: none; }
+/* ...and it was inherited by every shape in every chart too, which is a
+   subtler version of the same bug: a 1.7px currentColor outline on histogram
+   bars, on heatmap cells, and — most visibly — a hard box drawn around the
+   trend plot by its own transparent hover-catcher. Charts are drawings, not
+   icons: they state their own stroke, so start them from none. Anything that
+   wants a line (.axis-line, .spark-*, .hm-divider) sets it in its own rule. */
+.chart-card svg, #mini-trend { stroke: none; stroke-width: 1; }
 a { color: inherit; text-decoration: none; }
 ::selection { background: var(--accent); color: var(--on-accent); }
 

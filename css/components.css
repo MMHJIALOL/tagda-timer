@@ -608,8 +608,47 @@ input[type="range"]::-moz-range-thumb {
 .axis-txt { fill: var(--text-faint); font-size: 9px; font-family: var(--font-mono); }
 .bar { fill: var(--accent); opacity: .8; transition: opacity var(--dur-fast); }
 .bar:hover { opacity: 1; }
-.hm-cell { rx: 2; transition: transform 100ms var(--ease); }
-.hm-cell:hover { stroke: var(--text); stroke-width: 1; }
+/* ---- practice heatmap ---- */
+/* Not stretched to the card like the other charts: the cells are a fixed grid,
+   and scaling them up turns 11px squares into soft rectangles. It keeps its
+   own size and scrolls sideways on a narrow panel instead. */
+.chart-card svg.heatmap { width: auto; max-width: none; height: auto; }
+/* A year of weeks is wider than a narrow drawer; scroll it rather than
+   squeezing the cells, and start the view at the most recent month. */
+.heat-host { overflow-x: auto; overflow-y: hidden; }
+.hm-cell { rx: 2; }
+/* Ring rather than a fill change, so hovering never misreports the level. */
+.hm-cell:hover { stroke: var(--text); stroke-width: 1.2; paint-order: stroke; }
+.hm-month {
+  fill: var(--text-dim); font-size: 9px; font-weight: 600;
+  font-family: var(--font-ui); letter-spacing: .04em;
+}
+.hm-day  { fill: var(--text-faint); font-size: 8.5px; font-family: var(--font-ui); }
+.hm-key  { fill: var(--text-faint); font-size: 9px; font-family: var(--font-mono); }
+.hm-divider { stroke: var(--border); stroke-width: 1; opacity: .55; }
+
+/* ---- chart legend ----
+   Labels wear text ink, never the series colour; the swatch beside them is
+   what carries identity, so the words stay legible against any theme. */
+.chart-legend {
+  display: flex; flex-wrap: wrap; gap: 4px 14px;
+  font-size: .68rem; color: var(--text-faint); font-family: var(--font-ui);
+}
+.lg-item { display: inline-flex; align-items: center; gap: 6px; }
+.lg-swatch {
+  width: 14px; height: 3px; border-radius: 2px; flex: none;
+  background: var(--lg-color);
+}
+/* The dash pattern is the second channel — the same one the line uses — so the
+   key still reads when the two colours are hard to tell apart. */
+.lg-swatch[data-dash="dashed"] {
+  background: repeating-linear-gradient(to right,
+    var(--lg-color) 0 4px, transparent 4px 7px);
+}
+.lg-swatch[data-dash="dotted"] {
+  background: repeating-linear-gradient(to right,
+    var(--lg-color) 0 2px, transparent 2px 6px);
+}
 
 .big-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(104px, 1fr)); gap: 7px; }
 .bs {
