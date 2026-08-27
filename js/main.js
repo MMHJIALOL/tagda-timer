@@ -18,13 +18,10 @@ import { loadSettings, saveSettings, applyTheme, applyBackground, themeColors } 
 import { popover, closePopover, popoverOpen } from './popover.js';
 import { toast, confirmToast } from './toast.js';
 import { openPalette, closePalette, paletteOpen } from './palette.js';
-import { shareSolve, shareAverage, shareOpen, closeShare } from './sharedlg.js';
-import { Stackmat } from './stackmat.js';
-import {
-  openDrawer, closeDrawer, drawerOpen,
-  buildAppearance, buildSettings, buildStats, buildHistory, buildCases, buildShortcuts, buildSessions,
-  buildStatDetail, buildAbout, buildCustomScrambles,
-} from './panels.js';
+/* panels.js, sharedlg.js (which drags in sharecard.js and cubenet.js) and
+   stackmat.js are imported where they are first needed, not here — see
+   "Lazily loaded modules" below. Between them they were about 82KB of the
+   startup graph that no one needs in order to scramble and time a solve. */
 
 /* =========================================================
    State
@@ -53,8 +50,63 @@ window.tagdatimer = app;   // handy in the console
 // from here is a real error worth reporting, not a dead-page diagnosis.
 window.__tdtBooted = true;
 
+/* =========================================================
+   Lazily loaded modules
+
+   None of these are reachable until you open something: the drawers, the
+   share-card dialog, or a Stackmat. Each loader is idempotent — the promise
+   is kept, so a second click while the first import is still in flight waits
+   on the same request rather than starting another.
+
+   The sync shims matter: closeDrawer/drawerOpen/shareOpen are called from the
+   keydown handler and from modalOpen(), which cannot await. They are also
+   trivially answerable before the module exists — nothing can be open if the
+   code that opens it has never run.
+   ========================================================= */
+/**
+ * Remember the request, but never remember a failed one.
+ *
+ * `??=` on the bare promise looks right and is a trap: a rejected promise is
+ * still a promise, so one failed fetch — a flaky connection, a deploy mid-click
+ * — would be cached forever and every later click would reject instantly off
+ * the same dead value, with no way back short of a reload. Clearing the slot in
+ * the catch makes the next click a real retry.
+ */
+function lazy(load, onLoad) {
+  let req = null;
+  return () => (req ??= load().then(onLoad).catch(err => { req = null; throw err; }));
+}
+
+let _panels = null;
+const loadPanels = lazy(() => import('./panels.js'), m => (_panels = m));
+
+let _share = null;
+const loadShare = lazy(() => import('./sharedlg.js'), m => (_share = m));
+
+/** Nothing to open is better than a click that silently does nothing. */
+function lazyFailed(what, err) {
+  console.warn(`[lazy] could not load ${what}`, err);
+  toast(`Could not open ${what} — check your connection and try again`, { kind: 'bad' });
+}
+
+const drawerOpen  = () => !!_panels && _panels.drawerOpen();
+const closeDrawer = () => { _panels?.closeDrawer(); };
+const shareOpen   = () => !!_share && _share.shareOpen();
+const closeShare  = () => { _share?.closeShare(); };
+
+/**
+ * Open a drawer, fetching panels.js on first use.
+ * The builder is named rather than passed, because the function itself does
+ * not exist yet at the call site.
+ */
+async function openPanel(title, builder, opts, ...args) {
+  let m;
+  try { m = await loadPanels(); }
+  catch (err) { return lazyFailed(title.toLowerCase(), err); }
+  m.openDrawer(title, m[builder](...args), opts);
+}
+
 const queue = new ScrambleQueue(3);
-const stackmat = new Stackmat();
 const bg = new Background($('#bg-shader'), $('#bg-media'));
 const cube = new CubeView($('#cube-holder'), $('#cube-fallback'));
 let timer = null;
@@ -485,6 +537,7 @@ function wireTimer() {
   });
 
   timer.addEventListener('inspectstart', () => {
+    insp = { num: '', numColor: '', stroke: '', breathe: '', tint: '' };
     sizeRing();
     ring.classList.add('on');
     readout.hidden = false;
@@ -493,35 +546,60 @@ function wireTimer() {
     ringRect.style.strokeDashoffset = '0';
   });
 
+  /* Fifteen seconds of animation frames, and almost everything this handler
+     writes is the same value it wrote last frame: the countdown only changes
+     once a second, and the two colours change twice in the whole inspection.
+     Each redundant write still invalidates style on the element. Only the ring
+     offset genuinely wants to move every frame. */
+  let insp = { num: '', numColor: '', stroke: '', breathe: '', tint: '' };
   timer.addEventListener('inspecttick', (e) => {
     const { elapsed, remaining, penalty } = e.detail;
-    const left = Math.ceil(remaining / 1000);
-    num.textContent = penalty === 'DNF' ? 'DNF' : penalty === '+2' ? '+2' : String(left);
-    num.style.color = penalty === 'none'
-      ? (elapsed >= 12000 ? 'var(--danger)' : elapsed >= 8000 ? 'var(--warn)' : 'var(--warn)')
-      : 'var(--danger)';
 
+    const label = penalty === 'DNF' ? 'DNF' : penalty === '+2' ? '+2' : String(Math.ceil(remaining / 1000));
+    if (label !== insp.num) { insp.num = label; num.textContent = label; }
+
+    const numColor = penalty === 'none' ? 'var(--warn)' : 'var(--danger)';
+    if (numColor !== insp.numColor) { insp.numColor = numColor; num.style.color = numColor; }
+
+    // The one thing that really does move every frame.
     ringRect.style.strokeDashoffset = String(ringLen * Math.min(1, elapsed / INSPECT_MS));
-    ringRect.style.stroke = elapsed >= 12000 ? 'var(--danger)' : elapsed >= 8000 ? 'var(--warn)' : 'var(--accent-2)';
 
-    // heartbeat quickens
-    const b = 1500 - Math.min(1, elapsed / INSPECT_MS) * 1000;
-    document.documentElement.style.setProperty('--breathe', b.toFixed(0) + 'ms');
+    const stroke = elapsed >= 12000 ? 'var(--danger)' : elapsed >= 8000 ? 'var(--warn)' : 'var(--accent-2)';
+    if (stroke !== insp.stroke) { insp.stroke = stroke; ringRect.style.stroke = stroke; }
 
-    // background warms up as time burns down
-    const c = themeColors();
+    // Heartbeat quickens. Written on <html>, so every redundant write dirties
+    // the whole inherited tree — and it is only legible to the nearest 10ms.
+    const b = (Math.round((1500 - Math.min(1, elapsed / INSPECT_MS) * 1000) / 10) * 10) + 'ms';
+    if (b !== insp.breathe) { insp.breathe = b; document.documentElement.style.setProperty('--breathe', b); }
+
+    // Background warms up as time burns down. The shader tint steps through
+    // three bands, so it is worth setting only when the band actually changes.
     const t = clamp(elapsed / INSPECT_MS, 0, 1);
     bg.setSlow(1 + t * 2.2);
-    bg.setColors(c.bg2, t > 0.8 ? c.danger : t > 0.53 ? c.warn : c.accent, t > 0.8 ? c.warn : c.accent2);
+    const band = t > 0.8 ? 'hot' : t > 0.53 ? 'warm' : 'cool';
+    if (band !== insp.tint) {
+      insp.tint = band;
+      const c = themeColors();
+      bg.setColors(c.bg2,
+        band === 'hot' ? c.danger : band === 'warm' ? c.warn : c.accent,
+        band === 'hot' ? c.warn : c.accent2);
+    }
   });
 
   timer.addEventListener('warn', (e) => {
     callout(e.detail.at, app.settings.callouts);
-    flash(e.detail.at === 12 ? getVar('--danger') : getVar('--warn'));
+    const wc = themeColors();
+    flash(e.detail.at === 12 ? wc.danger : wc.warn);
   });
 
+  /* The digits only change every 10ms at two decimals, and every 100ms at one
+     — but this fires once per frame, which on a 144Hz panel is a third of the
+     writes landing on an identical string and dirtying the largest text node
+     on screen for nothing. At 240Hz it is over half of them. Compare first. */
+  let lastDigits = '';
   timer.addEventListener('tick', (e) => {
-    main.textContent = fmtLive(e.detail.elapsed, app.settings.precision);
+    const txt = fmtLive(e.detail.elapsed, app.settings.precision);
+    if (txt !== lastDigits) { lastDigits = txt; main.textContent = txt; }
   });
 
   timer.addEventListener('cancel', () => {
@@ -530,7 +608,7 @@ function wireTimer() {
     resetBgColors();
   });
 
-  timer.addEventListener('start', () => { main.style.opacity = ''; });
+  timer.addEventListener('start', () => { main.style.opacity = ''; lastDigits = ''; });
 
   timer.addEventListener('stop', (e) => onSolveFinished(e.detail));
 }
@@ -585,8 +663,6 @@ function sizeRing() {
   ringLen = r.getTotalLength ? r.getTotalLength() : (innerWidth + innerHeight) * 2;
 }
 
-const getVar = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
-
 function resetBgColors() {
   const c = themeColors();
   bg.setColors(c.bg2, c.accent, c.accent2);
@@ -603,11 +679,18 @@ function startPace(pace, fill) {
   pace.classList.remove('behind');
   fill.style.width = '0%';
   const t0 = performance.now();
+  // Second per-frame loop running alongside the digits during a solve. The bar
+  // is a few hundred pixels wide, so tenths of a percent are sub-pixel — round
+  // and skip the write when it would not move, rather than laying the bar out
+  // again on every frame of every solve.
+  let lastW = '', lastBehind = null;
   const step = () => {
     if (timer.state !== 'running') return;
     const p = (performance.now() - t0) / ref;
-    fill.style.width = Math.min(100, p * 100) + '%';
-    pace.classList.toggle('behind', p >= 1);
+    const w = Math.min(100, p * 100).toFixed(1) + '%';
+    if (w !== lastW) { lastW = w; fill.style.width = w; }
+    const behind = p >= 1;
+    if (behind !== lastBehind) { lastBehind = behind; pace.classList.toggle('behind', behind); }
     requestAnimationFrame(step);
   };
   requestAnimationFrame(step);
@@ -742,11 +825,20 @@ function celebratePB(kind) {
 /* =========================================================
    Rendering
    ========================================================= */
+/* The heatmap is the one chart fed by the whole store rather than the open
+   session, so it is the one that can contradict what you just did — delete a
+   day's solves and the grid kept showing them until the drawer was reopened.
+   Debounced because refreshing it means re-reading every solve on record, and
+   a session with the stats drawer open would otherwise do that on every solve
+   that lands. */
+const refreshHeatmap = debounce(() => document.querySelector('.heat-host')?.refresh?.(), 400);
+
 function renderAll() {
   renderStats();
   renderHistory();
   updateLabels();
   updateHint();
+  refreshHeatmap();
 }
 app.renderAll = renderAll;
 
@@ -1221,7 +1313,7 @@ function applyInputMode() {
   timer?.reset();
 
   if (mode === 'stackmat') startStackmat();
-  else stackmat.stop();
+  else stackmat?.stop();
 
   if (mode === 'manual') setTimeout(() => $('#manual-input')?.focus(), 0);
   else $('#manual-input')?.blur();
@@ -1259,11 +1351,26 @@ function wireManualEntry() {
   });
 }
 
-/* ---------------- Stackmat on the aux jack ---------------- */
+/* ---------------- Stackmat on the aux jack ----------------
+   The driver is only built the first time the input mode is switched to it,
+   which for almost everyone is never. Everything below that touches it is
+   null-safe for that reason. */
+let stackmat = null;
 let stackmatWired = false;
 
-function wireStackmat() {
-  if (stackmatWired) return;
+const loadStackmatModule = lazy(() => import('./stackmat.js'), m => m);
+
+async function getStackmat() {
+  if (!stackmat) {
+    const { Stackmat } = await loadStackmatModule();
+    stackmat = new Stackmat();
+  }
+  return stackmat;
+}
+
+async function wireStackmat() {
+  const stackmat = await getStackmat();
+  if (stackmatWired) return stackmat;
   stackmatWired = true;
   const msg = $('#stackmat-msg');
   const dot = $('#stackmat-dot');
@@ -1300,10 +1407,14 @@ function wireStackmat() {
     $('#time-main').textContent = fmt(e.detail.timeMs);
     await recordSolve({ timeMs: e.detail.timeMs });
   });
+
+  return stackmat;
 }
 
 async function startStackmat() {
-  wireStackmat();
+  let stackmat;
+  try { stackmat = await wireStackmat(); }
+  catch (err) { return lazyFailed('the Stackmat driver', err); }
   try {
     await stackmat.start();
     toast('Listening on the microphone input');
@@ -1319,13 +1430,20 @@ async function startStackmat() {
 /* =========================================================
    Sharing
    ========================================================= */
-app.shareSolveCard = (solve) => shareSolve(solve, { index: app.solves.indexOf(solve) + 1 });
+/* The card renderer and the cube-net drawing it needs are ~26KB that only
+   matter once someone actually asks for a card, so they arrive on the click. */
+app.shareSolveCard = async (solve) => {
+  let m;
+  try { m = await loadShare(); } catch (err) { return lazyFailed('the share card', err); }
+  return m.shareSolve(solve, { index: app.solves.indexOf(solve) + 1 });
+};
 
 /**
  * Share the last `n` solves as an average card. `kind` is one of the stat keys,
  * so the card is labelled with the same words the panel uses.
  */
-app.shareAverageCard = (kind) => {
+app.shareAverageCard = async (kind) => {
+  try { await loadShare(); } catch (err) { return lazyFailed('the share card', err); }
   const st = summarize(app.solves);
   const N = { ao5: 5, ao12: 12, ao50: 50, ao100: 100, mo3: 3 }[kind];
   if (!N) {
@@ -1334,9 +1452,9 @@ app.shareAverageCard = (kind) => {
       const best = app.solves.filter(x => eff(x) !== DNF)
         .sort((a, b) => eff(a) - eff(b))[0];
       if (!best) { toast('No solves yet'); return; }
-      return shareSolve(best, { index: app.solves.indexOf(best) + 1 });
+      return (await loadShare()).shareSolve(best, { index: app.solves.indexOf(best) + 1 });
     }
-    return shareAverage(app.solves.slice(-12), { label: 'session mean', value: st.mean === null ? '—' : fmt(st.mean) });
+    return (await loadShare()).shareAverage(app.solves.slice(-12), { label: 'session mean', value: st.mean === null ? '—' : fmt(st.mean) });
   }
   if (app.solves.length < N) { toast(`Needs ${N} solves`); return; }
   const window = app.solves.slice(-N);
@@ -1346,7 +1464,7 @@ app.shareAverageCard = (kind) => {
   const base = app.solves.length - N;
   const trimmed = new Set();
   for (const i of [...trim.best, ...trim.worst]) trimmed.add(i - base);
-  return shareAverage(window, {
+  return (await loadShare()).shareAverage(window, {
     label,
     value: value === null || value === undefined ? '—' : value === DNF ? 'DNF' : fmt(value),
     trimmed: kind === 'mo3' ? null : trimmed,
@@ -1708,7 +1826,7 @@ function wireChrome() {
       onSelect: () => setMode(id),
     }));
     if (setFor(app.settings.mode)) {
-      list.push({ sep: true }, { label: 'Pick cases…', badge: 'K', onSelect: () => openDrawer('Cases', buildCases(app)) });
+      list.push({ sep: true }, { label: 'Pick cases…', badge: 'K', onSelect: () => openPanel('Cases', 'buildCases', undefined, app) });
     }
     popover(e.currentTarget, [{ title: 'Scramble mode' }, ...list]);
   });
@@ -1723,16 +1841,16 @@ function wireChrome() {
     popover(e.currentTarget, [
       { title: 'Sessions' }, ...list, { sep: true },
       { label: '+ New session', onSelect: () => app.newSession() },
-      { label: 'Manage…', onSelect: () => openDrawer('Sessions', buildSessions(app)) },
+      { label: 'Manage…', onSelect: () => openPanel('Sessions', 'buildSessions', undefined, app) },
     ]);
   });
 
-  $('#btn-stats').addEventListener('click', () => openDrawer('Statistics', buildStats(app), { wide: true }));
-  $('#btn-theme').addEventListener('click', () => openDrawer('Appearance', buildAppearance(app)));
-  $('#btn-settings').addEventListener('click', () => openDrawer('Settings', buildSettings(app)));
-  $('#btn-help').addEventListener('click', () => openDrawer('Keyboard shortcuts', buildShortcuts(), { wide: true }));
-  $('#btn-about').addEventListener('click', () => openDrawer('About', buildAbout(app)));
-  $('#btn-open-history').addEventListener('click', () => openDrawer('All solves', buildHistory(app), { wide: true }));
+  $('#btn-stats').addEventListener('click', () => openPanel('Statistics', 'buildStats', { wide: true }, app));
+  $('#btn-theme').addEventListener('click', () => openPanel('Appearance', 'buildAppearance', undefined, app));
+  $('#btn-settings').addEventListener('click', () => openPanel('Settings', 'buildSettings', undefined, app));
+  $('#btn-help').addEventListener('click', () => openPanel('Keyboard shortcuts', 'buildShortcuts', { wide: true }));
+  $('#btn-about').addEventListener('click', () => openPanel('About', 'buildAbout', undefined, app));
+  $('#btn-open-history').addEventListener('click', () => openPanel('All solves', 'buildHistory', { wide: true }, app));
 
   // stats stay folded away until you ask for them
   const statsPanel = $('#panel-stats');
@@ -1755,11 +1873,11 @@ function wireChrome() {
   $$('.stat[data-k]').forEach((cell) => {
     const k = cell.dataset.k;
     cell.title = 'See the solves behind this';
-    cell.addEventListener('click', () => openDrawer(STAT_TITLES[k] || k, buildStatDetail(app, k), { wide: true }));
+    cell.addEventListener('click', () => openPanel(STAT_TITLES[k] || k, 'buildStatDetail', { wide: true }, app, k));
   });
 
   $('#mini-chart-btn')?.addEventListener('click', () =>
-    openDrawer('Statistics', buildStats(app), { wide: true }));
+    openPanel('Statistics', 'buildStats', { wide: true }, app));
 
   $('#btn-clear-session').addEventListener('click', clearSession);
 
@@ -1769,7 +1887,7 @@ function wireChrome() {
   $('#btn-next-scramble').addEventListener('click', forwardScramble);
   $('#btn-prev-scramble').addEventListener('click', prevScramble);
   $('#btn-copy-scramble').addEventListener('click', () => copyToast(app.scramble?.scramble || '', 'Scramble'));
-  $('#btn-custom-scramble').addEventListener('click', () => openDrawer('Your scrambles', buildCustomScrambles(app)));
+  $('#btn-custom-scramble').addEventListener('click', () => openPanel('Your scrambles', 'buildCustomScrambles', undefined, app));
   $('#btn-custom-exit').addEventListener('click', () => app.clearCustomScrambles());
   $('#scramble-text').addEventListener('click', () => copyToast(app.scramble?.scramble || '', 'Scramble'));
 
@@ -1921,7 +2039,7 @@ function wireShortcuts() {
         break;
 
       case 'n': case 'N': e.preventDefault(); forwardScramble(); break;
-      case 'x': case 'X': e.preventDefault(); openDrawer('Your scrambles', buildCustomScrambles(app)); break;
+      case 'x': case 'X': e.preventDefault(); openPanel('Your scrambles', 'buildCustomScrambles', undefined, app); break;
       case 'ArrowLeft':  e.preventDefault(); prevScramble(); break;
       case 'ArrowRight': e.preventDefault(); forwardScramble(); break;
 
@@ -1936,7 +2054,7 @@ function wireShortcuts() {
       case 'b': case 'B': e.preventDefault(); $('#btn-about').click(); break;
       case 'k': case 'K':
         e.preventDefault();
-        if (setFor(app.settings.mode)) openDrawer('Cases', buildCases(app));
+        if (setFor(app.settings.mode)) openPanel('Cases', 'buildCases', undefined, app);
         else toast('Current mode has no case list');
         break;
 
@@ -1984,11 +2102,11 @@ function openPaletteWithCommands() {
       { kind: 'go', label: 'Settings', key: ',', run: () => $('#btn-settings').click() },
       { kind: 'go', label: 'Keyboard shortcuts', key: '?', run: () => $('#btn-help').click() },
       { kind: 'go', label: 'About', key: 'B', run: () => $('#btn-about').click() },
-      { kind: 'go', label: 'Pick trainer cases', key: 'K', run: () => setFor(app.settings.mode) ? openDrawer('Cases', buildCases(app)) : toast('Current mode has no case list') },
+      { kind: 'go', label: 'Pick trainer cases', key: 'K', run: () => setFor(app.settings.mode) ? openPanel('Cases', 'buildCases', undefined, app) : toast('Current mode has no case list') },
       { kind: 'do', label: 'New session', run: () => app.newSession() },
       { kind: 'do', label: 'New scramble', key: 'N', run: forwardScramble },
       { kind: 'do', label: 'Copy scramble', run: () => copyToast(app.scramble?.scramble || '', 'Scramble') },
-      { kind: 'do', label: 'Enter your own scrambles', key: 'X', run: () => openDrawer('Your scrambles', buildCustomScrambles(app)) },
+      { kind: 'do', label: 'Enter your own scrambles', key: 'X', run: () => openPanel('Your scrambles', 'buildCustomScrambles', undefined, app) },
       { kind: 'do', label: 'Share last solve as a card', run: () => app.solves.at(-1) ? app.shareSolveCard(app.solves.at(-1)) : toast('No solves yet') },
       { kind: 'do', label: 'Share current ao5 as a card', run: () => app.shareAverageCard('ao5') },
       { kind: 'do', label: 'Toggle inspection', key: 'I', run: () => { app.setSetting('inspection', !app.settings.inspection); toast(`Inspection ${app.settings.inspection ? 'on' : 'off'}`); } },
