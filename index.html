@@ -15,10 +15,10 @@
 <!-- The scrambler is the one thing the user actually waits on, so start
      fetching its module graph alongside the stylesheets, not after them. -->
 <link rel="modulepreload" href="vendor/cubing/cubing/scramble.js">
-<link rel="modulepreload" href="js/main.js?v=28">
-<link rel="stylesheet" href="css/tokens.css?v=28">
-<link rel="stylesheet" href="css/base.css?v=28">
-<link rel="stylesheet" href="css/components.css?v=28">
+<link rel="modulepreload" href="js/main.js?v=29">
+<link rel="stylesheet" href="css/tokens.css?v=29">
+<link rel="stylesheet" href="css/base.css?v=29">
+<link rel="stylesheet" href="css/components.css?v=29">
 <link rel="icon" href="assets/favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="assets/logo-192.png">
 <link rel="apple-touch-icon" href="assets/logo-180.png">
@@ -133,10 +133,20 @@
         <button class="ghost-btn" id="btn-copy-scramble" title="Copy scramble  (Ctrl+C)">
           <svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/></svg>
         </button>
+        <button class="ghost-btn" id="btn-custom-scramble" title="Enter your own scrambles  (X)">
+          <svg viewBox="0 0 24 24"><path d="M4 6h11M4 12h7M4 18h11M17 9v9M13.5 12.5L17 9l3.5 3.5"/></svg>
+        </button>
         <button class="ghost-btn" id="btn-next-scramble" title="New scramble  (N)">
           <svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
         </button>
       </div>
+    </div>
+    <!-- Shown only while a pasted list is being worked through: which one you
+         are on, and the way back out to generated scrambles. -->
+    <div id="custom-bar" hidden>
+      <span class="cb-dot" aria-hidden="true"></span>
+      <span id="custom-pos">custom 1 / 1</span>
+      <button class="cb-x" id="btn-custom-exit" title="Back to generated scrambles">&times;</button>
     </div>
     <div id="case-label" hidden></div>
   </section>
@@ -247,6 +257,22 @@
           <span><b>ao12</b><i id="live-ao12">&mdash;</i></span>
         </div>
 
+        <!-- Manual entry. Replaces the spacebar entirely when it is on, so
+             there is no way to record two times for one scramble. -->
+        <form id="manual-entry" hidden autocomplete="off">
+          <input id="manual-input" type="text" inputmode="decimal" spellcheck="false"
+                 placeholder="type a time — 12.34, 1:05.67, 1234, 12.34+2, DNF"
+                 aria-label="Type a solve time">
+          <button type="submit" class="ghost-btn sm" id="manual-add">add</button>
+        </form>
+
+        <!-- Stackmat / aux. Says out loud whether the jack is actually
+             sending anything, which is the only question that ever matters. -->
+        <div id="stackmat-bar" hidden>
+          <span class="sm-dot" id="stackmat-dot"></span>
+          <span id="stackmat-msg">listening for a Stackmat…</span>
+        </div>
+
         <div id="timer-hint">press <kbd>space</kbd> to start</div>
 
         <div id="last-delta" hidden></div>
@@ -350,7 +376,7 @@
   </div>
 </div>
 
-<script type="module" src="js/main.js?v=28"></script>
+<script type="module" src="js/main.js?v=29"></script>
 <script>
 (function () {
   var isFile = location.protocol === 'file:';

@@ -4,7 +4,7 @@
    Every control writes straight into app.settings and applies live.
    =========================================================== */
 
-import { $, el, fmt, fmtDate, download } from './util.js';
+import { $, el, fmt, fmtDate, download, parseScrambleList } from './util.js';
 import { PRESETS, TIMER_FONTS, exportTheme, importTheme } from './theme.js';
 import { SHADER_NAMES } from './bg.js';
 import { summarize, byCase, eff, DNF, bestAvg, currentAvg, trimmedIndices, bestSingle } from './stats.js';
@@ -12,7 +12,7 @@ import { renderTrend, renderHistogram, renderHeatmap, renderCaseBars } from './c
 import { MODES, EVENTS } from './events.js';
 import { setFor } from './scramble.js';
 import { toast, confirmToast } from './toast.js';
-import { exportAll, importAll, Assets, Solves } from './db.js';
+import { exportAll, Assets, Solves } from './db.js';
 
 /* ---------------- drawer shell ---------------- */
 
@@ -366,7 +366,12 @@ export function buildStatDetail(app, kind) {
           el('div', { class: 'sd-label', text: w.label }),
           el('div', { class: 'sd-value', text: fmtStat(w.value) })),
         el('div', { class: 'sd-actions' },
-          copyBtn('copy all', statText(w), 'btn primary'),
+          el('button', {
+            class: 'btn primary', text: 'share card',
+            title: 'A picture of this average — times and scrambles',
+            onclick: () => app.shareAverageCard(kind),
+          }),
+          copyBtn('copy all', statText(w), 'ghost-btn'),
           copyBtn('times only', w.list.map((s, i) => timeCell(s, w.trimmed.has(w.start + i))).join(', ')),
           copyBtn('scrambles only', w.list.map(s => (s.scramble || '').replace(/\s+/g, ' ').trim()).join(NEWLINE)),
         )),
@@ -421,6 +426,39 @@ export function buildSettings(app) {
         ], S.callouts, v => set('callouts', v)), 'a tone at 8 and 12 seconds'),
       ),
 
+      group('Timing input',
+        row('Where times come from', chips([
+          { value: 'timer', label: 'Keyboard' },
+          { value: 'manual', label: 'Type them' },
+          { value: 'stackmat', label: 'Stackmat (aux)' },
+        ], S.inputMode || 'timer', (v) => {
+          set('inputMode', v);
+          // The note under this row is different for every mode, so redraw.
+          openDrawer('Settings', buildSettings(app));
+        }),
+          'the spacebar, a time you type in, or a Stackmat plugged into the mic socket'),
+        S.inputMode === 'manual'
+          ? el('div', { class: 'hint-note', html:
+              'Type the time under the clock and press <b>Enter</b>. It understands ' +
+              '<b>12.34</b>, <b>1:05.67</b>, bare digits (<b>1234</b> is 12.34), ' +
+              '<b>12.34+2</b> for a plus two, and <b>DNF</b>. Each entry records against the ' +
+              'scramble on screen and moves you to the next one.' })
+          : null,
+        S.inputMode === 'stackmat'
+          ? el('div', { class: 'hint-note', html:
+              'Run a 3.5&nbsp;mm cable from the timer&rsquo;s data port to this machine&rsquo;s ' +
+              '<b>microphone</b> input and allow the microphone when asked. The bar under the ' +
+              'clock says whether packets are actually arriving — if it stays on ' +
+              '&ldquo;no signal&rdquo;, raise the input level in your sound settings and check ' +
+              'the cable is in the mic socket, not line-out.' })
+          : null,
+        el('div', { class: 'hint-note', html:
+            '<b>Bluetooth smart timers are not supported.</b> Every model (GAN, QiYi, MoYu) ' +
+            'speaks its own encrypted protocol, and shipping an implementation that has never ' +
+            'been near the hardware would just be a button that fails silently. The aux route ' +
+            'above works with any Stackmat, which is what the Bluetooth timers emulate anyway.' }),
+      ),
+
       group('Timer',
         row('Hold time', chips([
           { value: 0, label: 'Instant' },
@@ -453,29 +491,51 @@ export function buildSettings(app) {
             },
           })),
         (() => {
-          const f = el('input', { type: 'file', accept: '.json', style: { display: 'none' } });
-          f.addEventListener('change', async () => {
-            try {
-              const n = await importAll(JSON.parse(await f.files[0].text()));
-              await app.reload(); toast(`Imported ${n} solves`, { kind: 'good' });
-            } catch (e) { toast(e.message, { kind: 'bad' }); }
+          // One picker for both formats. csTimer writes JSON into a .txt, so an
+          // extension filter is exactly the wrong thing to trust — the importer
+          // reads the file and decides what it is.
+          const f = el('input', {
+            type: 'file',
+            accept: '.json,.txt,text/plain,application/json',
+            style: { display: 'none' },
           });
-          return el('div', { class: 'row' },
-            el('div', { class: 'lbl' }, el('span', { text: 'Restore' }), el('span', { class: 'sub', text: 'merge a Tagda Timer backup' })),
-            el('span', {}, el('button', { class: 'ghost-btn', text: 'import', onclick: () => f.click() }), f));
-        })(),
-        (() => {
-          const f = el('input', { type: 'file', accept: '.json,.txt', style: { display: 'none' } });
+          const status = el('div', { class: 'sub', text: 'Tagda backup (.json) or csTimer export (.txt)' });
+          const btn = el('button', { class: 'ghost-btn', text: 'choose file', onclick: () => f.click() });
+
           f.addEventListener('change', async () => {
+            const file = f.files?.[0];
+            if (!file) return;
+            btn.disabled = true;
+            status.textContent = `reading ${file.name}…`;
             try {
-              const n = await app.importCsTimer(JSON.parse(await f.files[0].text()));
-              toast(`Imported ${n} solves from csTimer`, { kind: 'good' });
-            } catch (e) { toast('Could not read that csTimer export: ' + e.message, { kind: 'bad' }); }
+              const res = await app.importFile(file, {
+                onProgress: (n, name) => { status.textContent = `${n} solves… (${name})`; },
+              });
+              status.textContent = res.kind === 'cstimer'
+                ? `${res.solves} solves in ${res.sessions} sessions from csTimer`
+                : `${res.solves} solves restored`;
+              toast(res.kind === 'cstimer'
+                ? `Imported ${res.solves} solves across ${res.sessions} csTimer sessions`
+                : `Restored ${res.solves} solves`, { kind: 'good' });
+            } catch (e) {
+              status.textContent = 'nothing imported';
+              toast(`Could not import that file: ${e.message}`, { kind: 'bad' });
+            } finally {
+              btn.disabled = false;
+              f.value = '';
+            }
           });
+
           return el('div', { class: 'row' },
-            el('div', { class: 'lbl' }, el('span', { text: 'Import from csTimer' }), el('span', { class: 'sub', text: 'bring your whole history across' })),
-            el('span', {}, el('button', { class: 'ghost-btn', text: 'choose file', onclick: () => f.click() }), f));
+            el('div', { class: 'lbl' }, el('span', { text: 'Import solves' }), status),
+            el('span', {}, btn, f));
         })(),
+        el('div', { class: 'hint-note', html:
+          'Importing from <b>csTimer</b>: open csTimer, then <b>Export &rarr; Export to file</b>. ' +
+          'It saves a <b>.txt</b> — hand that file straight to the picker above. ' +
+          'Every session comes across with its own name, its times, its scrambles, ' +
+          'its comments and its penalties, and the event is read from the session&rsquo;s ' +
+          'scramble type where csTimer recorded one. Nothing already here is touched.' }),
         el('div', { class: 'row' },
           el('div', { class: 'lbl' }, el('span', { text: 'Session as CSV' })),
           el('button', {
@@ -592,6 +652,104 @@ export function buildHistory(app) {
   };
 }
 
+
+/* =========================================================
+   YOUR OWN SCRAMBLES
+   =========================================================
+   Paste a list, get them back one at a time in the order you pasted.
+   The list itself lives in IndexedDB, not in settings — ten thousand
+   lines has no business in an object that is rewritten on every slider
+   drag — so this panel only ever holds the text being edited.
+   ========================================================= */
+export function buildCustomScrambles(app) {
+  return (body) => {
+    const c = app.custom;
+    const remaining = Math.max(0, c.list.length - c.pos);
+
+    const ta = el('textarea', {
+      class: 'inp scramble-box',
+      rows: 12,
+      spellcheck: 'false',
+      placeholder: [
+        'One scramble per line — paste as many as you like.',
+        '',
+        "R U R' U' F' U F",
+        "D2 L2 F2 U' B2 U ...",
+        '',
+        'Any "1)" or "1." numbering is stripped for you.',
+      ].join('\n'),
+    });
+
+    const count = el('div', { class: 'sub', text: 'nothing pasted yet' });
+    const recount = () => {
+      const n = parseScrambleList(ta.value).length;
+      count.textContent = n ? `${n} scramble${n === 1 ? '' : 's'} ready to load` : 'nothing pasted yet';
+    };
+    ta.addEventListener('input', recount);
+
+    const file = el('input', { type: 'file', accept: '.txt,text/plain', style: { display: 'none' } });
+    file.addEventListener('change', async () => {
+      const f = file.files?.[0];
+      if (!f) return;
+      ta.value = await f.text();
+      recount();
+      file.value = '';
+    });
+
+    const load = (append) => () => {
+      if (!ta.value.trim()) { toast('Paste some scrambles first'); return; }
+      app.setCustomScrambles(ta.value, { append });
+    };
+
+    body.append(
+      group('Load a list',
+        el('div', { class: 'hint-note', html:
+          'While a list is loaded the generator steps aside completely: every ' +
+          '<b>next</b> hands you the following line, in order, and each solve is ' +
+          'recorded against the scramble it was actually done on. When the list ' +
+          'runs out the timer goes back to generating its own.' }),
+        ta,
+        el('div', { class: 'row' },
+          el('div', { class: 'lbl' }, el('span', { text: 'Ready' }), count),
+          el('span', {},
+            el('button', { class: 'ghost-btn', text: 'from a file', onclick: () => file.click() }),
+            file)),
+        el('div', { class: 'sd-actions' },
+          el('button', { class: 'btn primary', text: 'use these scrambles', onclick: load(false) }),
+          el('button', { class: 'ghost-btn', text: 'add to the current list', onclick: load(true) }),
+        ),
+      ),
+
+      c.list.length
+        ? group('Currently loaded',
+            el('div', { class: 'row' },
+              el('div', { class: 'lbl' },
+                el('span', { text: `${c.list.length} scrambles` }),
+                el('span', { class: 'sub', text: remaining
+                  ? `on number ${Math.min(c.pos + 1, c.list.length)} — ${remaining} still to come`
+                  : 'all of them used' })),
+              el('span', {},
+                el('button', { class: 'ghost-btn', text: 'start over', onclick: () => { app.restartCustomScrambles(); closeDrawer(); } }),
+                el('button', { class: 'ghost-btn danger', text: 'discard', onclick: () => { app.clearCustomScrambles(); closeDrawer(); } }))),
+            // A preview, capped: showing ten thousand rows would lock the drawer
+            // for as long as it took to build them.
+            el('div', { class: 'cs-preview' },
+              ...c.list.slice(0, 60).map((line, i) => el('div', {
+                class: `cs-line ${i < c.pos ? 'done' : ''} ${i === c.pos ? 'now' : ''}`,
+              },
+                el('span', { class: 'cs-i', text: String(i + 1) }),
+                el('span', { class: 'cs-s', text: line }))),
+              c.list.length > 60
+                ? el('div', { class: 'cs-line more', text: `…and ${c.list.length - 60} more` })
+                : null,
+            ))
+        : null,
+    );
+
+    recount();
+  };
+}
+
 /* =========================================================
    CASE PICKER (trainer modes)
    ========================================================= */
@@ -674,6 +832,7 @@ export const SHORTCUTS = [
     ['N', 'new scramble'],
     ['Ctrl + C', 'copy scramble'],
     ['←  →', 'previous / next scramble'],
+    ['X', 'enter your own scrambles'],
   ]],
   ['Go to', [
     ['E', 'event picker'],

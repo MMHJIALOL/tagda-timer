@@ -47,6 +47,11 @@ real cube, and the rendered page itself (that no overlay is stuck on screen).
   is already made before you finish the current solve.
 - cubing.js is **vendored into `vendor/`**, so the timer works with no internet at all.
   Re-mirror it any time with `python tools/mirror_cubing.py`.
+- **Your own scrambles.** Paste a list — a competition round, a set of cases, ten
+  thousand lines — and the generator steps aside: every *next* hands you the following
+  line, in order, and each solve is recorded against the scramble it was actually done
+  on. The list survives a reload, and the timer goes back to generating on its own once
+  the list runs out. Button beside the scramble, or `X`.
 
 ### Trainers (3x3)
 Every trainer knows which case it dealt you, which is what makes **per-case statistics**
@@ -77,11 +82,38 @@ neutral to amber to red, and the digits breathe faster as time runs out.
 
 Inspection is turned off automatically for the blindfolded events and FMC.
 
+### Timing input
+Three sources, one at a time, chosen in Settings:
+
+- **Keyboard / touch** — the spacebar, or a tap on a phone.
+- **Typed times** — type under the clock and press Enter. It reads `12.34`, `1:05.67`,
+  bare digits (`1234` is 12.34), `12.34+2` for a plus two, and `DNF`. Each entry records
+  against the scramble on screen and moves on to the next.
+- **Stackmat on the aux jack** — run a 3.5 mm cable from the timer's data port into the
+  microphone socket. The 1200-baud stream is decoded in an AudioWorklet, either polarity,
+  any Stackmat revision (the packet checksum is what is matched, not the frame length).
+  A bar under the clock says whether packets are actually arriving, so a wrong socket or
+  a muted input shows up in a second rather than a session.
+
+Bluetooth smart timers are deliberately **not** supported — every model speaks its own
+encrypted protocol and an untested implementation would be a button that fails silently.
+The aux route works with any Stackmat, which is what those timers emulate anyway.
+
 ### Timing
 All timing comes from `performance.now()` timestamps, never from counted frames, so no
 amount of animation or lag can change a recorded time. The inspection penalty is read
 from a fresh clock reading at the instant the timer starts, not from the last animation
 frame.
+
+### The times list
+The strip in the sidebar scrolls all the way back to the first solve of the
+session, a page at a time as you reach the bottom, ending on a `start of the
+session` marker. Only what is on screen is built, and a render diffs against
+what is already there rather than tearing the list down — so on a 5,000-solve
+session, appending a page costs about a millisecond and toggling a penalty with
+every row expanded costs about 30, against two full seconds for a naive rebuild.
+Recording a solve folds the strip back to its top page, because that is where
+you are looking.
 
 ### Statistics
 WCA-correct averages — trim the best and worst, DNFs count as worst, and two DNFs inside
@@ -107,12 +139,32 @@ live — drag a slider and the app changes under your hand, no reload.
 - Motion: full, reduced, or off (and `prefers-reduced-motion` is respected by default).
 - Export your theme as JSON and send it to someone.
 
+### Sharing
+Any solve, and any average, can be exported as a card rather than a wall of text.
+
+- **One solve** — the time, the scramble, and the cube exactly as that scramble leaves
+  it, drawn as a flat net from a facelet simulation rather than screenshotted.
+- **An average** — ao5, ao12, ao50, ao100, mo3: the counting times with their scrambles,
+  trimmed solves in brackets the way results are written up.
+- Copy the image to the clipboard, save the PNG, or hand it to the device's own share
+  sheet (the only route that reaches Instagram). X, WhatsApp, Telegram and Reddit links
+  are there when there is no native sheet.
+- The card takes its colours from whatever theme you are on.
+
+Share a solve from its context menu in the times list; share an average from the
+`share card` button on any statistic.
+
 ### Your data
 Everything lives in your browser's IndexedDB. No account, no server, nothing uploaded.
 
 - Full JSON backup and restore.
 - Per-session CSV export.
-- **csTimer import** — bring your entire existing history across.
+- **csTimer import** — one picker takes either a Tagda backup (`.json`) or a csTimer
+  export (`.txt`) and works out which it is from the contents, because csTimer writes
+  JSON into a `.txt` and an extension filter is exactly the wrong thing to trust. Every
+  session comes across with its name, times, scrambles, comments and penalties, and the
+  event is read from the session's scramble type. Tested at ~12,000 solves across 23
+  sessions in under five seconds.
 
 ---
 
@@ -129,6 +181,7 @@ Everything lives in your browser's IndexedDB. No account, no server, nothing upl
 | **N** | new scramble |
 | **← →** | previous / next scramble |
 | **Ctrl + C** | copy the scramble |
+| **X** | enter your own scrambles |
 | **E** / **M** / **S** | event · mode · session |
 | **A** / **H** | statistics · all solves |
 | **T** / **,** | appearance · settings |
@@ -197,6 +250,6 @@ modules over `file://`, and the page says so if you try.
 
 ## Not in this version
 
-Accounts and cloud sync, multiplayer racing, Bluetooth smart cubes, Stackmat input,
-and solve reconstruction. FMC currently records a time rather than running the full
-60-minute solution editor.
+Accounts and cloud sync, multiplayer racing, Bluetooth smart cubes, Bluetooth smart
+timers, and solve reconstruction. FMC currently records a time rather than running the
+full 60-minute solution editor.

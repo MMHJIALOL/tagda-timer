@@ -2,8 +2,9 @@
    Tagda Timer — application wiring
    =========================================================== */
 
-import { $, $$, el, uid, fmt, fmtLive, clamp, copy, download, toCSV, debounce } from './util.js';
-import { Solves, Sessions, KV, Assets } from './db.js';
+import { $, $$, el, uid, fmt, fmtLive, clamp, copy, download, toCSV, debounce,
+         parseTimeInput, parseScrambleList } from './util.js';
+import { Solves, Sessions, KV, Assets, importAll } from './db.js';
 import { EVENTS, EVENT_ORDER, MODES, modesForEvent, eventOf, modeOf } from './events.js';
 import { ScrambleQueue, setFor, cubingAvailable } from './scramble.js';
 import { Timer, INSPECT_MS } from './timer.js';
@@ -17,10 +18,12 @@ import { loadSettings, saveSettings, applyTheme, applyBackground, themeColors } 
 import { popover, closePopover, popoverOpen } from './popover.js';
 import { toast, confirmToast } from './toast.js';
 import { openPalette, closePalette, paletteOpen } from './palette.js';
+import { shareSolve, shareAverage, shareOpen, closeShare } from './sharedlg.js';
+import { Stackmat } from './stackmat.js';
 import {
   openDrawer, closeDrawer, drawerOpen,
   buildAppearance, buildSettings, buildStats, buildHistory, buildCases, buildShortcuts, buildSessions,
-  buildStatDetail, buildAbout,
+  buildStatDetail, buildAbout, buildCustomScrambles,
 } from './panels.js';
 
 /* =========================================================
@@ -35,7 +38,14 @@ const app = {
   scramble: null,
   scrambleHistory: [],
   historyPos: -1,
+  // What Ctrl+Z would put back: {solves, sessionId, label}. Deliberately not
+  // held in a toast's closure — toasts are gone in a second, and undo has to
+  // outlive the message that mentions it.
   lastDeleted: null,
+  // A pasted list of scrambles, handed out in order ahead of the generator.
+  // Kept as a plain array plus a cursor: pasting a thousand of them costs one
+  // allocation and every advance is an index bump.
+  custom: { list: [], pos: 0 },
 };
 window.tagdatimer = app;   // handy in the console
 // The boot guard in index.html only exists to catch "the modules never
@@ -44,6 +54,7 @@ window.tagdatimer = app;   // handy in the console
 window.__tdtBooted = true;
 
 const queue = new ScrambleQueue(3);
+const stackmat = new Stackmat();
 const bg = new Background($('#bg-shader'), $('#bg-media'));
 const cube = new CubeView($('#cube-holder'), $('#cube-fallback'));
 let timer = null;
@@ -93,6 +104,18 @@ async function init() {
   wireInput();
   wireChrome();
   wireShortcuts();
+  wireManualEntry();
+  wireHistoryScroll();
+
+  // A pasted scramble list outlives a reload — losing your competition round
+  // to an accidental refresh would be the whole feature failing at its job.
+  try {
+    const saved = await KV.get('customScrambles', null);
+    if (saved && Array.isArray(saved.list) && saved.pos < saved.list.length) {
+      app.custom = { list: saved.list, pos: saved.pos | 0 };
+    }
+  } catch { /* an unreadable list is not worth failing the boot over */ }
+  updateCustomBar();
 
   // The scrambler is the only thing anyone actually waits for, so it starts
   // before the decoration does rather than queueing behind it.
@@ -102,6 +125,7 @@ async function init() {
 
   renderAll();
   syncTimerDisplay();
+  applyInputMode();
   bootAnimation();
 
   // Everything below is decoration or bookkeeping and is deliberately not
@@ -182,6 +206,17 @@ async function nextScramble({ clear = false } = {}) {
     node.classList.remove('multiline', 'long');
     $('#case-label').hidden = true;
   }
+  // A pasted list always wins: while one is loaded, the generator is not
+  // consulted at all, so the order you pasted is the order you get.
+  const own = takeCustom();
+  if (own) {
+    app.scrambleHistory.push(own);
+    if (app.scrambleHistory.length > 40) app.scrambleHistory.shift();
+    app.historyPos = app.scrambleHistory.length - 1;
+    showScramble(own);
+    return;
+  }
+
   const token = ++scrambleToken;
   const s = await queue.next();
   if (token !== scrambleToken) return;   // a newer request overtook this one
@@ -202,6 +237,81 @@ function forwardScramble() {
   app.historyPos++;
   showScramble(app.scrambleHistory[app.historyPos]);
 }
+
+/* ---------------- custom scramble list ---------------- */
+
+/** Next unused scramble from the pasted list, or null when it is spent. */
+function takeCustom() {
+  const c = app.custom;
+  if (!c.list.length || c.pos >= c.list.length) return null;
+  const i = c.pos++;
+  saveCustom();
+  updateCustomBar();
+  if (c.pos >= c.list.length) {
+    toast(`Last of your ${c.list.length} scrambles — generated after this one`);
+  }
+  return { scramble: c.list[i], official: false, custom: true, customIndex: i + 1, customTotal: c.list.length };
+}
+
+function saveCustom() {
+  // Persisted outside `settings`: a thousand pasted scrambles have no business
+  // in an object that is rewritten on every slider drag.
+  KV.set('customScrambles', { list: app.custom.list, pos: app.custom.pos }).catch(() => {});
+}
+
+function updateCustomBar() {
+  const bar = $('#custom-bar');
+  if (!bar) return;
+  const c = app.custom;
+  // A spent list keeps its bar only while one of its own scrambles is still on
+  // screen; once the generator takes over, saying "custom 4 / 4" over a
+  // generated scramble is just a lie.
+  const live = c.list.length > 0 && (c.pos < c.list.length || !!app.scramble?.custom);
+  bar.hidden = !live;
+  if (live) {
+    $('#custom-pos').textContent = `custom ${Math.min(c.pos, c.list.length)} / ${c.list.length}`;
+    bar.classList.toggle('spent', c.pos >= c.list.length);
+  }
+}
+app.updateCustomBar = updateCustomBar;
+
+/**
+ * Load a pasted block. `append` keeps whatever is left of the current list,
+ * which is what you want when you paste a second competition round in.
+ */
+app.setCustomScrambles = (text, { append = false } = {}) => {
+  const list = parseScrambleList(text);
+  const c = app.custom;
+  if (append && c.list.length) {
+    c.list = c.list.concat(list);
+  } else {
+    c.list = list;
+    c.pos = 0;
+  }
+  saveCustom();
+  updateCustomBar();
+  if (!list.length) { toast('No scrambles found in that text', { kind: 'bad' }); return 0; }
+  closeDrawer();
+  // Show the first one straight away rather than making you press next.
+  if (!append || c.pos >= c.list.length - list.length) nextScramble();
+  toast(`${list.length} scramble${list.length === 1 ? '' : 's'} loaded`, { kind: 'good' });
+  return list.length;
+};
+
+app.clearCustomScrambles = ({ quiet = false } = {}) => {
+  app.custom = { list: [], pos: 0 };
+  saveCustom();
+  updateCustomBar();
+  if (!quiet) { nextScramble(); toast('Back to generated scrambles'); }
+};
+
+app.restartCustomScrambles = () => {
+  if (!app.custom.list.length) return;
+  app.custom.pos = 0;
+  saveCustom();
+  nextScramble();
+  toast('Back to the first of your scrambles');
+};
 
 function showScramble(s, silent = false) {
   app.scramble = s;
@@ -224,6 +334,14 @@ function showScramble(s, silent = false) {
   const caseEl = $('#case-label');
   if (s.caseName) { caseEl.hidden = false; caseEl.textContent = s.caseName; }
   else caseEl.hidden = true;
+
+  if (s.custom && s.customIndex) {
+    const bar = $('#custom-bar');
+    if (bar) {
+      bar.hidden = false;
+      $('#custom-pos').textContent = `custom ${s.customIndex} / ${s.customTotal}`;
+    }
+  } else updateCustomBar();
 
   // Only ever animate the *movement*. A keyframe that starts at opacity 0 leaves
   // the scramble invisible if the animation is paused or never runs (a
@@ -505,10 +623,24 @@ async function onSolveFinished(res) {
   $('#time-penalty').textContent = res.penalty === '+2' ? '+2' : res.penalty === 'DNF' ? 'DNF' : '';
 
   if (res.suspicious && app.settings.confirmShortSolves) {
-    const keep = await confirmToast(`${fmt(res.timeMs)} — misfire? Discard it?`, 'discard');
+    // A misfire is obvious the instant it happens — you felt the stack move.
+    // No answer means keep the solve, and the prompt gets out of the way fast.
+    const keep = await confirmToast(`${fmt(res.timeMs)} — misfire? Discard it?`, 'discard', { timeout: 1500 });
     if (keep) { timer.reset(); nextScramble(); return; }
   }
 
+  await recordSolve({ timeMs: res.timeMs, penalty: res.penalty, inspectionMs: res.inspectionMs });
+}
+
+/**
+ * Store one solve against the scramble currently on screen, then do everything
+ * that always follows: personal bests, the delta line, a redraw, next scramble.
+ *
+ * Split out of onSolveFinished so that a typed time and a Stackmat time land
+ * in the database through exactly the same path as a spacebar one — there is
+ * no second version of the PB logic to drift.
+ */
+async function recordSolve({ timeMs, penalty = 'none', inspectionMs = 0 }) {
   const prevBest = bestSingle(app.solves);
   const prevAo5  = bestAvg(app.solves, 5).value;
   const prevAo12 = bestAvg(app.solves, 12).value;
@@ -521,15 +653,20 @@ async function onSolveFinished(res) {
     scramble: app.scramble?.scramble || '',
     caseId: app.scramble?.caseId || null,
     caseName: app.scramble?.caseName || null,
-    timeMs: res.timeMs,
-    penalty: res.penalty,
-    inspectionMs: res.inspectionMs,
+    timeMs,
+    penalty,
+    inspectionMs,
     comment: '',
     createdAt: Date.now(),
   };
   app.solves.push(solve);
   await Solves.put(solve);
   app.sessionCounts.set(app.session.id, app.solves.length);
+
+  // You have just finished a solve, so you are looking at the timer, not at row
+  // four thousand. Folding the times strip back to its top page keeps recording
+  // a solve cheap however far back you had scrolled to read old ones.
+  resetHistoryWindow();
 
   // personal bests
   const nowBest = bestSingle(app.solves);
@@ -581,15 +718,22 @@ function showDelta(solve, prevBest) {
 function celebratePB(kind) {
   const c = themeColors();
   const intensity = kind === 'single' ? 1 : kind === 'ao5' ? 0.7 : 0.5;
-  shockwave(kind === 'single' ? c.gold : c.accent);
-  confetti([c.accent, c.accent2, c.gold, c.ok, c.text],
-    { count: Math.round(150 * intensity), power: 0.7 + intensity * 0.5 });
-  flash(c.gold);
+  const motion = app.settings.motion;
+
+  // The whole celebration is decoration, so it answers to the motion setting
+  // like everything else does — off means off, reduced means fewer flakes.
+  if (motion !== 'off') {
+    shockwave(kind === 'single' ? c.gold : c.accent);
+    confetti([c.accent, c.accent2, c.gold, c.ok, c.text],
+      { count: Math.round((motion === 'reduced' ? 55 : 120) * intensity),
+        power: 0.7 + intensity * 0.5 });
+    flash(c.gold);
+  }
   if (app.settings.soundOnPB) chime();
   const label = kind === 'single' ? 'New personal best!' : kind === 'ao5' ? 'Best ao5 of the session!' : 'Best ao12 of the session!';
-  toast(label, { kind: 'good', timeout: 3200 });
+  toast(label, { kind: 'good', long: true });
   const d = $('#timer-display');
-  if (app.settings.motion !== 'off') {
+  if (motion !== 'off') {
     d.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.09)' }, { transform: 'scale(1)' }],
       { duration: 640, easing: 'cubic-bezier(.34,1.56,.64,1)' });
   }
@@ -604,6 +748,7 @@ function renderAll() {
   updateLabels();
   updateHint();
 }
+app.renderAll = renderAll;
 
 let lastStats = {};
 function renderStats() {
@@ -661,54 +806,203 @@ function renderStats() {
   }
 }
 
-function renderHistory() {
+/* ---------------- the times strip ----------------
+   The strip used to stop dead at the last 60 solves, so the rest of a session
+   simply could not be reached from the sidebar. It now runs all the way back to
+   solve #1 — but a session can be five figures long, so it is windowed: a page
+   of rows is built at a time and more are *appended* as you reach the bottom,
+   rather than rebuilding thousands of nodes on every scroll. */
+
+const HIST_PAGE = 80;
+let histShown = HIST_PAGE;
+// Recomputed once per full render and reused while appending, because nothing
+// about the data changes between one page of scrolling and the next.
+let histCtx = null;
+// The solve ids currently on screen, newest first, and what each of those rows
+// last rendered as. Renders diff against these rather than assuming the list has
+// to be thrown away — and they live here rather than on the elements because
+// reading 5,000 data-attributes back off the DOM costs more than the render.
+let histIds = [];
+let histSigs = [];
+
+/** Back to the top window — a different session is a different list. */
+function resetHistoryWindow() {
+  histShown = HIST_PAGE;
+  histIds = [];
+  histSigs = [];
   const list = $('#hist-list');
-  list.innerHTML = '';
-  if (!app.solves.length) {
-    list.append(el('div', { class: 'hist-empty', text: 'No times yet — hold space and go.' }));
-    return;
-  }
-  const best = bestSingle(app.solves);
-  const trim5 = trimmedIndices(app.solves, 5);
-  const atTop = list.scrollTop < 8;
+  if (list) list.scrollTop = 0;
+}
 
-  // The running ao5 as it stood after each solve, so you can see the average
-  // moving without opening anything.
-  const ao5s = rollingSeries(app.solves, 5);
-  const valid = ao5s.filter(v => v !== null);
-  const bestAo5 = valid.length ? Math.min(...valid) : null;
-
-  // newest first, cap the strip
-  const start = Math.max(0, app.solves.length - 60);
-  for (let i = app.solves.length - 1; i >= start; i--) {
-    const s = app.solves[i];
-    const v = eff(s);
-    const cls = [
+/** Everything one row displays, as one string, so rows can be diffed cheaply. */
+function historyRowData(i) {
+  const s = app.solves[i];
+  const { best, trim5, ao5s, bestAo5 } = histCtx;
+  const v = eff(s);
+  const ao = ao5s[i];
+  return {
+    solve: s,
+    cls: [
       'solve-chip',
       s.penalty === 'DNF' ? 'dnf' : '',
       s.penalty === '+2' ? 'plus2' : '',
       v === best && v !== DNF ? 'pb' : '',
       trim5.best.has(i) ? 'best-in-avg' : '',
-    ].filter(Boolean).join(' ');
+    ].filter(Boolean).join(' '),
+    idx: String(i + 1),
+    time: v === DNF ? 'DNF' : fmt(v) + (s.penalty === '+2' ? '+' : ''),
+    ao: ao === null ? '·' : fmt(ao),
+    aoBest: ao !== null && bestAo5 !== null && ao === bestAo5,
+    aoTitle: ao === null ? 'needs five solves'
+      : `ao5 after solve ${i + 1}${ao === bestAo5 ? ' — best of the session' : ''}`,
+  };
+}
 
-    const ao = ao5s[i];
-    const isBestAo5 = ao !== null && bestAo5 !== null && ao === bestAo5;
-    const chip = el('div', { class: cls, role: 'listitem' },
-      el('span', { class: 'idx', text: String(i + 1) }),
-      el('span', { class: 't', text: v === DNF ? 'DNF' : fmt(v) + (s.penalty === '+2' ? '+' : '') }),
-      el('span', {
-        class: `ao5 ${isBestAo5 ? 'best' : ''}`,
-        title: ao === null ? 'needs five solves' : `ao5 after solve ${i + 1}${isBestAo5 ? ' — best of the session' : ''}`,
-        text: ao === null ? '·' : fmt(ao),
-      }),
-    );
-    chip.addEventListener('click', (e) => solveMenu(s, e.currentTarget));
-    chip.addEventListener('contextmenu', (e) => { e.preventDefault(); solveMenu(s, e.currentTarget); });
-    list.append(chip);
+const rowSig = (d) => `${d.cls}|${d.idx}|${d.time}|${d.ao}|${d.aoBest ? 1 : 0}`;
+
+/** One row. `i` is the index into app.solves, so #1 is always #1. */
+function historyChip(i, data) {
+  const d = data || historyRowData(i);
+  const chip = el('div', { class: d.cls, role: 'listitem' },
+    el('span', { class: 'idx', text: d.idx }),
+    el('span', { class: 't', text: d.time }),
+    el('span', { class: `ao5 ${d.aoBest ? 'best' : ''}`, title: d.aoTitle, text: d.ao }),
+  );
+  chip.addEventListener('click', (e) => solveMenu(d.solve, e.currentTarget));
+  chip.addEventListener('contextmenu', (e) => { e.preventDefault(); solveMenu(d.solve, e.currentTarget); });
+  return chip;
+}
+
+/**
+ * Add rows for indices `from` (higher) down to `to`, both inclusive.
+ * `sigs`, when given, is filled in with each new row's signature.
+ */
+function appendHistoryRows(list, from, to, sigs = null, sigAt = 0) {
+  // One fragment, one reflow, however many rows.
+  const frag = document.createDocumentFragment();
+  for (let i = from; i >= to; i--) {
+    const d = historyRowData(i);
+    if (sigs) sigs[sigAt + (from - i)] = rowSig(d);
+    frag.append(historyChip(i, d));
   }
-  // Newest is at the top now, so a new solve should not leave you scrolled
-  // away from it — unless you had deliberately scrolled down to read older ones.
-  if (atTop) list.scrollTop = 0;
+  list.querySelector('.hist-end')?.remove();
+  list.append(frag);
+  if (to === 0) {
+    list.append(el('div', { class: 'hist-end', text: 'start of the session' }));
+  }
+}
+
+function renderHistory() {
+  const list = $('#hist-list');
+  const n = app.solves.length;
+  if (!n) {
+    histShown = HIST_PAGE;
+    histIds = [];
+    histSigs = [];
+    list.innerHTML = '';
+    list.append(el('div', { class: 'hist-empty', text: 'No times yet — hold space and go.' }));
+    return;
+  }
+
+  // Deleting solves must not leave the window pointing past the end, and a new
+  // solve must not silently drop the oldest row you had scrolled to.
+  histShown = Math.min(Math.max(histShown, HIST_PAGE), n);
+
+  const ao5s = rollingSeries(app.solves, 5);
+  const valid = ao5s.filter(v => v !== null);
+  histCtx = {
+    best: bestSingle(app.solves),
+    trim5: trimmedIndices(app.solves, 5),
+    ao5s,
+    bestAo5: valid.length ? Math.min(...valid) : null,
+  };
+
+  const lo = n - histShown;
+  const target = [];
+  for (let i = n - 1; i >= lo; i--) target.push(app.solves[i].id);
+
+  /* Reuse what is already on screen wherever the same solves are still in the
+     same order. Once you have scrolled back through a few thousand rows, tearing
+     the list down and rebuilding it for a penalty toggle cost two whole seconds;
+     almost every row renders identically, so the honest amount of work is to
+     find the handful that changed.
+
+     The window only ever moves one way: new solves arrive at the top, and the
+     oldest rows fall off the bottom when the window is already at its full
+     length. So the check is "does the old list appear inside the new one,
+     shifted down by `added` rows" — which covers a new solve, a penalty edit,
+     and both at once. Anything else (a deletion in the middle, a different
+     session) renumbers the rows and honestly does need rebuilding. */
+  let added = histIds.length ? target.indexOf(histIds[0], 0) : -1;
+  // A shift bigger than a page means the list has moved on entirely.
+  if (added < 0 || added > HIST_PAGE) added = -1;
+  const reusable = added >= 0 &&
+    histIds.every((id, j) => j + added >= target.length || target[j + added] === id);
+
+  const sigs = new Array(target.length);
+  if (!reusable) {
+    // Reading scrollTop forces a layout of every row on screen, which on a
+    // five-thousand-row list is half a second on its own — so it is only ever
+    // read on the path that actually destroys the scroll position.
+    const prevScroll = list.scrollTop;
+    const atTop = prevScroll < 8;
+    list.innerHTML = '';
+    appendHistoryRows(list, n - 1, lo, sigs);
+    list.scrollTop = atTop ? 0 : prevScroll;
+  } else {
+    if (added > 0) {
+      const frag = document.createDocumentFragment();
+      for (let i = n - 1; i >= n - added; i--) {
+        const d = historyRowData(i);
+        sigs[n - 1 - i] = rowSig(d);
+        frag.append(historyChip(i, d));
+      }
+      list.prepend(frag);
+    }
+    // Rows pushed off the bottom by the new arrivals.
+    let spare = histIds.length + added - target.length;
+    for (let k = list.children.length - 1; k >= 0 && spare > 0; k--) {
+      const node = list.children[k];
+      if (!node.classList.contains('solve-chip')) continue;
+      node.remove();
+      spare--;
+    }
+
+    // `children` is live and indexable, and the chips always come before the
+    // end marker, so no second query is needed to reach row j.
+    const kids = list.children;
+    for (let j = added; j < target.length; j++) {
+      const i = n - 1 - j;
+      const d = historyRowData(i);
+      const sig = rowSig(d);
+      sigs[j] = sig;
+      if (histSigs[j - added] === sig) continue;      // renders identically
+      kids[j]?.replaceWith(historyChip(i, d));
+    }
+  }
+  histIds = target;
+  histSigs = sigs;
+
+  // The marker only belongs there while the window really does reach solve #1.
+  const end = list.querySelector('.hist-end');
+  if (lo === 0 && !end) list.append(el('div', { class: 'hist-end', text: 'start of the session' }));
+  else if (lo !== 0 && end) end.remove();
+}
+
+/** Grow the window when the scroll reaches the oldest row on screen. */
+function wireHistoryScroll() {
+  const list = $('#hist-list');
+  if (!list) return;
+  list.addEventListener('scroll', () => {
+    const n = app.solves.length;
+    if (histShown >= n) return;
+    if (list.scrollHeight - list.scrollTop - list.clientHeight > 300) return;
+    const from = n - histShown - 1;
+    histShown = Math.min(histShown + HIST_PAGE, n);
+    const to = n - histShown;
+    appendHistoryRows(list, from, to, histSigs, histIds.length);
+    for (let i = from; i >= to; i--) histIds.push(app.solves[i].id);
+  }, { passive: true });
 }
 
 /** The hint under the digits states what the spacebar actually does now. */
@@ -748,6 +1042,7 @@ function solveMenu(solve, anchor) {
     { label: 'DNF', badge: 'D', on: solve.penalty === 'DNF', onSelect: () => setPenalty('DNF') },
     { sep: true },
     { label: 'Copy scramble', badge: '', onSelect: () => copyToast(solve.scramble, 'Scramble') },
+    { label: 'Share as a card', badge: 'S', onSelect: () => app.shareSolveCard(solve) },
     { label: solve.comment ? 'Edit comment' : 'Add comment', badge: 'C', onSelect: () => commentOn(solve) },
     { label: 'Repeat this scramble', badge: 'R', onSelect: () => repeatScramble(solve) },
     { sep: true },
@@ -798,33 +1093,40 @@ async function deleteSolve(solve) {
   if (i === -1) return;
   app.solves.splice(i, 1);
   await Solves.del(solve.id);
-  app.lastDeleted = solve;
+  app.lastDeleted = { solves: [solve], sessionId: app.session.id, label: '1 solve' };
   app.sessionCounts.set(app.session.id, app.solves.length);
   renderAll();
   syncTimerDisplay();
-  toast(`Deleted ${eff(solve) === DNF ? 'DNF' : fmt(eff(solve))}`, {
+  toast(`Deleted ${eff(solve) === DNF ? 'DNF' : fmt(eff(solve))} — Ctrl+Z`, {
     action: 'undo',
-    onAction: async () => {
-      app.solves.push(solve);
-      app.solves.sort((a, b) => a.createdAt - b.createdAt);
-      await Solves.put(solve);
-      app.lastDeleted = null;
-      renderAll();
-      syncTimerDisplay();
-    },
+    onAction: undoDelete,
   });
 }
 
+/**
+ * Put back whatever was last removed — one solve or a whole cleared session.
+ *
+ * The record lives on `app`, not inside the toast that announces it, so the
+ * message can disappear in a second while the undo itself stays available for
+ * as long as you have not deleted something else.
+ */
 async function undoDelete() {
-  if (!app.lastDeleted) { toast('Nothing to undo'); return; }
-  const s = app.lastDeleted;
+  const rec = app.lastDeleted;
+  if (!rec) { toast('Nothing to undo'); return; }
   app.lastDeleted = null;
-  app.solves.push(s);
-  app.solves.sort((a, b) => a.createdAt - b.createdAt);
-  await Solves.put(s);
-  renderAll();
-  syncTimerDisplay();
-  toast('Restored');
+
+  await Solves.putMany(rec.solves);
+  // Restoring into a session you have since navigated away from would silently
+  // do nothing on screen, so only splice it back in when it belongs here.
+  if (rec.sessionId === app.session.id) {
+    app.solves = app.solves.concat(rec.solves).sort((a, b) => a.createdAt - b.createdAt);
+    lastStats = {};
+    resetHistoryWindow();
+    renderAll();
+    syncTimerDisplay();
+  }
+  app.sessionCounts.set(rec.sessionId, (app.sessionCounts.get(rec.sessionId) || 0) + rec.solves.length);
+  toast(`Restored ${rec.label}`);
 }
 
 /* =========================================================
@@ -844,6 +1146,7 @@ app.switchSession = async (id) => {
   if (s.event) { app.settings.event = s.event; syncEventConfig(); }
   app.solves = await Solves.bySession(id);
   lastStats = {};
+  resetHistoryWindow();          // a different session is a different list
   syncTimerDisplay();
   persist();
   refreshQueue(); nextScramble();
@@ -882,21 +1185,173 @@ async function clearSession() {
   await Solves.clearSession(app.session.id);
   app.solves = [];
   app.sessionCounts.set(app.session.id, 0);
+  resetHistoryWindow();
   lastStats = {};
   renderAll();
   syncTimerDisplay();
-  toast(`Cleared ${backup.length} solves`, {
-    action: 'undo',
-    timeout: 9000,
-    onAction: async () => {
-      await Solves.putMany(backup);
-      app.solves = backup;
-      app.sessionCounts.set(app.session.id, backup.length);
-      renderAll();
-      syncTimerDisplay();
-    },
+  app.lastDeleted = {
+    solves: backup,
+    sessionId: app.session.id,
+    label: `${backup.length} solves`,
+  };
+  toast(`Cleared ${backup.length} solves — Ctrl+Z`, { action: 'undo', onAction: undoDelete });
+}
+
+
+/* =========================================================
+   Input source — spacebar, typed, or a Stackmat on the aux jack
+   ========================================================= */
+
+/** True when the keyboard/touch timer should be live at all. */
+const timerInputLive = () => app.settings.inputMode === 'timer';
+
+function applyInputMode() {
+  const mode = app.settings.inputMode || 'timer';
+  const form = $('#manual-entry');
+  const bar = $('#stackmat-bar');
+  document.body.dataset.input = mode;
+
+  if (form) form.hidden = mode !== 'manual';
+  if (bar) bar.hidden = mode !== 'stackmat';
+  const hint = $('#timer-hint');
+  if (hint) hint.hidden = mode !== 'timer';
+
+  // Anything half-armed on the old source has to go, or a stale hold survives
+  // the switch and starts a solve nobody asked for.
+  timer?.reset();
+
+  if (mode === 'stackmat') startStackmat();
+  else stackmat.stop();
+
+  if (mode === 'manual') setTimeout(() => $('#manual-input')?.focus(), 0);
+  else $('#manual-input')?.blur();
+}
+app.applyInputMode = applyInputMode;
+
+/* ---------------- typed times ---------------- */
+function wireManualEntry() {
+  const form = $('#manual-entry');
+  const input = $('#manual-input');
+  if (!form || !input) return;
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const parsed = parseTimeInput(input.value);
+    if (!parsed) {
+      input.classList.remove('bad'); void input.offsetWidth; input.classList.add('bad');
+      toast('Could not read that as a time — try 12.34, 1:05.67 or DNF', { kind: 'bad' });
+      return;
+    }
+    input.value = '';
+    input.classList.remove('bad');
+    $('#time-main').textContent = fmt(parsed.timeMs);
+    $('#time-penalty').textContent = parsed.penalty === 'none' ? '' : parsed.penalty;
+    await recordSolve(parsed);
+    input.focus();
+  });
+
+  // Escape clears the field rather than closing something behind it.
+  input.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    e.stopPropagation();
+    if (input.value) { input.value = ''; return; }
+    input.blur();
   });
 }
+
+/* ---------------- Stackmat on the aux jack ---------------- */
+let stackmatWired = false;
+
+function wireStackmat() {
+  if (stackmatWired) return;
+  stackmatWired = true;
+  const msg = $('#stackmat-msg');
+  const dot = $('#stackmat-dot');
+  const say = (text, cls) => {
+    if (msg) msg.textContent = text;
+    if (dot) dot.className = `sm-dot ${cls || ''}`;
+  };
+
+  stackmat.addEventListener('signal', (e) => {
+    if (e.detail.ok) say('Stackmat connected', 'live');
+    else say('listening — no signal yet, check the cable and the input level', 'wait');
+  });
+
+  stackmat.addEventListener('time', (e) => {
+    // Mirror the mat's own display rather than running a second clock; the mat
+    // is the source of truth and the two would visibly disagree.
+    $('#timer-display').className = 'state-running';
+    $('#time-main').textContent = fmtLive(e.detail.timeMs, app.settings.precision);
+    $('#time-penalty').textContent = '';
+  });
+
+  stackmat.addEventListener('state', (e) => {
+    const hands = e.detail.hands;
+    $('#timer-display').classList.toggle('state-ready', hands === 'both');
+  });
+
+  stackmat.addEventListener('ready', () => {
+    $('#timer-display').className = 'state-idle';
+    syncTimerDisplay();
+  });
+
+  stackmat.addEventListener('solve', async (e) => {
+    $('#timer-display').className = 'state-idle';
+    $('#time-main').textContent = fmt(e.detail.timeMs);
+    await recordSolve({ timeMs: e.detail.timeMs });
+  });
+}
+
+async function startStackmat() {
+  wireStackmat();
+  try {
+    await stackmat.start();
+    toast('Listening on the microphone input');
+  } catch (err) {
+    console.warn('[stackmat] could not start', err);
+    toast(`Could not open the audio input: ${err.message}`, { kind: 'bad' });
+    app.settings.inputMode = 'timer';
+    persist();
+    applyInputMode();
+  }
+}
+
+/* =========================================================
+   Sharing
+   ========================================================= */
+app.shareSolveCard = (solve) => shareSolve(solve, { index: app.solves.indexOf(solve) + 1 });
+
+/**
+ * Share the last `n` solves as an average card. `kind` is one of the stat keys,
+ * so the card is labelled with the same words the panel uses.
+ */
+app.shareAverageCard = (kind) => {
+  const st = summarize(app.solves);
+  const N = { ao5: 5, ao12: 12, ao50: 50, ao100: 100, mo3: 3 }[kind];
+  if (!N) {
+    // "best single" and "mean" have no window of their own to show.
+    if (kind === 'best') {
+      const best = app.solves.filter(x => eff(x) !== DNF)
+        .sort((a, b) => eff(a) - eff(b))[0];
+      if (!best) { toast('No solves yet'); return; }
+      return shareSolve(best, { index: app.solves.indexOf(best) + 1 });
+    }
+    return shareAverage(app.solves.slice(-12), { label: 'session mean', value: st.mean === null ? '—' : fmt(st.mean) });
+  }
+  if (app.solves.length < N) { toast(`Needs ${N} solves`); return; }
+  const window = app.solves.slice(-N);
+  const value = st[kind];
+  const label = kind === 'mo3' ? 'mean of 3' : `average of ${N}`;
+  const trim = trimmedIndices(app.solves, N);
+  const base = app.solves.length - N;
+  const trimmed = new Set();
+  for (const i of [...trim.best, ...trim.worst]) trimmed.add(i - base);
+  return shareAverage(window, {
+    label,
+    value: value === null || value === undefined ? '—' : value === DNF ? 'DNF' : fmt(value),
+    trimmed: kind === 'mo3' ? null : trimmed,
+  });
+};
 
 /* =========================================================
    Settings plumbing
@@ -932,6 +1387,7 @@ function applyAll(changed) {
     fitScrambleToLine($('#scramble-text'));
   }
   if (changed === 'cubeView') { updateLabels(); if (app.scramble) showScramble(app.scramble, true); }
+  if (!changed || changed === 'inputMode') applyInputMode();
 }
 app.applyAll = () => applyAll();
 app.refreshBackground = () => applyBackground(bg, app.settings);
@@ -976,6 +1432,7 @@ app.reload = async () => {
   await refreshCounts();
   app.solves = await Solves.bySession(app.session.id);
   lastStats = {};
+  resetHistoryWindow();
   renderAll();
   closeDrawer();
 };
@@ -992,56 +1449,134 @@ app.exportSessionCSV = () => {
   toast('CSV downloaded', { kind: 'good' });
 };
 
-/* ---------------- csTimer import ---------------- */
-app.importCsTimer = async (data) => {
-  let names = {};
+/* ---------------- csTimer import ----------------
+   csTimer's "export to file" writes JSON with a .txt extension, which is why
+   a plain .json picker never sees it. We take the file, not the extension.
+
+   Shape:
+     { "session1": [ [[penalty, ms], scramble, comment, unixSeconds], ... ],
+       "properties": { "sessionData": "<JSON string of names and options>" } }
+   penalty is 0, 2000 (+2) or -1 (DNF); ms is already milliseconds.
+   --------------------------------------------------- */
+
+/** csTimer names its scramble types; map the ones that are really an event. */
+function eventFromScrType(scrType = '', name = '') {
+  const t = String(scrType || '').toLowerCase();
+  const n = String(name || '').toLowerCase();
+  const probe = t || n;
+  const table = [
+    ['333ni', '333bf'], ['333bf', '333bf'], ['333fm', '333fm'], ['333oh', '333oh'],
+    ['444bld', '444bf'], ['444bf', '444bf'], ['555bld', '555bf'], ['555bf', '555bf'],
+    ['333mbf', '333mbf'], ['mlt', '333mbf'],
+    ['222', '222'], ['444', '444'], ['555', '555'], ['666', '666'], ['777', '777'],
+    ['clk', 'clock'], ['clock', 'clock'], ['mgm', 'minx'], ['minx', 'minx'],
+    ['pyr', 'pyram'], ['pyram', 'pyram'], ['skb', 'skewb'], ['skewb', 'skewb'],
+    ['sq1', 'sq1'], ['sqr', 'sq1'], ['333', '333'],
+  ];
+  for (const [key, ev] of table) if (probe.includes(key)) return ev;
+  return '333';
+}
+
+/** Names and per-session options, which csTimer stores as JSON inside JSON. */
+function csTimerSessionMeta(data) {
+  const out = {};
   try {
     const props = data.properties?.sessionData;
-    if (props) {
-      const parsed = typeof props === 'string' ? JSON.parse(props) : props;
-      for (const [k, v] of Object.entries(parsed)) names[k] = v.name || `csTimer ${k}`;
+    if (!props) return out;
+    const parsed = typeof props === 'string' ? JSON.parse(props) : props;
+    for (const [k, v] of Object.entries(parsed)) {
+      out[k] = { name: v?.name ? String(v.name) : '', scrType: v?.opt?.scrType || '' };
     }
-  } catch { /* names are optional */ }
+  } catch { /* names and options are a bonus, never a requirement */ }
+  return out;
+}
+
+app.importCsTimer = async (data, { onProgress } = {}) => {
+  if (typeof data === 'string') data = JSON.parse(data);
+  const meta = csTimerSessionMeta(data);
+
+  const keys = Object.keys(data)
+    .filter(k => /^session\d+$/.test(k) && Array.isArray(data[k]) && data[k].length)
+    .sort((a, b) => (+a.slice(7)) - (+b.slice(7)));
+  if (!keys.length) throw new Error('no csTimer sessions in that file');
 
   let imported = 0;
-  for (const [key, value] of Object.entries(data)) {
-    const m = key.match(/^session(\d+)$/);
-    if (!m || !Array.isArray(value) || !value.length) continue;
-    const num = m[1];
+  let order = app.sessions.length;
+  const added = [];
+
+  for (const key of keys) {
+    const num = key.slice(7);
+    const info = meta[num] || {};
+    const event = eventFromScrType(info.scrType, info.name);
     const sess = {
       id: uid(),
-      name: names[num] || `csTimer ${num}`,
-      event: '333',
+      // csTimer stores the session number as the name until you rename it,
+      // and a sidebar full of bare digits tells you nothing.
+      name: (info.name && !/^\d+$/.test(info.name)) ? info.name : `csTimer ${num}`,
+      event,
       createdAt: Date.now(),
-      order: app.sessions.length,
+      order: order++,
     };
+
     const solves = [];
-    for (const item of value) {
+    for (const item of data[key]) {
       if (!Array.isArray(item) || !Array.isArray(item[0])) continue;
       const [pen, ms] = item[0];
+      if (!isFinite(ms)) continue;
       solves.push({
         id: uid(),
         sessionId: sess.id,
-        event: '333',
+        event,
         mode: 'wca',
         scramble: item[1] || '',
         timeMs: ms,
         penalty: pen === -1 ? 'DNF' : pen === 2000 ? '+2' : 'none',
-        comment: item[2] || '',
+        comment: typeof item[2] === 'string' ? item[2] : '',
         caseId: null, caseName: null,
-        createdAt: (item[3] ? item[3] * 1000 : Date.now()),
+        createdAt: item[3] ? item[3] * 1000 : Date.now(),
       });
     }
     if (!solves.length) continue;
+
     await Sessions.put(sess);
-    await Solves.putMany(solves);
+    // Written in blocks: a full csTimer history is tens of thousands of solves,
+    // and one transaction holding all of them is where the browser gives up.
+    for (let i = 0; i < solves.length; i += 1000) {
+      await Solves.putMany(solves.slice(i, i + 1000));
+      onProgress?.(imported + Math.min(i + 1000, solves.length), sess.name);
+    }
     app.sessions.push(sess);
+    added.push(sess);
     imported += solves.length;
   }
-  if (!imported) throw new Error('no sessions found in that file');
+
+  if (!imported) throw new Error('those sessions had no readable solves');
   await refreshCounts();
-  closeDrawer();
-  return imported;
+  return { solves: imported, sessions: added.length, first: added[0] };
+};
+
+/**
+ * One importer for both file types. csTimer exports are JSON in a .txt, and a
+ * Tagda backup is JSON in a .json, so sniffing the contents is both simpler
+ * and more forgiving than trusting the extension.
+ */
+app.importFile = async (file, { onProgress } = {}) => {
+  const text = (await file.text()).replace(/^\uFEFF/, '').trim();
+  let data;
+  try { data = JSON.parse(text); }
+  catch { throw new Error('that file is not a timer export — it is not readable as JSON'); }
+
+  if (data && data.app === 'tagdatimer' && Array.isArray(data.solves)) {
+    const n = await importAll(data);
+    await app.reload();
+    return { kind: 'backup', solves: n, sessions: (data.sessions || []).length };
+  }
+  if (data && Object.keys(data).some(k => /^session\d+$/.test(k))) {
+    const res = await app.importCsTimer(data, { onProgress });
+    await app.reload();
+    return { kind: 'cstimer', ...res };
+  }
+  throw new Error('unrecognised export — expected a Tagda backup or a csTimer file');
 };
 
 /* =========================================================
@@ -1055,7 +1590,7 @@ const isTyping = () => {
   // whole keyboard — spacebar included — goes dead.
   return editable && a.offsetParent !== null;
 };
-const modalOpen = () => drawerOpen() || paletteOpen() || popoverOpen();
+const modalOpen = () => drawerOpen() || paletteOpen() || popoverOpen() || shareOpen();
 
 function wireInput() {
   let spaceDown = false;
@@ -1075,6 +1610,9 @@ function wireInput() {
    * keystroke is one instruction: stop.
    */
   document.addEventListener('keydown', (e) => {
+    // Typed times and a Stackmat both own the timer outright; leaving the
+    // spacebar live alongside them is how you get two records for one solve.
+    if (!timerInputLive()) return;
     if (timer.state === 'running') {
       e.preventDefault();
       e.stopImmediatePropagation();
@@ -1095,6 +1633,7 @@ function wireInput() {
   }, true);
 
   document.addEventListener('keyup', (e) => {
+    if (!timerInputLive()) return;
     const key = e.code || e.key;
     if (stopKeys.has(key)) {
       stopKeys.delete(key);
@@ -1116,7 +1655,7 @@ function wireInput() {
   // mouse mid-session, or a stray click anywhere on the stage, would otherwise
   // start or stop a solve you never meant to touch.
   const zone = $('#timer-zone');
-  const pointerOK = (e) => (e.pointerType !== 'mouse') || app.settings.mouseTimer;
+  const pointerOK = (e) => timerInputLive() && ((e.pointerType !== 'mouse') || app.settings.mouseTimer);
   const touchOK = (e) => !modalOpen() && !e.target.closest('button, a, input, select, .solve-chip, .panel, #topbar');
 
   const down = (e) => { if (!pointerOK(e) || !touchOK(e)) return; e.preventDefault(); timer.down(); };
@@ -1230,6 +1769,8 @@ function wireChrome() {
   $('#btn-next-scramble').addEventListener('click', forwardScramble);
   $('#btn-prev-scramble').addEventListener('click', prevScramble);
   $('#btn-copy-scramble').addEventListener('click', () => copyToast(app.scramble?.scramble || '', 'Scramble'));
+  $('#btn-custom-scramble').addEventListener('click', () => openDrawer('Your scrambles', buildCustomScrambles(app)));
+  $('#btn-custom-exit').addEventListener('click', () => app.clearCustomScrambles());
   $('#scramble-text').addEventListener('click', () => copyToast(app.scramble?.scramble || '', 'Scramble'));
 
   $$('#view-toggle button[data-view="3D"], #view-toggle button[data-view="2D"]').forEach(b =>
@@ -1340,6 +1881,7 @@ function wireShortcuts() {
     if (mod && e.shiftKey && (k === 'Delete' || k === 'Backspace')) { e.preventDefault(); return clearSession(); }
 
     if (k === 'Escape') {
+      if (shareOpen()) return closeShare();
       if (paletteOpen()) return closePalette();
       if (!$('#mascot').hidden) return app.closeMascot();
       if (drawerOpen()) return closeDrawer();
@@ -1379,6 +1921,7 @@ function wireShortcuts() {
         break;
 
       case 'n': case 'N': e.preventDefault(); forwardScramble(); break;
+      case 'x': case 'X': e.preventDefault(); openDrawer('Your scrambles', buildCustomScrambles(app)); break;
       case 'ArrowLeft':  e.preventDefault(); prevScramble(); break;
       case 'ArrowRight': e.preventDefault(); forwardScramble(); break;
 
@@ -1445,6 +1988,9 @@ function openPaletteWithCommands() {
       { kind: 'do', label: 'New session', run: () => app.newSession() },
       { kind: 'do', label: 'New scramble', key: 'N', run: forwardScramble },
       { kind: 'do', label: 'Copy scramble', run: () => copyToast(app.scramble?.scramble || '', 'Scramble') },
+      { kind: 'do', label: 'Enter your own scrambles', key: 'X', run: () => openDrawer('Your scrambles', buildCustomScrambles(app)) },
+      { kind: 'do', label: 'Share last solve as a card', run: () => app.solves.at(-1) ? app.shareSolveCard(app.solves.at(-1)) : toast('No solves yet') },
+      { kind: 'do', label: 'Share current ao5 as a card', run: () => app.shareAverageCard('ao5') },
       { kind: 'do', label: 'Toggle inspection', key: 'I', run: () => { app.setSetting('inspection', !app.settings.inspection); toast(`Inspection ${app.settings.inspection ? 'on' : 'off'}`); } },
       { kind: 'do', label: 'Zen mode', key: 'Z', run: () => document.body.classList.toggle('zen') },
       { kind: 'do', label: 'Fullscreen', key: 'F', run: () => document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen?.() },

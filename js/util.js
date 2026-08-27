@@ -151,6 +151,59 @@ export function tidy(alg) {
   return out.join(' ');
 }
 
+/**
+ * Parse a hand-typed time into `{ timeMs, penalty }`, or null if it is not a
+ * time at all.
+ *
+ * Accepts what people actually type:
+ *   12.34      9,87       1:05.67      2:03
+ *   1234       -> 12.34   (bare digits, csTimer style: cs, then s, then min)
+ *   12.34+     12.34+2    -> +2 penalty on a 12.34 solve
+ *   12.34 dnf  dnf        -> DNF
+ */
+export function parseTimeInput(raw) {
+  let s = String(raw ?? '').trim().toLowerCase();
+  if (!s) return null;
+
+  let penalty = 'none';
+  if (/(^|\s)dnf(\s|$)/.test(s)) { penalty = 'DNF'; s = s.replace(/(^|\s)dnf(\s|$)/, ' ').trim(); }
+  if (/\+\s*2?$/.test(s))         { if (penalty === 'none') penalty = '+2'; s = s.replace(/\+\s*2?$/, '').trim(); }
+  if (!s) return penalty === 'none' ? null : { timeMs: 0, penalty };
+
+  s = s.replace(/\s+/g, '');
+
+  // Bare digits mean centiseconds first — "1234" is 12.34, not 1234 seconds.
+  if (/^\d+$/.test(s)) {
+    const d = s.padStart(3, '0');
+    const cs  = +d.slice(-2);
+    const sec = +(d.slice(-4, -2) || 0);
+    const min = +(d.slice(0, -4) || 0);
+    if (sec > 59) return null;
+    return { timeMs: min * 60000 + sec * 1000 + cs * 10, penalty };
+  }
+
+  const m = /^(?:(\d{1,3}):)?(\d{1,3})(?:[.,](\d{1,3}))?$/.exec(s);
+  if (!m) return null;
+  const min = +(m[1] || 0);
+  const sec = +m[2];
+  if (m[1] && sec > 59) return null;
+  const frac = (m[3] || '0').padEnd(3, '0');
+  const ms = min * 60000 + sec * 1000 + +frac;
+  if (!isFinite(ms) || ms < 0) return null;
+  return { timeMs: ms, penalty };
+}
+
+/**
+ * Split a pasted block into individual scrambles: one per line, with any
+ * "1)" / "1." / "1:" numbering the source added stripped back off.
+ */
+export function parseScrambleList(text) {
+  return String(text ?? '')
+    .split(/\r?\n/)
+    .map(l => l.replace(/^\s*\d+\s*[).:\-]\s*/, '').trim())
+    .filter(Boolean);
+}
+
 /* ---------- CSV ---------- */
 export function toCSV(rows) {
   const esc = v => {

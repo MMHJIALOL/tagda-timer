@@ -64,6 +64,7 @@ export const DEFAULTS = {
   confirmShortSolves: true,
   soundOnPB: true,
   mouseTimer: false,            // click-to-time; off so a stray click cannot start a solve
+  inputMode: 'timer',           // timer = spacebar/touch | manual = typed | stackmat = aux jack
 
   // appearance
   theme: 'nebula',
