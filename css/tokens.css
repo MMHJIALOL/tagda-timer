@@ -20,12 +20,17 @@
   --warn:          #ffb020;
   --danger:        #ff4d6d;
   --gold:          #ffd166;
+  /* Text/icons printed on top of --accent. js/theme.js rewrites this from the
+     accent's own brightness, so a pale accent gets dark type instead of the
+     white-on-white it used to get. */
+  --on-accent:     #ffffff;
 
   /* --- timer state colours --- */
   --t-idle:        var(--text);
   --t-holding:     #ff4d6d;
   --t-ready:       #3ddc84;
-  --t-running:     var(--text);
+  /* Follows the idle colour so a theme only has to state --t-idle once. */
+  --t-running:     var(--t-idle);
 
   /* --- geometry --- */
   --radius:        18px;
@@ -80,48 +85,62 @@
 
 /* ======================= PRESET THEMES ======================= */
 
+/* Every theme states its own type colours, and they are the real thing rather
+   than a hint of one: --text paints the scramble, the stats, the solve list and
+   the panel headings, so anything short of a genuine tint just reads as white
+   again. Each is pulled well into its own palette while staying comfortably
+   above 7:1 against that theme's background. Carbon is the deliberate
+   exception — a monochrome theme with a white accent is the entire idea. */
+
 [data-theme="nebula"] { /* default — deep violet glass */
   --bg:#07070c; --bg-2:#12102a; --surface:#151423; --surface-2:#1e1c33;
-  --border:#2e2b4a; --text:#ececf5; --text-dim:#9d9abe; --text-faint:#5f5c80;
+  --border:#2e2b4a; --text:#cdbfff; --text-dim:#9a8cd6; --text-faint:#6b6297;
   --accent:#7c5cff; --accent-2:#35e6c5;
+  --t-idle:#c3b2ff;
 }
 
 [data-theme="carbon"] { /* near-black, minimal, high contrast */
   --bg:#050505; --bg-2:#0d0d0d; --surface:#111111; --surface-2:#181818;
   --border:#262626; --text:#f2f2f2; --text-dim:#8f8f8f; --text-faint:#585858;
   --accent:#ffffff; --accent-2:#7c7c7c; --panel-alpha:.7; --radius:12px;
+  /* The one theme that stays neutral on purpose — that is what Carbon is. */
+  --t-idle:#ffffff;
 }
 
 [data-theme="vaporwave"] {
   --bg:#12002e; --bg-2:#3d0a5c; --surface:#220a45; --surface-2:#2f0f5c;
-  --border:#5a2a8c; --text:#ffe9ff; --text-dim:#c79ce8; --text-faint:#8b64b0;
+  --border:#5a2a8c; --text:#ffc4f4; --text-dim:#cf90e4; --text-faint:#8b64b0;
   --accent:#ff5ed2; --accent-2:#4de8ff; --timer-glow:26px;
+  --t-idle:#ff8ae0;
 }
 
 [data-theme="paper"] { /* light */
   --bg:#f3f1ec; --bg-2:#e6e2d9; --surface:#ffffff; --surface-2:#f7f5f1;
-  --border:#d8d3c8; --text:#1b1a17; --text-dim:#6b675d; --text-faint:#9d9789;
-  --accent:#1b1a17; --accent-2:#c2410c; --panel-alpha:.72;
+  --border:#d8d3c8; --text:#3a2a1c; --text-dim:#7a6a58; --text-faint:#a49a88;
+  --accent:#1b1a17; --accent-2:#c2410c; --panel-alpha:.72; --t-idle:#2a1d12;
   --shadow:0 18px 40px -22px rgba(0,0,0,.35); --bg-dim:.06;
 }
 
 [data-theme="terminal"] {
   --bg:#000700; --bg-2:#031a05; --surface:#041205; --surface-2:#08210b;
-  --border:#12471a; --text:#b9ffc4; --text-dim:#57c46a; --text-faint:#2f7a3c;
+  --border:#12471a; --text:#7dff9b; --text-dim:#45c25c; --text-faint:#2f7a3c;
   --accent:#39ff6a; --accent-2:#b9ffc4; --radius:4px; --radius-sm:3px;
+  --t-idle:#39ff6a;
   --font-ui:'JetBrains Mono', monospace; --timer-glow:18px;
 }
 
 [data-theme="speedcube"] { /* WCA sticker colours */
   --bg:#0a0a0a; --bg-2:#141414; --surface:#131313; --surface-2:#1c1c1c;
-  --border:#2b2b2b; --text:#ffffff; --text-dim:#9a9a9a; --text-faint:#5e5e5e;
+  --border:#2b2b2b; --text:#ffcfae; --text-dim:#b0937f; --text-faint:#6f5f54;
   --accent:#ff5800; --accent-2:#00a651; --ok:#00a651; --danger:#c41e3a; --warn:#ffd500;
+  --t-idle:#ff7a2e;
 }
 
 [data-theme="ice"] {
   --bg:#04101c; --bg-2:#0a2036; --surface:#0b1c2e; --surface-2:#11293f;
-  --border:#1d4160; --text:#eaf6ff; --text-dim:#8fb6d4; --text-faint:#547e9c;
+  --border:#1d4160; --text:#b9e6ff; --text-dim:#7fb2d6; --text-faint:#527e9c;
   --accent:#4cc9ff; --accent-2:#a0f0ff; --timer-glow:20px;
+  --t-idle:#8ad8ff;
 }
 
 /* ==================== reduced motion ==================== */

@@ -19,7 +19,7 @@ export class Timer extends EventTarget {
     super();
     this.cfg = {
       inspection: true,
-      holdTime: 300,          // ms to hold before "ready"
+      holdTime: 0,            // ms to hold before "ready"; 0 = armed on contact
       useInspection: true,
       minSolveMs: 500,        // below this, ask instead of recording
       precision: 2,           // decimal places shown while running
@@ -138,6 +138,8 @@ export class Timer extends EventTarget {
     this._setState('holding');
     clearTimeout(this._holdTimer);
     const wait = Math.max(0, this.cfg.holdTime);
+    // A hold time of zero still arms and still starts on the release — it just
+    // arms the instant your finger lands instead of making you wait for it.
     if (wait === 0) this._setState('ready');
     else this._holdTimer = setTimeout(() => {
       if (this.state === 'holding') this._setState('ready');

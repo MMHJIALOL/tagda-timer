@@ -31,7 +31,7 @@ svg[viewBox] { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linec
    outline with no fill — unreadable. Text inside an SVG is type, not an icon. */
 svg text { fill: currentColor; stroke: none; }
 a { color: inherit; text-decoration: none; }
-::selection { background: var(--accent); color: #fff; }
+::selection { background: var(--accent); color: var(--on-accent); }
 
 kbd {
   font-family: var(--font-mono); font-size: .78em; font-weight: 600;
@@ -257,6 +257,7 @@ body.inspecting #timer-display { opacity: 0; }
   min-width: 0; user-select: none;
 }
 #timer-core {
+  position: relative;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   gap: 10px; min-width: 0;
 }
@@ -324,6 +325,47 @@ body.inspecting #timer-display { opacity: 0; }
 }
 body.focus #timer-hint, body.inspecting #timer-hint { opacity: 0; }
 
+/* =================== RUNNING AVERAGES =================== */
+/* Hangs under the timer block rather than sitting inside it. In the flow it
+   added its own height to #timer-core, and because that box is centred on the
+   viewport by its own half-height, every pixel it gained pushed the digits up —
+   the timer no longer sat where it always had. Out of the flow it cannot move
+   anything: #timer-core measures exactly what it did before this row existed. */
+#timer-avgs {
+  position: absolute; top: 100%; left: 50%;
+  transform: translateX(-50%);
+  margin-top: 10px;
+  display: flex; align-items: center; gap: 26px;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  transition: opacity var(--dur) var(--ease);
+  pointer-events: none;
+}
+#timer-avgs[hidden] { display: none; }
+/* Before the twelfth solve there is no ao12 to print. */
+#timer-avgs.solo .sep, #timer-avgs.solo > span:last-child { display: none; }
+#timer-avgs > span { display: flex; align-items: baseline; gap: 10px; }
+#timer-avgs b {
+  font-size: .84rem; font-weight: 700; letter-spacing: .16em; text-transform: uppercase;
+  color: var(--text-faint);
+}
+/* Sized off the timer itself, so it stays in proportion at every window width
+   and follows the timer size slider instead of pinning itself to one number. */
+#timer-avgs i {
+  font-style: normal; font-weight: 700; color: var(--text);
+  font-size: clamp(1.4rem, calc(var(--timer-size) * .22), 2.6rem);
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -.02em;
+}
+#timer-avgs .sep {
+  width: 1px; height: 26px; align-self: center;
+  background: color-mix(in srgb, var(--text) 22%, transparent);
+}
+/* Nothing but the timer during an attempt — same rule the hint follows. */
+body.focus #timer-avgs, body.inspecting #timer-avgs,
+#timer-display.state-running ~ #timer-avgs { opacity: 0; }
+
 /* pace ghost */
 #pace-ghost {
   position: relative; width: min(420px, 60vw); height: 3px;
@@ -348,6 +390,11 @@ body.focus #timer-hint, body.inspecting #timer-hint { opacity: 0; }
   padding: 3px 10px; border-radius: 99px;
   animation: popIn 420ms var(--ease-back);
 }
+/* The inspection countdown is drawn over the top of the timer block, and this
+   chip sits exactly where the word INSPECTION goes — the two printed on top of
+   each other. It reports the last solve, which is not something you need while
+   the clock for the next one is already running. */
+body.inspecting #last-delta, body.focus #last-delta { display: none; }
 #last-delta.better { color: var(--ok); background: color-mix(in srgb, var(--ok) 13%, transparent); }
 #last-delta.worse  { color: var(--danger); background: color-mix(in srgb, var(--danger) 13%, transparent); }
 @keyframes popIn { from { opacity:0; transform: translateY(6px) scale(.92); } to { opacity:1; transform:none; } }
@@ -388,6 +435,10 @@ body.focus #timer-hint, body.inspecting #timer-hint { opacity: 0; }
   .brand-text { display: none; }
   .topbar-center { gap: 5px; }
   #timer-hint { display: none; }
+  /* Below this the sidebar owns the bottom of the screen, and a row hanging
+     off the end of the timer block would land on top of it. The same two
+     figures are in the stats peek a few pixels away. */
+  #timer-avgs { display: none; }
 }
 @media (max-width: 560px) {
   .seg-btn span { max-width: 62px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -406,19 +457,15 @@ body.zen #stage { grid-template-columns: minmax(0, 1fr); }
    focus mode and inspection, where everything else is hidden. */
 #hold-bar {
   position: relative;
-  width: min(280px, 46vw); height: 5px;
+  width: min(180px, 34vw); height: 2px;
   border-radius: 99px; overflow: hidden;
-  background: color-mix(in srgb, var(--text) 12%, transparent);
+  background: color-mix(in srgb, var(--text) 10%, transparent);
 }
 #hold-fill {
   height: 100%; width: 0%; border-radius: 99px;
-  background: var(--t-holding);
-  box-shadow: 0 0 14px color-mix(in srgb, var(--t-holding) 70%, transparent);
+  background: color-mix(in srgb, var(--t-holding) 80%, transparent);
 }
-#hold-bar.ready #hold-fill {
-  background: var(--t-ready);
-  box-shadow: 0 0 18px color-mix(in srgb, var(--t-ready) 80%, transparent);
-}
+#hold-bar.ready #hold-fill { background: color-mix(in srgb, var(--t-ready) 85%, transparent); }
 
 /* The inspection countdown is the only readable thing while arming, so it
    carries the state colour too. */
