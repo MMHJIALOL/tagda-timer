@@ -35,7 +35,7 @@ export const FEATURED_REEL = 'https://www.instagram.com/reel/DZzyIGcBQjD/';
  * existing profile carries the OLD default forever and simply editing
  * DEFAULTS would never reach anyone who has used the app before.
  */
-const SETTINGS_VERSION = 4;
+const SETTINGS_VERSION = 5;
 
 const MIGRATIONS = {
   // v2 — the pace ghost is now opt-in rather than on by default.
@@ -48,6 +48,14 @@ const MIGRATIONS = {
   4: (s) => {
     if (s.holdTime === 300 || s.holdTime === undefined) s.holdTime = 0;
     if (!s.featuredReel) s.featuredReel = FEATURED_REEL;
+  },
+  // v5 — album theming arrives switched off. Nothing polls, nothing tints,
+  // until a client ID is entered and Connect is pressed.
+  5: (s) => {
+    s.spotifyClientId ??= '';
+    s.spotifyTint ??= 'accent';
+    s.spotifyNowPlaying ??= false;
+    s.showSpotifyPanel ??= true;
   },
 };
 
@@ -107,6 +115,12 @@ export const DEFAULTS = {
   cubeView: '3D',
   hintFacelets: true,
   autoContrast: true,           // flip to dark text when the background is bright
+
+  // album theming (see SPOTIFY.md)
+  spotifyClientId: '',          // yours, from developer.spotify.com/dashboard
+  spotifyTint: 'accent',        // accent | background | both
+  spotifyNowPlaying: false,     // print the track under the scramble
+  showSpotifyPanel: true,       // the now-playing card in the sidebar
   featuredReel: FEATURED_REEL,  // an Instagram reel URL pinned in the About panel
 
   // session
@@ -190,10 +204,64 @@ export function applyTheme(s) {
     stage.dataset.sidebar = (s.showStats || s.showHistory) ? 'on' : 'off';
   }
 
+  // The album tint is an override on top of whatever the theme just wrote, so
+  // it has to go back on after every theme application or switching themes
+  // (or any settings change at all) would silently drop it.
+  paintAlbumTint(root);
+
   // Last line on purpose: everything above may have moved the palette, and the
   // accent overrides are written near the end of it.
   invalidateThemeColors();
 }
+
+/* ---------------------------------------------------------
+   Album tint
+
+   Deliberately *not* stored in settings. Writing it there would mean three
+   minutes of listening permanently overwrites the accent the user picked,
+   and disconnecting would strand them on the last album's colours. It lives
+   here, on top of the theme, and vanishing is the whole recovery path.
+   --------------------------------------------------------- */
+let _albumTint = null;
+
+function paintAlbumTint(root) {
+  if (!_albumTint) return;
+  const st = root.style;
+  if (_albumTint.accent)  st.setProperty('--accent', _albumTint.accent);
+  if (_albumTint.accent2) st.setProperty('--accent-2', _albumTint.accent2);
+  if (_albumTint.bg2)     st.setProperty('--bg-2', _albumTint.bg2);
+  // Type printed on the accent has to follow it, or a pale album colour gets
+  // white text on it and disappears.
+  const accent = getComputedStyle(root).getPropertyValue('--accent').trim();
+  st.setProperty('--on-accent', (hexLuma(accent) ?? 0) > 0.6 ? '#0b0b12' : '#ffffff');
+}
+
+/**
+ * Apply (or with null, clear) the album-derived colours.
+ *
+ * Only ever touches --accent, --accent-2 and --bg-2. The status colours
+ * (--warn, --danger, --ok, --gold) are load-bearing for inspection feedback
+ * and are never written from artwork — see SPOTIFY.md §5.1.
+ */
+export function setAlbumTint(colors, settings) {
+  _albumTint = colors;
+  const root = document.documentElement;
+  if (!colors) {
+    // Hand the theme back its own values rather than guessing them.
+    root.style.removeProperty('--bg-2');
+    if (settings?.accent)  root.style.setProperty('--accent', settings.accent);
+    else root.style.removeProperty('--accent');
+    if (settings?.accent2) root.style.setProperty('--accent-2', settings.accent2);
+    else root.style.removeProperty('--accent-2');
+    const accent = getComputedStyle(root).getPropertyValue('--accent').trim();
+    root.style.setProperty('--on-accent', (hexLuma(accent) ?? 0) > 0.6 ? '#0b0b12' : '#ffffff');
+  } else {
+    paintAlbumTint(root);
+  }
+  invalidateThemeColors();
+}
+
+export const albumTint = () => _albumTint;
 
 /* The palette is read from CSS on every inspection frame — the shader tint and
    the ring both want it — and getComputedStyle() there is a forced style

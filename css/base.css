@@ -38,6 +38,32 @@ svg text { fill: currentColor; stroke: none; }
    wants a line (.axis-line, .spark-*, .hm-divider) sets it in its own rule. */
 .chart-card svg, #mini-trend { stroke: none; stroke-width: 1; }
 a { color: inherit; text-decoration: none; }
+
+/* =================== FOCUS ===================
+   This app is driven from the keyboard -- space to time, and a dozen single-key
+   shortcuts -- but it had no focus styles of its own at all, so keyboard users
+   got whatever ring the browser happened to draw, which on a dark custom
+   surface is usually a low-contrast smudge and differs per browser.
+
+   :focus-visible, not :focus, so a mouse click on a button does not leave a
+   ring behind it. The double ring is what makes it survive every theme: the
+   accent reads on dark surfaces, the dark halo reads where the accent is pale.
+   Nothing here fires during a solve -- the timer is driven by keydown on the
+   document, not by a focused control. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--bg) 70%, transparent);
+}
+/* The scramble is focusable only so it can be read out and copied; a ring
+   around a whole paragraph of notation is noise. */
+.scramble:focus-visible { outline-offset: 4px; box-shadow: none; }
+/* Inputs that were given `outline: none` still need to say where focus is. */
+select.inp:focus-visible, input.inp:focus-visible, textarea.inp:focus-visible,
+#pal-input:focus-visible, #manual-input:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 1px;
+}
 ::selection { background: var(--accent); color: var(--on-accent); }
 
 kbd {
