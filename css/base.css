@@ -173,12 +173,12 @@ body.inspecting #timer-display { opacity: 0; }
 /* An <img> now, not an icon font glyph — it must not inherit the stroke rules
    that style the rest of the SVG icons. */
 .brand-mark {
-  width: 30px; height: 30px; flex: none;
+  width: 36px; height: 36px; flex: none;
   object-fit: contain; display: block;
   filter: drop-shadow(0 3px 8px rgba(0,0,0,.5));
 }
 .brand-text {
-  font-family: var(--font-ui); font-weight: 600; font-size: 1.02rem;
+  font-family: var(--font-ui); font-weight: 600; font-size: 1.18rem;
   letter-spacing: -.03em; color: var(--text);
 }
 .brand-text b { color: var(--accent); font-weight: 800; }
