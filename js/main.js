@@ -14,7 +14,8 @@ import { makeDraggable } from './drag.js';
 import { flash, shockwave, confetti, chime, callout, beep } from './fx.js';
 import { summarize, eff, DNF, bestSingle, bestAvg, trimmedIndices, byCase, sessionBests, rollingSeries } from './stats.js';
 import { renderMiniTrend } from './charts.js';
-import { loadSettings, saveSettings, applyTheme, applyBackground, themeColors } from './theme.js';
+import { loadSettings, saveSettings, applyTheme, applyBackground, themeColors, setAlbumTint } from './theme.js';
+import { SPOTIFY_CLIENT_ID, DEV_MODE_LIMIT } from './spotifyapp.js';
 import { popover, closePopover, popoverOpen } from './popover.js';
 import { toast, confirmToast } from './toast.js';
 import { openPalette, closePalette, paletteOpen } from './palette.js';
@@ -88,6 +89,31 @@ function lazyFailed(what, err) {
   console.warn(`[lazy] could not load ${what}`, err);
   toast(`Could not open ${what} — check your connection and try again`, { kind: 'bad' });
 }
+
+/* =========================================================
+   Album theming — the page takes its colours from what is playing
+
+   Both modules load on demand like the panels do: nobody who has not linked
+   an account should pay for the OAuth client or the colour quantiser. See
+   SPOTIFY.md.
+   ========================================================= */
+const loadSpotify = lazy(() => import('./spotify.js'), m => m);
+const loadPalette = lazy(() => import('./albumpalette.js'), m => m);
+
+/**
+ * The app to authenticate against: the built-in one unless somebody has
+ * deliberately supplied their own. The override exists because the built-in
+ * app is capped at 25 listed users — see spotifyapp.js.
+ */
+const clientId = () => app.settings.spotifyClientId || SPOTIFY_CLIENT_ID;
+const usingOwnApp = () => !!app.settings.spotifyClientId;
+
+/** null until a link is attempted; the poller lives here once it is. */
+let spotify = null;
+/** Set when a palette arrives mid-attempt and has to wait for idle. */
+let pendingTint = null;
+/** Whether this origin may read pixels off i.scdn.co — probed, never assumed. */
+let artworkReadable = null;
 
 const drawerOpen  = () => !!_panels && _panels.drawerOpen();
 const closeDrawer = () => { _panels?.closeDrawer(); };
@@ -183,6 +209,17 @@ async function init() {
   // Everything below is decoration or bookkeeping and is deliberately not
   // awaited: the timer is usable the moment the lines above have run.
 
+  /* Ask the browser to stop treating the solve history as disposable.
+     Without this an origin's IndexedDB is "best effort": the browser may evict
+     the whole thing whenever it wants the space back, and for an app whose
+     entire premise is that thousands of solves live on your own machine, that
+     is a silent way to lose all of them. Chrome grants this without a prompt on
+     a site you actually use; Firefox may ask. A refusal is not an error — it
+     just means the Settings backup is the only safety net there is. */
+  navigator.storage?.persist?.()
+    .then(ok => { if (!ok) console.info('[storage] not persistent — the browser may evict solves; keep a backup'); })
+    .catch(() => {});
+
   // Counting every solve in the database only feeds the badges in the session
   // picker. It used to block the boot for as long as that read took.
   refreshCounts().catch(() => {});
@@ -190,6 +227,11 @@ async function init() {
   // A broken shader, a missing blob, a browser with WebGL switched off — none
   // of that is a reason for the timer not to start.
   applyBackground(bg, app.settings).catch(err => console.warn('[bg] could not apply background', err));
+
+  // Album theming, if it was ever linked. Also picks up the ?code= we may have
+  // just been redirected back with.
+  syncSpotifyPanel();
+  startAlbumTheming().catch(err => console.warn('[spotify] not started', err));
 
   cube.orbit = app.settings.cubeOrbit;
   cube.init().then(() => {
@@ -527,6 +569,13 @@ function wireTimer() {
       pen.textContent = '';
       if (app.settings.paceGhost) startPace(pace, paceFill);
     } else if (st === 'idle') {
+      // A track that changed mid-attempt has been waiting for exactly this.
+      if (pendingTint) {
+        const { colors } = pendingTint;
+        pendingTint = null;
+        setAlbumTint(colors, app.settings);
+        bgFromTheme();
+      }
       bg.setSlow(1);
       ring.classList.remove('on');
       readout.hidden = true;
@@ -1428,6 +1477,365 @@ async function startStackmat() {
 }
 
 /* =========================================================
+   Album theming
+   ========================================================= */
+
+/**
+ * Bring the link up if there is one to bring up.
+ *
+ * Called once at boot. Does nothing at all — no import, no network — unless a
+ * client ID has been entered, so the cost to everyone else is one string check.
+ */
+async function startAlbumTheming() {
+  /* Now that a client ID always exists, "is one configured" no longer says
+     whether anyone has linked anything — so ask the question that does. Both
+     of these are cheap and neither pulls in the OAuth client, which is the
+     point: a visitor who never presses Connect never downloads any of it. */
+  const returning = new URLSearchParams(location.search).has('code')
+                 || new URLSearchParams(location.search).has('error');
+  const stored = await KV.get('spotifyTokens', null);
+  if (!returning && !stored) return;
+
+  const id = clientId();
+  const { Spotify } = await loadSpotify();
+  if (!spotify) { spotify = new Spotify(); wireSpotify(); wireControls(); }
+
+  // A redirect back from the consent page carries ?code=; consume it before
+  // trying to restore, because it is what creates the tokens to restore.
+  const fresh = await spotify.completeRedirect(id);
+  if (!fresh) await spotify.restore(id);
+
+  if (spotify.connected) spotify.start();
+  app.spotifyChanged?.();
+}
+
+function wireSpotify() {
+  spotify.addEventListener('track', async (e) => {
+    const { artUrl, title, artist } = e.detail;
+    showNowPlaying(title, artist);
+    paintNowPlaying(e.detail);
+
+    const pal = await loadPalette();
+    if (artworkReadable === null) artworkReadable = await pal.probeArtworkCors(artUrl);
+
+    if (!artworkReadable) {
+      // Pixels are off limits on this CDN, so fall back to what CORS cannot
+      // block: the artwork itself, behind the blur and dim already in settings.
+      if (app.settings.spotifyTint !== 'accent') bg.setMedia(`center/cover no-repeat url("${artUrl}")`);
+      return;
+    }
+
+    const dark = document.documentElement.dataset.bgLuma !== 'light';
+    const colors = await pal.paletteFromUrl(artUrl, { dark });
+    if (!colors) return;
+
+    if (app.settings.spotifyTint !== 'accent') {
+      bg.setMedia(`center/cover no-repeat url("${artUrl}")`);
+    }
+    paintSwatches(colors);
+    queueTint(app.settings.spotifyTint === 'background' ? null : colors);
+  });
+
+  spotify.addEventListener('progress', (e) => setProgress(e.detail));
+
+  /* A control that could not be carried out. Each of these is an ordinary
+     situation rather than a failure, so each gets a sentence saying what to do
+     rather than a generic error. */
+  spotify.addEventListener('blocked', (e) => {
+    const { reason, detail } = e.detail;
+    const msg = {
+      premium:     'Spotify only allows apps to control playback on Premium accounts.',
+      nodevice:    'No active Spotify device — start playing something on your phone or desktop app first.',
+      reconnect:   'Reconnect Spotify to allow playback control (the controls were added after you linked).',
+      ratelimited: 'Spotify is rate limiting — try again in a moment.',
+    }[reason] || `Spotify could not do that${detail ? ` — ${detail}` : ''}.`;
+    // A permanent limitation belongs in the card, not in a toast that vanishes.
+    if (reason === 'premium' || reason === 'reconnect') {
+      npBlocked = { reason, msg };
+      syncControls();
+    } else {
+      toast(msg, { kind: 'bad' });
+    }
+    // The optimistic icon flip was a guess; the poll that follows will correct
+    // it, but until then put it back rather than lying about the state.
+    drawPlayIcon(npAt?.playing);
+  });
+
+  spotify.addEventListener('idle', () => {
+    showNowPlaying(null);
+    paintNowPlaying(null);
+    queueTint(null);
+  });
+
+  spotify.addEventListener('status', (e) => {
+    const { state, detail } = e.detail;
+    if (state === 'disconnected' && detail) toast('Spotify disconnected — link it again in Appearance', { kind: 'bad' });
+    if (state === 'error' && detail) console.warn('[spotify]', detail);
+    app.spotifyChanged?.();
+  });
+}
+
+/**
+ * Apply a palette, but never in the middle of an attempt.
+ *
+ * A theme that shifts while you are inspecting or solving is exactly the
+ * distraction a timer must not have, so anything arriving mid-attempt waits
+ * for the next return to idle. See SPOTIFY.md §5.2.
+ */
+function queueTint(colors) {
+  if (timer && timer.state !== 'idle' && timer.state !== 'cooldown') {
+    pendingTint = { colors };
+    return;
+  }
+  setAlbumTint(colors, app.settings);
+  bgFromTheme();
+}
+
+/** Push whatever the palette now resolves to into the shader. */
+function bgFromTheme() {
+  const c = themeColors();
+  bg.setColors(c.bg2, c.accent, c.accent2);
+}
+
+/* ---------------- the now-playing panel ----------------
+   The sidebar card. Its job is to make the link between the record and the
+   interface visible: the cover, the track, and the two colours actually pulled
+   out of that cover sitting right next to it. Without the swatches the tint
+   just looks like the theme changed on its own. */
+
+let npClock = null;                 // interval that walks the bar between polls
+let npAt = null;                    // {progressMs, durationMs, playing, stamp}
+// A standing reason the controls cannot work, as {reason, msg}. Kept as the
+// reason and not just the sentence, so it can be re-evaluated rather than
+// lingering after the thing it complained about has been fixed.
+let npBlocked = null;
+
+const mmss = (ms) => {
+  const t = Math.max(0, Math.round(ms / 1000));
+  return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
+};
+
+/** Show/hide the whole panel according to the setting and the link state. */
+function syncSpotifyPanel() {
+  const panel = $('#panel-spotify');
+  if (!panel) return;
+  // Shown once there is something to show: a live link, or a link being made.
+  const on = app.settings.showSpotifyPanel && !!spotify?.connected;
+  panel.hidden = !on;
+  const st = $('#np-state');
+  if (st) {
+    st.textContent = !spotify?.connected ? 'not connected'
+      : npAt?.playing ? 'playing' : npAt ? 'paused' : 'nothing playing';
+    st.classList.toggle('live', !!npAt?.playing);
+  }
+}
+app.syncSpotifyPanel = syncSpotifyPanel;
+
+function paintNowPlaying(track) {
+  const art = $('#np-art'), title = $('#np-title'), artist = $('#np-artist');
+  const card = $('#np-card'), prog = $('#np-progress');
+  if (!art) return;
+
+  if (!track) {
+    art.removeAttribute('src');
+    art.hidden = true;
+    title.textContent = 'Nothing playing';
+    artist.textContent = '';
+    if (card) { card.removeAttribute('href'); card.classList.remove('has-track'); }
+    if (prog) prog.hidden = true;
+    $('#np-controls').hidden = true;
+    paintSwatches(null);
+    npAt = null;
+    stopNpClock();
+    syncSpotifyPanel();
+    return;
+  }
+
+  art.src = track.artUrl;
+  art.hidden = false;
+  art.alt = track.album ? `${track.album} cover` : '';
+  title.textContent = track.title;
+  artist.textContent = track.artist;
+  if (card) {
+    card.classList.add('has-track');
+    if (track.url) card.href = track.url; else card.removeAttribute('href');
+  }
+  if (prog) prog.hidden = false;
+  $('#np-duration').textContent = mmss(track.durationMs || 0);
+  // A new track clears a "no active device" style complaint; the device is
+  // plainly alive if it just started something.
+  if (npBlocked && npBlocked.reason !== 'premium' && npBlocked.reason !== 'reconnect') npBlocked = null;
+  syncSpotifyPanel();
+  syncControls();
+}
+
+/** The two colours this cover produced, shown next to the cover. */
+/** The play/pause glyph, kept in one place so the optimistic flip and the
+    correction from the next poll cannot disagree about which path is which. */
+function drawPlayIcon(playing) {
+  const icon = $('#np-play-icon');
+  if (!icon) return;
+  icon.innerHTML = playing
+    ? '<path d="M8 5.2h3.1v13.6H8zM12.9 5.2H16v13.6h-3.1z" fill="currentColor" stroke="none"/>'
+    : '<path d="M8 5.5l10 6.5-10 6.5V5.5z" fill="currentColor" stroke="none"/>';
+  $('#np-play')?.setAttribute('aria-label', playing ? 'Pause' : 'Play');
+}
+
+/** Show the transport only when this link is actually allowed to use it. */
+function syncControls() {
+  const row = $('#np-controls'), note = $('#np-note');
+  if (!row) return;
+
+  /* Re-check the standing complaint before acting on it. "Reconnect to enable
+     the controls" is exactly the sort of note that would otherwise outlive the
+     reconnect that fixed it, leaving the buttons hidden for the rest of the
+     session with a stale explanation underneath them. */
+  if (npBlocked?.reason === 'reconnect' && spotify?.canControl) npBlocked = null;
+  if (npBlocked && !spotify?.connected) npBlocked = null;
+
+  const usable = !!spotify?.connected && spotify.canControl && !npBlocked;
+  row.hidden = !usable;
+  if (note) {
+    note.hidden = !npBlocked;
+    note.textContent = npBlocked?.msg || '';
+  }
+}
+app.syncSpotifyControls = syncControls;
+
+function wireControls() {
+  const on = (id, fn) => $(id)?.addEventListener('click', (e) => { e.preventDefault(); fn(); });
+  on('#np-next', () => spotify?.next());
+  on('#np-prev', () => spotify?.previous());
+  on('#np-play', () => {
+    const playing = !!npAt?.playing;
+    // Flip immediately: a transport button that waits for a network round trip
+    // before acknowledging the press feels broken even when it works.
+    drawPlayIcon(!playing);
+    if (npAt) npAt = { ...npAt, playing: !playing, progressMs: currentProgress(), stamp: performance.now() };
+    (playing ? spotify?.pause() : spotify?.play());
+    if (npAt?.playing) startNpClock(); else stopNpClock();
+    syncSpotifyPanel();
+  });
+}
+
+function paintSwatches(colors) {
+  const host = $('#np-swatches');
+  if (!host) return;
+  host.innerHTML = '';
+  if (!colors) return;
+  for (const c of [colors.accent, colors.accent2]) {
+    const dot = el('i');
+    dot.style.background = c;
+    dot.title = c;
+    host.append(dot);
+  }
+}
+
+/**
+ * Spotify is polled every five seconds, so the bar has to walk itself in
+ * between or it jumps in five-second steps and reads as broken rather than
+ * live. Each poll re-anchors it, so drift never accumulates.
+ */
+function setProgress({ progressMs, durationMs, playing }) {
+  npAt = { progressMs, durationMs, playing, stamp: performance.now() };
+  drawProgress();
+  drawPlayIcon(playing);
+  syncSpotifyPanel();
+  syncControls();
+  if (playing) startNpClock(); else stopNpClock();
+}
+
+/** Where the track is right now, interpolated since the last poll. */
+function currentProgress() {
+  if (!npAt) return 0;
+  const since = npAt.playing ? performance.now() - npAt.stamp : 0;
+  return Math.min(npAt.durationMs, npAt.progressMs + since);
+}
+
+function drawProgress() {
+  if (!npAt) return;
+  const fill = $('#np-fill'), elapsed = $('#np-elapsed');
+  if (!fill) return;
+  const at = currentProgress();
+  const pct = npAt.durationMs ? (at / npAt.durationMs) * 100 : 0;
+  fill.style.width = pct.toFixed(2) + '%';
+  if (elapsed) elapsed.textContent = mmss(at);
+}
+
+function startNpClock() {
+  if (npClock) return;
+  // 500ms, not a frame loop: this is a progress bar in a sidebar, and it has no
+  // business competing with the timer for frames. It also stops entirely while
+  // a solve is running.
+  npClock = setInterval(() => {
+    if (timer && (timer.state === 'running' || timer.state === 'inspecting')) return;
+    if (document.hidden) return;
+    drawProgress();
+  }, 500);
+}
+
+function stopNpClock() { clearInterval(npClock); npClock = null; }
+
+function showNowPlaying(title, artist) {
+  const el = $('#now-playing');
+  if (!el) return;
+  const on = app.settings.spotifyNowPlaying && !!title;
+  el.hidden = !on;
+  if (on) el.textContent = `${title} — ${artist}`;
+}
+
+/** Drop the link and put the user's own theme back. */
+app.disconnectSpotify = async () => {
+  await spotify?.disconnect();
+  artworkReadable = null;
+  pendingTint = null;
+  setAlbumTint(null, app.settings);
+  bgFromTheme();
+  showNowPlaying(null);
+  paintNowPlaying(null);
+  app.spotifyChanged?.();
+};
+
+app.connectSpotify = async () => {
+  const id = clientId();
+  const { Spotify } = await loadSpotify();
+  if (!spotify) { spotify = new Spotify(); wireSpotify(); wireControls(); }
+  npBlocked = null;               // a fresh consent may grant what the last one did not
+  await spotify.connect(id);      // leaves the page
+};
+
+// Exposed like the other subsystems on `app` are: handy in the console, and
+// the only way to watch what the poller is doing without a network tab open.
+Object.defineProperty(app, 'spotify', { get: () => spotify });
+Object.defineProperty(app, 'pendingTint', { get: () => pendingTint });
+
+app.spotifyState = () => {
+  const base = location.origin + location.pathname.replace(/index\.html$/, '');
+  const u = new URL(location.href);
+  // Spotify allows http only on a loopback IP, never on `localhost`. Surfacing
+  // it here rather than letting the consent page reject them with
+  // INVALID_CLIENT: Invalid redirect URI, which says nothing about the cause.
+  let problem = null;
+  if (u.protocol !== 'https:' && u.hostname !== '127.0.0.1') {
+    problem = (u.hostname === 'localhost' || u.hostname === '[::1]')
+      ? { reason: 'Spotify rejects localhost — it only allows http on a loopback IP.',
+          openInstead: `http://127.0.0.1:${u.port || 80}${u.pathname}` }
+      : { reason: `Spotify needs https for redirect URIs; this page is ${u.protocol}//`, openInstead: null };
+  }
+  return {
+    configured: true,               // there is always an app to connect to now
+    usingOwnApp: usingOwnApp(),
+    devModeLimit: DEV_MODE_LIMIT,
+    connected: !!spotify?.connected,
+    canControl: !!spotify?.canControl,
+    blocked: npBlocked?.msg || null,
+    artworkReadable,
+    redirectUri: base,
+    problem,
+  };
+};
+
+/* =========================================================
    Sharing
    ========================================================= */
 /* The card renderer and the cube-net drawing it needs are ~26KB that only
@@ -1848,6 +2256,7 @@ function wireChrome() {
   $('#btn-stats').addEventListener('click', () => openPanel('Statistics', 'buildStats', { wide: true }, app));
   $('#btn-theme').addEventListener('click', () => openPanel('Appearance', 'buildAppearance', undefined, app));
   $('#btn-settings').addEventListener('click', () => openPanel('Settings', 'buildSettings', undefined, app));
+  $('#btn-spotify').addEventListener('click', () => openPanel('Spotify', 'buildSpotify', undefined, app));
   $('#btn-help').addEventListener('click', () => openPanel('Keyboard shortcuts', 'buildShortcuts', { wide: true }));
   $('#btn-about').addEventListener('click', () => openPanel('About', 'buildAbout', undefined, app));
   $('#btn-open-history').addEventListener('click', () => openPanel('All solves', 'buildHistory', { wide: true }, app));
@@ -2052,6 +2461,7 @@ function wireShortcuts() {
       case ',':           e.preventDefault(); $('#btn-settings').click(); break;
       case '?':           e.preventDefault(); $('#btn-help').click(); break;
       case 'b': case 'B': e.preventDefault(); $('#btn-about').click(); break;
+      case 'p': case 'P': e.preventDefault(); $('#btn-spotify').click(); break;
       case 'k': case 'K':
         e.preventDefault();
         if (setFor(app.settings.mode)) openPanel('Cases', 'buildCases', undefined, app);

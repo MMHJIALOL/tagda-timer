@@ -410,6 +410,142 @@ export function buildStatDetail(app, kind) {
 }
 
 /* =========================================================
+   SPOTIFY
+   Its own section rather than a row buried in Appearance: it owns an account
+   link, a live connection and a now-playing readout, none of which are
+   "appearance" in the sense the rest of that panel means.
+   ========================================================= */
+export function buildSpotify(app) {
+  return (body) => {
+    const set = (k, v) => app.setSetting(k, v);
+
+    const render = () => {
+      body.innerHTML = '';
+      const st = app.spotifyState();
+      const connected = st.connected;
+
+      /* ---- the whole feature, in one button ----
+         Everything a normal person needs is here. There is no client ID to
+         find, no dashboard to visit and no setup to read: the app is already
+         registered, and its identifier is public by design. */
+      body.append(
+        group('Spotify',
+          el('div', { class: `spot-hero ${connected ? 'on' : ''}` },
+            el('div', { class: 'spot-hero-dot' }),
+            el('div', {},
+              el('div', { class: 'spot-hero-title', text: connected ? 'Connected' : 'Not connected' }),
+              el('div', { class: 'spot-hero-sub', text: connected
+                ? (st.artworkReadable === false
+                    ? 'Artwork colours are blocked by Spotify’s CDN, so the cover is used as a background instead.'
+                    : 'The timer takes its colours from whatever you are playing.')
+                : 'Link an account and the timer takes its colours from the album art of whatever you are playing.' }),
+              connected && !st.canControl
+                ? el('div', { class: 'spot-hero-warn', text:
+                    'Reconnect to enable the play, next and previous buttons — this link '
+                    + 'was made before they existed.' })
+                : null,
+              connected && st.blocked
+                ? el('div', { class: 'spot-hero-warn', text: st.blocked })
+                : null),
+            connected
+              ? el('button', { class: 'btn danger', text: 'Disconnect',
+                  onclick: async () => { await app.disconnectSpotify(); render(); } })
+              : el('button', { class: 'btn primary', text: 'Connect Spotify',
+                  onclick: () => app.connectSpotify() }),
+          ),
+          st.problem ? el('div', { class: 'hint-note warn-note', text:
+            st.problem.reason
+            + (st.problem.openInstead
+                ? ` Open the timer at ${st.problem.openInstead} instead — that is a different origin, so it keeps its own solves.`
+                : '') }) : null,
+          el('div', { class: 'hint-note', text:
+            'Only "read what you are currently playing" and playback control are '
+            + 'requested — it cannot read your library or change anything about the '
+            + 'account. Revoke it any time at spotify.com/account/apps.' }),
+        ),
+      );
+
+      /* ---- what it drives ---- */
+      if (connected) {
+        body.append(group('What the album drives',
+          row('Tint', chips([
+            { value: 'accent', label: 'Colours' },
+            { value: 'background', label: 'Artwork' },
+            { value: 'both', label: 'Both' },
+          ], app.settings.spotifyTint, v => set('spotifyTint', v))),
+          row('Now playing panel', toggle(app.settings.showSpotifyPanel,
+            v => { set('showSpotifyPanel', v); app.syncSpotifyPanel?.(); }),
+            'the cover, track and controls in the sidebar'),
+          row('Track under the scramble', toggle(app.settings.spotifyNowPlaying,
+            v => set('spotifyNowPlaying', v)), 'a single line, off by default'),
+          el('div', { class: 'hint-note', text:
+            'Colours are never written into your saved theme, and never change '
+            + 'mid-solve — a new track waits for the timer to go idle. The status '
+            + 'colours for inspection are never touched at all.' }),
+        ));
+      }
+
+      /* ---- the escape hatch, folded away ----
+         The built-in app is capped at 25 listed users by Spotify, and there is
+         no way to raise that. Anyone past the cap can point the timer at an app
+         of their own instead — which is a real need, but not one worth putting
+         in front of the people who will never hit it. */
+      const adv = el('details', { class: 'adv' },
+        el('summary', { text: 'Use your own Spotify app' }),
+        el('div', { class: 'adv-body' },
+          el('div', { class: 'hint-note', text:
+            `The built-in app is limited by Spotify to ${st.devModeLimit} listed users, and that `
+            + 'limit cannot be raised for a project this size. If you are not on the '
+            + 'list, register an app of your own and paste its client ID here.' }),
+          el('div', { class: 'setup-steps' },
+            step(1, 'Create an app', 'developer.spotify.com/dashboard → Create app → tick Web API.'),
+            step(2, 'Add the redirect URI', 'Paste the one below into the app’s Redirect URIs, exactly as shown.'),
+            step(3, 'Paste the client ID', 'From the app’s Settings page. There is no client secret — this uses PKCE.'),
+          ),
+          row('Redirect URI', el('div', { class: 'copy-field' },
+            el('code', { text: st.redirectUri }),
+            el('button', { class: 'ghost-btn sm', text: 'copy',
+              onclick: () => app.copyToast(st.redirectUri, 'Redirect URI') }))),
+          ownAppRow(app, st, render),
+        ));
+      if (st.usingOwnApp) adv.open = true;
+      body.append(adv);
+    };
+
+    render();
+    // A redirect can complete while this panel is open.
+    app.spotifyChanged = render;
+  };
+}
+
+/** The client-ID override, plus the way back to the built-in app. */
+function ownAppRow(app, st, render) {
+  const input = el('input', {
+    class: 'inp', type: 'text', placeholder: 'client ID (leave blank to use the built-in app)',
+    value: app.settings.spotifyClientId || '', style: { flex: '1' },
+  });
+  input.addEventListener('change', async () => {
+    const next = input.value.trim();
+    if (next === (app.settings.spotifyClientId || '')) return;
+    // Tokens belong to the app that issued them, so switching apps has to drop
+    // them or the next call authenticates as the wrong application.
+    await app.disconnectSpotify();
+    app.setSetting('spotifyClientId', next);
+    render();
+  });
+  return row('Client ID', input, st.usingOwnApp ? 'using your own app' : 'using the built-in app');
+}
+
+/** One numbered step in the setup list. */
+function step(n, title, detail) {
+  return el('div', { class: 'setup-step' },
+    el('span', { class: 'ss-n', text: String(n) }),
+    el('div', {},
+      el('div', { class: 'ss-t', text: title }),
+      el('div', { class: 'ss-d', text: detail })));
+}
+
+/* =========================================================
    SETTINGS
    ========================================================= */
 export function buildSettings(app) {

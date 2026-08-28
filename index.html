@@ -2,7 +2,11 @@
 <html lang="en" data-theme="nebula">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<!-- user-scalable=no used to be here to stop double-tap zoom ruining a solve.
+     base.css already sets touch-action: manipulation globally, which kills
+     double-tap zoom on its own -- so the only thing the lock still did was
+     stop people pinch-zooming to read small type. -->
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Tagda Timer</title>
 <meta name="description" content="Tagda Timer — a modern WCA speedcubing timer.">
 <!-- The webfonts are served from this origin (css/fonts.css). That removes two
@@ -16,11 +20,11 @@
 <!-- The scrambler is the one thing the user actually waits on, so start
      fetching its module graph alongside the stylesheets, not after them. -->
 <link rel="modulepreload" href="vendor/cubing/cubing/scramble.js">
-<link rel="modulepreload" href="js/main.js?v=30">
-<link rel="stylesheet" href="css/fonts.css?v=30">
-<link rel="stylesheet" href="css/tokens.css?v=30">
-<link rel="stylesheet" href="css/base.css?v=30">
-<link rel="stylesheet" href="css/components.css?v=30">
+<link rel="modulepreload" href="js/main.js?v=33">
+<link rel="stylesheet" href="css/fonts.css?v=33">
+<link rel="stylesheet" href="css/tokens.css?v=33">
+<link rel="stylesheet" href="css/base.css?v=33">
+<link rel="stylesheet" href="css/components.css?v=33">
 <link rel="icon" href="assets/favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="assets/logo-192.png">
 <link rel="apple-touch-icon" href="assets/logo-180.png">
@@ -114,6 +118,17 @@
       <button class="icon-btn" id="btn-settings" title="Settings  (,)">
         <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.1"/><path d="M19.4 15a1.6 1.6 0 00.32 1.77l.06.06a1.94 1.94 0 11-2.75 2.75l-.06-.06a1.6 1.6 0 00-1.77-.32 1.6 1.6 0 00-.97 1.47v.16a1.94 1.94 0 01-3.88 0v-.09a1.6 1.6 0 00-1.05-1.47 1.6 1.6 0 00-1.77.32l-.06.06a1.94 1.94 0 11-2.75-2.75l.06-.06a1.6 1.6 0 00.32-1.77 1.6 1.6 0 00-1.47-.97H3.4a1.94 1.94 0 010-3.88h.09a1.6 1.6 0 001.47-1.05 1.6 1.6 0 00-.32-1.77l-.06-.06a1.94 1.94 0 112.75-2.75l.06.06a1.6 1.6 0 001.77.32h.08a1.6 1.6 0 00.97-1.47V3.4a1.94 1.94 0 013.88 0v.09a1.6 1.6 0 00.97 1.47 1.6 1.6 0 001.77-.32l.06-.06a1.94 1.94 0 112.75 2.75l-.06.06a1.6 1.6 0 00-.32 1.77v.08a1.6 1.6 0 001.47.97h.16a1.94 1.94 0 010 3.88h-.09a1.6 1.6 0 00-1.47.97z"/></svg>
       </button>
+      <!-- The three arcs are the Spotify mark. Spotify's design guidelines ask
+           that anything showing their content is attributed with it, so this is
+           the required logo as much as it is a nice button. -->
+      <button class="icon-btn" id="btn-spotify" title="Spotify  (P)">
+        <svg viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r="9.2"/>
+          <path d="M7 9.1c3.3-1 7.2-.7 10.2.9"/>
+          <path d="M7.7 12.3c2.7-.8 5.9-.5 8.4.8"/>
+          <path d="M8.3 15.4c2.2-.6 4.6-.4 6.5.6"/>
+        </svg>
+      </button>
       <button class="icon-btn" id="btn-help" title="Keyboard shortcuts  (?)">
         <svg viewBox="0 0 24 24"><path d="M16.2 4.2L7.8 19.8" stroke-width="2.4"/><circle cx="12" cy="12" r="9.2" opacity=".3"/></svg>
       </button>
@@ -143,6 +158,9 @@
         </button>
       </div>
     </div>
+    <!-- What Spotify says is playing. Off unless album theming is linked and
+         the setting is on -- the timer screen is meant to be empty. -->
+    <div id="now-playing" hidden></div>
     <!-- Shown only while a pasted list is being worked through: which one you
          are on, and the way back out to generated scrambles. -->
     <div id="custom-bar" hidden>
@@ -223,6 +241,52 @@
           <button class="ghost-btn sm danger" id="btn-clear-session" title="Clear session  (Ctrl+Shift+Del)">
             <svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg> clear
           </button>
+        </div>
+      </section>
+
+      <!-- Now playing. Hidden entirely until Spotify is linked and the panel is
+           switched on, so it costs nothing for anyone who never uses it.
+           The swatches are the point: they are the colours actually pulled out
+           of this cover, sitting next to the cover, so the link between the art
+           and the interface is something you can see rather than infer. -->
+      <section class="panel" id="panel-spotify" hidden>
+        <div class="panel-head">
+          <span>Now playing</span>
+          <span class="panel-sub" id="np-state">not linked</span>
+        </div>
+        <a id="np-card" href="#" target="_blank" rel="noopener noreferrer" title="Open in Spotify">
+          <span class="np-art-wrap">
+            <img id="np-art" alt="" width="112" height="112" decoding="async">
+            <span class="np-art-empty" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.2"/><path d="M7 9.1c3.3-1 7.2-.7 10.2.9"/><path d="M7.7 12.3c2.7-.8 5.9-.5 8.4.8"/><path d="M8.3 15.4c2.2-.6 4.6-.4 6.5.6"/></svg>
+            </span>
+          </span>
+          <span class="np-meta">
+            <span class="np-title" id="np-title">Nothing playing</span>
+            <span class="np-artist" id="np-artist"></span>
+            <span class="np-swatches" id="np-swatches" aria-hidden="true"></span>
+          </span>
+        </a>
+        <!-- Transport. Hidden until the link is known to allow it, so a free
+             account never gets a row of buttons that only 403. -->
+        <div class="np-controls" id="np-controls" hidden>
+          <button class="np-btn" id="np-prev" title="Previous track" aria-label="Previous track">
+            <svg viewBox="0 0 24 24"><path d="M18 6L9 12l9 6V6z" fill="currentColor" stroke="none"/><path d="M6 5.5v13" stroke-linecap="round"/></svg>
+          </button>
+          <button class="np-btn np-play" id="np-play" title="Play / pause" aria-label="Play or pause">
+            <svg id="np-play-icon" viewBox="0 0 24 24"><path d="M8 5.5l10 6.5-10 6.5V5.5z" fill="currentColor" stroke="none"/></svg>
+          </button>
+          <button class="np-btn" id="np-next" title="Next track" aria-label="Next track">
+            <svg viewBox="0 0 24 24"><path d="M6 6l9 6-9 6V6z" fill="currentColor" stroke="none"/><path d="M18 5.5v13" stroke-linecap="round"/></svg>
+          </button>
+        </div>
+        <div class="np-note" id="np-note" hidden></div>
+        <div class="np-progress" id="np-progress" hidden>
+          <div class="np-bar"><div class="np-fill" id="np-fill"></div></div>
+          <div class="np-times">
+            <span id="np-elapsed">0:00</span>
+            <span id="np-duration">0:00</span>
+          </div>
         </div>
       </section>
 
@@ -378,7 +442,7 @@
   </div>
 </div>
 
-<script type="module" src="js/main.js?v=30"></script>
+<script type="module" src="js/main.js?v=33"></script>
 <script>
 (function () {
   var isFile = location.protocol === 'file:';
