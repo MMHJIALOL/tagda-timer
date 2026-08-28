@@ -1515,25 +1515,26 @@ function wireSpotify() {
     showNowPlaying(title, artist);
     paintNowPlaying(e.detail);
 
+    /* One decode per cover, cached by URL. This used to be three — a CORS
+       probe, then the extraction, then the <img> in the card — and three
+       decodes of a 640px JPEG landing in the same tick is what made changing
+       track feel heavy. The probe is gone: the extraction reports whether the
+       pixels were readable from the decode it already had to do. */
     const pal = await loadPalette();
-    if (artworkReadable === null) artworkReadable = await pal.probeArtworkCors(artUrl);
-
-    if (!artworkReadable) {
-      // Pixels are off limits on this CDN, so fall back to what CORS cannot
-      // block: the artwork itself, behind the blur and dim already in settings.
-      if (app.settings.spotifyTint !== 'accent') bg.setMedia(`center/cover no-repeat url("${artUrl}")`);
-      return;
-    }
-
     const dark = document.documentElement.dataset.bgLuma !== 'light';
-    const colors = await pal.paletteFromUrl(artUrl, { dark });
-    if (!colors) return;
+    const { palette, blocked } = await pal.paletteForUrl(artUrl, { dark });
+    if (blocked) artworkReadable = false;
+    else if (palette) artworkReadable = true;
 
-    if (app.settings.spotifyTint !== 'accent') {
+    if (app.settings.spotifyTint !== 'accent' || blocked) {
+      // What CORS cannot block: the artwork itself, behind the blur and dim
+      // already in settings. Also the whole fallback when pixels are refused.
       bg.setMedia(`center/cover no-repeat url("${artUrl}")`);
     }
-    paintSwatches(colors);
-    queueTint(app.settings.spotifyTint === 'background' ? null : colors);
+    if (!palette) return;
+
+    paintSwatches(palette);
+    queueTint(app.settings.spotifyTint === 'background' ? null : palette);
   });
 
   spotify.addEventListener('progress', (e) => setProgress(e.detail));
