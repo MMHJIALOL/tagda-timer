@@ -985,13 +985,18 @@ input[type="range"]::-moz-range-thumb {
 }
 
 /* ---------------- collapsed peek: three numbers, not one ---------------- */
-/* Full width on its own row. Three figures beside a title could never be made
-   to fit at every sidebar width, and truncating the last one is the worst of
-   the available outcomes. */
+/* Full width on its own rows. Figures beside a title could never be made to
+   fit at every rail width, and truncating the last one is the worst of the
+   available outcomes. Two rows of three: the averages you watch while a
+   session runs, then the ones that say how it went. */
 .stats-peek {
   flex: 1 0 100%; margin-left: 0;
   display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px;
 }
+.stats-peek > span:nth-child(n + 4) {
+  background: color-mix(in srgb, var(--text) 3%, transparent);
+}
+.stats-peek > span:nth-child(n + 4) i { color: var(--text-dim); }
 .stats-peek > span {
   display: flex; flex-direction: column; gap: 1px; min-width: 0;
   padding: 4px 7px; border-radius: 7px;

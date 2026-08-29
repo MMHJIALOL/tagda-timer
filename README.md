@@ -148,7 +148,9 @@ screen is untouched until you ask for it.
   left off, split back into cross, four pairs, OLL and PLL.
 - **Copy it or make a card.** The two buttons beside the scramble: one puts the
   whole thing on the clipboard as text, the other draws a share card with the
-  scramble, the cube it makes, and the solution phase by phase.
+  scramble, the cube it makes, and the solution one line per phase — the cross
+  is one line however many goes it took, all four pairs are F2L, and a trailing
+  U turn is written out as the AUF it is.
 
 Any scramble works, not just a recorded solve — paste one into the field at the top,
 or pick a past solve from *from a solve*.
@@ -242,6 +244,7 @@ index.html            markup
 css/tokens.css        every design value, as CSS variables
 css/base.css          reset, layout, background, timer
 css/components.css    panels, controls, overlays, charts
+css/recon.css         the reconstruction workbench (fetched on first open)
 js/main.js            wiring — the entry point
 js/timer.js           timer state machine + WCA inspection
 js/scramble.js        cubing.js integration, trainers, pre-generation queue
@@ -251,6 +254,9 @@ js/charts.js          hand-built SVG charts
 js/theme.js           settings model + live theming
 js/bg.js              WebGL background shaders
 js/cube.js            static scramble preview
+js/cube3.js           the 3x3 model: notation, state, CFOP phase detection
+js/solver.js          cross / F2L search, last layer by simulation
+js/recon.js           the reconstruction workbench
 js/panels.js          settings / stats / history / case picker drawers
 js/db.js              IndexedDB
 js/fx.js              confetti, shockwave, audio callouts
@@ -258,7 +264,7 @@ vendor/cubing/        mirrored cubing.js (works offline)
 tools/mirror_cubing.py  re-download that mirror
 serve.py              no-cache dev server
 start.bat             double-click launcher
-test.html             39-check self test
+test.html             54-check self test
 ```
 
 ---

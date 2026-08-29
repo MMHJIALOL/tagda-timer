@@ -161,6 +161,33 @@ const look = () => analyse(currentState(), S.crossPref === 'auto' ? null : S.cro
 
 let ui = {};
 
+/* ---------------- hovering the cube ----------------
+   Two things made this feel broken. Passing the pointer down the list fired a
+   preview per row, so the cube machine-gunned through five algs nobody asked
+   to see; and clicking a suggestion re-drew the list under a pointer that had
+   not moved, so whatever row landed under the cursor immediately started
+   playing instead of the move just committed. A short delay fixes the first,
+   and a lock held until the pointer genuinely moves again fixes the second. */
+let hoverTimer = null;
+let hoverLocked = false;
+
+function hoverPreview(alg) {
+  if (hoverLocked) return;
+  clearTimeout(hoverTimer);
+  hoverTimer = setTimeout(() => renderCube(alg), 140);
+}
+
+function hoverEnd() {
+  clearTimeout(hoverTimer);
+  if (!hoverLocked) renderCube();
+}
+
+/** Hold hover off until the pointer moves of its own accord. */
+function lockHover() {
+  clearTimeout(hoverTimer);
+  hoverLocked = true;
+}
+
 /** Pick the cross colour by hand. Everything downstream is asked about it. */
 function setCross(face) {
   S.crossPref = face;
@@ -198,10 +225,10 @@ function renderSteps(a) {
       el('span', { class: 'ph', text: PHASE_LABEL[step.phase] || '' }),
       el('span', { class: 'mv', text: step.alg }),
       el('span', { class: 'n', text: String(step.alg.split(/\s+/).filter(t => !/^[xyz]/i.test(t)).length) }),
-      el('button', { class: 'rc-x', title: 'Remove this step', text: '×', onclick: () => { S.steps.splice(i, 1); commit(); } }),
+      el('button', { class: 'rc-x', title: 'Remove this step', text: '×', onclick: (e) => { e.stopPropagation(); lockHover(); S.steps.splice(i, 1); commit(); } }),
     );
-    row.addEventListener('mouseenter', () => previewUpTo(i));
-    row.addEventListener('mouseleave', () => renderCube());
+    row.addEventListener('mouseenter', () => playSoon(i));
+    row.addEventListener('mouseleave', hoverEnd);
     ui.steps.append(row);
   });
   ui.steps.append(el('div', { class: 'rc-step current' },
@@ -262,7 +289,12 @@ function playStep(i, only = null) {
   } catch { /* ignore */ }
 }
 
-const previewUpTo = (i) => playStep(i);
+/** Replay one step of the reconstruction, after the same settling delay. */
+function playSoon(i) {
+  if (hoverLocked) return;
+  clearTimeout(hoverTimer);
+  hoverTimer = setTimeout(() => playStep(i), 140);
+}
 
 function renderSuggestions(a) {
   ui.sugList.innerHTML = '';
@@ -331,9 +363,9 @@ function paintSuggestions(res, a) {
         el('span', { class: 'why', text: `${s.label} · ${s.note}` })),
       el('span', { class: 'len', text: String(s.moves) }),
     );
-    row.addEventListener('mouseenter', () => renderCube(s.alg));
-    row.addEventListener('mouseleave', () => renderCube());
-    row.addEventListener('click', () => addStep(s.alg));
+    row.addEventListener('mouseenter', () => hoverPreview(s.alg));
+    row.addEventListener('mouseleave', hoverEnd);
+    row.addEventListener('click', () => { lockHover(); addStep(s.alg); });
     ui.sugList.append(row);
   }
   ui.sugMore.textContent = res.partial
@@ -363,6 +395,7 @@ function addStep(alg, { typed = false } = {}) {
   commit();
   // Watch it happen. Snapping to the answer told you nothing about the moves,
   // which is the whole reason the cube is on screen.
+  lockHover();
   playStep(S.steps.length - 1, typed ? clean : null);
 }
 
@@ -494,6 +527,19 @@ function build() {
     onclick: () => { S.replay = !S.replay; ui.replayBtn.classList.toggle('on', S.replay); renderCube(); },
   });
 
+  /* Rotations. Most people reconstruct with the cross on the bottom, which
+     means the first thing they want is to turn the cube over — and every
+     suggestion after that comes back in the orientation they are holding.
+     They cost nothing: a rotation is not a move, and the counter ignores it. */
+  ui.rots = el('div', { class: 'rc-rots' },
+    el('span', { class: 'rc-rots-lbl', text: 'turn' }),
+    ...['x', "x'", 'x2', 'y', "y'", 'y2', 'z', "z'", 'z2'].map(r =>
+      el('button', {
+        class: 'rc-rot', text: r, title: `Turn the whole cube: ${r}`,
+        onclick: () => { lockHover(); addStep(r, { typed: true }); },
+      })),
+  );
+
   const left = el('section', { class: 'panel rc-left' },
     el('div', { class: 'panel-head' },
       el('span', { text: 'Position' }),
@@ -506,7 +552,7 @@ function build() {
         ui.crossSwatches = el('span', { class: 'rc-swatches' },
           ...CROSS_COLOURS.map(c => el('button', {
             class: 'rc-swatch', title: `${c.name} cross`, 'aria-label': `${c.name} cross`,
-            dataset: { face: c.face }, style: { '--sw': c.hex },
+            dataset: { face: c.face }, style: { background: c.hex },
             onclick: () => setCross(c.face),
           })),
           el('button', {
@@ -515,6 +561,7 @@ function build() {
           })),
       ),
     ),
+    ui.rots,
     ui.strip,
     el('div', { class: 'rc-strip-legend' },
       ...['cross', 'f2l 1', 'f2l 2', 'f2l 3', 'f2l 4', 'oll', 'pll'].map(t => el('span', { text: t }))),
@@ -553,11 +600,38 @@ function build() {
   );
 
   host.append(top, el('div', { class: 'rc-body' }, left, right));
+  // A pointer that has actually moved is a pointer that meant to hover.
+  host.addEventListener('mousemove', () => { hoverLocked = false; }, true);
   // Clicking anywhere else puts the solve list away, the way a menu should.
   host.addEventListener('click', (e) => {
     if (!ui.pickList.hidden && !ui.pick.contains(e.target)) ui.pickList.hidden = true;
   });
   document.body.append(host);
+}
+
+/**
+ * The solution as a card wants it: one line per phase.
+ * Adding two moves to the cross does not make a second cross, and four pairs
+ * are all F2L — repeating the label four times is noise, not information. A
+ * trailing U turn on a finished solve is the AUF, so it gets its own line.
+ */
+function cardSteps() {
+  const out = [];
+  for (const st of S.steps) {
+    const phase = PHASE_LABEL[st.phase] || '';
+    const last = out.at(-1);
+    if (last && last.phase === phase) last.alg = `${last.alg} ${st.alg}`;
+    else out.push({ phase, alg: st.alg });
+  }
+  const last = out.at(-1);
+  if (last && look().solved) {
+    const toks = last.alg.split(/\s+/).filter(Boolean);
+    if (toks.length > 1 && /^U('|2)?$/.test(toks.at(-1))) {
+      last.alg = toks.slice(0, -1).join(' ');
+      out.push({ phase: 'AUF', alg: toks.at(-1) });
+    }
+  }
+  return out;
 }
 
 /** Hand the whole thing - scramble, the cube it makes, and the solution - to
@@ -569,7 +643,7 @@ async function shareCard() {
     await m.shareRecon({
       scramble: S.scramble,
       title: ui.title.textContent,
-      steps: S.steps.map(st => ({ phase: PHASE_LABEL[st.phase] || '', alg: st.alg })),
+      steps: cardSteps(),
       moves: moveCount(),
     });
   } catch (err) {

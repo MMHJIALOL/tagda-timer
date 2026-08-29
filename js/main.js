@@ -963,10 +963,14 @@ function renderStats() {
   void 0;
   renderMiniTrend($('#mini-trend'), app.solves);
 
-  // Collapsed peek: the three numbers worth glancing at mid-session.
+  /* Collapsed peek. Two rows: the three averages you watch while a session is
+     running, and the three that say how the session has gone. */
   $('#peek-ao5').textContent  = f(st.ao5);
   $('#peek-ao12').textContent = f(st.ao12);
   $('#peek-mo3').textContent  = f(st.mo3);
+  $('#peek-best').textContent = f(st.best);
+  $('#peek-ao50').textContent = f(st.ao50);
+  $('#peek-mean').textContent = f(st.mean);
 
   // ...and the two of them again under the timer, where you are already looking.
   // Hidden outright until there is an average to print, rather than sitting
