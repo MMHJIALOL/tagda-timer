@@ -196,6 +196,88 @@ for (const [ev, [lo, hi]] of Object.entries(EXPECT)) {
     s.official && len >= lo && len <= hi, `${len} moves, official=${s.official}`);
 }
 
+/* ---------------- the reconstruction model and solver ---------------- */
+section('reconstruction');
+{
+  const C = await import('./js/cube3.js');
+  const SV = await import('./js/solver.js');
+  const eq = (a, b) => a.length === b.length && [...a].every((v, i) => v === b[i]);
+  const run = (alg) => C.applyAlg(C.SOLVED, alg).state;
+  const same = (a, b) => eq(run(a), run(b));
+
+  // Superflip is the strongest single check on the move tables and on the edge
+  // orientation convention: every edge flipped, nothing else touched.
+  const sf = run("U R2 F B R B2 R U2 L B2 R U' D' R2 F R' L B2 U2 F2");
+  check('superflip flips all twelve edges and moves nothing else',
+    [...sf.slice(0, 8)].every((v, i) => v === i) &&
+    [...sf.slice(8, 16)].every(v => v === 0) &&
+    [...sf.slice(16, 28)].every((v, i) => v === i) &&
+    [...sf.slice(28, 40)].every(v => v === 1));
+
+  check('the sexy move returns to solved after six',
+    eq(run("R U R' U' R U R' U' R U R' U' R U R' U' R U R' U' R U R' U'"), C.SOLVED));
+
+  const tp = run("R U R' U' R' F R2 U' R' U' R U R' F'");
+  check('a T-perm leaves the bottom two layers alone',
+    [4, 5, 6, 7].every(i => tp[i] === i && tp[8 + i] === 0) &&
+    [4, 5, 6, 7, 8, 9, 10, 11].every(i => tp[16 + i] === i && tp[28 + i] === 0));
+
+  check("wide turns are the layer turns they claim to be",
+    same('r', "R M'") && same('l', 'L M') && same('u', "U E'") &&
+    same('d', 'D E') && same('f', 'F S') && same('b', "B S'"), 'r l u d f b');
+  check('Rw and r are the same turn', same('Rw', 'r'));
+  check('a rotation moves no pieces, only what the next letter means',
+    eq(run('x'), C.SOLVED) && same('y R', 'B') && same('x U', 'F') && same('z R', 'U'));
+
+  // A whole solve, driven only by what the solver suggests. If any phase hands
+  // back a move that does not do what it says, the cube does not end up solved.
+  const scr = "R' U' F D2 L2 F2 R2 B2 D' B2 U' R2 D' F' L' R2 B U R' F2 U2 R' U' F";
+  let pos = C.applyAlg(C.SOLVED, scr);
+  let steps = 0, stuck = false;
+  for (let i = 0; i < 12; i++) {
+    const a = C.analyse(pos.state);
+    if (a.solved) break;
+    const res = SV.suggest(pos.state, pos.frame, a, { limit: 5 });
+    if (!res.list.length) { stuck = true; break; }
+    pos = C.applyAlg(pos.state, res.list[0].alg, pos.frame);
+    steps++;
+  }
+  const done = C.analyse(pos.state);
+  check('the solver can talk itself through a whole CFOP solve',
+    done.solved && !stuck, `${steps} steps to solved`);
+
+  /* The same thing on real scrambles, because the position that used to defeat
+     it was always the last F2L slot: three pairs in, and every line that fixes
+     the fourth without scattering them is nine or ten moves deep. */
+  let solvedAll = 0, worstMs = 0;
+  for (let n = 0; n < 3; n++) {
+    const s = await G.generate('333', 'wca');
+    let p2 = C.applyAlg(C.SOLVED, s.scramble);
+    for (let i = 0; i < 14; i++) {
+      const a = C.analyse(p2.state, 'U');
+      if (a.solved) { solvedAll++; break; }
+      const t0 = performance.now();
+      const res = SV.suggest(p2.state, p2.frame, a, { limit: 3 });
+      worstMs = Math.max(worstMs, performance.now() - t0);
+      if (!res.list.length) break;
+      p2 = C.applyAlg(p2.state, res.list[0].alg, p2.frame);
+    }
+  }
+  check('it never runs out of ideas on a random scramble',
+    solvedAll === 3, `${solvedAll}/3 solved · slowest single search ${Math.round(worstMs)}ms`);
+
+  // The shortest suggestion has to actually be the shortest: nothing one move
+  // less may exist, or "6 moves to finish the cross" is a lie.
+  const start = C.applyAlg(C.SOLVED, scr);
+  const cross = SV.suggest(start.state, start.frame, C.analyse(start.state), { limit: 40 });
+  const moveCount = (alg) => alg.split(/\s+/).filter(t => !/^[xyz]/i.test(t)).length;
+  check('every suggestion really finishes the phase it claims',
+    cross.list.every(x => C.crossDone(C.applyAlg(start.state, x.alg, start.frame).state, cross.face)),
+    `${cross.list.length} cross solutions checked`);
+  check('the shortest suggestion is genuinely the shortest',
+    cross.list.every(x => moveCount(x.alg) >= cross.best), `best ${cross.best}`);
+}
+
 /* ---------------- the real page, in an iframe ---------------- */
 section('the app as actually rendered');
 await new Promise((resolve) => {

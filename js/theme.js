@@ -194,14 +194,23 @@ export function applyTheme(s) {
   if (cube)  cube.style.display  = s.showCube ? '' : 'none';
   if (hist)  hist.style.display  = s.showHistory ? '' : 'none';
 
-  // the sidebar only earns its column when something is in it
+  /* Each rail only earns its column when something is in it. The times list
+     and Now playing are on the left, the numbers on the right, so the two are
+     switched off independently. */
   const stage = document.getElementById('stage');
   const sidebar = document.getElementById('sidebar');
-  if (sidebar) sidebar.style.display = (s.showStats || s.showHistory) ? '' : 'none';
+  const railRight = document.getElementById('sidebar-right');
+  const nowPlaying = document.getElementById('panel-spotify');
+  const leftOn = !!(s.showHistory || (nowPlaying && !nowPlaying.hidden));
+  const rightOn = !!s.showStats;
+  if (sidebar) sidebar.style.display = leftOn ? '' : 'none';
+  if (railRight) railRight.style.display = rightOn ? '' : 'none';
   if (stage) {
-    // Only state whether a sidebar exists. Writing grid-template-columns inline
-    // here outranks the responsive media queries and broke the mobile layout.
-    stage.dataset.sidebar = (s.showStats || s.showHistory) ? 'on' : 'off';
+    // Only state which rails exist. Writing grid-template-columns inline here
+    // outranks the responsive media queries and broke the mobile layout.
+    stage.dataset.left = leftOn ? 'on' : 'off';
+    stage.dataset.right = rightOn ? 'on' : 'off';
+    stage.dataset.sidebar = (leftOn || rightOn) ? 'on' : 'off';
   }
 
   // The album tint is an override on top of whatever the theme just wrote, so
