@@ -177,6 +177,26 @@ export function parse(alg) {
 }
 
 /**
+ * Write an alg the way every other cube program spells it.
+ *
+ * The move box types in caps so no shift key stands between you and a move,
+ * which turns a wide turn into RW — something this model reads happily and
+ * twisty-player does not read at all. An unreadable alg is not a slow cube,
+ * it is a cube that stops dead, which is what "the preview glitches on wide
+ * moves" was. So everything on its way to the player comes through here:
+ * RW and rw become Rw, X becomes x, and 2' becomes 2.
+ */
+export function canonical(alg) {
+  const toks = typeof alg === 'string' ? parse(alg) : alg;
+  if (!toks) return null;
+  return toks.map(({ letter, wide, amount }) => {
+    const suffix = amount === 2 ? '2' : amount === 3 ? "'" : '';
+    if (wide) return letter.toUpperCase() + 'w' + suffix;
+    return letter + suffix;
+  }).join(' ');
+}
+
+/**
  * Apply an alg to a position.
  * `frame` carries the rotations already accumulated; pass the one that came
  * out of the last call to keep a running reconstruction consistent.
@@ -305,6 +325,10 @@ export function analyse(s, prefer = null) {
   const llIdx = FACES.indexOf(ll) * 9;
   const oll = f2l && Array.from({ length: 9 }, (_, i) => fl[llIdx + i]).every(c => c === ll);
   const solved = fl.every((c, i) => c === FACES[Math.floor(i / 9)]);
+  /* The last layer's edges already the right way up — the cross showing on
+     top. It is the only thing that separates an OLL you have to follow with a
+     PLL from one ZBLL alg can finish on its own. */
+  const eo = [1, 3, 5, 7].every(i => fl[llIdx + i] === ll);
 
   let phase = 'cross';
   if (solved) phase = 'done';
@@ -312,7 +336,7 @@ export function analyse(s, prefer = null) {
   else if (f2l) phase = 'oll';
   else if (cross) phase = 'f2l';
 
-  return { face, ll, cross, slots, f2l, oll, solved, phase };
+  return { face, ll, cross, slots, f2l, oll, eo, solved, phase };
 }
 
 const OPP = { U: 'D', D: 'U', L: 'R', R: 'L', F: 'B', B: 'F' };

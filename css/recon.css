@@ -60,6 +60,18 @@ body.recon-open #bg-root { opacity: 0; }
 .rc-right > .panel:first-child { flex: 0 1 auto; min-height: 120px; }
 .rc-right > .panel:last-child  { flex: 1 1 auto; min-height: 0; }
 
+/* The scramble, again, right above the cube it produced. The bar at the top
+   of the panel is for editing it; this one is for reading it without taking
+   your eyes off the thing you are reading it against. */
+.rc-cube-scramble {
+  font-size: .72rem; line-height: 1.5; color: var(--text-dim);
+  text-align: center; word-break: break-word;
+  padding: 7px 12px; border-radius: 10px;
+  background: color-mix(in srgb, var(--text) 5%, transparent);
+  border: 1px solid var(--border);
+}
+.rc-cube-scramble.empty { color: var(--text-faint); font-style: italic; }
+
 .rc-cube { flex: 1; min-height: 200px; display: grid; place-items: center; }
 /* Big enough to read the stickers, not so big it swallows the panel it shares
    with the playback row and the phase strip. */
@@ -198,6 +210,23 @@ body.recon-open #bg-root { opacity: 0; }
   background: color-mix(in srgb, var(--accent) 13%, transparent);
   border-color: color-mix(in srgb, var(--accent) 40%, transparent);
 }
+/* A ZBLL suggestion finishes the last layer in one alg instead of two, so it
+   sits above the OLLs and is coloured to say why it is up there. */
+.rc-sug.zb {
+  background: color-mix(in srgb, var(--accent-2) 14%, transparent);
+  border-color: color-mix(in srgb, var(--accent-2) 45%, transparent);
+}
+.rc-sug.zb:hover { background: color-mix(in srgb, var(--accent-2) 22%, transparent); }
+.rc-sug.zb .len { color: var(--accent-2); }
+.rc-zb-tag {
+  margin-left: 8px; padding: 1px 6px; border-radius: 999px;
+  font-family: var(--font-sans); font-size: .55rem; font-weight: 800;
+  letter-spacing: .1em; text-transform: uppercase;
+  color: var(--bg); background: var(--accent-2); vertical-align: 2px;
+}
+.rc-step .ph.zb { color: var(--accent-2); }
+.rc-dist.zb .n { color: var(--accent-2); }
+
 .rc-sug .alg { font-family: var(--font-mono); font-size: .82rem; color: var(--text); }
 .rc-sug .why { display: block; margin-top: 2px; font-size: .64rem; color: var(--text-faint); }
 .rc-sug .len { font-family: var(--font-mono); font-size: .7rem; color: var(--text-faint); }
