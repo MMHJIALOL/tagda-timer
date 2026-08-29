@@ -25,10 +25,16 @@ const SOURCES = [
 /* The panel's own stylesheet, fetched on the first open for the same reason
    the module is: most sessions never come in here. */
 function loadCss() {
-  // The version query matters on Vercel, where /css/* is served immutable for
-  // a year — see vercel.json. Bump it with the ones in index.html.
-  const href = `${new URL('../css/recon.css', import.meta.url).href}?v=35`;
-  if (document.querySelector(`link[data-recon]`)) return;
+  if (document.querySelector('link[data-recon]')) return;
+  /* The version query is not decoration. vercel.json serves /css/* as immutable
+     for a year, so a sheet whose contents change without its URL changing is a
+     sheet nobody who has already visited will ever see again. Reading the
+     version off a stylesheet index.html already asked for means this one cannot
+     drift out of step with the others — bumping them bumps this too. */
+  const v = document.querySelector('link[rel="stylesheet"][href*="?v="]')
+    ?.getAttribute('href')?.match(/\?v=([^&"]+)/)?.[1];
+  const url = new URL('../css/recon.css', import.meta.url).href;
+  const href = v ? `${url}?v=${v}` : url;
   const link = document.createElement('link');
   link.rel = 'stylesheet'; link.href = href; link.dataset.recon = '1';
   document.head.append(link);
