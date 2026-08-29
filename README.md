@@ -30,8 +30,10 @@ There is **no build step** — no Node, no npm, no bundler. It is plain ES modul
 so any static file server works, and deploying later means uploading the folder as-is.
 
 To check everything still works after a change, open <http://localhost:5173/test.html>.
-It runs 39 checks: the statistics maths, every trainer algorithm verified by simulating a
-real cube, and the rendered page itself (that no overlay is stuck on screen).
+It runs 55 checks: the statistics maths, every trainer algorithm verified by simulating a
+real cube, the reconstruction model and solver (superflip, the wide-turn identities, and
+whole CFOP solves driven only by the suggestions it hands back), and the rendered page
+itself (that no overlay is stuck on screen).
 
 ---
 
@@ -115,6 +117,46 @@ every row expanded costs about 30, against two full seconds for a naive rebuild.
 Recording a solve folds the strip back to its top page, because that is where
 you are looking.
 
+### Reconstruction
+A workbench for working out what you actually did, and what you could have done
+instead. It is off the timer entirely — it opens from a solve's menu
+(*Reconstruct this solve*), from the topbar cube button, or with `Y`, and the timer
+screen is untouched until you ask for it.
+
+- **One click from the times list.** Hover a solve and the ao5 gives way to a
+  **reconstruct** button; the solve's menu carries the same entry, which is how
+  you get there on a touch screen.
+- **It suggests the moves.** From wherever the cube currently stands it works out
+  every shortest way on, ranked by move count and then by how comfortably they turn.
+  The search runs in a worker, so a hard last-slot position thinks for a second
+  or two without the page — or the cube mid-turn — freezing while it does.
+  Cross and F2L are solved by search against a pruning table, so "6 moves" means six
+  and not "six that I happened to find". OLL and PLL come from the app's own alg
+  tables with the AUFs worked out, so you get the alg you recognise.
+- **Nothing is ever refused.** Type a move that is not in the list and it simply
+  becomes the new position — a fresh set of suggestions is built from there. The
+  counter above the list is the honest feedback: it goes up, and turns amber, when
+  the move you made cost you something.
+- **The cube keeps up.** Hover a suggestion and it plays on the cube beside the
+  list; click it and the position advances. *Replay the whole solve* turns the panel
+  into a scrubbable playback of everything from the scramble.
+- **The move box types in caps and adds as you go.** Finish a move, press space, and
+  it lands — there is no Enter key in the loop. Wide turns are `RW`, `LW`, `UW`.
+- **Pick your cross colour.** Six swatches under the cube, white selected by
+  default. Say white and every question after that is asked about the white
+  cross, finished or not; `auto` works it out from the cube instead, which is
+  what reads a solve that starts `x2` or `z'` correctly.
+- Reconstructions are **saved onto the solve**, so reopening one picks up where you
+  left off, split back into cross, four pairs, OLL and PLL.
+- **Copy it or make a card.** The two buttons beside the scramble: one puts the
+  whole thing on the clipboard as text, the other draws a share card with the
+  scramble, the cube it makes, and the solution one line per phase — the cross
+  is one line however many goes it took, all four pairs are F2L, and a trailing
+  U turn is written out as the AUF it is.
+
+Any scramble works, not just a recorded solve — paste one into the field at the top,
+or pick a past solve from *from a solve*.
+
 ### Statistics
 WCA-correct averages — trim the best and worst, DNFs count as worst, and two DNFs inside
 a window make the whole average a DNF. Current and best ao5 / ao12 / ao50 / ao100, mo3,
@@ -186,6 +228,7 @@ Everything lives in your browser's IndexedDB. No account, no server, nothing upl
 | **A** / **H** | statistics · all solves |
 | **T** / **,** | appearance · settings |
 | **K** | pick trainer cases |
+| **Y** | reconstruct (topbar button, or a solve's menu) |
 | **Ctrl + K** or **/** | command palette |
 | **?** | shortcut list |
 | **Z** / **F** / **V** | zen mode · fullscreen · 3D↔2D preview |
@@ -203,6 +246,7 @@ index.html            markup
 css/tokens.css        every design value, as CSS variables
 css/base.css          reset, layout, background, timer
 css/components.css    panels, controls, overlays, charts
+css/recon.css         the reconstruction workbench (fetched on first open)
 js/main.js            wiring — the entry point
 js/timer.js           timer state machine + WCA inspection
 js/scramble.js        cubing.js integration, trainers, pre-generation queue
@@ -212,6 +256,10 @@ js/charts.js          hand-built SVG charts
 js/theme.js           settings model + live theming
 js/bg.js              WebGL background shaders
 js/cube.js            static scramble preview
+js/cube3.js           the 3x3 model: notation, state, CFOP phase detection
+js/solver.js          cross / F2L search, last layer by simulation
+js/solver.worker.js   runs that search off the main thread
+js/recon.js           the reconstruction workbench
 js/panels.js          settings / stats / history / case picker drawers
 js/db.js              IndexedDB
 js/fx.js              confetti, shockwave, audio callouts
@@ -219,7 +267,7 @@ vendor/cubing/        mirrored cubing.js (works offline)
 tools/mirror_cubing.py  re-download that mirror
 serve.py              no-cache dev server
 start.bat             double-click launcher
-test.html             39-check self test
+test.html             55-check self test
 ```
 
 ---
@@ -250,6 +298,10 @@ modules over `file://`, and the page says so if you try.
 
 ## Not in this version
 
-Accounts and cloud sync, multiplayer racing, Bluetooth smart cubes, Bluetooth smart
-timers, and solve reconstruction. FMC currently records a time rather than running the
-full 60-minute solution editor.
+Accounts and cloud sync, multiplayer racing, Bluetooth smart cubes, and Bluetooth
+smart timers. FMC currently records a time rather than running the full 60-minute
+solution editor.
+
+The reconstructor suggests and animates, but it cannot know what you actually turned —
+without a smart cube it removes the typing, not the recall. It reads CFOP; Roux, ZZ and
+freestyle solves will not phase-detect cleanly, and it says so rather than guessing.

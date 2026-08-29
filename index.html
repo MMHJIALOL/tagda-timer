@@ -112,6 +112,9 @@
       <button class="icon-btn" id="btn-stats" title="Statistics  (A)">
         <svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>
       </button>
+      <button class="icon-btn" id="btn-recon" title="Reconstruct a solve  (Y)">
+        <svg viewBox="0 0 24 24"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M4 7.5l8 4.5 8-4.5M12 12v9"/></svg>
+      </button>
       <button class="icon-btn" id="btn-theme" title="Appearance  (T)">
         <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.2v2.6M12 19.2v2.6M2.2 12h2.6M19.2 12h2.6M5.05 5.05l1.85 1.85M17.1 17.1l1.85 1.85M18.95 5.05L17.1 6.9M6.9 17.1l-1.85 1.85"/></svg>
       </button>
@@ -176,52 +179,6 @@
 
     <!-- LEFT COLUMN: times on top, stats collapsed at the bottom -->
     <aside id="sidebar" class="fade-layer">
-
-      <!-- Above the times list on purpose: expanding it then takes space from a
-           list that can scroll, instead of growing off the bottom of the
-           sidebar and colliding with the creator chip. -->
-      <section class="panel" id="panel-stats" data-collapsed="true">
-        <button class="panel-head as-btn" id="stats-toggle" aria-expanded="false" aria-controls="stats-body" title="Show statistics">
-          <span class="stats-title">Stats</span>
-          <svg class="chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
-          <!-- Its own row, so three figures can never crowd the title out. -->
-          <span class="stats-peek" id="stats-peek">
-            <span><b>ao5</b><i id="peek-ao5">&mdash;</i></span>
-            <span><b>ao12</b><i id="peek-ao12">&mdash;</i></span>
-            <span><b>mo3</b><i id="peek-mo3">&mdash;</i></span>
-          </span>
-        </button>
-        <div id="stats-body">
-          <div id="stats-inner">
-          <div class="stat-grid" id="stat-grid">
-            <div class="stat" data-k="best"><span class="stat-k">best</span><span class="stat-v" id="s-best">&mdash;</span></div>
-            <div class="stat" data-k="mo3"><span class="stat-k">mo3</span><span class="stat-v" id="s-mo3">&mdash;</span></div>
-            <div class="stat" data-k="mean"><span class="stat-k">mean</span><span class="stat-v" id="s-mean">&mdash;</span></div>
-            <div class="stat" data-k="ao5"><span class="stat-k">ao5</span><span class="stat-v" id="s-ao5">&mdash;</span></div>
-            <div class="stat" data-k="ao12"><span class="stat-k">ao12</span><span class="stat-v" id="s-ao12">&mdash;</span></div>
-            <div class="stat" data-k="ao50"><span class="stat-k">ao50</span><span class="stat-v" id="s-ao50">&mdash;</span></div>
-            <div class="stat" data-k="ao100"><span class="stat-k">ao100</span><span class="stat-v" id="s-ao100">&mdash;</span></div>
-            <div class="stat wide" data-k="ao5"><span class="stat-k">consistency</span><span class="stat-v" id="cons-val">&mdash;</span>
-              <div class="cons-bar"><div class="cons-fill" id="cons-fill"></div></div>
-            </div>
-          </div>
-          <div class="bests-block">
-            <div class="bests-head">session best</div>
-            <div class="bests-grid" id="bests-grid">
-              <div class="bst" data-b="single"><span>single</span><b id="b-single">&mdash;</b></div>
-              <div class="bst" data-b="ao5"><span>ao5</span><b id="b-ao5">&mdash;</b></div>
-              <div class="bst" data-b="ao12"><span>ao12</span><b id="b-ao12">&mdash;</b></div>
-              <div class="bst" data-b="ao50"><span>ao50</span><b id="b-ao50">&mdash;</b></div>
-              <div class="bst" data-b="ao100"><span>ao100</span><b id="b-ao100">&mdash;</b></div>
-            </div>
-          </div>
-          <button class="mini-chart-wrap" id="mini-chart-btn" title="Open the full charts">
-            <svg id="mini-trend" viewBox="0 0 300 84" preserveAspectRatio="none"></svg>
-            <span class="mini-chart-cue">expand</span>
-          </button>
-          </div>
-        </div>
-      </section>
 
       <section class="panel" id="panel-times">
         <div class="panel-head">
@@ -344,6 +301,59 @@
         <div id="last-delta" hidden></div>
       </div>
     </section>
+    <!-- RIGHT COLUMN: the numbers -->
+    <aside id="sidebar-right" class="fade-layer">
+      <!-- The right rail: the numbers you glance at, away from the times list
+           you scroll. The column was already in the #stage grid and empty. -->
+      <section class="panel" id="panel-stats" data-collapsed="true">
+        <button class="panel-head as-btn" id="stats-toggle" aria-expanded="false" aria-controls="stats-body" title="Show statistics">
+          <span class="stats-title">Stats</span>
+          <svg class="chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+          <!-- Its own rows, so the figures can never crowd the title out.
+               Two of them: the three averages you watch mid-session, and the
+               three that say how the session is going overall. -->
+          <span class="stats-peek" id="stats-peek">
+            <span><b>ao5</b><i id="peek-ao5">&mdash;</i></span>
+            <span><b>ao12</b><i id="peek-ao12">&mdash;</i></span>
+            <span><b>mo3</b><i id="peek-mo3">&mdash;</i></span>
+            <span><b>best</b><i id="peek-best">&mdash;</i></span>
+            <span><b>ao50</b><i id="peek-ao50">&mdash;</i></span>
+            <span><b>mean</b><i id="peek-mean">&mdash;</i></span>
+          </span>
+        </button>
+        <div id="stats-body">
+          <div id="stats-inner">
+          <div class="stat-grid" id="stat-grid">
+            <div class="stat" data-k="best"><span class="stat-k">best</span><span class="stat-v" id="s-best">&mdash;</span></div>
+            <div class="stat" data-k="mo3"><span class="stat-k">mo3</span><span class="stat-v" id="s-mo3">&mdash;</span></div>
+            <div class="stat" data-k="mean"><span class="stat-k">mean</span><span class="stat-v" id="s-mean">&mdash;</span></div>
+            <div class="stat" data-k="ao5"><span class="stat-k">ao5</span><span class="stat-v" id="s-ao5">&mdash;</span></div>
+            <div class="stat" data-k="ao12"><span class="stat-k">ao12</span><span class="stat-v" id="s-ao12">&mdash;</span></div>
+            <div class="stat" data-k="ao50"><span class="stat-k">ao50</span><span class="stat-v" id="s-ao50">&mdash;</span></div>
+            <div class="stat" data-k="ao100"><span class="stat-k">ao100</span><span class="stat-v" id="s-ao100">&mdash;</span></div>
+            <div class="stat wide" data-k="ao5"><span class="stat-k">consistency</span><span class="stat-v" id="cons-val">&mdash;</span>
+              <div class="cons-bar"><div class="cons-fill" id="cons-fill"></div></div>
+            </div>
+          </div>
+          <div class="bests-block">
+            <div class="bests-head">session best</div>
+            <div class="bests-grid" id="bests-grid">
+              <div class="bst" data-b="single"><span>single</span><b id="b-single">&mdash;</b></div>
+              <div class="bst" data-b="ao5"><span>ao5</span><b id="b-ao5">&mdash;</b></div>
+              <div class="bst" data-b="ao12"><span>ao12</span><b id="b-ao12">&mdash;</b></div>
+              <div class="bst" data-b="ao50"><span>ao50</span><b id="b-ao50">&mdash;</b></div>
+              <div class="bst" data-b="ao100"><span>ao100</span><b id="b-ao100">&mdash;</b></div>
+            </div>
+          </div>
+          <button class="mini-chart-wrap" id="mini-chart-btn" title="Open the full charts">
+            <svg id="mini-trend" viewBox="0 0 300 84" preserveAspectRatio="none"></svg>
+            <span class="mini-chart-cue">expand</span>
+          </button>
+          </div>
+        </div>
+      </section>
+    </aside>
+
   </main>
 
   <!-- ---------- SCRAMBLE PREVIEW (flat, not a panel) ---------- -->

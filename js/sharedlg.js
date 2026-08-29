@@ -10,7 +10,7 @@ import { el, download, fmt } from './util.js';
 import { eff, DNF } from './stats.js';
 import { toast } from './toast.js';
 import {
-  drawSolveCard, drawAverageCard, canvasBlob, shareText, socialLinks,
+  drawSolveCard, drawAverageCard, drawReconCard, canvasBlob, shareText, socialLinks,
   SITE, SITE_URL, INSTA, INSTA_URL,
 } from './sharecard.js';
 
@@ -145,6 +145,17 @@ export async function shareSolve(solve, { index = null } = {}) {
     title: 'Share this solve',
     filename: `tagda-solve-${stamp(solve.createdAt)}.png`,
     text: shareText('Single', value),
+  });
+}
+
+/** A reconstruction: the scramble, the cube it makes, and the solution. */
+export async function shareRecon({ scramble, title, steps, moves }) {
+  toast('Rendering card…');
+  const canvas = await drawReconCard({ scramble, title, steps, moves });
+  present(canvas, {
+    title: 'Share this reconstruction',
+    filename: `tagda-reconstruction-${stamp()}.png`,
+    text: shareText('Reconstruction', `${moves} moves`),
   });
 }
 

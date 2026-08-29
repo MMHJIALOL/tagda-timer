@@ -181,10 +181,10 @@ function paintHero(ctx, c, y, label, value, sub) {
 }
 
 /** Boxed scramble block. Returns the y it ends at. */
-function paintScramble(ctx, c, y, scramble, { title = 'SCRAMBLE', maxLines = 4 } = {}) {
+function paintScramble(ctx, c, y, scramble, { title = 'SCRAMBLE', maxLines = 4, x = 74, width = W - 148, size: start = 30 } = {}) {
   const pad = 34;
-  const boxW = W - 148;
-  let size = 30;
+  const boxW = width;
+  let size = start;
   ctx.font = `500 ${size}px ${MONO}`;
   let lines = wrap(ctx, scramble, boxW - pad * 2);
   while (lines.length > maxLines && size > 16) {
@@ -196,7 +196,7 @@ function paintScramble(ctx, c, y, scramble, { title = 'SCRAMBLE', maxLines = 4 }
   const boxH = pad * 2 + 34 + lines.length * lh;
 
   ctx.fillStyle = hex(c.text, 0.055);
-  rr(ctx, 74, y, boxW, boxH, 26);
+  rr(ctx, x, y, boxW, boxH, 26);
   ctx.fill();
   ctx.strokeStyle = hex(c.text, 0.09);
   ctx.lineWidth = 2;
@@ -206,12 +206,12 @@ function paintScramble(ctx, c, y, scramble, { title = 'SCRAMBLE', maxLines = 4 }
   ctx.fillStyle = hex(c.text, 0.42);
   ctx.font = `700 20px ${SANS}`;
   ctx.letterSpacing = '4px';
-  ctx.fillText(title, 74 + pad, y + pad);
+  ctx.fillText(title, x + pad, y + pad);
   ctx.letterSpacing = '0px';
 
   ctx.fillStyle = c.text;
   ctx.font = `500 ${size}px ${MONO}`;
-  lines.forEach((ln, i) => ctx.fillText(ln, 74 + pad, y + pad + 34 + i * lh));
+  lines.forEach((ln, i) => ctx.fillText(ln, x + pad, y + pad + 34 + i * lh));
   ctx.textBaseline = 'alphabetic';
   return y + boxH;
 }
@@ -277,6 +277,138 @@ export async function drawSolveCard(solve, { index = null } = {}) {
   }
 
   paintFooter(ctx, H, c);
+  return cv;
+}
+
+/* ---------------------------------------------------------
+   Card 3 — a reconstruction: the scramble, the cube it makes,
+   and the solution written out phase by phase
+   --------------------------------------------------------- */
+
+export async function drawReconCard({ scramble = '', title = 'Reconstruction', steps = [], moves = 0 } = {}) {
+  await fontsReady();
+  const c = themeColors();
+  const logo = await logoImage();
+
+  const shown = steps.slice(0, 18);
+  const spare = steps.length - shown.length;
+
+  const paint = (ctx, H) => {
+    paintBackground(ctx, H, c);
+    paintHeader(ctx, c, logo, 'RECONSTRUCTION');
+
+    /* The move count and the scramble share the top band. The count used to be
+       190px tall on its own line, which pushed the scramble and the cube down
+       the card and left a third of the width empty beside it. */
+    const top = 214;
+    ctx.textBaseline = 'alphabetic';
+    ctx.textAlign = 'left';
+    ctx.fillStyle = c.accent2;
+    ctx.font = `700 26px ${SANS}`;
+    ctx.letterSpacing = '5px';
+    ctx.fillText(String(title).toUpperCase(), 74, top + 26);
+    ctx.letterSpacing = '0px';
+
+    const numSize = 104;
+    ctx.fillStyle = c.text;
+    ctx.font = `800 ${numSize}px ${MONO}`;
+    ctx.fillText(String(moves), 74, top + 26 + 44 + numSize * 0.76);
+    ctx.fillStyle = hex(c.text, 0.55);
+    ctx.font = `500 24px ${SANS}`;
+    ctx.fillText(`${moves === 1 ? 'move' : 'moves'}  ·  ${steps.length} step${steps.length === 1 ? '' : 's'}`,
+      74, top + 26 + 44 + numSize * 0.76 + 40);
+    const leftBottom = top + 26 + 44 + numSize * 0.76 + 60;
+
+    const scrX = 420;
+    const scrBottom = paintScramble(ctx, c, top, (scramble || '—').replace(/\s+/g, ' '),
+      { x: scrX, width: W - 74 - scrX, maxLines: 7, size: 25 });
+
+    let y = Math.max(leftBottom, scrBottom);
+
+    // The cube the scramble actually leaves you — the thing the solution
+    // below is a solution to.
+    const netH = 270;
+    drawNet(ctx, faceletsFor(scramble, 3), 3, 74, y + 34, W - 148, netH);
+    y = y + 34 + netH;
+
+    /* One row per phase, and a row wraps rather than shrinking to nothing:
+       all four pairs on one F2L line is thirty moves, and 12px type is not a
+       smaller reconstruction, it is an unreadable one. */
+    const pad = 34;
+    const boxW = W - 148;
+    const boxTop = y + 40;
+    const labelW = 150;
+    const algMax = boxW - pad * 2 - labelW;
+    const algSize = shown.length > 8 ? 24 : 27;
+    const lh = algSize * 1.42;
+
+    ctx.font = `500 ${algSize}px ${MONO}`;
+    const rows = shown.map(st => ({ ...st, lines: wrap(ctx, st.alg, algMax) }));
+    const rowGap = 14;
+    const rowsH = rows.reduce((n, r) => n + r.lines.length * lh + rowGap, 0);
+    const boxH = pad * 2 + 40 + rowsH + (spare ? 40 : 0);
+
+    ctx.fillStyle = hex(c.text, 0.055);
+    rr(ctx, 74, boxTop, boxW, boxH, 26);
+    ctx.fill();
+    ctx.strokeStyle = hex(c.text, 0.09);
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    ctx.textBaseline = 'top';
+    ctx.fillStyle = hex(c.text, 0.42);
+    ctx.font = `700 20px ${SANS}`;
+    ctx.letterSpacing = '4px';
+    ctx.fillText('SOLUTION', 74 + pad, boxTop + pad);
+    ctx.letterSpacing = '0px';
+
+    let ry = boxTop + pad + 40;
+    rows.forEach((r, i) => {
+      ctx.fillStyle = c.accent2;
+      ctx.font = `700 21px ${SANS}`;
+      ctx.letterSpacing = '2px';
+      ctx.fillText(String(r.phase || '').toUpperCase(), 74 + pad, ry + 4);
+      ctx.letterSpacing = '0px';
+
+      ctx.fillStyle = c.text;
+      ctx.font = `500 ${algSize}px ${MONO}`;
+      r.lines.forEach((ln, k) => ctx.fillText(ln, 74 + pad + labelW, ry + k * lh));
+
+      ry += r.lines.length * lh + rowGap;
+      /* A rule only where the heading changes. The four F2L lines are one
+         thing with four goes at it, so they read as a block rather than as
+         four unrelated rows. */
+      if (i < rows.length - 1 && rows[i + 1].phase) {
+        ctx.strokeStyle = hex(c.text, 0.07);
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(74 + pad, ry - rowGap / 2);
+        ctx.lineTo(74 + boxW - pad, ry - rowGap / 2);
+        ctx.stroke();
+      }
+    });
+    if (spare) {
+      ctx.fillStyle = hex(c.text, 0.45);
+      ctx.font = `500 22px ${SANS}`;
+      ctx.fillText(`+ ${spare} more step${spare === 1 ? '' : 's'}`, 74 + pad, ry);
+    }
+    ctx.textBaseline = 'alphabetic';
+
+    paintFooter(ctx, H, c);
+    return boxTop + boxH;
+  };
+
+  /* A reconstruction is as long as it is, so the card is painted once on a
+     scratch canvas to find out where it ends, then painted again at exactly
+     that height. Guessing put the footer on top of the last row. */
+  const scratch = document.createElement('canvas');
+  scratch.width = W; scratch.height = 4200;
+  const bottom = paint(scratch.getContext('2d'), 4200);
+
+  const H = Math.max(1200, Math.round(bottom + 150));
+  const cv = document.createElement('canvas');
+  cv.width = W; cv.height = H;
+  paint(cv.getContext('2d'), H);
   return cv;
 }
 

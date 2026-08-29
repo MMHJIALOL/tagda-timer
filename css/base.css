@@ -262,9 +262,15 @@ body.inspecting #timer-display { opacity: 0; }
   min-height: 0;
   align-items: stretch;
 }
-#stage[data-sidebar="off"] { grid-template-columns: minmax(0, 1fr); }
+/* A rail that is switched off does not keep its column. The remaining children
+   fall into the remaining tracks in DOM order, which is why the right rail is
+   written after the timer in index.html. */
+#stage[data-left="off"]  { grid-template-columns: minmax(0, 1fr) minmax(0, var(--sidebar-w)); }
+#stage[data-right="off"] { grid-template-columns: minmax(0, var(--sidebar-w)) minmax(0, 1fr); }
+#stage[data-sidebar="off"],
+#stage[data-left="off"][data-right="off"] { grid-template-columns: minmax(0, 1fr); }
 
-/* left column: times fill the space, stats sit at the bottom */
+/* left column: the times list, which is the thing you scroll */
 #sidebar {
   display: flex; flex-direction: column; gap: var(--gap);
   min-height: 0; min-width: 0;
@@ -280,8 +286,17 @@ body.inspecting #timer-display { opacity: 0; }
 /* `flex: 0 0 auto` matters: as a shrinkable item with min-height 0, the flex
    algorithm handed all the height to the greedy times list below and collapsed
    the expanded panel to nothing. It takes its content height, capped. */
-#panel-stats { flex: 0 0 auto; max-height: 68%; }
 #panel-times { flex: 1 1 auto; min-height: 0; }
+
+/* Right column: the numbers. Nothing in here scrolls, so it is free to sit
+   opposite the times list rather than stacked on top of it, and the creator
+   chip is not down this side — no clearance needed. */
+#sidebar-right {
+  display: flex; flex-direction: column; gap: var(--gap);
+  min-height: 0; min-width: 0;
+  font-size: calc(1rem * var(--sidebar-text));
+}
+#panel-stats { flex: 0 1 auto; min-height: 0; }
 
 /* =================== TIMER =================== */
 #timer-zone {
@@ -465,17 +480,24 @@ body.inspecting #last-delta, body.focus #last-delta { display: none; }
 /* =================== RESPONSIVE =================== */
 @media (max-width: 1080px) {
   #stage { grid-template-columns: minmax(0, min(var(--sidebar-w), 200px)) 1fr minmax(0, min(var(--sidebar-w), 200px)); }
-  #stage[data-sidebar="off"] { grid-template-columns: minmax(0, 1fr); }
+  #stage[data-left="off"]  { grid-template-columns: 1fr minmax(0, min(var(--sidebar-w), 200px)); }
+  #stage[data-right="off"] { grid-template-columns: minmax(0, min(var(--sidebar-w), 200px)) 1fr; }
+  #stage[data-sidebar="off"],
+  #stage[data-left="off"][data-right="off"] { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 860px) {
   #app { gap: 10px; padding: 10px; }
-  #stage, #stage[data-sidebar="off"] { grid-template-columns: minmax(0, 1fr); grid-template-rows: 1fr auto; }
+  #stage, #stage[data-sidebar="off"], #stage[data-left="off"], #stage[data-right="off"] {
+    grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 1fr auto;
+  }
   #timer-zone { order: 1; }
-  /* still a row here, but the chip is still bottom-left, so keep the gap */
-  #sidebar { order: 2; flex-direction: row; max-height: 34vh; min-width: 0; padding-bottom: 30px; }
-  #sidebar > .panel { min-width: 0; }
+  /* One column again, so the two rails stack: the numbers above the times list,
+     both still under the timer. The chip is still bottom-left, hence the gap. */
+  #sidebar-right { order: 2; }
+  #sidebar { order: 3; flex-direction: row; max-height: 34vh; min-width: 0; padding-bottom: 30px; }
+  #sidebar > .panel, #sidebar-right > .panel { min-width: 0; }
   #panel-times { flex: 1; }
-  #panel-stats { flex: 1; }
+  #panel-stats { flex: 0 0 auto; }
   .brand-text { display: none; }
   .topbar-center { gap: 5px; }
   #timer-hint { display: none; }
@@ -492,7 +514,8 @@ body.inspecting #last-delta, body.focus #last-delta { display: none; }
 }
 
 /* zen mode — hide chrome permanently */
-body.zen #topbar, body.zen #sidebar, body.zen #panel-cube, body.zen #creator-chip { display: none; }
+body.zen #topbar, body.zen #sidebar, body.zen #sidebar-right,
+body.zen #panel-cube, body.zen #creator-chip { display: none; }
 body.zen #app { grid-template-rows: auto 1fr; }
 body.zen #stage { grid-template-columns: minmax(0, 1fr); }
 
