@@ -124,19 +124,12 @@ function pairTable(corner, edge) {
   return dist;
 }
 
-const pairIndex = (s, corner, edge) => {
-  let cp = 0, ep = 0;
-  for (let i = 0; i < 8; i++) if (s[i] === corner) { cp = i; break; }
-  for (let i = 0; i < 12; i++) if (s[16 + i] === edge) { ep = i; break; }
-  return ((cp * 3 + s[8 + cp]) * 12 + ep) * 2 + s[28 + ep];
-};
-
 /* =========================================================
    Depth-first enumeration
    ========================================================= */
 
 const MAX_DEPTH = 11;
-const NODE_BUDGET = 3_000_000;
+const NODE_BUDGET = 5_000_000;
 
 /**
  * Every solution of length exactly `limit`, up to `want` of them.
@@ -186,7 +179,11 @@ function solveGoal(start, goal, h, { want = 60, slack = 2, maxDepth = MAX_DEPTH,
     if (budget.left <= 0) break;
     searchDepth(start, goal, h, d, want, out, budget);
     if (out.length && best < 0) best = d;
-    if (best >= 0 && (d >= best + slack || out.length >= want)) break;
+    /* Alternatives are worth having when the answer is short. Once it is eight
+       moves or more, one more depth costs an order of magnitude and buys a
+       list nobody reads, so a long solution is handed over as it is. */
+    const allow = best >= 8 ? 0 : slack;
+    if (best >= 0 && (d >= best + allow || out.length >= want)) break;
   }
   return { best, solutions: out };
 }
@@ -292,7 +289,7 @@ function lastLayer(state, frame, analysis) {
  *   best    length of the shortest thing that works, in face turns
  *   list    ranked suggestions
  */
-export function suggest(state, frame, analysis, { limit = 20, timeMs = 1500 } = {}) {
+export function suggest(state, frame, analysis, { limit = 20, timeMs = 1500, crossName = null } = {}) {
   const budget = { left: NODE_BUDGET };
   const started = performance.now();
   const out = { kind: analysis.phase, best: -1, list: [], partial: false, face: analysis.face };
@@ -310,7 +307,8 @@ export function suggest(state, frame, analysis, { limit = 20, timeMs = 1500 } = 
     const h = (s) => dist[crossIndex(s, slotOf)];
     const { best, solutions } = solveGoal(state, crossGoal(homes), h, { want: 120, slack: 2, maxDepth: 9, budget });
     out.best = best;
-    out.list = dedupe(solutions.map(p => ({ ...render(p, frame), label: `${analysis.face} cross`, note: 'cross' })))
+    const crossLabel = crossName || `${analysis.face} cross`;
+    out.list = dedupe(solutions.map(p => ({ ...render(p, frame), label: crossLabel, note: 'cross' })))
       .sort(byNiceness).slice(0, limit);
     out.partial = budget.left <= 0;
     return out;
@@ -320,25 +318,91 @@ export function suggest(state, frame, analysis, { limit = 20, timeMs = 1500 } = 
      question a reconstruction actually asks is "which pair was easiest from
      here", not "finish the one I picked". */
   const { dist, slotOf, homes } = crossTable(analysis.face);
-  const crossH = (s) => dist[crossIndex(s, slotOf)];
+  const cross = [0, 0, 0, 0], crossO = [0, 0, 0, 0];
   const done = analysis.slots.filter(s => s.done);
   const todo = analysis.slots.filter(s => !s.done);
   const all = [];
   let best = -1;
 
+  /* A pair that is already in has to come back out and go home again, so its
+     own distance is a lower bound too. Taking the largest of them stops the
+     search wandering into lines that scatter three finished pairs — which is
+     what used to make the last slot unfindable inside the depth limit. */
+  const keep = done.map(sl => ({ ...sl, pd: pairTable(sl.corner, sl.edge) }));
+
+  /* The heuristic is the innermost thing in the search, so it walks the
+     position once and then does nothing but table lookups. Finding each
+     piece with its own scan cost four passes a node and showed up as a
+     second of thinking on the last slot. */
+  const cAt = new Uint8Array(8);
+  const eAt = new Uint8Array(12);
+
   for (const slot of todo) {
     if (performance.now() - started > timeMs) { out.partial = true; break; }
     const pd = pairTable(slot.corner, slot.edge);
-    const h = (s) => Math.max(crossH(s), pd[pairIndex(s, slot.corner, slot.edge)]);
+    const pairs = [{ corner: slot.corner, edge: slot.edge, pd }, ...keep];
+    const h = (s) => {
+      for (let i = 0; i < 8; i++) cAt[s[i]] = i;
+      let n = 0;
+      for (let i = 0; i < 12; i++) {
+        const p = s[16 + i];
+        eAt[p] = i;
+        const k = slotOf[p];
+        if (k >= 0) { cross[k] = i; crossO[k] = s[28 + i]; }
+      }
+      n = dist[((((cross[0] * 12 + cross[1]) * 12 + cross[2]) * 12 + cross[3]) << 4)
+        | (crossO[0] << 3 | crossO[1] << 2 | crossO[2] << 1 | crossO[3])];
+      for (const q of pairs) {
+        const cp = cAt[q.corner], ep = eAt[q.edge];
+        const d = q.pd[((cp * 3 + s[8 + cp]) * 12 + ep) * 2 + s[28 + ep]];
+        if (d > n) n = d;
+      }
+      return n;
+    };
+    // The last slot is the only search left, so it can afford to look deeper.
+    const cap = todo.length === 1 ? 11 : 10;
     const { best: b, solutions } = solveGoal(
       state, pairGoal(homes, done, slot), h,
-      { want: 24, slack: 1, maxDepth: best >= 0 ? Math.min(10, best + 1) : 10, budget },
+      { want: 24, slack: 1, maxDepth: best >= 0 ? Math.min(cap, best + 1) : cap, budget },
     );
     if (b >= 0 && (best < 0 || b < best)) best = b;
     for (const p of solutions) {
-      all.push({ ...render(p, frame), label: `${slot.label} pair`, note: `slot ${slot.label}` });
+      const where = [...slot.label].map(f => toUserFace(frame, f)).join('');
+      all.push({ ...render(p, frame), label: `${where} pair`, note: 'f2l' });
     }
   }
+  /* If nothing keeps everything intact inside the depth limit, look again
+     without insisting the finished pairs survive. Breaking one is a real thing
+     people do, and a suggestion that says so beats an empty list. */
+  if (!all.length && done.length) {
+    for (const slot of todo) {
+      if (budget.left <= 0) break;
+      const pd = pairTable(slot.corner, slot.edge);
+      const h = (s) => {
+        for (let i = 0; i < 8; i++) cAt[s[i]] = i;
+        for (let i = 0; i < 12; i++) {
+          const p = s[16 + i];
+          eAt[p] = i;
+          const k = slotOf[p];
+          if (k >= 0) { cross[k] = i; crossO[k] = s[28 + i]; }
+        }
+        const n = dist[((((cross[0] * 12 + cross[1]) * 12 + cross[2]) * 12 + cross[3]) << 4)
+          | (crossO[0] << 3 | crossO[1] << 2 | crossO[2] << 1 | crossO[3])];
+        const cp = cAt[slot.corner], ep = eAt[slot.edge];
+        const d = pd[((cp * 3 + s[8 + cp]) * 12 + ep) * 2 + s[28 + ep]];
+        return d > n ? d : n;
+      };
+      const { best: b, solutions } = solveGoal(
+        state, pairGoal(homes, [], slot), h, { want: 12, slack: 1, maxDepth: 9, budget },
+      );
+      if (b >= 0 && (best < 0 || b < best)) best = b;
+      for (const p of solutions) {
+        const where = [...slot.label].map(f => toUserFace(frame, f)).join('');
+        all.push({ ...render(p, frame), label: `${where} pair`, note: 'disturbs a finished pair' });
+      }
+    }
+  }
+
   out.best = best;
   out.partial = out.partial || budget.left <= 0;
   out.list = dedupe(all).sort(byNiceness).slice(0, limit);

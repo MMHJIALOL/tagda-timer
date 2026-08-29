@@ -290,7 +290,7 @@ export async function drawReconCard({ scramble = '', title = 'Reconstruction', s
   const c = themeColors();
   const logo = await logoImage();
 
-  const shown = steps.slice(0, 14);
+  const shown = steps.slice(0, 18);
   const spare = steps.length - shown.length;
 
   const paint = (ctx, H) => {
@@ -344,7 +344,7 @@ export async function drawReconCard({ scramble = '', title = 'Reconstruction', s
 
     ctx.font = `500 ${algSize}px ${MONO}`;
     const rows = shown.map(st => ({ ...st, lines: wrap(ctx, st.alg, algMax) }));
-    const rowGap = 16;
+    const rowGap = 14;
     const rowsH = rows.reduce((n, r) => n + r.lines.length * lh + rowGap, 0);
     const boxH = pad * 2 + 40 + rowsH + (spare ? 40 : 0);
 
@@ -375,7 +375,10 @@ export async function drawReconCard({ scramble = '', title = 'Reconstruction', s
       r.lines.forEach((ln, k) => ctx.fillText(ln, 74 + pad + labelW, ry + k * lh));
 
       ry += r.lines.length * lh + rowGap;
-      if (i < rows.length - 1) {
+      /* A rule only where the heading changes. The four F2L lines are one
+         thing with four goes at it, so they read as a block rather than as
+         four unrelated rows. */
+      if (i < rows.length - 1 && rows[i + 1].phase) {
         ctx.strokeStyle = hex(c.text, 0.07);
         ctx.lineWidth = 1;
         ctx.beginPath();

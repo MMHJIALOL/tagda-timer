@@ -246,6 +246,26 @@ section('reconstruction');
   check('the solver can talk itself through a whole CFOP solve',
     done.solved && !stuck, `${steps} steps to solved`);
 
+  /* The same thing on real scrambles, because the position that used to defeat
+     it was always the last F2L slot: three pairs in, and every line that fixes
+     the fourth without scattering them is nine or ten moves deep. */
+  let solvedAll = 0, worstMs = 0;
+  for (let n = 0; n < 3; n++) {
+    const s = await G.generate('333', 'wca');
+    let p2 = C.applyAlg(C.SOLVED, s.scramble);
+    for (let i = 0; i < 14; i++) {
+      const a = C.analyse(p2.state, 'U');
+      if (a.solved) { solvedAll++; break; }
+      const t0 = performance.now();
+      const res = SV.suggest(p2.state, p2.frame, a, { limit: 3 });
+      worstMs = Math.max(worstMs, performance.now() - t0);
+      if (!res.list.length) break;
+      p2 = C.applyAlg(p2.state, res.list[0].alg, p2.frame);
+    }
+  }
+  check('it never runs out of ideas on a random scramble',
+    solvedAll === 3, `${solvedAll}/3 solved · slowest single search ${Math.round(worstMs)}ms`);
+
   // The shortest suggestion has to actually be the shortest: nothing one move
   // less may exist, or "6 moves to finish the cross" is a lie.
   const start = C.applyAlg(C.SOLVED, scr);

@@ -30,9 +30,9 @@ There is **no build step** — no Node, no npm, no bundler. It is plain ES modul
 so any static file server works, and deploying later means uploading the folder as-is.
 
 To check everything still works after a change, open <http://localhost:5173/test.html>.
-It runs 54 checks: the statistics maths, every trainer algorithm verified by simulating a
-real cube, the reconstruction model and solver (superflip, the wide-turn identities, and a
-whole CFOP solve driven only by the suggestions it hands back), and the rendered page
+It runs 55 checks: the statistics maths, every trainer algorithm verified by simulating a
+real cube, the reconstruction model and solver (superflip, the wide-turn identities, and
+whole CFOP solves driven only by the suggestions it hands back), and the rendered page
 itself (that no overlay is stuck on screen).
 
 ---
@@ -128,6 +128,8 @@ screen is untouched until you ask for it.
   you get there on a touch screen.
 - **It suggests the moves.** From wherever the cube currently stands it works out
   every shortest way on, ranked by move count and then by how comfortably they turn.
+  The search runs in a worker, so a hard last-slot position thinks for a second
+  or two without the page — or the cube mid-turn — freezing while it does.
   Cross and F2L are solved by search against a pruning table, so "6 moves" means six
   and not "six that I happened to find". OLL and PLL come from the app's own alg
   tables with the AUFs worked out, so you get the alg you recognise.
@@ -256,6 +258,7 @@ js/bg.js              WebGL background shaders
 js/cube.js            static scramble preview
 js/cube3.js           the 3x3 model: notation, state, CFOP phase detection
 js/solver.js          cross / F2L search, last layer by simulation
+js/solver.worker.js   runs that search off the main thread
 js/recon.js           the reconstruction workbench
 js/panels.js          settings / stats / history / case picker drawers
 js/db.js              IndexedDB
@@ -264,7 +267,7 @@ vendor/cubing/        mirrored cubing.js (works offline)
 tools/mirror_cubing.py  re-download that mirror
 serve.py              no-cache dev server
 start.bat             double-click launcher
-test.html             54-check self test
+test.html             55-check self test
 ```
 
 ---

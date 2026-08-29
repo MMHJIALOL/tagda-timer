@@ -14,7 +14,7 @@
 
 import { el, copy } from './util.js';
 import { SOLVED, applyAlg, analyse, parse, IDENTITY_FRAME } from './cube3.js';
-import { suggest, warm } from './solver.js';
+import { suggest } from './solver.js';
 import { toast } from './toast.js';
 
 /* twisty-player, loaded the same way the scramble preview loads it. */
@@ -169,23 +169,49 @@ let ui = {};
    playing instead of the move just committed. A short delay fixes the first,
    and a lock held until the pointer genuinely moves again fixes the second. */
 let hoverTimer = null;
-let hoverLocked = false;
+let hoverRow = null;
+let hoverArmed = true;
+let clickedAt = null;
 
-function hoverPreview(alg) {
-  if (hoverLocked) return;
-  clearTimeout(hoverTimer);
-  hoverTimer = setTimeout(() => renderCube(alg), 140);
+/**
+ * Has the pointer moved enough to count as hovering on purpose?
+ *
+ * Rows are driven by mousemove rather than mouseenter, because a row that
+ * appears underneath a stationary cursor fires mouseenter all by itself —
+ * that is what made the cube run off and play something else the moment you
+ * clicked. After a click the pointer has to travel a few pixels before the
+ * panel will believe you meant to hover again.
+ */
+function armed(e) {
+  if (hoverArmed) return true;
+  if (!clickedAt) { hoverArmed = true; return true; }
+  if (Math.hypot(e.clientX - clickedAt.x, e.clientY - clickedAt.y) < 12) return false;
+  hoverArmed = true;
+  clickedAt = null;
+  return true;
 }
 
-function hoverEnd() {
+/** Preview `alg` if the pointer has settled on a row it was not already on. */
+function hoverPreview(e, row, run) {
+  if (!armed(e) || hoverRow === row) return;
+  hoverRow = row;
   clearTimeout(hoverTimer);
-  if (!hoverLocked) renderCube();
+  hoverTimer = setTimeout(run, 140);
 }
 
-/** Hold hover off until the pointer moves of its own accord. */
-function lockHover() {
+function hoverEnd(row) {
+  if (row && hoverRow !== row) return;
+  hoverRow = null;
   clearTimeout(hoverTimer);
-  hoverLocked = true;
+  if (hoverArmed) renderCube();
+}
+
+/** Freeze hovering where the click left it, until the pointer moves off. */
+function holdHover(e) {
+  clearTimeout(hoverTimer);
+  hoverArmed = false;
+  hoverRow = null;
+  clickedAt = e ? { x: e.clientX, y: e.clientY } : null;
 }
 
 /** Pick the cross colour by hand. Everything downstream is asked about it. */
@@ -194,6 +220,9 @@ function setCross(face) {
   lastBest = null;
   commit();
 }
+
+/** "white cross" — the one name that means the same whichever way up it is. */
+const crossLabel = (a) => `${colourOf(a.face)?.name || a.face} cross`;
 
 function paintCrossPicker() {
   for (const b of ui.crossSwatches.children) {
@@ -225,10 +254,10 @@ function renderSteps(a) {
       el('span', { class: 'ph', text: PHASE_LABEL[step.phase] || '' }),
       el('span', { class: 'mv', text: step.alg }),
       el('span', { class: 'n', text: String(step.alg.split(/\s+/).filter(t => !/^[xyz]/i.test(t)).length) }),
-      el('button', { class: 'rc-x', title: 'Remove this step', text: '×', onclick: (e) => { e.stopPropagation(); lockHover(); S.steps.splice(i, 1); commit(); } }),
+      el('button', { class: 'rc-x', title: 'Remove this step', text: '×', onclick: (e) => { e.stopPropagation(); holdHover(e); S.steps.splice(i, 1); commit(); } }),
     );
-    row.addEventListener('mouseenter', () => playSoon(i));
-    row.addEventListener('mouseleave', hoverEnd);
+    row.addEventListener('mousemove', (e) => hoverPreview(e, row, () => playStep(i)));
+    row.addEventListener('mouseleave', () => hoverEnd(row));
     ui.steps.append(row);
   });
   ui.steps.append(el('div', { class: 'rc-step current' },
@@ -289,12 +318,7 @@ function playStep(i, only = null) {
   } catch { /* ignore */ }
 }
 
-/** Replay one step of the reconstruction, after the same settling delay. */
-function playSoon(i) {
-  if (hoverLocked) return;
-  clearTimeout(hoverTimer);
-  hoverTimer = setTimeout(() => playStep(i), 140);
-}
+
 
 function renderSuggestions(a) {
   ui.sugList.innerHTML = '';
@@ -312,21 +336,71 @@ function renderSuggestions(a) {
   ui.dist.append(el('span', { class: 'n', text: '…' }), el('span', { class: 'lbl', text: 'looking for the shortest way on' }));
   ui.sugList.append(el('div', { class: 'rc-empty', text: 'thinking…' }));
 
-  /* Let the "thinking" paint land before the search blocks the thread. A timer
-     rather than an animation frame: a backgrounded tab stops handing those out,
-     and the panel would sit on "thinking…" for as long as you looked away.
-     The token drops any result that a newer click has already outrun. */
+  // The ticket drops any result a newer click has already outrun.
   const ticket = ++pending;
-  setTimeout(() => {
-    if (ticket !== pending) return;
-    let res;
-    try { res = suggest(currentState(), currentFrame(), a, { limit: 20 }); }
-    catch (err) { console.warn('[recon] solver', err); res = { list: [], best: -1 }; }
-    if (ticket === pending) paintSuggestions(res, a);
-  }, 16);
+  askSolver(currentState(), currentFrame(), a, { limit: 20, crossName: crossLabel(a) })
+    .then((res) => { if (ticket === pending) paintSuggestions(res, a); })
+    .catch((err) => {
+      console.warn('[recon] solver', err);
+      if (ticket === pending) paintSuggestions({ list: [], best: -1 }, a);
+    });
 }
 
 let pending = 0;
+
+/* ---------------- where the thinking happens ----------------
+   A last-slot F2L search can run for a couple of seconds. On the main thread
+   that is a couple of seconds of frozen page — the cube stops mid-turn and the
+   panel reads as broken rather than busy — so it goes to a worker, which also
+   keeps the pruning tables warm between questions. If module workers are not
+   available the search still runs, just inline, which is what the app did
+   before and is only ever noticeable on the hardest positions. */
+let worker = null;
+let workerDead = false;
+let workerJobs = new Map();
+let workerSeq = 0;
+
+function getWorker() {
+  if (worker || workerDead) return worker;
+  try {
+    worker = new Worker(new URL('./solver.worker.js', import.meta.url), { type: 'module' });
+    worker.onmessage = (e) => {
+      const { id, result, error } = e.data || {};
+      const job = workerJobs.get(id);
+      if (!job) return;
+      workerJobs.delete(id);
+      if (error) job.reject(new Error(error)); else job.resolve(result);
+    };
+    worker.onerror = (e) => {
+      console.warn('[recon] solver worker failed, falling back', e.message);
+      workerDead = true;
+      worker = null;
+      for (const job of workerJobs.values()) job.reject(new Error('worker died'));
+      workerJobs.clear();
+    };
+  } catch (err) {
+    console.warn('[recon] no module workers here, solving inline', err.message);
+    workerDead = true;
+  }
+  return worker;
+}
+
+function askSolver(state, frame, analysis, opts) {
+  const w = getWorker();
+  if (!w) {
+    // Inline, but after a paint, so "thinking…" is on screen before it blocks.
+    return new Promise((resolve) => setTimeout(() => resolve(suggest(state, frame, analysis, opts)), 16));
+  }
+  const id = ++workerSeq;
+  return new Promise((resolve, reject) => {
+    workerJobs.set(id, { resolve, reject });
+    // A copy, because the panel keeps using this position while the search runs.
+    w.postMessage({ id, state: state.slice().buffer, frame, analysis, opts });
+  }).catch((err) => {
+    if (workerDead) return suggest(state, frame, analysis, opts);
+    throw err;
+  });
+}
 
 let lastBest = null;
 
@@ -341,7 +415,7 @@ function paintSuggestions(res, a) {
     ui.dist.append(el('span', { class: 'n', text: '?' }),
       el('span', { class: 'lbl', text: 'nothing found within reach — type a move and carry on' }));
   } else {
-    const what = a.phase === 'cross' ? 'to finish the cross'
+    const what = a.phase === 'cross' ? `to finish the ${crossLabel(a)}`
       : a.phase === 'f2l' ? 'to insert the easiest pair'
       : a.phase === 'oll' ? 'to orient the last layer'
       : 'to finish the solve';
@@ -363,9 +437,9 @@ function paintSuggestions(res, a) {
         el('span', { class: 'why', text: `${s.label} · ${s.note}` })),
       el('span', { class: 'len', text: String(s.moves) }),
     );
-    row.addEventListener('mouseenter', () => hoverPreview(s.alg));
-    row.addEventListener('mouseleave', hoverEnd);
-    row.addEventListener('click', () => { lockHover(); addStep(s.alg); });
+    row.addEventListener('mousemove', (e) => hoverPreview(e, row, () => renderCube(s.alg)));
+    row.addEventListener('mouseleave', () => hoverEnd(row));
+    row.addEventListener('click', (e) => { holdHover(e); addStep(s.alg); });
     ui.sugList.append(row);
   }
   ui.sugMore.textContent = res.partial
@@ -390,12 +464,15 @@ function addStep(alg, { typed = false } = {}) {
   const last = S.steps.at(-1);
   const a = look();
   const rank = rankOf(a);
-  if (typed && last?.typed && rank <= last.rank) last.alg = `${last.alg} ${clean}`;
+  /* A step made only of rotations is not a step yet — you turned the cube to
+     set something up. Whatever comes next joins it, which is how a y' in the
+     middle of F2L ends up on the line with the pair it was for. */
+  const openRotation = last && allRotations(last.alg);
+  if (openRotation || (typed && last?.typed && rank <= last.rank)) last.alg = `${last.alg} ${clean}`;
   else S.steps.push({ alg: clean, phase: a.phase, rank, typed });
   commit();
   // Watch it happen. Snapping to the answer told you nothing about the moves,
   // which is the whole reason the cube is on screen.
-  lockHover();
   playStep(S.steps.length - 1, typed ? clean : null);
 }
 
@@ -405,6 +482,8 @@ export function reconText() {
   const total = moveCount();
   return [S.scramble, '', ...lines, '', `${total} moves`].join('\n');
 }
+
+const allRotations = (alg) => alg.split(/\s+/).filter(Boolean).every(t => /^[xyz]/i.test(t));
 
 /** Face turns in the reconstruction so far. Rotations are not moves. */
 function moveCount() {
@@ -536,7 +615,7 @@ function build() {
     ...['x', "x'", 'x2', 'y', "y'", 'y2', 'z', "z'", 'z2'].map(r =>
       el('button', {
         class: 'rc-rot', text: r, title: `Turn the whole cube: ${r}`,
-        onclick: () => { lockHover(); addStep(r, { typed: true }); },
+        onclick: (e) => { holdHover(e); addStep(r, { typed: true }); },
       })),
   );
 
@@ -600,8 +679,6 @@ function build() {
   );
 
   host.append(top, el('div', { class: 'rc-body' }, left, right));
-  // A pointer that has actually moved is a pointer that meant to hover.
-  host.addEventListener('mousemove', () => { hoverLocked = false; }, true);
   // Clicking anywhere else puts the solve list away, the way a menu should.
   host.addEventListener('click', (e) => {
     if (!ui.pickList.hidden && !ui.pick.contains(e.target)) ui.pickList.hidden = true;
@@ -617,11 +694,13 @@ function build() {
  */
 function cardSteps() {
   const out = [];
+  let heading = null;
   for (const st of S.steps) {
     const phase = PHASE_LABEL[st.phase] || '';
-    const last = out.at(-1);
-    if (last && last.phase === phase) last.alg = `${last.alg} ${st.alg}`;
-    else out.push({ phase, alg: st.alg });
+    // Every step keeps its own line — four pairs are four lines. The heading is
+    // what stops repeating: they are all F2L, and saying so four times is noise.
+    out.push({ phase: phase === heading ? '' : phase, alg: st.alg });
+    heading = phase;
   }
   const last = out.at(-1);
   if (last && look().solved) {
@@ -739,8 +818,9 @@ export async function openRecon({ scramble = '', title = 'Reconstruct', moves = 
   document.body.classList.add('recon-open');
   await mountPlayer();
   commit();
-  // The cross table for D is the one almost every reconstruction wants.
-  setTimeout(() => { try { warm('D'); } catch { /* ignore */ } }, 0);
+  // Get the worker (and its module graph) loading now, alongside the cube,
+  // rather than on the first question asked of it.
+  setTimeout(() => { try { getWorker(); } catch { /* ignore */ } }, 0);
   ui.input.focus();
 }
 
