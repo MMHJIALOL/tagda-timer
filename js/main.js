@@ -84,6 +84,9 @@ const loadPanels = lazy(() => import('./panels.js'), m => (_panels = m));
 let _share = null;
 const loadShare = lazy(() => import('./sharedlg.js'), m => (_share = m));
 
+let _recon = null;
+const loadRecon = lazy(() => import('./recon.js'), m => (_recon = m));
+
 /** Nothing to open is better than a click that silently does nothing. */
 function lazyFailed(what, err) {
   console.warn(`[lazy] could not load ${what}`, err);
@@ -119,6 +122,45 @@ const drawerOpen  = () => !!_panels && _panels.drawerOpen();
 const closeDrawer = () => { _panels?.closeDrawer(); };
 const shareOpen   = () => !!_share && _share.shareOpen();
 const closeShare  = () => { _share?.closeShare(); };
+const reconOpen   = () => !!_recon && _recon.reconOpen();
+const closeRecon  = () => _recon ? _recon.closeRecon() : false;
+
+/**
+ * The reconstruction workbench. Nothing about it is loaded until somebody asks
+ * for it — it drags in a solver and a second cube renderer, and most sessions
+ * never open it.
+ */
+async function openRecon(opts) {
+  let m;
+  try { m = await loadRecon(); }
+  catch (err) { return lazyFailed('the reconstructor', err); }
+  timer.reset?.();
+  return m.openRecon(opts);
+}
+
+/** The session's solves, as things the workbench can jump straight into. */
+function reconLibrary() {
+  return app.solves.filter(s => s.scramble).slice(-60).reverse().map((s) => ({
+    label: `#${app.solves.indexOf(s) + 1} · ${eff(s) === DNF ? 'DNF' : fmt(eff(s))}`,
+    scramble: s.scramble,
+    moves: s.recon || '',
+    save: (moves) => { s.recon = moves; Solves.put(s).catch(() => {}); },
+  }));
+}
+
+/** Reconstruct a recorded solve, remembering the work on the solve itself. */
+function reconstructSolve(solve) {
+  if (!solve?.scramble) { toast('That solve has no scramble saved'); return; }
+  const n = app.solves.indexOf(solve) + 1;
+  return openRecon({
+    scramble: solve.scramble,
+    title: `#${n} · ${eff(solve) === DNF ? 'DNF' : fmt(eff(solve))}`,
+    moves: solve.recon || '',
+    onSave: (moves) => { solve.recon = moves; Solves.put(solve).catch(() => {}); },
+    library: reconLibrary(),
+  });
+}
+app.reconstructSolve = reconstructSolve;
 
 /**
  * Open a drawer, fetching panels.js on first use.
@@ -1186,6 +1228,7 @@ function solveMenu(solve, anchor) {
     { label: 'Share as a card', badge: 'S', onSelect: () => app.shareSolveCard(solve) },
     { label: solve.comment ? 'Edit comment' : 'Add comment', badge: 'C', onSelect: () => commentOn(solve) },
     { label: 'Repeat this scramble', badge: 'R', onSelect: () => repeatScramble(solve) },
+    { label: solve.recon ? 'Open the reconstruction' : 'Reconstruct this solve', badge: 'Y', onSelect: () => reconstructSolve(solve) },
     { sep: true },
     { label: 'Delete solve', badge: 'Del', onSelect: () => deleteThrottled(solve) },
   ]);
@@ -2116,7 +2159,7 @@ const isTyping = () => {
   // whole keyboard — spacebar included — goes dead.
   return editable && a.offsetParent !== null;
 };
-const modalOpen = () => drawerOpen() || paletteOpen() || popoverOpen() || shareOpen();
+const modalOpen = () => drawerOpen() || paletteOpen() || popoverOpen() || shareOpen() || reconOpen();
 
 function wireInput() {
   let spaceDown = false;
@@ -2253,6 +2296,11 @@ function wireChrome() {
     ]);
   });
 
+  $('#btn-recon').addEventListener('click', () => openRecon({
+    scramble: app.scramble?.scramble || '',
+    title: 'Reconstruct',
+    library: reconLibrary(),
+  }));
   $('#btn-stats').addEventListener('click', () => openPanel('Statistics', 'buildStats', { wide: true }, app));
   $('#btn-theme').addEventListener('click', () => openPanel('Appearance', 'buildAppearance', undefined, app));
   $('#btn-settings').addEventListener('click', () => openPanel('Settings', 'buildSettings', undefined, app));
@@ -2408,6 +2456,7 @@ function wireShortcuts() {
     if (mod && e.shiftKey && (k === 'Delete' || k === 'Backspace')) { e.preventDefault(); return clearSession(); }
 
     if (k === 'Escape') {
+      if (reconOpen()) return void closeRecon();
       if (shareOpen()) return closeShare();
       if (paletteOpen()) return closePalette();
       if (!$('#mascot').hidden) return app.closeMascot();
@@ -2461,6 +2510,7 @@ function wireShortcuts() {
       case ',':           e.preventDefault(); $('#btn-settings').click(); break;
       case '?':           e.preventDefault(); $('#btn-help').click(); break;
       case 'b': case 'B': e.preventDefault(); $('#btn-about').click(); break;
+      case 'y': case 'Y': e.preventDefault(); $('#btn-recon').click(); break;
       case 'p': case 'P': e.preventDefault(); $('#btn-spotify').click(); break;
       case 'k': case 'K':
         e.preventDefault();
@@ -2512,6 +2562,8 @@ function openPaletteWithCommands() {
       { kind: 'go', label: 'Settings', key: ',', run: () => $('#btn-settings').click() },
       { kind: 'go', label: 'Keyboard shortcuts', key: '?', run: () => $('#btn-help').click() },
       { kind: 'go', label: 'About', key: 'B', run: () => $('#btn-about').click() },
+      { kind: 'go', label: 'Reconstruct a scramble', key: 'Y', run: () => $('#btn-recon').click() },
+      { kind: 'do', label: 'Reconstruct the last solve', run: () => app.solves.at(-1) ? reconstructSolve(app.solves.at(-1)) : toast('No solves yet') },
       { kind: 'go', label: 'Pick trainer cases', key: 'K', run: () => setFor(app.settings.mode) ? openPanel('Cases', 'buildCases', undefined, app) : toast('Current mode has no case list') },
       { kind: 'do', label: 'New session', run: () => app.newSession() },
       { kind: 'do', label: 'New scramble', key: 'N', run: forwardScramble },

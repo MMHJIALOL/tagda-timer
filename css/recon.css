@@ -1,0 +1,212 @@
+/* ===========================================================
+   Tagda Timer — reconstruction workbench
+
+   A full-screen surface rather than a drawer: the cube needs room to
+   animate next to a list you are reading at the same time. Nothing in
+   here is in the DOM until somebody opens the panel, and the sheet is
+   fetched by js/recon.js on that first open.
+   =========================================================== */
+
+#recon {
+  position: fixed; inset: 0; z-index: 120;
+  display: flex; flex-direction: column;
+  /* Opaque on purpose. A translucent sheet let the running timer and the
+     scramble read straight through the cube, and there is nothing behind here
+     worth looking at anyway. */
+  background:
+    radial-gradient(58% 42% at 18% 0%, color-mix(in srgb, var(--accent) 14%, transparent), transparent 62%),
+    radial-gradient(50% 40% at 90% 100%, color-mix(in srgb, var(--accent-2) 8%, transparent), transparent 60%),
+    var(--bg);
+  animation: reconIn 260ms var(--ease);
+}
+#recon[hidden] { display: none; }
+@keyframes reconIn { from { opacity: 0; transform: scale(.99); } to { opacity: 1; transform: none; } }
+
+/* The shader keeps painting behind a surface nobody can see through. */
+body.recon-open #bg-root { opacity: 0; }
+
+.rc-top {
+  flex: none; display: flex; align-items: center; gap: 14px;
+  padding: 11px 16px; border-bottom: 1px solid var(--border);
+}
+.rc-top > .ghost-btn { flex: none; }
+.rc-scr {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px;
+  height: 34px; padding: 0 10px; border-radius: 11px;
+  background: color-mix(in srgb, var(--bg) 70%, transparent);
+  border: 1px solid var(--border);
+}
+.rc-scr-lbl {
+  flex: none; font-size: .58rem; font-weight: 700; letter-spacing: .16em;
+  text-transform: uppercase; color: var(--text-faint);
+}
+.rc-title { flex: none; font-size: .9rem; font-weight: 600; color: var(--text); }
+
+.rc-inp {
+  flex: 1; min-width: 0; height: 30px; padding: 0 2px;
+  background: none; border: 0; outline: none;
+  color: var(--text); font-family: var(--font-mono); font-size: .8rem;
+}
+.rc-inp::placeholder { color: var(--text-faint); text-transform: none; }
+.rc-inp.bad { color: var(--danger); }
+
+.rc-body {
+  flex: 1; min-height: 0; display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 400px);
+  gap: var(--gap); padding: var(--gap); align-items: stretch;
+}
+.rc-left { min-height: 0; }
+.rc-right { display: flex; flex-direction: column; gap: var(--gap); min-height: 0; }
+.rc-right > .panel:first-child { flex: 0 1 auto; min-height: 120px; }
+.rc-right > .panel:last-child  { flex: 1 1 auto; min-height: 0; }
+
+.rc-cube { flex: 1; min-height: 200px; display: grid; place-items: center; }
+/* Big enough to read the stickers, not so big it swallows the panel it shares
+   with the playback row and the phase strip. */
+.rc-cube twisty-player { width: min(100%, 560px); height: min(100%, 400px); }
+.rc-nocube { color: var(--text-faint); font-size: .82rem; }
+
+.rc-cube-tools { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.rc-cube-tools .ghost-btn.on {
+  color: var(--accent-2);
+  background: color-mix(in srgb, var(--accent-2) 12%, transparent);
+}
+.rc-cross-pick {
+  display: flex; align-items: center; gap: 7px;
+  font-size: .58rem; font-weight: 700; letter-spacing: .16em;
+  text-transform: uppercase; color: var(--text-faint);
+}
+.rc-sel {
+  height: 26px; padding: 0 6px; border-radius: 8px;
+  background: var(--surface-2); border: 1px solid var(--border);
+  color: var(--text); font: inherit; font-size: .68rem; letter-spacing: .04em;
+}
+
+/* Where you are in the solve, as seven bars: filled is behind you, the bright
+   one is the step the suggestions are for. */
+.rc-strip { display: flex; gap: 4px; }
+.rc-strip div {
+  flex: 1; height: 5px; border-radius: 3px;
+  background: color-mix(in srgb, var(--text) 12%, transparent);
+  transition: background var(--dur) var(--ease);
+}
+.rc-strip div.done { background: color-mix(in srgb, var(--accent-2) 55%, transparent); }
+.rc-strip div.now  { background: var(--accent); }
+.rc-strip-legend {
+  display: flex; font-size: .52rem; font-weight: 700; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--text-faint);
+}
+.rc-strip-legend span { flex: 1; }
+
+/* ---------------- the reconstruction so far ---------------- */
+.rc-steps { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+.rc-head-tools { display: flex; gap: 2px; }
+.rc-step {
+  display: grid; grid-template-columns: 62px minmax(0, 1fr) auto 20px;
+  align-items: center; gap: 9px;
+  padding: 6px 8px; border-radius: 8px; border: 1px solid transparent;
+}
+.rc-step:hover { background: color-mix(in srgb, var(--text) 6%, transparent); }
+.rc-step .ph {
+  font-size: .55rem; font-weight: 700; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--text-faint);
+}
+.rc-step .mv { font-family: var(--font-mono); font-size: .82rem; color: var(--text); word-break: break-word; }
+.rc-step .n  { font-family: var(--font-mono); font-size: .66rem; color: var(--text-faint); }
+.rc-step .rc-x { color: var(--text-faint); font-size: 1rem; line-height: 1; opacity: 0; }
+.rc-step:hover .rc-x { opacity: 1; }
+.rc-step .rc-x:hover { color: var(--danger); }
+.rc-step.current {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+}
+.rc-step.current .ph { color: var(--accent); }
+.rc-step.current .mv { color: var(--text-dim); font-style: italic; }
+.rc-step.current .rc-x { display: none; }
+.rc-empty { padding: 10px 2px; font-size: .78rem; color: var(--text-faint); }
+
+/* ---------------- how far there is to go ----------------
+   The one number that makes an off-list move honest: it goes up, and turns
+   amber, instead of the move being refused. */
+.rc-dist {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 11px; border-radius: 11px;
+  background: color-mix(in srgb, var(--accent-2) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent-2) 24%, transparent);
+  transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+.rc-dist .n {
+  font-family: var(--font-mono); font-size: 1.15rem; font-weight: 700;
+  color: var(--accent-2); line-height: 1; font-variant-numeric: tabular-nums;
+}
+.rc-dist .lbl { font-size: .74rem; color: var(--text-dim); }
+.rc-dist.worse {
+  background: color-mix(in srgb, var(--warn) 9%, transparent);
+  border-color: color-mix(in srgb, var(--warn) 28%, transparent);
+}
+.rc-dist.worse .n { color: var(--warn); }
+
+/* ---------------- suggestions ---------------- */
+.rc-sugs { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 3px; }
+.rc-sug {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center;
+  padding: 7px 10px; border-radius: 9px; border: 1px solid transparent; cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+}
+.rc-sug:hover { background: color-mix(in srgb, var(--text) 8%, transparent); border-color: var(--border); }
+.rc-sug.top {
+  background: color-mix(in srgb, var(--accent) 13%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+}
+.rc-sug .alg { font-family: var(--font-mono); font-size: .82rem; color: var(--text); }
+.rc-sug .why { display: block; margin-top: 2px; font-size: .64rem; color: var(--text-faint); }
+.rc-sug .len { font-family: var(--font-mono); font-size: .7rem; color: var(--text-faint); }
+.rc-sug.top .len { color: var(--accent-2); }
+.rc-more { font-size: .66rem; color: var(--text-faint); text-align: center; }
+
+.rc-entry { display: flex; gap: 7px; align-items: center; }
+.rc-entry .rc-inp {
+  height: 34px; padding: 0 11px; border-radius: 10px;
+  background: color-mix(in srgb, var(--bg) 70%, transparent);
+  border: 1px solid var(--border);
+}
+.rc-entry .rc-inp:focus { border-color: var(--accent); }
+.rc-entry .btn { height: 34px; padding: 0 14px; font-size: .78rem; }
+.rc-hint { font-size: .68rem; color: var(--text-faint); line-height: 1.5; }
+
+@media (max-width: 900px) {
+  .rc-body { grid-template-columns: 1fr; overflow-y: auto; align-items: start; }
+  .rc-cube { min-height: 240px; max-height: 44vh; }
+  .rc-title { display: none; }
+  /* The scramble needs a whole line to itself here, or it gets squeezed to
+     nothing between the back button and the solve picker. */
+  .rc-top { flex-wrap: wrap; gap: 8px 12px; }
+  .rc-scr { order: 3; flex: 1 0 100%; }
+  .rc-pick { margin-left: auto; }
+  .rc-picklist { width: min(340px, calc(100vw - 32px)); }
+}
+
+/* ---------------- pick a solve to reconstruct ---------------- */
+.rc-pick { position: relative; flex: none; }
+.rc-pick .ghost-btn svg { width: 13px; height: 13px; }
+.rc-picklist {
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: 3;
+  width: min(360px, 80vw); max-height: 46vh; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 8px; border-radius: 14px;
+  background: color-mix(in srgb, var(--surface) 96%, transparent);
+  border: 1px solid var(--border); box-shadow: var(--shadow);
+}
+.rc-picklist[hidden] { display: none; }
+.rc-pickrow {
+  display: flex; flex-direction: column; gap: 2px; align-items: flex-start;
+  padding: 7px 9px; border-radius: 9px; text-align: left; width: 100%;
+  border: 1px solid transparent;
+}
+.rc-pickrow:hover { background: color-mix(in srgb, var(--text) 8%, transparent); border-color: var(--border); }
+.rc-pickrow b { font-family: var(--font-mono); font-size: .8rem; font-weight: 600; color: var(--text); }
+.rc-pickrow span {
+  font-family: var(--font-mono); font-size: .62rem; color: var(--text-faint);
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.rc-pickrow i { font-size: .6rem; font-style: normal; color: var(--accent-2); }
