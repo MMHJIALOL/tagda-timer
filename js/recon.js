@@ -13,7 +13,7 @@
    =========================================================== */
 
 import { el, copy } from './util.js';
-import { SOLVED, applyAlg, analyse, parse, IDENTITY_FRAME, FACES } from './cube3.js';
+import { SOLVED, applyAlg, analyse, parse, IDENTITY_FRAME } from './cube3.js';
 import { suggest, warm } from './solver.js';
 import { toast } from './toast.js';
 
@@ -25,7 +25,9 @@ const SOURCES = [
 /* The panel's own stylesheet, fetched on the first open for the same reason
    the module is: most sessions never come in here. */
 function loadCss() {
-  const href = new URL('../css/recon.css', import.meta.url).href;
+  // The version query matters on Vercel, where /css/* is served immutable for
+  // a year — see vercel.json. Bump it with the ones in index.html.
+  const href = `${new URL('../css/recon.css', import.meta.url).href}?v=33`;
   if (document.querySelector(`link[data-recon]`)) return;
   const link = document.createElement('link');
   link.rel = 'stylesheet'; link.href = href; link.dataset.recon = '1';
@@ -55,7 +57,7 @@ const S = {
   steps: [],                // [{ alg, phase }]
   positions: [],            // state after each step, [0] is after the scramble
   frames: [],
-  crossPref: 'auto',
+  crossPref: 'U',           // white, which is where most people start
   library: [],              // recorded solves you can jump straight into
   replay: false,
   thinking: false,
@@ -63,6 +65,19 @@ const S = {
 };
 
 const PHASE_LABEL = { cross: 'Cross', f2l: 'F2L', oll: 'OLL', pll: 'PLL', done: 'Solved' };
+
+/* Cubers pick a cross by colour, not by face letter, so that is what the picker
+   offers. These are the standard scheme cubing.js scrambles assume and the
+   preview paints — white on top, yellow underneath. */
+const CROSS_COLOURS = [
+  { face: 'U', name: 'white',  hex: '#ffffff' },
+  { face: 'D', name: 'yellow', hex: '#ffe100' },
+  { face: 'F', name: 'green',  hex: '#00b04a' },
+  { face: 'B', name: 'blue',   hex: '#0051ba' },
+  { face: 'R', name: 'red',    hex: '#ec0000' },
+  { face: 'L', name: 'orange', hex: '#ff8b00' },
+];
+const colourOf = (face) => CROSS_COLOURS.find(c => c.face === face);
 
 export const reconOpen = () => !!host && !host.hidden;
 
@@ -146,14 +161,27 @@ const look = () => analyse(currentState(), S.crossPref === 'auto' ? null : S.cro
 
 let ui = {};
 
+/** Pick the cross colour by hand. Everything downstream is asked about it. */
+function setCross(face) {
+  S.crossPref = face;
+  lastBest = null;
+  commit();
+}
+
+function paintCrossPicker() {
+  for (const b of ui.crossSwatches.children) {
+    b.classList.toggle('on', b.dataset.face === S.crossPref);
+  }
+}
+
 function render() {
   const a = look();
-  const moves = allMoves();
-  const count = moves ? moves.split(/\s+/).filter(t => !/^[xyz]/i.test(t)).length : 0;
+  const count = moveCount();
 
   ui.scrambleBox.value = S.scramble;
   ui.count.textContent = `${count} move${count === 1 ? '' : 's'} so far`;
 
+  paintCrossPicker();
   renderSteps(a);
   renderStrip(a);
   renderCube();
@@ -213,16 +241,28 @@ function renderCube(alg = '') {
   } catch (err) { console.warn('[recon] player', err); }
 }
 
-/** Show the cube as it stood before step `i` ran, then run that step. */
-function previewUpTo(i) {
-  if (!player || S.replay) return;
-  const before = [S.scramble, S.steps.slice(0, i).map(s => s.alg).join(' ')].filter(Boolean).join(' ');
+/**
+ * Wind the cube back to just before step `i` and run it.
+ * `only` narrows that to the tail of the step — when you type a single move
+ * into a line that already has five, you want to see the one you just made,
+ * not all six again.
+ */
+function playStep(i, only = null) {
+  if (!player || S.replay || i < 0 || !S.steps[i]) return;
+  const step = S.steps[i];
+  const alg = only || step.alg;
+  const head = only ? step.alg.slice(0, step.alg.length - only.length).trim() : '';
+  const before = [S.scramble, S.steps.slice(0, i).map(s => s.alg).join(' '), head]
+    .filter(Boolean).join(' ');
   try {
     player.setAttribute('experimental-setup-alg', before);
-    player.setAttribute('alg', S.steps[i].alg);
-    player.jumpToStart?.(); player.play?.();
+    player.setAttribute('alg', alg);
+    player.jumpToStart?.();
+    player.play?.();
   } catch { /* ignore */ }
 }
+
+const previewUpTo = (i) => playStep(i);
 
 function renderSuggestions(a) {
   ui.sugList.innerHTML = '';
@@ -321,6 +361,21 @@ function addStep(alg, { typed = false } = {}) {
   if (typed && last?.typed && rank <= last.rank) last.alg = `${last.alg} ${clean}`;
   else S.steps.push({ alg: clean, phase: a.phase, rank, typed });
   commit();
+  // Watch it happen. Snapping to the answer told you nothing about the moves,
+  // which is the whole reason the cube is on screen.
+  playStep(S.steps.length - 1, typed ? clean : null);
+}
+
+/** The reconstruction as text, the way people write them out. */
+export function reconText() {
+  const lines = S.steps.map(st => `${PHASE_LABEL[st.phase] || ''}: ${st.alg}`);
+  const total = moveCount();
+  return [S.scramble, '', ...lines, '', `${total} moves`].join('\n');
+}
+
+/** Face turns in the reconstruction so far. Rotations are not moves. */
+function moveCount() {
+  return allMoves().split(/\s+/).filter(t => t && !/^[xyz]/i.test(t)).length;
 }
 
 /** Take back one move, not one line - the smallest thing you can regret. */
@@ -408,13 +463,17 @@ function build() {
         html: '<svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/></svg>',
       }),
       el('button', {
-        class: 'ghost-btn sm', title: 'Copy the reconstruction',
+        class: 'ghost-btn sm', title: 'Copy the reconstruction as text',
         onclick: () => {
           if (!S.steps.length) return toast('Nothing to copy yet');
-          copy(`${S.scramble}\n\n${S.steps.map(s => `${PHASE_LABEL[s.phase]}: ${s.alg}`).join('\n')}`)
-            .then(() => toast('Reconstruction copied'));
+          copy(reconText()).then(() => toast('Reconstruction copied', { kind: 'good' }));
         },
         html: '<svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg>',
+      }),
+      el('button', {
+        class: 'ghost-btn sm', title: 'Make a share card of this reconstruction',
+        onclick: shareCard,
+        html: '<svg viewBox="0 0 24 24"><path d="M4 12v7a2 2 0 002 2h12a2 2 0 002-2v-7M12 3v13M8 7l4-4 4 4"/></svg>',
       }),
     ),
     ui.pick = el('div', { class: 'rc-pick' },
@@ -444,9 +503,17 @@ function build() {
       ui.replayBtn,
       el('span', { class: 'rc-cross-pick' },
         el('span', { text: 'cross' }),
-        ui.crossSel = el('select', { class: 'rc-sel', onchange: () => { S.crossPref = ui.crossSel.value; render(); } },
-          el('option', { value: 'auto', text: 'auto' }),
-          ...FACES.map(f => el('option', { value: f, text: f })))),
+        ui.crossSwatches = el('span', { class: 'rc-swatches' },
+          ...CROSS_COLOURS.map(c => el('button', {
+            class: 'rc-swatch', title: `${c.name} cross`, 'aria-label': `${c.name} cross`,
+            dataset: { face: c.face }, style: { '--sw': c.hex },
+            onclick: () => setCross(c.face),
+          })),
+          el('button', {
+            class: 'rc-swatch auto', title: 'Work out the cross colour from the cube',
+            dataset: { face: 'auto' }, text: 'auto', onclick: () => setCross('auto'),
+          })),
+      ),
     ),
     ui.strip,
     el('div', { class: 'rc-strip-legend' },
@@ -493,6 +560,24 @@ function build() {
   document.body.append(host);
 }
 
+/** Hand the whole thing - scramble, the cube it makes, and the solution - to
+    the share sheet. Loaded on demand, like every other card in the app. */
+async function shareCard() {
+  if (!S.steps.length) { toast('Reconstruct something first'); return; }
+  try {
+    const m = await import('./sharedlg.js');
+    await m.shareRecon({
+      scramble: S.scramble,
+      title: ui.title.textContent,
+      steps: S.steps.map(st => ({ phase: PHASE_LABEL[st.phase] || '', alg: st.alg })),
+      moves: moveCount(),
+    });
+  } catch (err) {
+    console.warn('[recon] share', err);
+    toast('Could not open the share sheet', { kind: 'bad' });
+  }
+}
+
 /* ---------------- the "or pick one you already did" list ----------------
    The topbar button opens the panel on whatever scramble is on screen. This is
    the other half of the same question: any solve in the session, with whatever
@@ -519,8 +604,6 @@ function togglePicker(e) {
 function loadFrom(item) {
   S.scramble = String(item.scramble || '').replace(/\s+/g, ' ').trim();
   S.steps = explode(S.scramble, item.moves);
-  S.crossPref = 'auto';
-  ui.crossSel.value = 'auto';
   saveHook = item.save || null;
   ui.title.textContent = item.label;
   lastBest = null;
@@ -544,7 +627,7 @@ async function mountPlayer() {
   player.setAttribute('hint-facelets', 'floating');
   player.setAttribute('back-view', 'top-right');
   player.setAttribute('visualization', '3D');
-  player.setAttribute('tempo-scale', '1.8');
+  player.setAttribute('tempo-scale', '2.2');
   ui.stage.append(player);
 }
 
@@ -572,12 +655,10 @@ export async function openRecon({ scramble = '', title = 'Reconstruct', moves = 
   S.scramble = String(scramble || '').replace(/\s+/g, ' ').trim();
   S.steps = explode(S.scramble, moves);
   S.replay = false;
-  S.crossPref = 'auto';
   S.library = library;
   lastBest = null;
   ui.title.textContent = title;
   ui.replayBtn.classList.remove('on');
-  ui.crossSel.value = 'auto';
   ui.pickList.hidden = true;
 
   host.hidden = false;

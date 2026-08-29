@@ -291,7 +291,9 @@ export function analyse(s, prefer = null) {
     const n = crossScore(s, f) * 10 + (f === 'D' ? 1 : 0);
     if (n > best) { best = n; face = f; }
   }
-  if (prefer && FACES.includes(prefer) && !crossDone(s, face)) face = prefer;
+  // A named colour is an instruction, not a hint: if you say white cross, every
+  // question after this is asked about the white cross, finished or not.
+  if (prefer && FACES.includes(prefer)) face = prefer;
   const cross = crossDone(s, face);
   const slots = slotsFor(face).map(sl => ({
     ...sl,

@@ -281,6 +281,108 @@ export async function drawSolveCard(solve, { index = null } = {}) {
 }
 
 /* ---------------------------------------------------------
+   Card 3 — a reconstruction: the scramble, the cube it makes,
+   and the solution written out phase by phase
+   --------------------------------------------------------- */
+
+export async function drawReconCard({ scramble = '', title = 'Reconstruction', steps = [], moves = 0 } = {}) {
+  await fontsReady();
+  const c = themeColors();
+  const logo = await logoImage();
+
+  /* A reconstruction is as long as it is: a cross and four pairs is seven
+     lines, one picked apart move by move is twenty. Rather than guess a height
+     and have the footer land on top of the last row, the card is painted once
+     on a scratch canvas to find out where it ends, then painted again at
+     exactly that height. */
+  const shown = steps.slice(0, 24);
+  const spare = steps.length - shown.length;
+  const rowH = shown.length > 12 ? 52 : shown.length > 8 ? 60 : 68;
+
+  const paint = (ctx, H) => {
+    paintBackground(ctx, H, c);
+    paintHeader(ctx, c, logo, 'RECONSTRUCTION');
+
+    let y = paintHero(ctx, c, 250, title, String(moves),
+      `${moves === 1 ? 'move' : 'moves'}  ·  ${steps.length} step${steps.length === 1 ? '' : 's'}`);
+    y = paintScramble(ctx, c, y + 46, (scramble || '—').replace(/\s+/g, ' '), { maxLines: 3 });
+
+    // The cube the scramble actually leaves you — the thing the solution
+    // below is a solution to.
+    const netH = 280;
+    drawNet(ctx, faceletsFor(scramble, 3), 3, 74, y + 40, W - 148, netH);
+    y = y + 40 + netH;
+
+    /* Phase on the left in the accent, moves on the right in mono: the shape
+       every reconstruction on the internet is already written in. */
+    const pad = 34;
+    const boxW = W - 148;
+    const boxTop = y + 46;
+    const boxH = pad * 2 + 40 + shown.length * rowH + (spare ? 40 : 0);
+
+    ctx.fillStyle = hex(c.text, 0.055);
+    rr(ctx, 74, boxTop, boxW, boxH, 26);
+    ctx.fill();
+    ctx.strokeStyle = hex(c.text, 0.09);
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    ctx.textBaseline = 'top';
+    ctx.fillStyle = hex(c.text, 0.42);
+    ctx.font = `700 20px ${SANS}`;
+    ctx.letterSpacing = '4px';
+    ctx.fillText('SOLUTION', 74 + pad, boxTop + pad);
+    ctx.letterSpacing = '0px';
+
+    const labelW = 168;
+    const algMax = boxW - pad * 2 - labelW;
+    shown.forEach((st, i) => {
+      const ry = boxTop + pad + 40 + i * rowH;
+      ctx.fillStyle = c.accent2;
+      ctx.font = `700 ${rowH > 60 ? 22 : 19}px ${SANS}`;
+      ctx.letterSpacing = '2px';
+      ctx.fillText(String(st.phase || '').toUpperCase(), 74 + pad, ry + 6);
+      ctx.letterSpacing = '0px';
+
+      ctx.fillStyle = c.text;
+      const size = fitOneLine(ctx, st.alg, algMax, MONO, 500, rowH > 60 ? 30 : 25, 15);
+      ctx.font = `500 ${size}px ${MONO}`;
+      ctx.fillText(st.alg, 74 + pad + labelW, ry);
+
+      if (i < shown.length - 1) {
+        ctx.strokeStyle = hex(c.text, 0.07);
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(74 + pad, ry + rowH - 10);
+        ctx.lineTo(74 + boxW - pad, ry + rowH - 10);
+        ctx.stroke();
+      }
+    });
+    if (spare) {
+      ctx.fillStyle = hex(c.text, 0.45);
+      ctx.font = `500 22px ${SANS}`;
+      ctx.fillText(`+ ${spare} more step${spare === 1 ? '' : 's'}`, 74 + pad, boxTop + pad + 40 + shown.length * rowH);
+    }
+    ctx.textBaseline = 'alphabetic';
+
+    paintFooter(ctx, H, c);
+    return boxTop + boxH;
+  };
+
+  // Pass one: measure. Nothing from this canvas is kept.
+  const scratch = document.createElement('canvas');
+  scratch.width = W; scratch.height = 4200;
+  const bottom = paint(scratch.getContext('2d'), 4200);
+
+  // Pass two: the real card, with room for the footer under the last row.
+  const H = Math.max(1350, Math.round(bottom + 150));
+  const cv = document.createElement('canvas');
+  cv.width = W; cv.height = H;
+  paint(cv.getContext('2d'), H);
+  return cv;
+}
+
+/* ---------------------------------------------------------
    Card 2 — an average: the counting times and their scrambles
    --------------------------------------------------------- */
 

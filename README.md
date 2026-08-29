@@ -123,6 +123,9 @@ instead. It is off the timer entirely — it opens from a solve's menu
 (*Reconstruct this solve*), from the topbar cube button, or with `Y`, and the timer
 screen is untouched until you ask for it.
 
+- **One click from the times list.** Hover a solve and the ao5 gives way to a
+  **reconstruct** button; the solve's menu carries the same entry, which is how
+  you get there on a touch screen.
 - **It suggests the moves.** From wherever the cube currently stands it works out
   every shortest way on, ranked by move count and then by how comfortably they turn.
   Cross and F2L are solved by search against a pruning table, so "6 moves" means six
@@ -137,11 +140,15 @@ screen is untouched until you ask for it.
   into a scrubbable playback of everything from the scramble.
 - **The move box types in caps and adds as you go.** Finish a move, press space, and
   it lands — there is no Enter key in the loop. Wide turns are `RW`, `LW`, `UW`.
-- **Colour neutral.** The cross face is detected rather than assumed, so a solve
-  that starts `x2` or `z'` is read correctly; the picker under the cube forces a
-  colour when you want to insist.
+- **Pick your cross colour.** Six swatches under the cube, white selected by
+  default. Say white and every question after that is asked about the white
+  cross, finished or not; `auto` works it out from the cube instead, which is
+  what reads a solve that starts `x2` or `z'` correctly.
 - Reconstructions are **saved onto the solve**, so reopening one picks up where you
   left off, split back into cross, four pairs, OLL and PLL.
+- **Copy it or make a card.** The two buttons beside the scramble: one puts the
+  whole thing on the clipboard as text, the other draws a share card with the
+  scramble, the cube it makes, and the solution phase by phase.
 
 Any scramble works, not just a recorded solve — paste one into the field at the top,
 or pick a past solve from *from a solve*.

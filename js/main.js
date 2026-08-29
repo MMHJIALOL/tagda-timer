@@ -1046,10 +1046,23 @@ const rowSig = (d) => `${d.cls}|${d.idx}|${d.time}|${d.ao}|${d.aoBest ? 1 : 0}`;
 /** One row. `i` is the index into app.solves, so #1 is always #1. */
 function historyChip(i, data) {
   const d = data || historyRowData(i);
+  /* One click from the times list into the reconstruction. It sits over the
+     ao5 on hover rather than taking a column of its own, because the ao5 is
+     what you read while you are solving and this is what you reach for when
+     you have stopped. The solve menu still carries the same entry, which is
+     the only way in on a touch screen. */
+  const recon = el('button', {
+    class: 'chip-recon', title: 'Reconstruct this solve  (Y)',
+    html: '<svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 108-8"/><path d="M12 4L9 7l3 3"/></svg>'
+        + '<i>reconstruct</i>',
+  });
+  recon.addEventListener('click', (e) => { e.stopPropagation(); reconstructSolve(d.solve); });
+
   const chip = el('div', { class: d.cls, role: 'listitem' },
     el('span', { class: 'idx', text: d.idx }),
     el('span', { class: 't', text: d.time }),
     el('span', { class: `ao5 ${d.aoBest ? 'best' : ''}`, title: d.aoTitle, text: d.ao }),
+    recon,
   );
   chip.addEventListener('click', (e) => solveMenu(d.solve, e.currentTarget));
   chip.addEventListener('contextmenu', (e) => { e.preventDefault(); solveMenu(d.solve, e.currentTarget); });

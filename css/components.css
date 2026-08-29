@@ -1365,3 +1365,36 @@ body.celebrating .toast {
   -webkit-backdrop-filter: none;
   background: var(--surface-2);
 }
+
+/* ---- reconstruct, one click from the times list ----
+   Rides over the ao5 on hover: the ao5 is the number you read mid-session,
+   this is the one you reach for once you have stopped. */
+.solve-chip { position: relative; }
+.chip-recon {
+  position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+  display: none; align-items: center; gap: 5px;
+  height: 22px; padding: 0 9px; border-radius: 7px;
+  background: var(--accent); color: var(--on-accent);
+  font-family: var(--font-ui); font-size: .66rem; font-weight: 600; letter-spacing: .01em;
+  box-shadow: 0 4px 14px -6px color-mix(in srgb, var(--accent) 90%, transparent);
+}
+.chip-recon svg { width: 12px; height: 12px; }
+.solve-chip:hover .chip-recon,
+.chip-recon:focus-visible { display: inline-flex; }
+.solve-chip:hover .ao5 { visibility: hidden; }
+.chip-recon:hover { filter: brightness(1.12); }
+/* No hover on a touch screen, and a permanent button would crowd every row —
+   the solve menu carries the same entry there. */
+@media (hover: none) { .chip-recon { display: none !important; } .solve-chip:hover .ao5 { visibility: visible; } }
+
+/* ---- the two topbar buttons that are about something, not everything ----
+   Spotify green is Spotify's, and their guidelines ask for it. The
+   reconstructor gets the accent, so both read as places rather than settings. */
+#btn-spotify { color: #1db954; }
+#btn-spotify:hover { color: #1ed760; background: rgba(29, 185, 84, .12); }
+#btn-recon { color: var(--accent); }
+#btn-recon:hover {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 34%, transparent);
+}
