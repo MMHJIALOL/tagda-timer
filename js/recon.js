@@ -13,7 +13,7 @@
    =========================================================== */
 
 import { el, copy } from './util.js';
-import { SOLVED, applyAlg, analyse, parse, IDENTITY_FRAME } from './cube3.js';
+import { SOLVED, applyAlg, analyse, parse, canonical, IDENTITY_FRAME } from './cube3.js';
 import { suggest } from './solver.js';
 import { toast } from './toast.js';
 
@@ -27,7 +27,7 @@ const SOURCES = [
 function loadCss() {
   // The version query matters on Vercel, where /css/* is served immutable for
   // a year — see vercel.json. Bump it with the ones in index.html.
-  const href = `${new URL('../css/recon.css', import.meta.url).href}?v=33`;
+  const href = `${new URL('../css/recon.css', import.meta.url).href}?v=35`;
   if (document.querySelector(`link[data-recon]`)) return;
   const link = document.createElement('link');
   link.rel = 'stylesheet'; link.href = href; link.dataset.recon = '1';
@@ -66,6 +66,11 @@ const S = {
 
 const PHASE_LABEL = { cross: 'Cross', f2l: 'F2L', oll: 'OLL', pll: 'PLL', done: 'Solved' };
 
+/* A step that took an oriented-edge OLL straight to a solved cube did both
+   jobs at once, and calling that "OLL" undersells it — everywhere the step is
+   named, it is named ZBLL instead. */
+const stepLabel = (step) => (step.zb ? 'ZBLL' : PHASE_LABEL[step.phase] || '');
+
 /* Cubers pick a cross by colour, not by face letter, so that is what the picker
    offers. These are the standard scheme cubing.js scrambles assume and the
    preview paints — white on top, yellow underneath. */
@@ -101,6 +106,9 @@ function recompute() {
     step.rank = rankOf(a);
     const next = applyAlg(prev, step.alg, pf);
     if (!next) break;
+    // Recognised rather than remembered, so it survives closing the panel:
+    // an OLL with its edges already up that comes out solved was a ZBLL.
+    step.zb = a.phase === 'oll' && a.eo && analyse(next.state, pref).solved;
     S.positions.push(next.state);
     S.frames.push(next.frame);
   }
@@ -135,7 +143,9 @@ function explode(scramble, moves) {
   if (!start) return [{ alg: list.join(' '), phase: 'cross', typed: true }];
   let state = start.state, frame = start.frame;
   const steps = [];
-  for (const tok of list) {
+  for (const raw of list) {
+    const tok = canonical(raw);
+    if (!tok) break;
     const a = analyse(state);
     const rank = rankOf(a);
     const last = steps.at(-1);
@@ -230,17 +240,27 @@ function paintCrossPicker() {
   }
 }
 
+/* Set while a move is being committed. The commit redraws the panel, and the
+   redraw used to hand the cube the finished position a frame before the move
+   that got there was played — two writes, and the cube visibly jumped back
+   before turning. The play that follows is the one that matters. */
+let pendingPlay = false;
+
 function render() {
   const a = look();
   const count = moveCount();
 
   ui.scrambleBox.value = S.scramble;
+  // The bar at the top is where you edit the scramble; this is where you read
+  // it, next to the cube it made, without looking away from the cube.
+  ui.scrambleEcho.textContent = S.scramble || 'no scramble yet';
+  ui.scrambleEcho.classList.toggle('empty', !S.scramble);
   ui.count.textContent = `${count} move${count === 1 ? '' : 's'} so far`;
 
   paintCrossPicker();
   renderSteps(a);
   renderStrip(a);
-  renderCube();
+  if (!pendingPlay) renderCube();
   renderSuggestions(a);
 }
 
@@ -251,7 +271,7 @@ function renderSteps(a) {
   }
   S.steps.forEach((step, i) => {
     const row = el('div', { class: 'rc-step' },
-      el('span', { class: 'ph', text: PHASE_LABEL[step.phase] || '' }),
+      el('span', { class: 'ph' + (step.zb ? ' zb' : ''), text: stepLabel(step) }),
       el('span', { class: 'mv', text: step.alg }),
       el('span', { class: 'n', text: String(step.alg.split(/\s+/).filter(t => !/^[xyz]/i.test(t)).length) }),
       el('button', { class: 'rc-x', title: 'Remove this step', text: '×', onclick: (e) => { e.stopPropagation(); holdHover(e); S.steps.splice(i, 1); commit(); } }),
@@ -280,21 +300,42 @@ function renderStrip(a) {
   }
 }
 
-function renderCube(alg = '') {
+/* ---------------- driving the cube ----------------
+   Every path that changes what the cube shows comes through here, because
+   twisty-player restarts itself for each attribute it is handed. Writing the
+   new position and then immediately writing a move to play made it re-seat
+   itself mid-turn — the jump you saw when a suggestion was clicked while the
+   previous one was still turning. Stopping first, writing once, and only
+   starting the animation on the next frame makes a click mid-turn look like
+   what it is: the cube changing its mind, cleanly.
+
+   Everything is spelt the way twisty-player spells it on the way in. RW is a
+   wide turn to this app and a syntax error to the player, and a player that
+   cannot read its alg does not turn slowly, it stops. */
+let cubeToken = 0;
+
+function showCube({ setup = '', alg = '', controls = 'none' } = {}) {
   if (!player) return;
-  const setup = [S.scramble, allMoves()].filter(Boolean).join(' ');
+  const token = ++cubeToken;
+  const setupText = canonical(setup) ?? '';
+  const algText = canonical(alg) ?? '';
   try {
-    if (S.replay) {
-      player.setAttribute('experimental-setup-alg', S.scramble);
-      player.setAttribute('alg', allMoves());
-      player.setAttribute('control-panel', 'bottom-row');
-      return;
-    }
-    player.setAttribute('control-panel', 'none');
-    player.setAttribute('experimental-setup-alg', setup);
-    player.setAttribute('alg', alg);
-    if (alg) { player.jumpToStart?.(); player.play?.(); }
+    player.pause?.();
+    player.setAttribute('control-panel', controls);
+    player.setAttribute('experimental-setup-alg', setupText);
+    player.setAttribute('alg', algText);
+    if (!algText) return;
+    player.jumpToStart?.();
+    requestAnimationFrame(() => { if (token === cubeToken) { try { player.play?.(); } catch { /* ignore */ } } });
   } catch (err) { console.warn('[recon] player', err); }
+}
+
+function renderCube(alg = '') {
+  if (S.replay) {
+    showCube({ setup: S.scramble, alg: allMoves(), controls: 'bottom-row' });
+    return;
+  }
+  showCube({ setup: [S.scramble, allMoves()].filter(Boolean).join(' '), alg });
 }
 
 /**
@@ -310,12 +351,7 @@ function playStep(i, only = null) {
   const head = only ? step.alg.slice(0, step.alg.length - only.length).trim() : '';
   const before = [S.scramble, S.steps.slice(0, i).map(s => s.alg).join(' '), head]
     .filter(Boolean).join(' ');
-  try {
-    player.setAttribute('experimental-setup-alg', before);
-    player.setAttribute('alg', alg);
-    player.jumpToStart?.();
-    player.play?.();
-  } catch { /* ignore */ }
+  showCube({ setup: before, alg });
 }
 
 
@@ -409,7 +445,7 @@ function paintSuggestions(res, a) {
   const worse = lastBest !== null && res.best > lastBest;
   lastBest = res.best;
 
-  ui.dist.className = 'rc-dist' + (worse ? ' worse' : '');
+  ui.dist.className = 'rc-dist' + (worse ? ' worse' : '') + (res.zb ? ' zb' : '');
   ui.dist.innerHTML = '';
   if (res.best < 0) {
     ui.dist.append(el('span', { class: 'n', text: '?' }),
@@ -419,9 +455,13 @@ function paintSuggestions(res, a) {
       : a.phase === 'f2l' ? 'to insert the easiest pair'
       : a.phase === 'oll' ? 'to orient the last layer'
       : 'to finish the solve';
+    /* The edges are already up, so this OLL does not need a PLL after it.
+       That is worth saying out loud — it is the difference between two algs
+       and one, and it is easy to miss looking at the cube. */
+    const zb = res.zb ? ` — edges are already oriented, so ${res.zbBest} finishes it in one` : '';
     ui.dist.append(el('span', { class: 'n', text: String(res.best) }),
       el('span', { class: 'lbl', text: `${res.best === 1 ? 'move' : 'moves'} ${what}`
-        + (worse ? ' — that last move cost you' : '') }));
+        + zb + (worse ? ' — that last move cost you' : '') }));
   }
 
   if (!res.list.length) {
@@ -431,9 +471,11 @@ function paintSuggestions(res, a) {
   }
 
   for (const s of res.list) {
-    const row = el('div', { class: 'rc-sug' + (s.moves === res.best ? ' top' : '') },
+    const zb = s.kind === 'ZBLL';
+    const row = el('div', { class: 'rc-sug' + (zb ? ' zb' : s.moves === res.best ? ' top' : '') },
       el('span', {},
-        el('span', { class: 'alg', text: s.alg }),
+        el('span', { class: 'alg', text: s.alg },
+          zb ? el('span', { class: 'rc-zb-tag', text: 'ZBLL', title: 'One alg for the whole last layer' }) : null),
         el('span', { class: 'why', text: `${s.label} · ${s.note}` })),
       el('span', { class: 'len', text: String(s.moves) }),
     );
@@ -458,9 +500,12 @@ function paintSuggestions(res, a) {
  * suggestion always starts its own line, because that is how you thought of it.
  */
 function addStep(alg, { typed = false } = {}) {
-  const clean = String(alg || '').trim();
+  /* Stored the way the cube draws it rather than the way it was typed, so a
+     wide turn is Rw wherever it goes next — the player, the share card, the
+     move string saved on the solve. */
+  const clean = canonical(String(alg || '').trim());
+  if (clean === null) { toast("Could not read that - try moves like R U2 F'", { kind: 'bad' }); return; }
   if (!clean) return;
-  if (!parse(clean)) { toast("Could not read that - try moves like R U2 F'", { kind: 'bad' }); return; }
   const last = S.steps.at(-1);
   const a = look();
   const rank = rankOf(a);
@@ -470,15 +515,17 @@ function addStep(alg, { typed = false } = {}) {
   const openRotation = last && allRotations(last.alg);
   if (openRotation || (typed && last?.typed && rank <= last.rank)) last.alg = `${last.alg} ${clean}`;
   else S.steps.push({ alg: clean, phase: a.phase, rank, typed });
-  commit();
   // Watch it happen. Snapping to the answer told you nothing about the moves,
-  // which is the whole reason the cube is on screen.
+  // which is the whole reason the cube is on screen — and the redraw is told
+  // to leave the cube alone so the move is the only thing it is asked to do.
+  pendingPlay = true;
+  try { commit(); } finally { pendingPlay = false; }
   playStep(S.steps.length - 1, typed ? clean : null);
 }
 
 /** The reconstruction as text, the way people write them out. */
 export function reconText() {
-  const lines = S.steps.map(st => `${PHASE_LABEL[st.phase] || ''}: ${st.alg}`);
+  const lines = S.steps.map(st => `${stepLabel(st)}: ${st.alg}`);
   const total = moveCount();
   return [S.scramble, '', ...lines, '', `${total} moves`].join('\n');
 }
@@ -598,6 +645,10 @@ function build() {
   );
 
   /* ---- left: the cube ---- */
+  /* The scramble again, above the cube. The bar at the top of the panel is
+     where you change it; this is where you read it while you are looking at
+     the thing it produced, which is where you are actually looking. */
+  ui.scrambleEcho = el('div', { class: 'rc-cube-scramble mono', title: 'The scramble this position came from' });
   ui.stage = el('div', { class: 'rc-cube' });
   ui.strip = el('div', { class: 'rc-strip' });
 
@@ -623,6 +674,7 @@ function build() {
     el('div', { class: 'panel-head' },
       el('span', { text: 'Position' }),
       ui.count = el('span', { class: 'panel-sub', text: '0 moves so far' })),
+    ui.scrambleEcho,
     ui.stage,
     el('div', { class: 'rc-cube-tools' },
       ui.replayBtn,
@@ -696,10 +748,10 @@ function cardSteps() {
   const out = [];
   let heading = null;
   for (const st of S.steps) {
-    const phase = PHASE_LABEL[st.phase] || '';
+    const phase = stepLabel(st);
     // Every step keeps its own line — four pairs are four lines. The heading is
     // what stops repeating: they are all F2L, and saying so four times is noise.
-    out.push({ phase: phase === heading ? '' : phase, alg: st.alg });
+    out.push({ phase: phase === heading ? '' : phase, alg: st.alg, zb: !!st.zb });
     heading = phase;
   }
   const last = out.at(-1);
@@ -719,11 +771,13 @@ async function shareCard() {
   if (!S.steps.length) { toast('Reconstruct something first'); return; }
   try {
     const m = await import('./sharedlg.js');
+    const steps = cardSteps();
     await m.shareRecon({
       scramble: S.scramble,
       title: ui.title.textContent,
-      steps: cardSteps(),
+      steps,
       moves: moveCount(),
+      zb: steps.some(st => st.zb),
     });
   } catch (err) {
     console.warn('[recon] share', err);
@@ -755,7 +809,7 @@ function togglePicker(e) {
 }
 
 function loadFrom(item) {
-  S.scramble = String(item.scramble || '').replace(/\s+/g, ' ').trim();
+  S.scramble = canonical(String(item.scramble || '').replace(/\s+/g, ' ').trim()) || '';
   S.steps = explode(S.scramble, item.moves);
   saveHook = item.save || null;
   ui.title.textContent = item.label;
@@ -785,8 +839,8 @@ async function mountPlayer() {
 }
 
 function setScramble(text) {
-  const clean = String(text || '').replace(/\s+/g, ' ').trim();
-  if (clean && !parse(clean)) { toast('That scramble has a move I cannot read', { kind: 'bad' }); return false; }
+  const clean = canonical(String(text || '').replace(/\s+/g, ' ').trim());
+  if (clean === null) { toast('That scramble has a move I cannot read', { kind: 'bad' }); return false; }
   S.scramble = clean;
   S.steps = [];
   lastBest = null;
@@ -805,7 +859,7 @@ export async function openRecon({ scramble = '', title = 'Reconstruct', moves = 
   if (!host) { loadCss(); build(); }
   saveHook = onSave;
   onClose = onExit;
-  S.scramble = String(scramble || '').replace(/\s+/g, ' ').trim();
+  S.scramble = canonical(String(scramble || '').replace(/\s+/g, ' ').trim()) || '';
   S.steps = explode(S.scramble, moves);
   S.replay = false;
   S.library = library;

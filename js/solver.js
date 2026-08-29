@@ -10,11 +10,16 @@
    optimality. Every solution of the shortest length comes back,
    not just one.
 
-   The last layer is not searched. It is simulated: take the 57 OLLs
-   and 21 PLLs the app already ships in algs.js, try each one with
+   The last layer is not searched. It is simulated: take every OLL,
+   PLL and ZBLL alg the app ships in algsets.js, try each one with
    every AUF, and keep the ones that actually finish the job. That
    is exact, instant, and gives back the alg you would recognise
    rather than a machine-optimal string nobody has fingertricks for.
+
+   Every spelling of a case is tried, not just one, because the
+   question a reconstruction asks is "is this what I did?" — and the
+   answer has to be yes for the alg your fingers know, not only for
+   the one the app happens to teach.
 
    Everything here runs on the main thread on purpose — it only ever
    runs while the reconstruction panel is open, and there is no timer
@@ -23,9 +28,10 @@
 
 import {
   MOVES, MOVE_NAMES, FACES, mulInto, applyAlg,
-  faceEdges, toUserFace, analyse,
+  faceEdges, toUserFace, facelets, parse,
 } from './cube3.js';
 import { OLL, PLL } from './algs.js';
+import { OLL_ALGS, PLL_ALGS, ZBLL } from './algsets.js';
 import { tidy } from './util.js';
 
 /* ---------------- piece transitions ----------------
@@ -240,43 +246,158 @@ function pairGoal(homes, keep, slot) {
 const BRING_UP = { U: '', F: 'x', D: 'x2', B: "x'", L: 'z', R: "z'" };
 const AUFS = ['', 'U', 'U2', "U'"];
 
+/* Every spelling of every case, with the one algs.js teaches kept at the
+   front so the app's own alg is still the first thing offered. Each is parsed
+   once here rather than on every question: a ZBLL lookup asks about two
+   thousand algs, and re-reading the notation each time was most of the cost. */
+const merge = (entry, extra) => {
+  const seen = new Set();
+  const algs = [];
+  for (const raw of [entry.alg, ...(extra || [])]) {
+    const text = String(raw || '').trim();
+    if (!text) continue;
+    const key = tidy(text);
+    if (seen.has(key)) continue;
+    const toks = parse(text);
+    if (!toks) continue;
+    seen.add(key);
+    algs.push({ text, toks });
+  }
+  return { ...entry, algs };
+};
+
+const OLL_SET = OLL.map(o => merge(o, OLL_ALGS[Number(o.name)]));
+const PLL_SET = PLL.map(p => merge(p, PLL_ALGS[p.id]));
+const ZBLL_SET = ZBLL.map(z => merge({ ...z, alg: '' }, z.algs));
+
+/** Is every sticker on face `ll` showing `ll`? */
+function orientedOn(s, ll) {
+  const fl = facelets(s);
+  const base = FACES.indexOf(ll) * 9;
+  for (let i = 0; i < 9; i++) if (fl[base + i] !== ll) return false;
+  return true;
+}
+
+const isSolvedState = (s) => {
+  for (let i = 0; i < 8; i++) if (s[i] !== i || s[8 + i] !== 0) return false;
+  for (let i = 0; i < 12; i++) if (s[16 + i] !== i || s[28 + i] !== 0) return false;
+  return true;
+};
+
+/** How the AUFs a case needed read on the row. */
+const aufNote = (rot, pre, post) =>
+  [rot && 'rotate first', pre && `${pre} to set up`, post && `${post} to finish`]
+    .filter(Boolean).join(' · ') || 'straight in';
+
+const faceTurns = (alg) => alg.split(/\s+/).filter(t => t && !/^[xyz]/.test(t)).length;
+
+/**
+ * Try one alg from `state` with every AUF, and return the first pairing that
+ * works. The AUFs are the case's rotation, not part of the alg, so the first
+ * pairing that fits is the case — the others would only restate it.
+ *
+ * The alg itself is applied once per setup turn rather than once per pair:
+ * the finishing turn goes on the end of the position the alg left behind, in
+ * the orientation the alg left it in, which is the same answer for a quarter
+ * of the work.
+ */
+function fit(state, frame, rot, toks, ok, posts) {
+  for (const pre of AUFS) {
+    const setup = [rot, pre].filter(Boolean).join(' ');
+    const base = setup ? applyAlg(state, setup, frame) : { state, frame };
+    if (!base) continue;
+    const mid = applyAlg(base.state, toks, base.frame);
+    if (!mid) continue;
+    for (const post of posts) {
+      const end = post ? applyAlg(mid.state, post, mid.frame) : mid;
+      if (!end || !ok(end.state)) continue;
+      return { pre, post };
+    }
+  }
+  return null;
+}
+
+/**
+ * Every alg in `set` that finishes the job from here.
+ *
+ * One case matches a position, but that case has half a dozen spellings and
+ * the point of the list is that yours is on it. So the loop does not stop at
+ * the first case it recognises: it collects every alg that works, and you
+ * pick the one your hands already know.
+ */
+function hits(set, state, frame, rot, ok, posts, kind, name) {
+  const found = [];
+  for (const entry of set) {
+    for (const { text, toks } of entry.algs) {
+      const h = fit(state, frame, rot, toks, ok, posts);
+      if (!h) continue;
+      /* Tidied, because the setup turn and the alg's own first move are next
+         to each other now: U written before an alg that opens on U2 is U', and
+         printing it as "U U2" makes one alg look like two. */
+      const alg = tidy([rot, h.pre, text, h.post].filter(Boolean).join(' '));
+      found.push({
+        alg,
+        moves: faceTurns(alg),
+        awkward: rot ? 1 : 0,
+        kind,
+        label: `${kind} ${name(entry)}`,
+        note: aufNote(rot, h.pre, h.post),
+      });
+    }
+  }
+  return dedupe(found);
+}
+
+const ollName = (entry) => (entry.label ? `${entry.label} ${entry.name}` : entry.name);
+
+/**
+ * The PLL skip: the last layer is already permuted and all that is left is to
+ * turn it back.
+ *
+ * No PLL alg can be the answer here — every one of them moves pieces, and
+ * nothing needs moving — so without this the panel announces it has run out of
+ * ideas one turn away from a finished solve, which is the one place it must
+ * not.
+ */
+function aufOnly(state, frame, rot) {
+  for (const pre of AUFS) {
+    if (!pre) continue;
+    const full = tidy([rot, pre].filter(Boolean).join(' '));
+    const res = applyAlg(state, full, frame);
+    if (!res || !isSolvedState(res.state)) continue;
+    return [{
+      alg: full, moves: faceTurns(full), awkward: 0, kind: 'PLL',
+      label: 'PLL skip', note: 'the layer is already permuted — just the AUF',
+    }];
+  }
+  return [];
+}
+
 function lastLayer(state, frame, analysis) {
   const showing = toUserFace(frame, analysis.ll);
   const rot = BRING_UP[showing] ?? '';
-  const set = analysis.phase === 'oll' ? OLL : PLL;
-  const wantSolved = analysis.phase === 'pll';
-  const found = [];
+  const ll = analysis.ll;
 
-  for (const entry of set) {
-    // The first AUF pairing that works is the case; the others would only
-    // restate it, so each alg contributes at most one suggestion.
-    let hit = null;
-    for (const pre of AUFS) {
-      for (const post of (wantSolved ? AUFS : [''])) {
-        const alg = [rot, pre, entry.alg, post].filter(Boolean).join(' ');
-        const res = applyAlg(state, alg, frame);
-        if (!res) continue;
-        const a = analyse(res.state);
-        if (wantSolved ? !a.solved : !a.oll) continue;
-        hit = { alg, pre, post };
-        break;
-      }
-      if (hit) break;
-    }
-    if (!hit) continue;
-    const kind = wantSolved ? 'PLL' : 'OLL';
-    const title = entry.label ? `${entry.label} ${entry.name}` : entry.name;
-    found.push({
-      alg: hit.alg,
-      moves: hit.alg.split(/\s+/).filter(t => !/^[xyz]/.test(t)).length,
-      awkward: rot ? 1 : 0,
-      label: `${kind} ${title}`,
-      note: [rot && 'rotate first', hit.pre && `${hit.pre} to set up`, hit.post && `${hit.post} to finish`]
-        .filter(Boolean).join(' · ') || 'straight in',
-    });
+  if (analysis.phase === 'pll') {
+    const skip = aufOnly(state, frame, rot);
+    return {
+      main: skip.length ? skip
+        : hits(PLL_SET, state, frame, rot, isSolvedState, AUFS, 'PLL', e => e.name).sort(byNiceness),
+      zb: [],
+    };
   }
-  found.sort(byNiceness);
-  return found;
+
+  const main = hits(OLL_SET, state, frame, rot, s => orientedOn(s, ll), [''], 'OLL', ollName)
+    .sort(byNiceness);
+
+  /* ZBLL only exists as an option when the edges are already up the right way
+     — the cross showing on the last layer. Asking otherwise would be eighteen
+     hundred algs of guaranteed disappointment. */
+  const zb = analysis.eo
+    ? hits(ZBLL_SET, state, frame, rot, isSolvedState, AUFS, 'ZBLL', e => `${e.family} ${e.id.split('-').pop()}`).sort(byNiceness)
+    : [];
+
+  return { main, zb };
 }
 
 /* =========================================================
@@ -288,17 +409,25 @@ function lastLayer(state, frame, analysis) {
  *   kind    which phase these are for
  *   best    length of the shortest thing that works, in face turns
  *   list    ranked suggestions
+ *   zb      true when the list opens with one-alg finishes for this OLL
  */
 export function suggest(state, frame, analysis, { limit = 20, timeMs = 1500, crossName = null } = {}) {
   const budget = { left: NODE_BUDGET };
   const started = performance.now();
-  const out = { kind: analysis.phase, best: -1, list: [], partial: false, face: analysis.face };
+  const out = { kind: analysis.phase, best: -1, list: [], partial: false, face: analysis.face, zb: false };
 
   if (analysis.phase === 'done') return out;
 
   if (analysis.phase === 'oll' || analysis.phase === 'pll') {
-    out.list = lastLayer(state, frame, analysis).slice(0, limit);
-    out.best = out.list.length ? out.list[0].moves : -1;
+    const { main, zb } = lastLayer(state, frame, analysis);
+    /* ZBLL goes first even though it is the longer alg. It is longer because
+       it is doing both jobs, and burying a solve-the-whole-layer suggestion
+       under the OLL that only does half of it gets the ranking backwards. */
+    const zbShown = zb.slice(0, Math.max(4, limit - main.length));
+    out.zb = zbShown.length > 0;
+    out.zbBest = zbShown.length ? zbShown[0].moves : -1;
+    out.list = [...zbShown, ...main].slice(0, limit);
+    out.best = main.length ? main[0].moves : out.zbBest;
     return out;
   }
 

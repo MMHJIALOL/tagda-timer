@@ -131,8 +131,19 @@ screen is untouched until you ask for it.
   The search runs in a worker, so a hard last-slot position thinks for a second
   or two without the page — or the cube mid-turn — freezing while it does.
   Cross and F2L are solved by search against a pruning table, so "6 moves" means six
-  and not "six that I happened to find". OLL and PLL come from the app's own alg
-  tables with the AUFs worked out, so you get the alg you recognise.
+  and not "six that I happened to find". The last layer is not searched, it is
+  simulated against the full alg libraries, so you get the alg you recognise.
+- **Every spelling of the case, not just one.** The last-layer libraries carry
+  every alg the community actually uses — 228 for the 57 OLLs, 83 for the 21 PLLs
+  — so the alg *your* fingers know is on the list and you never have to type it
+  out. Every one of them is checked against the cube model in `test.html`: an alg
+  is in the file only if applying it really does solve the case it is filed under.
+- **ZBLL, when the cross is already there.** If F2L leaves the last layer's edges
+  already oriented, the whole layer can go in one alg instead of two. The panel
+  spots that, puts all 472 ZBLL cases (1790 algs) at it, and lists what it finds
+  above the OLLs — highlighted, tagged `ZBLL`, with the summary line saying how
+  many moves finish it in one. A step made that way is labelled **ZBLL** in the
+  reconstruction, in the copied text, and on the share card.
 - **Nothing is ever refused.** Type a move that is not in the list and it simply
   becomes the new position — a fresh set of suggestions is built from there. The
   counter above the list is the honest feedback: it goes up, and turns amber, when
@@ -141,7 +152,12 @@ screen is untouched until you ask for it.
   list; click it and the position advances. *Replay the whole solve* turns the panel
   into a scrubbable playback of everything from the scramble.
 - **The move box types in caps and adds as you go.** Finish a move, press space, and
-  it lands — there is no Enter key in the loop. Wide turns are `RW`, `LW`, `UW`.
+  it lands — there is no Enter key in the loop. Wide turns are `RW`, `LW`, `UW`;
+  they are stored and drawn as `Rw`, `Lw`, `Uw`, which is the notation the cube
+  preview reads, and they animate as the two-layer turns they are.
+- **The scramble sits above the cube as well.** The bar at the top of the panel
+  is where you edit it; the line over the cube is where you read it, next to the
+  position it produced.
 - **Pick your cross colour.** Six swatches under the cube, white selected by
   default. Say white and every question after that is asked about the white
   cross, finished or not; `auto` works it out from the cube instead, which is
@@ -152,7 +168,8 @@ screen is untouched until you ask for it.
   whole thing on the clipboard as text, the other draws a share card with the
   scramble, the cube it makes, and the solution one line per phase — the cross
   is one line however many goes it took, all four pairs are F2L, and a trailing
-  U turn is written out as the AUF it is.
+  U turn is written out as the AUF it is. The time is the headline and the move
+  count the footnote under it; a ZBLL finish is called out under both.
 
 Any scramble works, not just a recorded solve — paste one into the field at the top,
 or pick a past solve from *from a solve*.
@@ -250,7 +267,8 @@ css/recon.css         the reconstruction workbench (fetched on first open)
 js/main.js            wiring — the entry point
 js/timer.js           timer state machine + WCA inspection
 js/scramble.js        cubing.js integration, trainers, pre-generation queue
-js/algs.js            PLL / OLL / trigger tables (verified in test.html)
+js/algs.js            trainer PLL / OLL / trigger tables (verified in test.html)
+js/algsets.js         every OLL, PLL and ZBLL alg, all checked in test.html
 js/stats.js           WCA-correct averages
 js/charts.js          hand-built SVG charts
 js/theme.js           settings model + live theming
@@ -267,7 +285,7 @@ vendor/cubing/        mirrored cubing.js (works offline)
 tools/mirror_cubing.py  re-download that mirror
 serve.py              no-cache dev server
 start.bat             double-click launcher
-test.html             55-check self test
+test.html             71-check self test
 ```
 
 ---

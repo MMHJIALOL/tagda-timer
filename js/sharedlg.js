@@ -149,13 +149,13 @@ export async function shareSolve(solve, { index = null } = {}) {
 }
 
 /** A reconstruction: the scramble, the cube it makes, and the solution. */
-export async function shareRecon({ scramble, title, steps, moves }) {
+export async function shareRecon({ scramble, title, steps, moves, zb = false }) {
   toast('Rendering card…');
   const canvas = await drawReconCard({ scramble, title, steps, moves });
   present(canvas, {
     title: 'Share this reconstruction',
     filename: `tagda-reconstruction-${stamp()}.png`,
-    text: shareText('Reconstruction', `${moves} moves`),
+    text: shareText('Reconstruction', `${moves} moves${zb ? ', ZBLL finish' : ''}`),
   });
 }
 

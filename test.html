@@ -278,6 +278,117 @@ section('reconstruction');
     cross.list.every(x => moveCount(x.alg) >= cross.best), `best ${cross.best}`);
 }
 
+/* ---------------- the last-layer libraries ----------------
+   Two thousand algs scraped off a website is two thousand chances to ship one
+   that does not work, and a suggestion that does not work is worse than no
+   suggestion. So every one of them is checked here, against the same model the
+   panel reasons with. */
+section('last layer libraries');
+{
+  const C = await import('./js/cube3.js');
+  const A = await import('./js/algsets.js');
+
+  const eq = (a, b) => [...a].every((v, i) => v === b[i]);
+
+  /** The position `alg` is the solution to, worked out from what it does. */
+  const caseFor = (alg) => {
+    const got = C.applyAlg(C.SOLVED, alg);
+    if (!got) return null;
+    const x = got.state, y = new Uint8Array(40);
+    for (let i = 0; i < 8; i++) { const p = x[i]; y[p] = i; y[8 + p] = (3 - x[8 + i]) % 3; }
+    for (let i = 0; i < 12; i++) { const p = x[16 + i]; y[16 + p] = i; y[28 + p] = x[28 + i]; }
+    const back = C.applyAlg(y, alg);
+    return back && eq(back.state, C.SOLVED) ? y : null;
+  };
+
+  const audit = (name, algs, wants) => {
+    const bad = [];
+    let n = 0;
+    for (const [id, list] of algs) {
+      for (const alg of list) {
+        n++;
+        const c = caseFor(alg);
+        const why = !c ? 'does not solve itself'
+          : !C.analyse(c, 'D').f2l ? 'breaks f2l'
+          : wants(C.analyse(c, 'D')) ? null : 'wrong kind of case';
+        if (why) bad.push(`${id}: ${alg} (${why})`);
+      }
+    }
+    check(`every ${name} alg solves the case it is filed under`, !bad.length,
+      bad.length ? bad.slice(0, 3).join(' | ') : `${n} algs, ${algs.length} cases`);
+  };
+
+  audit('OLL', Object.entries(A.OLL_ALGS), a => a.phase === 'oll');
+  audit('PLL', Object.entries(A.PLL_ALGS), a => a.phase === 'pll');
+  audit('ZBLL', A.ZBLL.map(z => [z.name, z.algs]), a => a.phase === 'oll' && a.eo);
+
+  check('ZBLL covers the whole set', A.ZBLL.length === 472, `${A.ZBLL.length} cases`);
+  check('every OLL and PLL case has more than one spelling',
+    Object.values(A.OLL_ALGS).every(v => v.length > 1) &&
+    Object.values(A.PLL_ALGS).every(v => v.length > 1),
+    `OLL ${Object.values(A.OLL_ALGS).reduce((n, v) => n + v.length, 0)} algs, ` +
+    `PLL ${Object.values(A.PLL_ALGS).reduce((n, v) => n + v.length, 0)} algs`);
+
+  /* The notation the cube preview is handed. RW is a wide turn to this app and
+     a syntax error to twisty-player, which is what used to stop the cube dead
+     the moment somebody typed one. */
+  check('caps and lowercase wide turns both come out as Rw',
+    C.canonical('RW') === 'Rw' && C.canonical('rw') === 'Rw' && C.canonical("RW'") === "Rw'"
+    && C.canonical('X2') === 'x2' && C.canonical("R2'") === 'R2');
+  check('tidying the notation never changes the turn',
+    ['RW', "LW2", 'UW', "M2", "r U R' U' Rw2 F"].every(a =>
+      eq(C.applyAlg(C.SOLVED, a).state, C.applyAlg(C.SOLVED, C.canonical(a)).state)));
+}
+
+/* ---------------- ZBLL, offered where it belongs ---------------- */
+section('zbll recognition');
+{
+  const C = await import('./js/cube3.js');
+  const SV = await import('./js/solver.js');
+  const eq = (a, b) => [...a].every((v, i) => v === b[i]);
+
+  // A Sune case: corners twisted, edges already up. That is a ZBLL position.
+  const sune = C.applyAlg(C.SOLVED, "R U2 R' U' R U' R' U' R U R' F' R U R' U' R' F R2 U' R'");
+  const a1 = C.analyse(sune.state, 'D');
+  check('an OLL with its edges up is recognised as a ZBLL case',
+    a1.phase === 'oll' && a1.eo, `phase ${a1.phase}, eo ${a1.eo}`);
+  const r1 = SV.suggest(sune.state, sune.frame, a1, { limit: 20 });
+  check('the panel offers one-alg finishes for it', r1.zb && r1.list.some(x => x.kind === 'ZBLL'),
+    `${r1.list.filter(x => x.kind === 'ZBLL').length} ZBLL suggestions`);
+  check('and every one of them really does finish the solve',
+    r1.list.filter(x => x.kind === 'ZBLL')
+      .every(x => eq(C.applyAlg(sune.state, x.alg, sune.frame).state, C.SOLVED)));
+  check('the ZBLL suggestions come first', r1.list[0]?.kind === 'ZBLL');
+
+  // The same corners with an edge flipped is not a ZBLL case, and must not
+  // be sold as one.
+  const flipped = C.applyAlg(sune.state, "F R U R' U' F'", sune.frame);
+  const a2 = C.analyse(flipped.state, 'D');
+  const r2 = SV.suggest(flipped.state, flipped.frame, a2, { limit: 20 });
+  check('an OLL with a flipped edge is not offered a one-alg finish',
+    !a2.eo && !r2.zb && !r2.list.some(x => x.kind === 'ZBLL'));
+
+  // Multiple spellings of the case somebody actually used.
+  check('an OLL position comes back with more than one alg to choose from',
+    r2.list.filter(x => x.kind === 'OLL').length > 1,
+    `${r2.list.filter(x => x.kind === 'OLL').length} OLL algs offered`);
+  check('every OLL suggestion orients the last layer',
+    r2.list.filter(x => x.kind === 'OLL')
+      .every(x => C.analyse(C.applyAlg(flipped.state, x.alg, flipped.frame).state, 'D').oll));
+
+  /* A PLL skip. No alg in the PLL list permutes nothing, so the only answer
+     here is the AUF — and the panel used to say it had run out of ideas one
+     turn from a finished solve. */
+  const skip = C.applyAlg(C.SOLVED, 'U2');
+  const a3 = C.analyse(skip.state, 'D');
+  const r3 = SV.suggest(skip.state, skip.frame, a3, { limit: 5 });
+  check('a permuted last layer is offered its AUF, not nothing',
+    a3.phase === 'pll' && r3.list.length > 0 && r3.best === 1,
+    r3.list[0] ? `${r3.list[0].alg} · ${r3.list[0].label}` : 'nothing offered');
+  check('and the AUF really does finish it',
+    !!r3.list.length && eq(C.applyAlg(skip.state, r3.list[0].alg, skip.frame).state, C.SOLVED));
+}
+
 /* ---------------- the real page, in an iframe ---------------- */
 section('the app as actually rendered');
 await new Promise((resolve) => {

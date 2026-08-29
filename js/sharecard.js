@@ -297,29 +297,34 @@ export async function drawReconCard({ scramble = '', title = 'Reconstruction', s
     paintBackground(ctx, H, c);
     paintHeader(ctx, c, logo, 'RECONSTRUCTION');
 
-    /* The move count and the scramble share the top band. The count used to be
-       190px tall on its own line, which pushed the scramble and the cube down
-       the card and left a third of the width empty beside it. */
+    /* The time is the headline and the move count is the footnote — it is the
+       solve being shared, and the count is how it was done. The step count was
+       a number about the card's own layout, so it is gone. The scramble shares
+       the band rather than sitting under it, which is what keeps the cube and
+       the solution above the fold. */
     const top = 214;
+    const scrX = 420;
     ctx.textBaseline = 'alphabetic';
     ctx.textAlign = 'left';
-    ctx.fillStyle = c.accent2;
-    ctx.font = `700 26px ${SANS}`;
-    ctx.letterSpacing = '5px';
-    ctx.fillText(String(title).toUpperCase(), 74, top + 26);
-    ctx.letterSpacing = '0px';
 
-    const numSize = 104;
+    const heroSize = fitOneLine(ctx, String(title), scrX - 74 - 30, MONO, 800, 104, 40);
     ctx.fillStyle = c.text;
-    ctx.font = `800 ${numSize}px ${MONO}`;
-    ctx.fillText(String(moves), 74, top + 26 + 44 + numSize * 0.76);
-    ctx.fillStyle = hex(c.text, 0.55);
-    ctx.font = `500 24px ${SANS}`;
-    ctx.fillText(`${moves === 1 ? 'move' : 'moves'}  ·  ${steps.length} step${steps.length === 1 ? '' : 's'}`,
-      74, top + 26 + 44 + numSize * 0.76 + 40);
-    const leftBottom = top + 26 + 44 + numSize * 0.76 + 60;
+    ctx.font = `800 ${heroSize}px ${MONO}`;
+    const heroBase = top + 26 + heroSize * 0.76;
+    ctx.fillText(String(title), 74, heroBase);
 
-    const scrX = 420;
+    const zbUsed = steps.some(st => st.zb);
+    ctx.fillStyle = hex(c.text, 0.55);
+    ctx.font = `500 26px ${SANS}`;
+    ctx.fillText(`${moves} ${moves === 1 ? 'move' : 'moves'}`, 74, heroBase + 44);
+    if (zbUsed) {
+      // The one thing about this solve worth calling out from across a feed.
+      ctx.fillStyle = c.accent2;
+      ctx.font = `700 24px ${SANS}`;
+      ctx.fillText('ZBLL finish', 74, heroBase + 80);
+    }
+    const leftBottom = heroBase + (zbUsed ? 100 : 64);
+
     const scrBottom = paintScramble(ctx, c, top, (scramble || '—').replace(/\s+/g, ' '),
       { x: scrX, width: W - 74 - scrX, maxLines: 7, size: 25 });
 
@@ -364,10 +369,20 @@ export async function drawReconCard({ scramble = '', title = 'Reconstruction', s
 
     let ry = boxTop + pad + 40;
     rows.forEach((r, i) => {
-      ctx.fillStyle = c.accent2;
+      const heading = String(r.phase || '').toUpperCase();
       ctx.font = `700 21px ${SANS}`;
       ctx.letterSpacing = '2px';
-      ctx.fillText(String(r.phase || '').toUpperCase(), 74 + pad, ry + 4);
+      /* A ZBLL row gets its label boxed. One alg for the whole last layer is
+         the thing somebody scrolling past should notice, and an accent-coloured
+         word in a column of accent-coloured words is not noticeable. */
+      if (r.zb && heading) {
+        const w = ctx.measureText(heading).width + 22;
+        ctx.fillStyle = hex(c.accent2, 0.18);
+        rr(ctx, 74 + pad - 11, ry - 3, w, 32, 9);
+        ctx.fill();
+      }
+      ctx.fillStyle = c.accent2;
+      ctx.fillText(heading, 74 + pad, ry + 4);
       ctx.letterSpacing = '0px';
 
       ctx.fillStyle = c.text;
