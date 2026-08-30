@@ -81,6 +81,13 @@
      pinned to the bottom-left corner and would otherwise sit on top of the
      stats panel. */
   --chip-clearance: 36px;
+  /* The same idea down the other side. The scramble preview floats in the
+     bottom-right corner, which is on top of the right-hand rail — with enough
+     of a session to fill it, the cube covered the session bests and the trend
+     chart. This is the preview's own height (holder + grip + 2D/3D toggle)
+     plus its 18px inset, and it tracks the size slider because the preview
+     does. */
+  --cube-clearance: calc(clamp(96px, 12vw, 150px) * var(--cube-scale) + 58px);
 }
 
 /* ======================= PRESET THEMES ======================= */

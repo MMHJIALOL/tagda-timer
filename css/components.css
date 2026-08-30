@@ -216,29 +216,34 @@
 
 /* Lives here, not in base.css: components.css loads later, and an equally
    specific rule in the earlier file loses regardless of the media query. */
-/* Pinned to the top-right corner, this landed on top of the scramble: at phone
-   width the notation wraps to two or three lines and fills the row the cube was
-   floating over, so the preview covered the moves you were trying to read.
-   In the flow it cannot overlap anything — base.css gives it a row of its own
-   between the scramble and the stage. */
+/* Floating and draggable, the same as on a desktop — it is a preview you park
+   where it suits the way you hold the phone, and pinning it into the document
+   flow took a whole row away from the timer for something 80px tall.
+   What it must not do is sit on the scramble, which is what `top: 54px` did:
+   at phone width the notation wraps to three lines and fills exactly that
+   space. Anchored to the bottom instead, above the two tiles, in the empty
+   half of the timer area. */
 @media (max-width: 860px) {
   #panel-cube {
-    position: static;
-    width: calc(clamp(72px, 19vw, 96px) * var(--cube-scale));
-    margin-inline: auto;
-    justify-self: center;
-    /* `none` existed to stop a drag being read as a page scroll. There is no
-       drag here, and the preview still wants its own spin gesture. */
-    touch-action: manipulation;
-    cursor: default;
+    width: calc(clamp(64px, 17vw, 88px) * var(--cube-scale));
+    top: auto;
+    right: 10px;
+    bottom: calc(34vh + 22px);
   }
-  #cube-holder { height: calc(clamp(72px, 19vw, 96px) * var(--cube-scale)); }
-  /* Nothing to drag once it is in the flow, and a persisted position from a
-     desktop session must not follow it here. */
-  #cube-grip { display: none; }
-  #panel-cube[data-placed="true"] { left: auto; top: auto; }
-  /* No hover on a touch screen, so the toggle has to be readable on its own. */
+  #cube-holder { height: calc(clamp(64px, 17vw, 88px) * var(--cube-scale)); }
+  /* Both of these were revealed on hover, on a device that has none — which
+     left the widget with no visible way to move it and no visible 2D/3D
+     switch. The grip is also a touch target now, not a 34x13 sliver. */
+  #cube-grip { opacity: .55; width: 52px; height: 20px; }
   .view-toggle { opacity: 1; }
+
+  /* Expanded, the stats tile is 46vh rather than 34, and the preview was left
+     floating on top of it. Only while it is still parked in its corner — once
+     dragged it is wherever you put it. */
+  #app:has(#panel-stats[data-collapsed="false"]) #panel-cube:not([data-placed]) {
+    bottom: calc(46vh + 22px);
+  }
+
 }
 
 /* A phone on its side has ~375px of height for everything. The preview is the
@@ -247,10 +252,8 @@
    reason as the block above — `display: flex` is declared in this file.) */
 @media (max-width: 940px) and (max-height: 500px) and (orientation: landscape) {
   #panel-cube { display: none; }
-  /* Bottom-left, over a stats panel that now runs the full height of the
-     screen — it was sitting on top of the figures. */
-  #creator-chip { display: none; }
 }
+
 .view-toggle button {
   font-size: .58rem; font-weight: 700; letter-spacing: .08em;
   padding: 2px 7px; border-radius: 5px; color: var(--text-faint);
@@ -638,6 +641,17 @@ input[type="range"]::-moz-range-thumb {
 #creator-chip .ig { width: 14px; height: 14px; flex: none; }
 #creator-chip:hover .ig { color: var(--accent); }
 #creator-chip i { font-style: normal; opacity: .6; margin-right: 2px; }
+/* Pinned bottom-left, which below 860px is where the two tiles reach — it sat
+   on the times column headings at phone width, on the trend chart at tablet
+   width, and on the stats panel in landscape. The credit is in the About panel,
+   where it can be read rather than squinted past.
+   Has to come after the rules above, not in either mobile block further up this
+   file, or the `display: flex` a few lines back simply wins — which is exactly
+   why the landscape version of this rule never did anything. */
+@media (max-width: 860px),
+       (max-width: 940px) and (max-height: 500px) and (orientation: landscape) {
+  #creator-chip { display: none; }
+}
 
 /* ---------------- big charts (stats drawer) ---------------- */
 .chart-card {
