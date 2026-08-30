@@ -1205,10 +1205,24 @@ function wireHistoryScroll() {
   }, { passive: true });
 }
 
-/** The hint under the digits states what the spacebar actually does now. */
+/* Plugging a keyboard into a tablet, or the browser's own device emulation,
+   changes the answer after boot — so the hint is re-read rather than baked in
+   once. */
+const COARSE = matchMedia('(pointer: coarse)');
+COARSE.addEventListener('change', () => updateHint());
+
+/** The hint under the digits states what starts a solve on this device. */
 function updateHint() {
   const node = $('#timer-hint');
   if (!node) return;
+  // On a touch screen there is no spacebar, so naming one is worse than saying
+  // nothing. Same two states, described with the input the device actually has.
+  if (COARSE.matches) {
+    node.innerHTML = app.settings.holdTime > 0
+      ? 'hold anywhere, release to start'
+      : 'tap anywhere, release to start';
+    return;
+  }
   node.innerHTML = app.settings.holdTime > 0
     ? 'hold <kbd>space</kbd>, release to start'
     : 'tap <kbd>space</kbd>, release to start';
@@ -2241,21 +2255,56 @@ function wireInput() {
   // start it. A mouse click does not, unless you ask for it: reaching for the
   // mouse mid-session, or a stray click anywhere on the stage, would otherwise
   // start or stop a solve you never meant to touch.
-  const zone = $('#timer-zone');
+  //
+  // ONE listener, on #stage only. #timer-zone lives inside #stage, so binding
+  // both meant a single tap on the digits ran the handler twice as it bubbled:
+  // down() took idle -> inspecting (swallowing the matching up), then the
+  // second down() took inspecting -> holding -> ready, and the second up()
+  // started the solve. On a phone -- the one place touch is the only input --
+  // inspection was therefore skipped entirely and the timer just ran.
   const pointerOK = (e) => timerInputLive() && ((e.pointerType !== 'mouse') || app.settings.mouseTimer);
-  const touchOK = (e) => !modalOpen() && !e.target.closest('button, a, input, select, .solve-chip, .panel, #topbar');
+  const touchOK = (e) => !modalOpen() && !e.target.closest(
+    'button, a, input, select, .solve-chip, .panel, #topbar'
+  );
 
-  const down = (e) => { if (!pointerOK(e) || !touchOK(e)) return; e.preventDefault(); timer.down(); };
-  const up   = (e) => { if (!pointerOK(e) || modalOpen()) return; timer.up(); };
+  // A second finger landing mid-solve must not count as a stop, and its release
+  // must not count as the release of the first. `isPrimary` is exactly that
+  // distinction and the browser maintains it for us: one primary pointer at a
+  // time, extra fingers arrive non-primary. Deliberately not a pointer id we
+  // latch onto — a press whose release never comes back (capture stolen,
+  // inspection abandoned with Esc, the page backgrounded mid-hold) would leave
+  // the id set and every later tap ignored, i.e. a screen dead to touch until
+  // reload.
+  //
+  // `tracking` gates only the release, never the press, so it cannot wedge. It
+  // says "the press this release belongs to was one we acted on", which is what
+  // stops a pointerup that began life on a panel from starting a solve.
+  let tracking = false;
+  const down = (e) => {
+    if (!e.isPrimary) return;
+    if (!pointerOK(e) || !touchOK(e)) { tracking = false; return; }
+    tracking = true;
+    e.preventDefault();
+    timer.down();
+  };
+  const up = (e) => {
+    if (!e.isPrimary || !tracking) return;
+    tracking = false;
+    if (!pointerOK(e) || modalOpen()) return;
+    timer.up();
+  };
 
-  for (const target of [zone, $('#stage')]) {
-    target.addEventListener('pointerdown', down);
-    target.addEventListener('pointerup', up);
-    target.addEventListener('pointercancel', up);
-  }
+  const stage = $('#stage');
+  stage.addEventListener('pointerdown', down);
+  // The release goes on the window: a finger that slides off the stage mid-solve
+  // would otherwise never deliver its pointerup to #stage, and the solve would
+  // keep running with nothing left to stop it.
+  addEventListener('pointerup', up);
+  addEventListener('pointercancel', up);
 
   window.addEventListener('blur', () => {
     spaceDown = false;
+    tracking = false;
     stopKeys.clear();
     if (timer.state !== 'running') timer.reset();
   });
