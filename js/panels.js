@@ -430,15 +430,28 @@ export function buildSpotify(app) {
          registered, and its identifier is public by design. */
       body.append(
         group('Spotify',
-          el('div', { class: `spot-hero ${connected ? 'on' : ''}` },
+          el('div', { class: `spot-hero ${connected && !st.denied ? 'on' : ''}` },
             el('div', { class: 'spot-hero-dot' }),
             el('div', {},
-              el('div', { class: 'spot-hero-title', text: connected ? 'Connected' : 'Not connected' }),
-              el('div', { class: 'spot-hero-sub', text: connected
-                ? (st.artworkReadable === false
-                    ? 'Artwork colours are blocked by Spotify’s CDN, so the cover is used as a background instead.'
-                    : 'The timer takes its colours from whatever you are playing.')
-                : 'Link an account and the timer takes its colours from the album art of whatever you are playing.' }),
+              el('div', { class: 'spot-hero-title', text:
+                st.denied ? 'Linked, but blocked'
+                : connected ? 'Connected' : 'Not connected' }),
+              /* Nothing here when denied: an invitation to "link an account"
+                 is nonsense to someone who just did, and the warning below
+                 carries the whole message. */
+              st.denied ? null
+                : el('div', { class: 'spot-hero-sub', text: connected
+                    ? (st.artworkReadable === false
+                        ? 'Artwork colours are blocked by Spotify’s CDN, so the cover is used as a background instead.'
+                        : 'The timer takes its colours from whatever you are playing.')
+                    : 'Link an account and the timer takes its colours from the album art of whatever you are playing.' }),
+              !connected
+                ? el('div', { class: 'spot-hero-sub', text:
+                    `Worth knowing first: Spotify only lets ${st.devModeLimit} people use this `
+                    + 'connection, and they have to be added by hand by whoever runs this site. '
+                    + 'If you are not one of them, Connect will appear to work and then show '
+                    + 'nothing — set up your own connection below instead.' })
+                : null,
               connected && !st.canControl
                 ? el('div', { class: 'spot-hero-warn', text:
                     'Reconnect to enable the play, next and previous buttons — this link '
@@ -446,6 +459,18 @@ export function buildSpotify(app) {
                 : null,
               connected && st.blocked
                 ? el('div', { class: 'spot-hero-warn', text: st.blocked })
+                : null,
+              /* The refusal that used to be invisible. Spotify hands out a
+                 perfectly good token to someone who is not on the app's list
+                 and only then refuses every request, so this is the only
+                 place a visitor can find out what went wrong. */
+              st.denied
+                ? el('div', { class: 'spot-hero-warn', text:
+                    'Spotify accepted the login but will not share what you are playing, '
+                    + 'because this account is not on this app’s guest list. That list is '
+                    + `capped at ${st.devModeLimit} people and only the site’s owner can add you. `
+                    + 'To use it anyway, set up your own connection below — you will need '
+                    + 'Spotify Premium for that.' })
                 : null),
             connected
               ? el('button', { class: 'btn danger', text: 'Disconnect',
@@ -466,7 +491,7 @@ export function buildSpotify(app) {
       );
 
       /* ---- what it drives ---- */
-      if (connected) {
+      if (connected && !st.denied) {
         body.append(group('What the album drives',
           row('Tint', chips([
             { value: 'accent', label: 'Colours' },
@@ -486,21 +511,43 @@ export function buildSpotify(app) {
       }
 
       /* ---- the escape hatch, folded away ----
-         The built-in app is capped at 25 listed users by Spotify, and there is
+         The built-in app is capped at 5 listed users by Spotify, and there is
          no way to raise that. Anyone past the cap can point the timer at an app
-         of their own instead — which is a real need, but not one worth putting
-         in front of the people who will never hit it. */
+         of their own instead — which since the cap dropped to 5 is most
+         visitors, so it is no longer a corner case. It stays folded because the
+         Premium requirement makes it a dead end for a lot of people, and the
+         hero above now says so before anyone opens it. */
       const adv = el('details', { class: 'adv' },
-        el('summary', { text: 'Use your own Spotify app' }),
+        el('summary', { text: 'Set up your own connection' }),
         el('div', { class: 'adv-body' },
           el('div', { class: 'hint-note', text:
-            `The built-in app is limited by Spotify to ${st.devModeLimit} listed users, and that `
-            + 'limit cannot be raised for a project this size. If you are not on the '
-            + 'list, register an app of your own and paste its client ID here.' }),
+            `Spotify only allows ${st.devModeLimit} people to use this site’s connection, and `
+            + 'there is no way to raise that — Spotify stopped granting bigger limits to '
+            + 'projects like this one. Everyone else has to make their own connection. It is '
+            + 'free, takes about five minutes, and only has to be done once.' }),
+          st.ownerNeedsPremium
+            ? el('div', { class: 'hint-note warn-note', text:
+                'You need Spotify Premium for this. Anyone can create the connection, but '
+                + 'since early 2026 Spotify refuses to share your music with a connection '
+                + 'whose owner is not a Premium subscriber — and doing this makes you the '
+                + 'owner. On a free account the steps below will all appear to work, and '
+                + 'then nothing will play through. Ask the site’s owner to add you to the '
+                + 'guest list instead.' })
+            : null,
           el('div', { class: 'setup-steps' },
-            step(1, 'Create an app', 'developer.spotify.com/dashboard → Create app → tick Web API.'),
-            step(2, 'Add the redirect URI', 'Paste the one below into the app’s Redirect URIs, exactly as shown.'),
-            step(3, 'Paste the client ID', 'From the app’s Settings page. There is no client secret — this uses PKCE.'),
+            step(1, 'Create an app',
+              'Go to developer.spotify.com/dashboard, sign in, and press Create app. '
+              + 'Give it any name you like and tick "Web API".'),
+            step(2, 'Add the redirect address',
+              'In the app’s settings, paste the address below into "Redirect URIs" and save. '
+              + 'It has to match exactly, character for character.'),
+            step(3, 'Add yourself as a user',
+              'Open the User Management tab and add your own name and Spotify email. '
+              + 'This is easy to miss, and without it Spotify refuses everything — even '
+              + 'though the connection is yours.'),
+            step(4, 'Copy the Client ID',
+              'It is on the app’s settings page. Paste it in the box below. Ignore the '
+              + 'client secret — this site never uses one and never asks for one.'),
           ),
           row('Redirect URI', el('div', { class: 'copy-field' },
             el('code', { text: st.redirectUri }),

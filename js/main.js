@@ -15,7 +15,7 @@ import { flash, shockwave, confetti, chime, callout, beep } from './fx.js';
 import { summarize, eff, DNF, bestSingle, bestAvg, trimmedIndices, byCase, sessionBests, rollingSeries } from './stats.js';
 import { renderMiniTrend } from './charts.js';
 import { loadSettings, saveSettings, applyTheme, applyBackground, themeColors, setAlbumTint } from './theme.js';
-import { SPOTIFY_CLIENT_ID, DEV_MODE_LIMIT } from './spotifyapp.js';
+import { SPOTIFY_CLIENT_ID, DEV_MODE_LIMIT, OWNER_NEEDS_PREMIUM } from './spotifyapp.js';
 import { popover, closePopover, popoverOpen } from './popover.js';
 import { toast, confirmToast } from './toast.js';
 import { openPalette, closePalette, paletteOpen } from './palette.js';
@@ -106,7 +106,7 @@ const loadPalette = lazy(() => import('./albumpalette.js'), m => m);
 /**
  * The app to authenticate against: the built-in one unless somebody has
  * deliberately supplied their own. The override exists because the built-in
- * app is capped at 25 listed users — see spotifyapp.js.
+ * app is capped at 5 listed users — see spotifyapp.js.
  */
 const clientId = () => app.settings.spotifyClientId || SPOTIFY_CLIENT_ID;
 const usingOwnApp = () => !!app.settings.spotifyClientId;
@@ -117,6 +117,8 @@ let spotify = null;
 let pendingTint = null;
 /** Whether this origin may read pixels off i.scdn.co — probed, never assumed. */
 let artworkReadable = null;
+/** Set when Spotify answers a valid token with 403: linked, but not allowed. */
+let accessDenied = false;
 
 const drawerOpen  = () => !!_panels && _panels.drawerOpen();
 const closeDrawer = () => { _panels?.closeDrawer(); };
@@ -1580,6 +1582,14 @@ async function startAlbumTheming() {
   if (!fresh) await spotify.restore(id);
 
   if (spotify.connected) spotify.start();
+  /* Both of these, not just spotifyChanged. `spotifyChanged` is assigned only
+     while the Spotify panel is open, and even then it redraws that panel's own
+     body — it has never had anything to do with the sidebar card. Without the
+     sync here the card stayed hidden after connecting until something else
+     happened to call it, which is why toggling "Now playing panel" appeared to
+     be what summoned it. */
+  syncSpotifyPanel();
+  syncControls();
   app.spotifyChanged?.();
 }
 
@@ -1646,6 +1656,19 @@ function wireSpotify() {
     const { state, detail } = e.detail;
     if (state === 'disconnected' && detail) toast('Spotify disconnected — link it again in Appearance', { kind: 'bad' });
     if (state === 'error' && detail) console.warn('[spotify]', detail);
+    /* The allowlist refusal. This used to fall through to the generic error
+       path, which only console.warn()s — so a visitor who was not on the list
+       saw "Connected", an empty card, and no explanation anywhere. */
+    if (state === 'denied') {
+      accessDenied = true;
+      showNowPlaying(null);
+      paintNowPlaying(null);
+      queueTint(null);
+      toast('Spotify linked, but this account is not on the app’s user list — open the Spotify panel', { kind: 'bad' });
+    }
+    if (state === 'connected') accessDenied = false;
+    syncSpotifyPanel();
+    syncControls();
     app.spotifyChanged?.();
   });
 }
@@ -1694,8 +1717,10 @@ const mmss = (ms) => {
 function syncSpotifyPanel() {
   const panel = $('#panel-spotify');
   if (!panel) return;
-  // Shown once there is something to show: a live link, or a link being made.
-  const on = app.settings.showSpotifyPanel && !!spotify?.connected;
+  /* Shown once there is something to show. A denied link is "connected" in
+     the sense that tokens exist, but Spotify will never answer it, so the card
+     would sit there empty forever — the Spotify panel says why instead. */
+  const on = app.settings.showSpotifyPanel && !!spotify?.connected && !accessDenied;
   panel.hidden = !on;
   const st = $('#np-state');
   if (st) {
@@ -1863,6 +1888,7 @@ function showNowPlaying(title, artist) {
 app.disconnectSpotify = async () => {
   await spotify?.disconnect();
   artworkReadable = null;
+  accessDenied = false;
   pendingTint = null;
   setAlbumTint(null, app.settings);
   bgFromTheme();
@@ -1876,6 +1902,7 @@ app.connectSpotify = async () => {
   const { Spotify } = await loadSpotify();
   if (!spotify) { spotify = new Spotify(); wireSpotify(); wireControls(); }
   npBlocked = null;               // a fresh consent may grant what the last one did not
+  accessDenied = false;           // the dashboard may have been fixed since
   await spotify.connect(id);      // leaves the page
 };
 
@@ -1904,6 +1931,8 @@ app.spotifyState = () => {
     connected: !!spotify?.connected,
     canControl: !!spotify?.canControl,
     blocked: npBlocked?.msg || null,
+    denied: accessDenied,
+    ownerNeedsPremium: OWNER_NEEDS_PREMIUM,
     artworkReadable,
     redirectUri: base,
     problem,

@@ -96,7 +96,10 @@ const dropTokens  = () => KV.del(KEY);
  *   'progress' {progressMs, durationMs, playing}
  *              — every poll, so the panel can follow along
  *   'idle'     {}                          — nothing is playing
- *   'status'   {state, detail}             — connected | disconnected | error
+ *   'status'   {state, detail}             — connected | disconnected | denied | error
+ *              'denied' is the development-mode allowlist: a valid token that
+ *              Spotify refuses to answer. Polling stops; only the dashboard
+ *              can change it.
  *   'blocked'  {reason}                    — a control could not be carried out
  */
 export class Spotify extends EventTarget {
@@ -108,6 +111,9 @@ export class Spotify extends EventTarget {
     this._timer = null;
     this._backoff = 0;
     this._stopped = true;
+    // Whether an 'idle' has already been emitted for the current silence, so
+    // the first poll after connecting reports "nothing playing" exactly once.
+    this._idled = false;
   }
 
   emit(type, detail) { this.dispatchEvent(new CustomEvent(type, { detail })); }
@@ -178,6 +184,7 @@ export class Spotify extends EventTarget {
     this.stop();
     this.tokens = null;
     this.trackId = null;
+    this._idled = false;
     await dropTokens();
     this.emit('status', { state: 'disconnected' });
   }
@@ -325,7 +332,15 @@ export class Spotify extends EventTarget {
       });
 
       if (res.status === 204) {          // nothing playing
-        if (this.trackId !== null) { this.trackId = null; this.emit('idle'); }
+        /* `_idled` rather than a trackId check: a fresh instance already has
+           trackId === null, so the old guard swallowed the very first poll
+           after connecting — which is exactly the poll the panel is waiting
+           on to unhide itself when no music is playing yet. */
+        if (this.trackId !== null || !this._idled) {
+          this.trackId = null;
+          this._idled = true;
+          this.emit('idle');
+        }
         this._backoff = 0;
         return this._schedule();
       }
@@ -340,6 +355,19 @@ export class Spotify extends EventTarget {
         return this._schedule(wait + 250);
       }
 
+      /* 403 here is not a transport problem, it is the development-mode cap.
+         Spotify lets a user who is not on the app's allowlist finish the OAuth
+         flow and hold a perfectly valid token, and only then refuses every
+         call — so "connected" and "allowed" are genuinely different states and
+         this is the only place the difference shows up.
+
+         Retrying cannot help: nothing about the token changes until someone
+         edits the dashboard. Stop, and let the panel explain it. */
+      if (res.status === 403) {
+        this.emit('status', { state: 'denied' });
+        return this.stop();
+      }
+
       if (!res.ok) throw new Error(`player ${res.status}`);
 
       const json = await res.json();
@@ -349,10 +377,15 @@ export class Spotify extends EventTarget {
       // as "nothing playing" rather than half-applying a theme.
       const art = item?.album?.images?.[0]?.url;
       if (!item || !art) {
-        if (this.trackId !== null) { this.trackId = null; this.emit('idle'); }
+        if (this.trackId !== null || !this._idled) {
+          this.trackId = null;
+          this._idled = true;
+          this.emit('idle');
+        }
         return this._schedule();
       }
 
+      this._idled = false;
       if (item.id !== this.trackId) {
         this.trackId = item.id;
         this.emit('track', {
