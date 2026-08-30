@@ -543,10 +543,11 @@ body.inspecting #last-delta, body.focus #last-delta { display: none; }
   /* The two rails become two small tiles side by side under the timer, rather
      than two full-width panels stacked on top of each other — stacked, they ate
      the bottom half of the screen and squeezed the timer into what was left.
-     Placed explicitly, so DOM order (times, timer, stats) does not decide which
-     side each lands on. */
-  #sidebar       { grid-column: 1; grid-row: 2; flex-direction: column; padding-bottom: 0; }
-  #sidebar-right { grid-column: 2; grid-row: 2; }
+     Figures on the left, times on the right: the reverse of the desktop rails,
+     and placed explicitly here precisely because DOM order (times, timer,
+     stats) would otherwise put them the other way round. */
+  #sidebar-right { grid-column: 1; grid-row: 2; }
+  #sidebar       { grid-column: 2; grid-row: 2; flex-direction: column; padding-bottom: 0; }
   #sidebar, #sidebar-right { min-height: 0; min-width: 0; max-height: 34vh; }
   #sidebar > .panel, #sidebar-right > .panel { min-width: 0; }
   #panel-times { flex: 1 1 auto; min-height: 0; }
