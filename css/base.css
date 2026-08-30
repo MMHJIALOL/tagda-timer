@@ -21,6 +21,26 @@ body {
   text-rendering: optimizeLegibility;
   overscroll-behavior: none;
   touch-action: manipulation;
+  /* Holding the screen to start a solve is a long press, and a long press on
+     text is a text selection: on a phone the digits turned blue and a
+     copy/paste bubble appeared over the timer. `user-select` alone is not
+     enough -- iOS Safari needs the prefixed property, and the callout is a
+     separate switch again. */
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+}
+/* Everything you press to time a solve. Text you might genuinely want to copy
+   -- the scramble, the drawers, anything you can type into -- is exempted
+   below, so this costs nothing anywhere it matters. */
+#app, #timer-zone, #timer-core, #timer-display, #time-main, #time-penalty,
+#solving-label, #inspect-readout, #timer-avgs, #timer-hint, #last-delta,
+#panel-cube, #mascot, #dock-bottom, #tile-float-layer {
+  -webkit-user-select: none;
+  user-select: none;
+}
+.scramble, #drawer, #palette, .sh-box, #recon-root, input, textarea {
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 button, input, select, textarea { font: inherit; color: inherit; }
@@ -229,6 +249,19 @@ body.inspecting #timer-display { opacity: 0; }
 .scramble:hover { background: color-mix(in srgb, var(--text) 6%, transparent); }
 .scramble.multiline { text-align: left; font-size: calc(clamp(.8rem, 1.35vw, 1.05rem) * var(--scramble-scale)); }
 .scramble.long { font-size: calc(clamp(.8rem, 1.45vw, 1.08rem) * var(--scramble-scale)); }
+/* Two lines of notation at the one-line leading read as one solid block with a
+   crack through it. When the fit gives up and lets the text wrap (or the
+   scramble carries its own line breaks), it gets the room to be two lines:
+   more leading, tighter word spacing so a line is a phrase rather than a
+   scatter of letters, and balanced breaks so the second line is not two
+   moves long. */
+.scramble.multiline, .scramble.wrapped {
+  line-height: 1.8;
+  word-spacing: .2em;
+  padding-top: 14px; padding-bottom: 14px;
+}
+.scramble.wrapped { text-wrap: balance; text-align: center; }
+.scramble.multiline { text-wrap: initial; }
 .scramble .m { display: inline-block; transition: color var(--dur-fast); }
 
 /* Taken out of the flex flow: in-flow they add their width to the row and shove
@@ -317,11 +350,11 @@ body.inspecting #timer-display { opacity: 0; }
 
    Above the mobile breakpoint only: below it the rail is a short tile at the
    bottom of the screen and the preview floats clear above it. */
-@media (min-width: 861px) {
-  body:not(.no-cube) #app:has(#panel-cube:not([data-placed])) #sidebar-right {
-    padding-bottom: var(--cube-clearance);
-  }
-}
+/* Nothing reserves rail space for the preview any more. It used to, from a
+   constant that could only ever be a guess at the widget's height, and it cost
+   the solve list that height permanently whether or not the two were anywhere
+   near each other. The preview moves aside instead, and only when it actually
+   collides — see placePreview() in tiles.js. */
 #panel-stats { flex: 0 1 auto; min-height: 0; }
 
 /* =================== TIMER =================== */
@@ -349,6 +382,7 @@ body.inspecting #timer-display { opacity: 0; }
 }
 
 #timer-display {
+  position: relative;
   font-family: var(--font-timer);
   font-size: var(--timer-size);
   font-weight: var(--timer-weight);
@@ -366,7 +400,27 @@ body.inspecting #timer-display { opacity: 0; }
 #timer-display.state-ready   { color: var(--t-ready);   transform: scale(1.03); }
 #timer-display.state-running { color: var(--t-running); }
 #timer-display.state-inspect { color: var(--warn); }
-#timer-display.hidden-digits #time-main { opacity: .12; }
+/* Hiding the time means hiding it. At .12 opacity the digits were still
+   legible on every theme, so the setting did nothing but dim the thing it was
+   asked to remove. The word takes its place, in the same box, so the layout
+   does not jump when the solve starts. */
+#timer-display.hidden-digits #time-main,
+#timer-display.hidden-digits #time-penalty { visibility: hidden; }
+
+#solving-label {
+  position: absolute; left: 50%; top: 50%;
+  transform: translate(-50%, -50%);
+  display: none;
+  font-family: var(--font-ui);
+  font-size: clamp(1.1rem, 3.6vw, 2.4rem);
+  font-weight: 700; letter-spacing: .38em; text-indent: .38em;
+  text-transform: uppercase;
+  color: var(--t-running);
+  text-shadow: none;
+  white-space: nowrap;
+  opacity: .8;
+}
+#timer-display.hidden-digits #solving-label { display: block; }
 
 #time-penalty {
   font-size: .3em; font-weight: 700; letter-spacing: 0;
@@ -631,7 +685,8 @@ body.inspecting #last-delta, body.focus #last-delta { display: none; }
 
 /* zen mode — hide chrome permanently */
 body.zen #topbar, body.zen #sidebar, body.zen #sidebar-right,
-body.zen #panel-cube, body.zen #creator-chip { display: none; }
+body.zen #panel-cube, body.zen #creator-chip,
+body.zen #dock-bottom, body.zen #tile-float-layer { display: none; }
 body.zen #app { grid-template-rows: auto 1fr; }
 body.zen #stage { grid-template-columns: minmax(0, 1fr); }
 

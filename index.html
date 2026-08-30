@@ -180,7 +180,8 @@
     <!-- LEFT COLUMN: times on top, stats collapsed at the bottom -->
     <aside id="sidebar" class="fade-layer">
 
-      <section class="panel" id="panel-times">
+      <section class="panel" id="panel-times" data-tile="times">
+        <button class="tile-grip" type="button" title="Drag to move — drop on a highlighted zone to dock" aria-label="Move this panel"><svg viewBox="0 0 24 24"><circle cx="9" cy="7" r="1.5"/><circle cx="15" cy="7" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="17" r="1.5"/><circle cx="15" cy="17" r="1.5"/></svg></button>
         <div class="panel-head">
           <span id="hist-title">Times</span>
           <span class="panel-sub" id="stat-count">0 solves</span>
@@ -206,7 +207,8 @@
            The swatches are the point: they are the colours actually pulled out
            of this cover, sitting next to the cover, so the link between the art
            and the interface is something you can see rather than infer. -->
-      <section class="panel" id="panel-spotify" hidden>
+      <section class="panel" id="panel-spotify" data-tile="spotify" hidden>
+        <button class="tile-grip" type="button" title="Drag to move — drop on a highlighted zone to dock" aria-label="Move this panel"><svg viewBox="0 0 24 24"><circle cx="9" cy="7" r="1.5"/><circle cx="15" cy="7" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="17" r="1.5"/><circle cx="15" cy="17" r="1.5"/></svg></button>
         <div class="panel-head">
           <span>Now playing</span>
           <span class="panel-sub" id="np-state">not linked</span>
@@ -261,6 +263,10 @@
 
         <div id="timer-display" class="state-idle">
           <span id="time-main">0.00</span><span id="time-penalty"></span>
+          <!-- Stands in for the digits when "hide time while solving" is on.
+               The digits at 12% opacity were still perfectly readable, which
+               is the one thing the setting exists to prevent. -->
+          <span id="solving-label" aria-hidden="true">solving</span>
         </div>
 
         <div id="pace-ghost" hidden>
@@ -305,7 +311,8 @@
     <aside id="sidebar-right" class="fade-layer">
       <!-- The right rail: the numbers you glance at, away from the times list
            you scroll. The column was already in the #stage grid and empty. -->
-      <section class="panel" id="panel-stats" data-collapsed="true">
+      <section class="panel" id="panel-stats" data-tile="stats" data-collapsed="true">
+        <button class="tile-grip" type="button" title="Drag to move — drop on a highlighted zone to dock" aria-label="Move this panel"><svg viewBox="0 0 24 24"><circle cx="9" cy="7" r="1.5"/><circle cx="15" cy="7" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="17" r="1.5"/><circle cx="15" cy="17" r="1.5"/></svg></button>
         <button class="panel-head as-btn" id="stats-toggle" aria-expanded="false" aria-controls="stats-body" title="Show statistics">
           <span class="stats-title">Stats</span>
           <svg class="chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
@@ -375,6 +382,15 @@
       <button data-view="reset" id="btn-reset-orbit" title="Reset the cube angle">&#8635;</button>
     </div>
   </div>
+
+
+  <!-- ---------- TILE DOCKS ----------
+       The bottom bar is a real container tiles get moved into; the float layer
+       holds anything dropped away from a dock. Both are click-through except
+       where a tile actually is. -->
+  <div id="dock-bottom"></div>
+  <div id="tile-float-layer"></div>
+  <div id="snap-zones" aria-hidden="true" hidden></div>
 
   <!-- ---------- MASCOT ---------- -->
   <!-- Click the brand mark to let him out. Draggable, resizable, remembers
