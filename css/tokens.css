@@ -87,7 +87,6 @@
      chart. This is the preview's own height (holder + grip + 2D/3D toggle)
      plus its 18px inset, and it tracks the size slider because the preview
      does. */
-  --cube-clearance: calc(clamp(96px, 12vw, 150px) * var(--cube-scale) + 58px);
 }
 
 /* ======================= PRESET THEMES ======================= */

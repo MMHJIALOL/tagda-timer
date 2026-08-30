@@ -12,9 +12,10 @@ import { Background } from './bg.js';
 import { CubeView } from './cube.js';
 import { makeDraggable } from './drag.js';
 import { flash, shockwave, confetti, chime, callout, beep } from './fx.js';
-import { summarize, eff, DNF, bestSingle, bestAvg, trimmedIndices, byCase, sessionBests, rollingSeries } from './stats.js';
+import { summarize, eff, DNF, bestSingle, bestAvg, trimmedIndices, byCase, sessionBests, rollingSeries, statWindow, STAT_LABELS } from './stats.js';
 import { renderMiniTrend } from './charts.js';
-import { loadSettings, saveSettings, applyTheme, applyBackground, themeColors, setAlbumTint } from './theme.js';
+import { DEFAULTS, loadSettings, saveSettings, applyTheme, applyBackground, themeColors, setAlbumTint } from './theme.js';
+import { initTiles, applyTiles, measureLayout } from './tiles.js';
 import { SPOTIFY_CLIENT_ID, DEV_MODE_LIMIT, OWNER_NEEDS_PREMIUM } from './spotifyapp.js';
 import { popover, closePopover, popoverOpen } from './popover.js';
 import { toast, confirmToast } from './toast.js';
@@ -539,25 +540,43 @@ function watchScrambleWidth() {
 function fitScrambleToLine(node) {
   if (!node) return;
   node.style.fontSize = '';
-  node.classList.remove('oneline');
+  node.classList.remove('oneline', 'wrapped');
   // Scrambles with real line breaks in them (megaminx, multi-blind) mean it.
   if (node.classList.contains('multiline')) return;
 
+  // `oneline` is nowrap, so scrollWidth is the true width of the whole
+  // scramble set as a single line — the number the rest of this needs.
   node.classList.add('oneline');
   const base = parseFloat(getComputedStyle(node).fontSize) || 16;
-  if (node.scrollWidth <= node.clientWidth) return;   // already fits
+  const box = node.clientWidth;
+  const need = node.scrollWidth;
+  if (!box || need <= box) return;   // already fits
 
-  const floor = base * 0.55;
+  /* How small the type may get before two lines is the better answer. Below
+     about three quarters of the base size the notation stops being something
+     you can take in at a glance, which is the entire job of the line. */
+  const floor = base * 0.74;
   // 0.98 absorbs the sub-pixel rounding in scrollWidth.
-  let size = base * (node.clientWidth / node.scrollWidth) * 0.98;
-  if (size < floor) { node.classList.remove('oneline'); node.style.fontSize = ''; return; }
-
-  node.style.fontSize = `${size.toFixed(2)}px`;
-  // One correction pass: glyph widths are not perfectly linear in font size.
-  if (node.scrollWidth > node.clientWidth) {
-    size = Math.max(floor, size * (node.clientWidth / node.scrollWidth) * 0.99);
+  let size = base * (box / need) * 0.98;
+  if (size >= floor) {
     node.style.fontSize = `${size.toFixed(2)}px`;
+    // One correction pass: glyph widths are not perfectly linear in font size.
+    if (node.scrollWidth > node.clientWidth) {
+      size = Math.max(floor, size * (node.clientWidth / node.scrollWidth) * 0.99);
+      node.style.fontSize = `${size.toFixed(2)}px`;
+    }
+    return;
   }
+
+  /* Two lines, and deliberately two rather than however many the browser
+     happens to produce: left to itself the text wrapped to three or four
+     cramped rows that read as one block with cracks through it. Sized so the
+     whole scramble fits across two lines with room to spare, then balanced
+     (.scramble.wrapped) so the second line is a phrase and not two moves. */
+  node.classList.remove('oneline');
+  node.classList.add('wrapped');
+  const twoLine = base * ((box * 2 * 0.88) / need);
+  node.style.fontSize = `${Math.max(base * 0.58, Math.min(base, twoLine)).toFixed(2)}px`;
 }
 
 /* =========================================================
@@ -1618,6 +1637,7 @@ function wireSpotify() {
     if (!palette) return;
 
     paintSwatches(palette);
+    paintBarTint(palette);
     queueTint(app.settings.spotifyTint === 'background' ? null : palette);
   });
 
@@ -1713,6 +1733,11 @@ const mmss = (ms) => {
   return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
 };
 
+/* What the Spotify panel looked like last time, so a poll that changed nothing
+   does not drag a full theme re-application through the frame the timer is
+   trying to paint in. */
+let npShown = '';
+
 /** Show/hide the whole panel according to the setting and the link state. */
 function syncSpotifyPanel() {
   const panel = $('#panel-spotify');
@@ -1720,13 +1745,26 @@ function syncSpotifyPanel() {
   /* Shown once there is something to show. A denied link is "connected" in
      the sense that tokens exist, but Spotify will never answer it, so the card
      would sit there empty forever — the Spotify panel says why instead. */
-  const on = app.settings.showSpotifyPanel && !!spotify?.connected && !accessDenied;
+  const live = !!spotify?.connected && !accessDenied;
+  const on = app.settings.showSpotifyPanel && live;
   panel.hidden = !on;
+
   const st = $('#np-state');
   if (st) {
     st.textContent = !spotify?.connected ? 'not connected'
       : npAt?.playing ? 'playing' : npAt ? 'paused' : 'nothing playing';
     st.classList.toggle('live', !!npAt?.playing);
+  }
+
+  /* Either of those two can be the only thing in a rail, so whether a rail
+     earns a column can change here — applyTheme is what decides that, and it
+     reads the DOM this function just rewrote. Only when it actually changed:
+     this runs on every five-second poll, and a needless theme re-application
+     is a forced style recalculation on the whole document. */
+  const shown = String(panel.hidden);
+  if (shown !== npShown) {
+    npShown = shown;
+    applyTheme(app.settings);
   }
 }
 app.syncSpotifyPanel = syncSpotifyPanel;
@@ -1745,6 +1783,7 @@ function paintNowPlaying(track) {
     if (prog) prog.hidden = true;
     $('#np-controls').hidden = true;
     paintSwatches(null);
+    paintBarTint(null);
     npAt = null;
     stopNpClock();
     syncSpotifyPanel();
@@ -1816,6 +1855,29 @@ function wireControls() {
     if (npAt?.playing) startNpClock(); else stopNpClock();
     syncSpotifyPanel();
   });
+}
+
+/**
+ * Wash the now-playing panel in the cover's own colours.
+ *
+ * Separate from the theme tint on purpose: `spotifyTint` decides whether the
+ * artwork is allowed to move the *interface* accent, and someone who has that
+ * switched off (or set to background-only) should still get a player that
+ * looks like the record it is playing. Only spent while the panel is docked
+ * across the bottom (see components.css); in a rail it stays a plain card.
+ * Cleared back to the accent pair when there is nothing playing or the artwork
+ * could not be read.
+ */
+function paintBarTint(colors) {
+  const panel = $('#panel-spotify');
+  if (!panel) return;
+  if (!colors) {
+    panel.style.removeProperty('--sb-1');
+    panel.style.removeProperty('--sb-2');
+    return;
+  }
+  panel.style.setProperty('--sb-1', colors.accent);
+  panel.style.setProperty('--sb-2', colors.accent2);
 }
 
 function paintSwatches(colors) {
@@ -1890,6 +1952,7 @@ app.disconnectSpotify = async () => {
   artworkReadable = null;
   accessDenied = false;
   pendingTint = null;
+  paintBarTint(null);
   setAlbumTint(null, app.settings);
   bgFromTheme();
   showNowPlaying(null);
@@ -1951,35 +2014,39 @@ app.shareSolveCard = async (solve) => {
 };
 
 /**
- * Share the last `n` solves as an average card. `kind` is one of the stat keys,
- * so the card is labelled with the same words the panel uses.
+ * Share a statistic as a card. `kind` is a stat key — best | mean | aoN — or
+ * its `best-` prefixed form, which shares the fastest such average anywhere in
+ * the session rather than the one ending on the last solve. Both come from the
+ * same window the stat-detail drawer shows, so the picture and the panel can
+ * never disagree about which solves counted.
  */
 app.shareAverageCard = async (kind) => {
-  try { await loadShare(); } catch (err) { return lazyFailed('the share card', err); }
-  const st = summarize(app.solves);
-  const N = { ao5: 5, ao12: 12, ao50: 50, ao100: 100, mo3: 3 }[kind];
-  if (!N) {
-    // "best single" and "mean" have no window of their own to show.
-    if (kind === 'best') {
-      const best = app.solves.filter(x => eff(x) !== DNF)
-        .sort((a, b) => eff(a) - eff(b))[0];
-      if (!best) { toast('No solves yet'); return; }
-      return (await loadShare()).shareSolve(best, { index: app.solves.indexOf(best) + 1 });
-    }
-    return (await loadShare()).shareAverage(app.solves.slice(-12), { label: 'session mean', value: st.mean === null ? '—' : fmt(st.mean) });
+  let m;
+  try { m = await loadShare(); } catch (err) { return lazyFailed('the share card', err); }
+
+  const w = statWindow(app.solves, kind);
+  if (!w.list.length || w.value === null || w.value === undefined) {
+    const n = Number(kind.replace(/^best-/, '').slice(2));
+    toast(n ? `Needs ${n} solves` : 'No solves yet');
+    return;
   }
-  if (app.solves.length < N) { toast(`Needs ${N} solves`); return; }
-  const window = app.solves.slice(-N);
-  const value = st[kind];
-  const label = kind === 'mo3' ? 'mean of 3' : `average of ${N}`;
-  const trim = trimmedIndices(app.solves, N);
-  const base = app.solves.length - N;
-  const trimmed = new Set();
-  for (const i of [...trim.best, ...trim.worst]) trimmed.add(i - base);
-  return (await loadShare()).shareAverage(window, {
-    label,
-    value: value === null || value === undefined ? '—' : value === DNF ? 'DNF' : fmt(value),
-    trimmed: kind === 'mo3' ? null : trimmed,
+
+  // A single has no window of its own to show — it is one solve, so it gets
+  // the solve card.
+  if (kind === 'best' || kind === 'best-single') {
+    return m.shareSolve(w.list[0], { index: w.start + 1 });
+  }
+
+  // The session mean is every solve there has ever been; a card with four
+  // hundred rows on it is not a card. The last twelve stand for it.
+  const list = kind === 'mean' ? w.list.slice(-12) : w.list;
+  const base = kind === 'mean' ? app.solves.length - list.length : w.start;
+  const trimmed = new Set([...w.trimmed].map(i => i - base).filter(i => i >= 0 && i < list.length));
+
+  return m.shareAverage(list, {
+    label: (STAT_LABELS[kind] || kind).toLowerCase(),
+    value: w.value === DNF ? 'DNF' : fmt(w.value),
+    trimmed: trimmed.size ? trimmed : null,
   });
 };
 
@@ -1989,6 +2056,38 @@ app.shareAverageCard = async (kind) => {
 function persist() { saveSettings(app.settings); }
 app.persist = persist;
 
+/* Settings the reset deliberately keeps. Which event you are on, which session
+   you are in and which cases you have picked are where you *are*, not how the
+   app looks; and re-entering a Spotify client ID to undo a colour change would
+   be a nasty surprise. Nothing in the database is touched either way. */
+const RESET_KEEPS = [
+  'event', 'mode', 'sessionId', 'allowedCases', 'multiCount',
+  'spotifyClientId', 'featuredReel',
+];
+
+/** Put every look-and-feel setting back to the value it shipped with. */
+app.resetSettings = () => {
+  const kept = {};
+  for (const k of RESET_KEEPS) kept[k] = app.settings[k];
+  // Same object, not a new one: initTiles and the drag helpers closed over it
+  // at boot, and handing them a replacement would leave them writing into a
+  // settings object nothing else reads.
+  for (const k of Object.keys(app.settings)) delete app.settings[k];
+  Object.assign(app.settings, structuredClone(DEFAULTS), kept);
+  persist();
+  applyAll();
+  app.syncStatsCollapsed?.();
+  // cubePos and mascotPos are settings, but where those two widgets actually
+  // sit is written onto the elements — without this the preview stays pinned
+  // wherever it was last dragged while the setting says it is back in its
+  // corner, and the rails reserve room in the wrong place.
+  cubeDrag?.apply();
+  app.applyMascot?.();
+  renderStats();
+  measureLayout();
+  toast('Settings back to their defaults', { kind: 'good' });
+};
+
 app.setSetting = (k, v) => {
   app.settings[k] = v;
   persist();
@@ -1996,6 +2095,9 @@ app.setSetting = (k, v) => {
 };
 
 function applyAll(changed) {
+  // Tiles first: applyTheme decides whether each rail earns a column by looking
+  // at what is actually in it, so the panels have to be in their homes by then.
+  applyTiles(app.settings);
   applyTheme(app.settings);
   // bgSolid and bgGradient were missing here, so editing the background colour
   // or the gradient string did nothing at all until some unrelated setting
@@ -2011,8 +2113,9 @@ function applyAll(changed) {
     timer.cfg.useInspection = !eventOf(app.settings.event).noInspection;
   }
   if (changed === 'hintFacelets') cube.setHints(app.settings.hintFacelets);
-  // A bigger preview can push a dragged widget off screen, so re-clamp it.
-  if (changed === 'cubeSize') cubeDrag?.apply();
+  // A bigger preview can push a dragged widget off screen, so re-clamp it —
+  // and it also takes more room away from the rail beside it.
+  if (changed === 'cubeSize') { cubeDrag?.apply(); measureLayout(); }
   if (!changed || ['scrambleSize', 'density', 'sidebarWidth', 'panelStyle'].includes(changed)) {
     fitScrambleToLine($('#scramble-text'));
   }
@@ -2350,11 +2453,6 @@ async function copyToast(text, label = 'Copied') {
 }
 app.copyToast = copyToast;
 
-const STAT_TITLES = {
-  best: 'Best single', ao5: 'Average of 5', ao12: 'Average of 12',
-  ao50: 'Average of 50', ao100: 'Average of 100', mean: 'Session mean',
-};
-
 function wireChrome() {
   $('#btn-event').addEventListener('click', (e) => {
     popover(e.currentTarget, EVENT_ORDER.map(id => ({
@@ -2421,12 +2519,23 @@ function wireChrome() {
     if (!collapsed) renderStats();
   });
   app.expandStats = () => { applyStatsCollapsed(false); app.setSetting('statsCollapsed', false); renderStats(); };
+  // Restoring defaults can change `statsCollapsed` without going through the
+  // toggle, and the panel's own data attribute is what the CSS reads.
+  app.syncStatsCollapsed = () => applyStatsCollapsed(app.settings.statsCollapsed !== false);
   // Every statistic opens the solves behind it — times, scrambles, and a copy
   // button for pasting the lot somewhere else.
   $$('.stat[data-k]').forEach((cell) => {
     const k = cell.dataset.k;
     cell.title = 'See the solves behind this';
-    cell.addEventListener('click', () => openPanel(STAT_TITLES[k] || k, 'buildStatDetail', { wide: true }, app, k));
+    cell.addEventListener('click', () => openPanel(STAT_LABELS[k] || k, 'buildStatDetail', { wide: true }, app, k));
+  });
+  /* And the session bests, which until now were figures you could read but not
+     open — so the fastest ao5 of a session was the one average there was no way
+     to share a card of. Same drawer, same share button, `best-` window. */
+  $$('.bst[data-b]').forEach((cell) => {
+    const k = 'best-' + cell.dataset.b;
+    cell.title = 'See the solves behind this — and share it';
+    cell.addEventListener('click', () => openPanel(STAT_LABELS[k] || k, 'buildStatDetail', { wide: true }, app, k));
   });
 
   $('#mini-chart-btn')?.addEventListener('click', () =>
@@ -2452,9 +2561,38 @@ function wireChrome() {
   cubeDrag = makeDraggable($('#panel-cube'), {
     handle: '#cube-grip',
     get: () => app.settings.cubePos,
-    set: (pos) => { app.settings.cubePos = pos; persist(); },
+    // Where the preview sits decides how far up the rails have to stop, so the
+    // rails are re-measured the moment it lands somewhere new.
+    set: (pos) => { app.settings.cubePos = pos; persist(); measureLayout(); },
   });
   app.resetCubePosition = () => { cubeDrag.reset(); toast('Preview back in its corner'); };
+
+  /* Drag any of the panels by the grip on its top edge. The left rail, the
+     right rail and the bar across the bottom light up while one is in the air
+     and it clicks into whichever you drop it on; drop it anywhere else and it
+     stays there, floating. */
+  initTiles({
+    settings: app.settings,
+    save: (id, cfg) => {
+      app.settings.tiles = { ...(app.settings.tiles || {}), [id]: cfg };
+      persist();
+    },
+    // After the panel is back in the document, not before — applyTheme decides
+    // whether each rail earns a column by looking at what is in it.
+    onPlaced: () => {
+      applyTheme(app.settings);
+      // A rail that just appeared or vanished changes the stage's column count,
+      // and with it the width the scramble has to fit into.
+      fitScrambleToLine($('#scramble-text'));
+    },
+  });
+
+  app.resetTiles = () => {
+    app.settings.tiles = null;
+    persist();
+    applyAll();
+    toast('Panels back where they started');
+  };
 
   // Spinning the cube only helps if the angle survives the next scramble and
   // the next visit, so read it back whenever a drag on the cube itself ends.
@@ -2506,6 +2644,13 @@ function wireMascot() {
     app.settings.mascotOpen = on;
     persist();
     if (on) { applySize(); mascotDrag.apply(); }
+  };
+
+  // Restoring defaults changes mascotOpen/mascotPos/mascotSize underneath him;
+  // this is how those settings reach the element.
+  app.applyMascot = () => {
+    box.hidden = !app.settings.mascotOpen;
+    if (!box.hidden) { applySize(); mascotDrag.apply(); }
   };
 
   $('#brand').addEventListener('click', () => show(box.hidden));
@@ -2667,6 +2812,12 @@ function openPaletteWithCommands() {
       { kind: 'do', label: 'Enter your own scrambles', key: 'X', run: () => openPanel('Your scrambles', 'buildCustomScrambles', undefined, app) },
       { kind: 'do', label: 'Share last solve as a card', run: () => app.solves.at(-1) ? app.shareSolveCard(app.solves.at(-1)) : toast('No solves yet') },
       { kind: 'do', label: 'Share current ao5 as a card', run: () => app.shareAverageCard('ao5') },
+      { kind: 'do', label: 'Share current ao12 as a card', run: () => app.shareAverageCard('ao12') },
+      { kind: 'do', label: 'Share best ao5 as a card', run: () => app.shareAverageCard('best-ao5') },
+      { kind: 'do', label: 'Share best ao12 as a card', run: () => app.shareAverageCard('best-ao12') },
+      { kind: 'do', label: 'Share best single as a card', run: () => app.shareAverageCard('best-single') },
+      { kind: 'do', label: 'Reset panel layout', run: () => app.resetTiles?.() },
+      { kind: 'do', label: 'Restore default settings', run: () => app.resetSettings?.() },
       { kind: 'do', label: 'Toggle inspection', key: 'I', run: () => { app.setSetting('inspection', !app.settings.inspection); toast(`Inspection ${app.settings.inspection ? 'on' : 'off'}`); } },
       { kind: 'do', label: 'Zen mode', key: 'Z', run: () => document.body.classList.toggle('zen') },
       { kind: 'do', label: 'Fullscreen', key: 'F', run: () => document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen?.() },

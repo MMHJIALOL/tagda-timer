@@ -1475,3 +1475,349 @@ body.celebrating .toast {
   background: color-mix(in srgb, var(--accent) 14%, transparent);
   border-color: color-mix(in srgb, var(--accent) 34%, transparent);
 }
+
+/* =========================================================
+   DOCKABLE TILES
+
+   A grip on the top edge of each movable panel, three snap zones that light
+   up while one is in the air, a bottom bar they can be dropped into, and a
+   float layer for anything parked away from a dock.
+   ========================================================= */
+
+.tile-grip {
+  position: absolute; top: -10px; left: 50%;
+  transform: translateX(-50%);
+  z-index: 3;
+  display: flex; align-items: center; justify-content: center;
+  /* Big enough to aim at without hunting. The first version was 40x15 at .35
+     opacity and people could not find it, let alone hit it. */
+  width: 56px; height: 20px;
+  border-radius: 99px; cursor: grab;
+  color: var(--text-dim);
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border) 85%, transparent);
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 3px 10px -4px rgba(0, 0, 0, .55);
+  opacity: .62;
+  /* The drag owns the gesture: without this a touch drag scrolls the page
+     underneath instead of moving the tile. */
+  touch-action: none;
+  transition: opacity var(--dur) var(--ease), color var(--dur-fast) var(--ease),
+              background var(--dur-fast) var(--ease);
+}
+/* The icon rule in base.css strokes every path in every SVG, which turns six
+   1.5px dots into six rings. These are meant to be filled. */
+.tile-grip svg { width: 22px; height: 15px; fill: currentColor; stroke: none; }
+[data-tile]:hover > .tile-grip { opacity: 1; }
+.tile-grip:hover {
+  opacity: 1; color: var(--text);
+  background: color-mix(in srgb, var(--accent) 26%, var(--surface));
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+}
+.tile-grip:active { cursor: grabbing; }
+
+/* The list inside a panel must not replay its entry animation every time the
+   panel changes parent — see tiles.js. */
+body.tiles-moving .solve-chip { animation: none; }
+
+/* Nothing to drag below the mobile breakpoint — see tilesEnabled() in
+   tiles.js, which uses the same width. */
+@media (max-width: 860px) {
+  .tile-grip { display: none; }
+}
+
+/* ---- floating ---- */
+#tile-float-layer {
+  position: fixed; inset: 0; z-index: 13;
+  pointer-events: none;
+}
+#tile-float-layer > * { pointer-events: auto; }
+.tile-float {
+  position: fixed;
+  /* A floating times list still has to be able to scroll rather than run off
+     the bottom of the screen. */
+  max-height: min(66vh, 620px);
+}
+.tile-dragging {
+  z-index: 95;
+  cursor: grabbing;
+  box-shadow: 0 30px 60px -20px rgba(0, 0, 0, .8);
+  transform: scale(1.012);
+  opacity: .95;
+  /* The pointer is driving position directly; a transition would trail it. */
+  transition: none;
+}
+
+/* ---- the bottom bar ---- */
+/* Full width and centred with flexbox rather than `left: 50%` plus a
+   translate. A transform makes an element the containing block for every
+   `position: fixed` descendant, and a tile being dragged out of this bar is
+   exactly that — with the transform here, its viewport coordinates were
+   resolved against the bar instead and it shot off to the side of the screen
+   the moment you picked it up. */
+#dock-bottom {
+  /* Exactly the strip the snap outline promises — between the two rails, not
+     the whole viewport. Full width ran the bar on underneath the rail panels
+     and the scramble preview. --dock-x/--dock-w come from bottomZone() in
+     tiles.js, the same measurement that draws the outline. */
+  position: fixed; bottom: 14px; z-index: 13;
+  left: var(--dock-x, 12px);
+  /* The fallback matters: on a window too narrow for a strip between the rails
+     bottomZone() reports nothing, and `auto` would shrink the bar to its own
+     content. Span the window instead. */
+  width: var(--dock-w, calc(100% - 24px));
+  right: auto;
+  /* Stacked rows, not a row of cards. Two tiles sharing the width meant two
+     half-width strips, and half a screen is not enough for eight figures *or*
+     for a player — the whole reason to be down here is the full width. The
+     player ends up on the bottom row, which is where a player bar belongs. */
+  display: flex; flex-direction: column; align-items: stretch; gap: 10px;
+  padding: 0 12px;
+  pointer-events: none;
+}
+#dock-bottom:empty { display: none; }
+/* The bar is a bar: whatever is docked in it spans the width of the screen,
+   rather than sitting in the middle as a card you have to scroll sideways to
+   read. */
+#dock-bottom > * { pointer-events: auto; flex: 0 0 auto; min-width: 0; width: auto; }
+/* A player bar belongs at the very bottom of the screen, under anything else
+   docked down here. Only in the bar — the rails keep their own stacking. */
+#dock-bottom > #panel-spotify { order: 2; }
+/* The strip is a good deal narrower than the window now that it sits between
+   the rails, so what fits in it is a question about the strip, not about the
+   screen. `container-type` lets the rules below ask the right one. */
+#dock-bottom > .panel {
+  max-height: 148px;
+  container-type: inline-size;
+  container-name: dockbar;
+}
+/* Below the breakpoint the rails are tiles under the timer, there is no strip
+   between them, and the bar simply spans the screen. */
+@media (max-width: 860px) {
+  #dock-bottom { left: 0; right: 0; width: auto; padding: 0 12px; }
+}
+
+/* ---- the statistics panel, laid on its side ----
+   In a rail it is a column of figures with a chart under it. Across the bottom
+   of the screen it has one short dimension and a very long one, so the three
+   blocks sit side by side and the figures run in a single row. */
+#panel-stats[data-dock="bottom"] { padding: 10px var(--pad); }
+#panel-stats[data-dock="bottom"] #stats-body { margin-top: 8px; }
+#panel-stats[data-dock="bottom"] #stats-inner {
+  flex-direction: row; align-items: stretch; gap: 14px;
+  overflow: hidden;
+}
+#panel-stats[data-dock="bottom"] .stat-grid {
+  display: flex; flex-wrap: nowrap; gap: 6px;
+  flex: 1 1 auto; min-width: 0;
+}
+#panel-stats[data-dock="bottom"] .stat { flex: 1 1 0; min-width: 0; justify-content: center; }
+/* Consistency spans two columns in the grid; in a row it is just one more cell,
+   and its bar sits under its figure. */
+#panel-stats[data-dock="bottom"] .stat.wide { flex: 1.4 1 0; }
+#panel-stats[data-dock="bottom"] .bests-block { flex: 0 0 auto; max-width: 42%; }
+#panel-stats[data-dock="bottom"] .bests-grid {
+  display: flex; flex-wrap: nowrap; gap: 4px;
+}
+#panel-stats[data-dock="bottom"] .bst { flex: 0 0 auto; }
+#panel-stats[data-dock="bottom"] .mini-chart-wrap { flex: 0 0 clamp(120px, 14vw, 220px); }
+/* A divider between the three blocks, so a single long row still reads as
+   three groups rather than one undifferentiated strip of numbers. */
+#panel-stats[data-dock="bottom"] .bests-block,
+#panel-stats[data-dock="bottom"] .mini-chart-wrap {
+  border-left: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  padding-left: 14px;
+}
+/* Collapsed, the peek row is the whole panel — let it use the width instead of
+   wrapping into three cramped lines. Scoped to the collapsed state on purpose:
+   `[data-collapsed="false"] .stats-peek { display: none }` has exactly the same
+   specificity as this rule, so an unscoped version simply won it by coming
+   later and left the peek sitting on top of the expanded figures. */
+#panel-stats[data-dock="bottom"][data-collapsed="true"] .stats-peek {
+  display: flex; flex-wrap: nowrap; gap: 22px; justify-content: flex-end;
+}
+#panel-stats[data-dock="bottom"][data-collapsed="true"] .stats-peek > span:nth-child(n + 4) { display: flex; }
+
+/* Below the point where a row of eight figures stops being readable, drop the
+   trailing blocks rather than squeezing everything — measured against the bar
+   itself, not the window. */
+@container dockbar (max-width: 1020px) {
+  #panel-stats[data-dock="bottom"] .mini-chart-wrap { display: none; }
+}
+@container dockbar (max-width: 800px) {
+  #panel-stats[data-dock="bottom"] .bests-block { display: none; }
+}
+body.focus #dock-bottom, body.focus #tile-float-layer { opacity: 0; pointer-events: none; }
+#dock-bottom, #tile-float-layer { transition: opacity 420ms var(--ease) 40ms; }
+
+/* How much room the bar is actually taking, measured and written by tiles.js —
+   its height depends on what is docked in it, and a guessed constant would be
+   wrong for every combination but one. Everything anchored to the bottom of the
+   screen steps up by it, rather than being buried underneath. */
+/* Each rail stops above whichever of the two things below it reaches higher:
+   the credit chip (left rail only — that is the corner it sits in) or the
+   bottom bar. Both measured rather than assumed: the chip's own position moves
+   when the bar is occupied, and a flat 36px left it clipping the last panel in
+   the rail by a few pixels.
+
+   The scramble preview is normally NOT one of them: reserving room for it cost
+   the solve list a chunk of its height permanently, whether or not the two were
+   anywhere near each other, so it moves aside instead. --cube-clear-* is only
+   ever non-zero in the one case where it cannot — a panel in each rail, both
+   reaching down into its corner, so there is no free side to move to. See
+   placePreview() in tiles.js. */
+@media (min-width: 861px) {
+  #sidebar {
+    padding-bottom: max(var(--chip-h-left, 36px), var(--dock-clear-left, 0px), var(--cube-clear-left, 0px));
+  }
+  #sidebar-right {
+    padding-bottom: max(var(--chip-h-right, 0px), var(--dock-clear-right, 0px), var(--cube-clear-right, 0px));
+  }
+}
+/* Both of these live in bottom corners, outside the strip the bar occupies, so
+   normally neither moves at all. The variables are zero unless the bar really
+   is in front of them — a rail switched off and the bar widening into that
+   corner, or a phone where it spans the screen. */
+#creator-chip { bottom: max(14px, calc(var(--dock-clear-chip, 0px) + 6px)); }
+@media (min-width: 861px) {
+  body:not(.no-cube) #panel-cube:not([data-placed]) {
+    bottom: max(18px, calc(var(--dock-clear-cube, 0px) + 12px));
+  }
+}
+/* The escape hatch: placePreview() flips this on only while the preview's usual
+   corner is occupied and this one is not. */
+#panel-cube[data-side="left"] { right: auto; left: 18px; }
+@media (max-width: 860px) {
+  #panel-cube[data-side="left"] { right: auto; left: 10px; }
+}
+/* ...and the credit chip lives in that corner, so the two swap: the chip takes
+   the corner the preview just left. Climbing above the preview instead would
+   have cost the left rail everything the preview's own reservation used to,
+   which is the whole thing this arrangement exists to avoid. */
+#app:has(#panel-cube[data-side="left"]) #creator-chip {
+  left: auto; right: 18px;
+}
+
+/* ---- snap zones ---- */
+#snap-zones {
+  position: fixed; inset: 0; z-index: 90;
+  pointer-events: none;
+}
+.snap-zone {
+  position: fixed;
+  border-radius: var(--radius);
+  border: 2px dashed color-mix(in srgb, var(--accent) 45%, transparent);
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  display: grid; place-items: center;
+  transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+}
+.snap-zone.on {
+  border-style: solid;
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+  box-shadow: inset 0 0 40px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+.snap-tag {
+  font-size: .64rem; font-weight: 700; letter-spacing: .18em; text-transform: uppercase;
+  color: var(--text-dim);
+  padding: 5px 11px; border-radius: 99px;
+  background: color-mix(in srgb, var(--bg) 72%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+}
+.snap-zone.on .snap-tag { color: var(--text); border-color: color-mix(in srgb, var(--accent) 55%, transparent); }
+[data-motion="off"] .snap-zone { transition: none; }
+
+/* =========================================================
+   NOW PLAYING, LAID ON ITS SIDE
+
+   The same panel that lives in a rail — same markup, same handlers, same
+   features — rearranged into one row when it is docked across the bottom.
+   There is deliberately no second player widget: one that "looks like a bar"
+   but reimplements half the controls is two things to keep in step, and the
+   half it reimplemented is the half that went missing.
+   ========================================================= */
+/* Laid out the way a music player's bar is: the record on the left, and one
+   centred column holding the transport with the scrubber directly beneath it.
+   A grid rather than a row, because the two centre pieces are siblings in the
+   markup — the rail version stacks them in a column and this has to reuse that
+   same markup, so the layout does the arranging instead of a wrapper element. */
+#panel-spotify[data-dock="bottom"] {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 1.9fr) minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  align-items: center;
+  column-gap: 18px; row-gap: 5px;
+  padding: 9px 20px;
+  /* The cover's own two colours, washed across the bar the way the album
+     header of a music player is — see paintBarTint() in main.js. Falls back to
+     the accent pair, so it looks deliberate before anything is playing and
+     when the artwork refuses to be read. */
+  background:
+    linear-gradient(100deg,
+      color-mix(in srgb, var(--sb-1, var(--accent)) 30%, var(--surface)) 0%,
+      color-mix(in srgb, var(--sb-2, var(--accent-2)) 18%, var(--surface)) 46%,
+      color-mix(in srgb, var(--surface) 96%, transparent) 100%);
+  transition: background 600ms var(--ease);
+}
+[data-motion="off"] #panel-spotify[data-dock="bottom"] { transition: none; }
+
+/* "NOW PLAYING · playing" is a heading for a card in a column. In a bar the
+   artwork and the play button already say both of those things. */
+#panel-spotify[data-dock="bottom"] .panel-head { display: none; }
+
+#panel-spotify[data-dock="bottom"] #np-card {
+  grid-column: 1; grid-row: 1 / 3;
+  justify-self: start; gap: 12px;
+  /* Both needed: `justify-self: start` sizes the card to its content, and a
+     long track name would then run straight out of its column and into the
+     transport. These hold it to the track so the title ellipsises instead. */
+  min-width: 0; max-width: 100%;
+}
+#panel-spotify[data-dock="bottom"] .np-art-wrap { width: 46px; height: 46px; }
+#panel-spotify[data-dock="bottom"] .np-title { font-size: .84rem; }
+/* The two colours pulled out of this cover stay — they are the point of the
+   whole album-tint feature, not decoration to be dropped for a few pixels. */
+#panel-spotify[data-dock="bottom"] .np-swatches { margin-top: 3px; }
+
+#panel-spotify[data-dock="bottom"] .np-controls {
+  grid-column: 2; grid-row: 1;
+  justify-content: center; gap: 8px;
+}
+#panel-spotify[data-dock="bottom"] .np-progress {
+  grid-column: 2; grid-row: 2;
+  flex-direction: row; align-items: center; gap: 10px;
+}
+#panel-spotify[data-dock="bottom"] .np-progress .np-bar { flex: 1 1 auto; height: 4px; }
+/* `display: contents` dissolves the times wrapper so its two figures become
+   siblings of the bar, and `order` puts the elapsed one in front of it —
+   elapsed | scrubber | duration, without touching the markup the rail version
+   depends on. */
+#panel-spotify[data-dock="bottom"] .np-times { display: contents; }
+#panel-spotify[data-dock="bottom"] .np-times > span {
+  flex: none; font-size: .66rem; color: var(--text-dim);
+}
+#panel-spotify[data-dock="bottom"] #np-elapsed { order: -1; }
+/* A standing complaint about the controls gets its own row under everything. */
+#panel-spotify[data-dock="bottom"] .np-note { grid-column: 1 / -1; grid-row: 3; }
+/* On a coloured wash the accent fill loses its edge; white reads on every
+   album. */
+#panel-spotify[data-dock="bottom"] #np-fill { background: color-mix(in srgb, var(--text) 88%, transparent); }
+#panel-spotify[data-dock="bottom"] .np-bar { background: color-mix(in srgb, var(--text) 22%, transparent); }
+
+/* Narrow enough that a three-column grid leaves the centre too tight: drop the
+   empty right-hand column and let the player use it. */
+@media (max-width: 1180px) {
+  #panel-spotify[data-dock="bottom"] {
+    grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+  }
+}
+@media (max-width: 860px) {
+  #panel-spotify[data-dock="bottom"] { padding: 8px 13px; column-gap: 12px; }
+  #panel-spotify[data-dock="bottom"] .np-swatches { display: none; }
+}
+}
+}
+
+/* The session bests open the same drawer the stat grid does, so they get the
+   same affordance — they used to be figures you could read but not follow. */
+.bst { cursor: pointer; }

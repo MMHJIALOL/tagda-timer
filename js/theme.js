@@ -35,7 +35,7 @@ export const FEATURED_REEL = 'https://www.instagram.com/reel/DZzyIGcBQjD/';
  * existing profile carries the OLD default forever and simply editing
  * DEFAULTS would never reach anyone who has used the app before.
  */
-const SETTINGS_VERSION = 5;
+const SETTINGS_VERSION = 6;
 
 const MIGRATIONS = {
   // v2 — the pace ghost is now opt-in rather than on by default.
@@ -56,6 +56,14 @@ const MIGRATIONS = {
     s.spotifyTint ??= 'accent';
     s.spotifyNowPlaying ??= false;
     s.showSpotifyPanel ??= true;
+  },
+  // v6 — panels became dockable tiles. They start where they always were, so
+  // nothing moves under anyone.
+  6: (s) => {
+    s.tiles ??= null;
+    // A short-lived second player widget lived here; the now-playing panel it
+    // duplicated does the job, so the switch that hid it is dropped.
+    delete s.showSpotifyBar;
   },
 };
 
@@ -103,6 +111,7 @@ export const DEFAULTS = {
   sidebarWidth: 236,            // px
   sidebarText: 100,             // % — stats + panel labels
   timesSize: 100,               // % — the solve list
+  tiles: null,                  // { [tileId]: {dock, pos, w} } once anything has been dragged
   cubePos: null,                // {x,y} once the preview has been dragged
   cubeOrbit: null,              // {latitude,longitude,distance} once it has been spun
   mascotOpen: false,            // the brand cube, loose on the page
@@ -204,9 +213,14 @@ export function applyTheme(s) {
   const stage = document.getElementById('stage');
   const sidebar = document.getElementById('sidebar');
   const railRight = document.getElementById('sidebar-right');
-  const nowPlaying = document.getElementById('panel-spotify');
-  const leftOn = !!(s.showHistory || (nowPlaying && !nowPlaying.hidden));
-  const rightOn = !!s.showStats;
+  /* Which rail is on is now a question about the DOM, not about settings: a
+     panel can be dragged from one rail to the other, or out of both, so
+     `showStats` no longer tells you whether the right-hand column has anything
+     in it. Ask the column. */
+  const occupied = (rail) => !!rail && [...rail.children].some(n =>
+    !n.hidden && n.style.display !== 'none');
+  const leftOn = occupied(sidebar);
+  const rightOn = occupied(railRight);
   if (sidebar) sidebar.style.display = leftOn ? '' : 'none';
   if (railRight) railRight.style.display = rightOn ? '' : 'none';
   if (stage) {

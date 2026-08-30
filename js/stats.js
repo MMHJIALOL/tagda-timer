@@ -342,3 +342,72 @@ export function dailyCounts(solves, keyOf) {
   }
   return m;
 }
+
+/* =========================================================
+   Stat windows — which solves are behind one number
+
+   Shared by the stat-detail drawer and the share card, so the picture and
+   the panel can never disagree about which solves counted. `trimmed` holds
+   indices into `solves`, not into `list`, exactly like trimmedIndices().
+   ========================================================= */
+
+export const STAT_LABELS = {
+  best: 'Best single', mean: 'Session mean',
+  ao5: 'Average of 5', ao12: 'Average of 12',
+  ao50: 'Average of 50', ao100: 'Average of 100',
+  'best-single': 'Best single',
+  'best-ao5': 'Best average of 5', 'best-ao12': 'Best average of 12',
+  'best-ao50': 'Best average of 50', 'best-ao100': 'Best average of 100',
+};
+
+/** The trimmed best/worst of an arbitrary window, as indices into `solves`. */
+function trimSetAt(solves, start, n) {
+  const window = solves.slice(start, start + n).map((s, i) => ({ i: start + i, v: eff(s) }));
+  if (window.length < n) return new Set();
+  const t = trimCount(n);
+  const sorted = [...window].sort((a, b) => a.v - b.v);
+  return new Set([...sorted.slice(0, t), ...sorted.slice(-t)].map(x => x.i));
+}
+
+/**
+ * The solves behind one statistic.
+ *
+ * `kind` is a stat key — best | mean | aoN — or its `best-` prefixed form,
+ * which asks for the fastest such average anywhere in the session rather than
+ * the one ending on the last solve.
+ */
+export function statWindow(solves, kind) {
+  const base = { kind, label: STAT_LABELS[kind] || kind, value: null, list: [], trimmed: new Set(), start: 0 };
+
+  if (kind === 'best' || kind === 'best-single') {
+    const v = bestSingle(solves);
+    const i = v === null ? -1 : solves.findIndex(x => eff(x) === v);
+    return { ...base, value: v, list: i === -1 ? [] : [solves[i]], start: i === -1 ? 0 : i };
+  }
+  if (kind === 'mean') {
+    return { ...base, value: summarize(solves).mean, list: solves, start: 0 };
+  }
+
+  // best-aoN: the fastest window in the session. aoN: the one ending now.
+  const best = kind.startsWith('best-');
+  const n = Number((best ? kind.slice(7) : kind.slice(2)));
+  if (!n || solves.length < n) {
+    return { ...base, label: STAT_LABELS[kind] || `Average of ${n || '?'}` };
+  }
+
+  if (best) {
+    const { value, at } = bestAvg(solves, n);
+    if (at < 0 || value === null) return base;
+    return { ...base, value, list: solves.slice(at, at + n), trimmed: trimSetAt(solves, at, n), start: at };
+  }
+
+  const start = solves.length - n;
+  const t = trimmedIndices(solves, n);
+  return {
+    ...base,
+    value: currentAvg(solves, n),
+    list: solves.slice(start),
+    trimmed: new Set([...t.best, ...t.worst]),
+    start,
+  };
+}

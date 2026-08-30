@@ -7,7 +7,7 @@
 import { $, el, fmt, fmtDate, download, parseScrambleList } from './util.js';
 import { PRESETS, TIMER_FONTS, exportTheme, importTheme } from './theme.js';
 import { SHADER_NAMES } from './bg.js';
-import { summarize, byCase, eff, DNF, bestAvg, currentAvg, trimmedIndices, bestSingle } from './stats.js';
+import { summarize, byCase, eff, DNF, bestAvg, statWindow } from './stats.js';
 import { renderTrend, renderHistogram, renderHeatmap, renderCaseBars } from './charts.js';
 import { MODES, EVENTS } from './events.js';
 import { setFor } from './scramble.js';
@@ -252,6 +252,16 @@ export function buildAppearance(app) {
           { value: 'reduced', label: 'Reduced' },
           { value: 'off', label: 'Off' },
         ], S.motion, v => set('motion', v))),
+        el('div', { class: 'hint-note', html:
+          'Drag the times list, the statistics panel, the now-playing card and the play bar ' +
+          'by the grip on their top edge. The <b>left rail</b>, the <b>right rail</b> and the ' +
+          '<b>bar across the bottom</b> light up while you are dragging — drop on one and the ' +
+          'panel clicks into it. Drop it anywhere else and it stays exactly where you let go. ' +
+          'On a phone the panels keep their fixed layout, because there is nowhere to put them.' }),
+        el('div', { class: 'row' },
+          el('div', { class: 'lbl' }, el('span', { text: 'Panel layout' }),
+            el('span', { class: 'sub', text: 'put every panel back in its original rail' })),
+          el('button', { class: 'ghost-btn', text: 'reset', onclick: () => app.resetTiles?.() })),
       ),
 
       group('Share',
@@ -290,42 +300,9 @@ export function buildAppearance(app) {
    the plain-text block people paste into Discord.
    ========================================================= */
 
-const STAT_LABELS = {
-  best: 'Best single', mean: 'Session mean',
-  ao5: 'Average of 5', ao12: 'Average of 12',
-  ao50: 'Average of 50', ao100: 'Average of 100',
-};
-
 const NEWLINE = String.fromCharCode(10);
 
 const fmtStat = (v) => (v === null || v === undefined) ? '—' : v === DNF ? 'DNF' : fmt(v);
-
-/** The solves behind one statistic, plus which of them the average throws away. */
-function statWindow(app, kind) {
-  const solves = app.solves;
-  const base = { label: STAT_LABELS[kind] || kind, value: null, list: [], trimmed: new Set(), start: 0 };
-
-  if (kind === 'best') {
-    const v = bestSingle(solves);
-    const i = solves.findIndex(x => eff(x) === v);
-    return { ...base, value: v, list: i === -1 ? [] : [solves[i]], start: i === -1 ? 0 : i };
-  }
-  if (kind === 'mean') {
-    return { ...base, value: summarize(solves).mean, list: solves, start: 0 };
-  }
-
-  const n = Number(kind.slice(2));
-  if (!n || solves.length < n) return { ...base, label: `Average of ${n || '?'}` };
-  const start = solves.length - n;
-  const t = trimmedIndices(solves, n);
-  return {
-    ...base,
-    value: currentAvg(solves, n),
-    list: solves.slice(start),
-    trimmed: new Set([...t.best, ...t.worst]),
-    start,
-  };
-}
 
 /** One solve's time, in parentheses when the average does not count it. */
 function timeCell(solve, trimmed) {
@@ -347,7 +324,7 @@ function statText(w) {
 
 export function buildStatDetail(app, kind) {
   return (body) => {
-    const w = statWindow(app, kind);
+    const w = statWindow(app.solves, kind);
 
     if (!w.list.length) {
       body.append(el('div', { class: 'hint-note', text:
@@ -725,6 +702,25 @@ export function buildSettings(app) {
             class: 'ghost-btn', text: 'export',
             onclick: () => app.exportSessionCSV(),
           })),
+      ),
+
+      group('Start over',
+        el('div', { class: 'row' },
+          el('div', { class: 'lbl' },
+            el('span', { text: 'Restore defaults' }),
+            el('span', { class: 'sub', text: 'every setting back to the day you arrived' })),
+          el('button', {
+            class: 'ghost-btn danger', text: 'reset',
+            onclick: async () => {
+              if (!await confirmToast('Put every setting back to its default?', 'reset')) return;
+              app.resetSettings();
+              closeDrawer();
+            },
+          })),
+        el('div', { class: 'hint-note', html:
+          'Resets the appearance, the background, the timer behaviour and where every panel ' +
+          'sits. <b>Your solves are not touched</b> — neither are your sessions, the event ' +
+          'you are on, the cases you have picked, or your Spotify client ID.' }),
       ),
 
       group('About',
