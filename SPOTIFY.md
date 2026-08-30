@@ -43,8 +43,11 @@ already provided. The card, the OAuth link and the poller now exist for the
 theming, so the transport is three buttons and three endpoints on top of
 infrastructure that is already paid for.
 
-Reading what is playing still works on a free account. Only the transport needs
-Premium, and it is hidden rather than broken when it is unavailable.
+Reading what is playing still works on a free account — **provided the account is
+one of the five listed on the maintainer's app**. Only the transport needs
+Premium of the *listener*, and it is hidden rather than broken when unavailable.
+A visitor using a client ID of their own is a different case: they own the app,
+so Premium is required of them for anything to work at all. See §3.4.
 
 ---
 
@@ -139,17 +142,58 @@ setup, no ID to find.
 
 ### 3.3 The development-mode cap — the one real limit
 
-The app is in Spotify's development mode: **at most 25 users, each added by
-email** under *Settings → User Management* in the dashboard. Extended quota
-needs a review Spotify does not grant projects this size, so this is a ceiling
-rather than a to-do.
+The app is in Spotify's development mode: **at most 5 users, each added by
+email** under *Settings → User Management* in the dashboard. Not 25 — Spotify
+lowered it, and the number in this file was wrong for a while.
 
-Anyone past it is stopped by Spotify at its own consent screen and never
-returns to the timer, which means it cannot be caught and turned into a nice
-message here. What the UI can do — and does — is offer the alternative: a
-folded-away *Use your own Spotify app* section that accepts a client ID of
-their own. Switching apps clears the stored tokens, since a token belongs to
-the application that issued it.
+This is a permanent ceiling, not a to-do. Extended quota mode is the only way
+past it, and since **15 May 2025 it is open to organisations only**: applying
+requires a registered business, a launched product and 250k+ monthly active
+users, submitted from a company email. A cube timer does not clear that bar and
+never will, so the cap should be designed around rather than worked on.
+
+**The failure mode is not what this file used to claim.** A user who is not on
+the list is *not* stopped at the consent screen. They log in, approve, come back
+with a valid token, and then every API call returns **403**. So it can be caught
+— and is: `_tick` treats 403 as `status: denied`, stops polling (nothing about
+the token will change until the dashboard does), and the panel explains it in
+plain words. Before that it fell through to the generic error path, which only
+`console.warn`s, so a visitor saw "Connected", an empty card and no reason.
+
+The alternative the UI offers is a folded-away *Set up your own connection*
+section that accepts a client ID of their own. Switching apps clears the stored
+tokens, since a token belongs to the application that issued it.
+
+### 3.4 The owner-Premium rule, and who it lands on
+
+Since **February 2026**, a development-mode app only works while its *owner*
+holds an active Spotify Premium subscription; if the subscription lapses the app
+stops working and resumes on resubscription. New apps are also limited to one
+client ID per developer.
+
+The requirement lands on the owner **alone**, which produces an asymmetry worth
+being deliberate about:
+
+| | Who must have Premium | Headcount |
+|---|---|---|
+| The built-in app | the maintainer only — the 5 listed users may be on free accounts | 5, hard cap |
+| A visitor's own client ID | that visitor, because they are now an owner | unlimited, but Premium each |
+
+So bring-your-own-ID removes the cap and *adds* a Premium requirement. It is not
+strictly better, and the panel says so before anyone spends five minutes in the
+dashboard. The built-in app's 5 slots are the only route by which a free account
+ever gets album theming.
+
+It also means the maintainer's own Premium status is a single point of failure
+for every listed user.
+
+Two other things that cost people a lot of time, both now in the setup steps:
+
+- **The owner is not auto-allowlisted.** Creating the app is not enough; you add
+  yourself under *User Management* like anyone else.
+- **Creating a client ID is free.** The Premium gate is at *runtime*, not at
+  creation — which is the worst ordering, because a free user can complete every
+  step and only then find that nothing comes through.
 
 For everyone under the cap, and for anyone who never presses Connect, none of
 this is visible.
@@ -276,6 +320,7 @@ defined behaviour rather than an exception.
 | Rate limited (`429`) | Backs off for `Retry-After`, then resumes |
 | Artwork CORS blocked | Falls back to background mode, states so in the UI |
 | Control pressed on a free account (`403`) | Row hides, card explains Premium is required |
+| Polling refused (`403`) — not on the app's user list, or the owner's Premium lapsed | Polling stops, card and panel say the account is not on the guest list and point at the own-connection setup |
 | Control pressed with no active device (`404`) | Toast: start playback on a device first |
 | Control pressed on a pre-transport link | Card asks the user to reconnect |
 | Offline / network error | Keeps the last tint, retries with backoff |
@@ -304,8 +349,11 @@ defined behaviour rather than an exception.
 **As the maintainer**, two jobs remain:
 
 1. **Add people.** *Settings → User Management* in the dashboard, by Spotify
-   account email. Twenty-five maximum — see §3.3. Anyone not listed is refused
-   by Spotify before they ever get back to the timer.
+   account email. **Five maximum** — see §3.3. Add yourself too; the owner is not
+   automatically on the list. Anyone not listed can still log in, and then gets a
+   403 on every call, which the panel now explains.
+   **Keep your own Premium active** — see §3.4. If it lapses, the link breaks for
+   all five of you, not just for you.
 2. **Keep the redirect URIs registered.** They must match byte for byte:
    - `https://tagdatimer.vercel.app/` — production
    - `http://127.0.0.1:5199/` — local development. Spotify permits `http` only
@@ -316,5 +364,11 @@ defined behaviour rather than an exception.
    the dashboard *and* to the list in `js/spotifyapp.js` before Connect works
    there.
 
-**Premium** is required for the transport controls only. Reading what is
-playing, and therefore all of the theming, works on a free account.
+**Premium** is required in two distinct places, and conflating them is the
+easiest mistake to make here:
+
+- **The listener's Premium** gates the transport controls only. A listed user on
+  a free account still gets the theming.
+- **The app owner's Premium** gates the whole app, for everyone on it (§3.4).
+  For the built-in app that is the maintainer; for anyone using their own client
+  ID it is that person.
