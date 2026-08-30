@@ -20,11 +20,20 @@
 <!-- The scrambler is the one thing the user actually waits on, so start
      fetching its module graph alongside the stylesheets, not after them. -->
 <link rel="modulepreload" href="vendor/cubing/cubing/scramble.js">
-<link rel="modulepreload" href="js/main.js?v=37">
-<link rel="stylesheet" href="css/fonts.css?v=37">
-<link rel="stylesheet" href="css/tokens.css?v=37">
-<link rel="stylesheet" href="css/base.css?v=37">
-<link rel="stylesheet" href="css/components.css?v=37">
+<!-- BUMP ?v= ON EVERY CHANGE TO ANYTHING UNDER css/.
+     vercel.json serves /css/ as `max-age=31536000, immutable`, so a browser
+     that has been here before will not so much as ask whether a stylesheet
+     changed for a year. This query string is the only thing that can hand it a
+     new one. Forgetting it ships new markup against a year-old stylesheet:
+     the page renders unstyled in every returning visitor's browser and looks
+     perfect in incognito, which is a miserable thing to debug.
+     /js/ is `must-revalidate` and does not depend on this, but keep the number
+     in step anyway rather than leaving two answers to the same question. -->
+<link rel="modulepreload" href="js/main.js?v=38">
+<link rel="stylesheet" href="css/fonts.css?v=38">
+<link rel="stylesheet" href="css/tokens.css?v=38">
+<link rel="stylesheet" href="css/base.css?v=38">
+<link rel="stylesheet" href="css/components.css?v=38">
 <link rel="icon" href="assets/favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="assets/logo-192.png">
 <link rel="apple-touch-icon" href="assets/logo-180.png">
@@ -468,7 +477,7 @@
   </div>
 </div>
 
-<script type="module" src="js/main.js?v=37"></script>
+<script type="module" src="js/main.js?v=38"></script>
 <script>
 (function () {
   var isFile = location.protocol === 'file:';
