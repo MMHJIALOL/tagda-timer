@@ -309,6 +309,19 @@ body.inspecting #timer-display { opacity: 0; }
   min-height: 0; min-width: 0;
   font-size: calc(1rem * var(--sidebar-text));
 }
+/* ...except that the preview is down this side, in the corner, on top of it.
+   Stop the rail short of it the same way the left one stops short of the
+   creator chip. Only while the preview is actually parked in that corner: drag
+   it anywhere else (`data-placed`) or switch it off (`body.no-cube`) and the
+   rail gets its full height back.
+
+   Above the mobile breakpoint only: below it the rail is a short tile at the
+   bottom of the screen and the preview floats clear above it. */
+@media (min-width: 861px) {
+  body:not(.no-cube) #app:has(#panel-cube:not([data-placed])) #sidebar-right {
+    padding-bottom: var(--cube-clearance);
+  }
+}
 #panel-stats { flex: 0 1 auto; min-height: 0; }
 
 /* =================== TIMER =================== */
@@ -499,64 +512,65 @@ body.inspecting #last-delta, body.focus #last-delta { display: none; }
   #stage[data-left="off"][data-right="off"] { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 860px) {
-  /* Four rows, not three. The scramble preview leaves its floating corner at
-     this width and takes a row of its own between the scramble and the stage —
-     see components.css. Pinned over the top-right it sat exactly where a
-     phone-width scramble wraps to, and covered the notation you are reading. */
   #app {
     gap: 10px;
     padding: 10px;
-    grid-template-rows: auto auto auto 1fr;
     padding-top: max(10px, env(safe-area-inset-top));
     padding-left: max(10px, env(safe-area-inset-left));
     padding-right: max(10px, env(safe-area-inset-right));
     padding-bottom: max(10px, env(safe-area-inset-bottom));
   }
-  /* Focus mode collapses the rows above the stage; there is one more of them
-     here than the desktop rule knows about. */
-  body.focus #app { grid-template-rows: 0 0 0 1fr; }
-  #topbar        { order: 0; }
-  #scramble-zone { order: 1; }
-  #panel-cube    { order: 2; }
-  #stage         { order: 3; }
 
-  /* One column again, so the two rails stack: the numbers above the times list,
-     both still under the timer.
-     Rows are `auto auto minmax(0,1fr)`, not `auto 1fr auto`. With the stats in
-     the flexible middle track the times list was sized by its content and ran
-     off the bottom of the screen; this way the list is the thing that gets the
-     leftover height, and it is the thing that scrolls. */
+  /* The timer takes the whole top of the stage and every pixel of slack in it,
+     so the digits sit in the middle of the space they have rather than at the
+     top of it. This is what was wrong with the inspection countdown: #stage's
+     first row was `auto`, so the timer block was only as tall as itself and
+     the number was pinned to the top of the screen with the rest of the page
+     empty below it. `1fr` plus the centring #timer-zone already does puts it
+     back in the middle, and it stays there however tall the scramble is. */
   #stage, #stage[data-sidebar="off"], #stage[data-left="off"], #stage[data-right="off"] {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto auto minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
   }
-  #timer-zone { order: 1; }
-  #sidebar-right { order: 2; min-height: 0; }
-  /* The chip is still bottom-left, hence the gap. */
-  #sidebar { order: 3; flex-direction: row; min-height: 0; min-width: 0; padding-bottom: 26px; }
+  #timer-zone { grid-column: 1 / -1; grid-row: 1; }
+  /* Focus mode already empties the two rows above the stage. The tiles below
+     the timer fade out but keep their track, which left the countdown centred
+     in the top two thirds of the screen rather than in the screen. They are at
+     opacity 0 with no pointer events by then, so collapsing the track costs
+     nothing and the number lands dead centre. */
+  body.focus #stage { grid-template-rows: minmax(0, 1fr) 0; }
+
+  /* The two rails become two small tiles side by side under the timer, rather
+     than two full-width panels stacked on top of each other — stacked, they ate
+     the bottom half of the screen and squeezed the timer into what was left.
+     Figures on the left, times on the right: the reverse of the desktop rails,
+     and placed explicitly here precisely because DOM order (times, timer,
+     stats) would otherwise put them the other way round. */
+  #sidebar-right { grid-column: 1; grid-row: 2; }
+  #sidebar       { grid-column: 2; grid-row: 2; flex-direction: column; padding-bottom: 0; }
+  #sidebar, #sidebar-right { min-height: 0; min-width: 0; max-height: 34vh; }
   #sidebar > .panel, #sidebar-right > .panel { min-width: 0; }
   #panel-times { flex: 1 1 auto; min-height: 0; }
   #panel-stats { flex: 1 1 auto; min-height: 0; }
+  /* With one of them switched off the other has no reason to stay half width. */
+  #stage[data-left="off"] #sidebar-right,
+  #stage[data-right="off"] #sidebar { grid-column: 1 / -1; }
 
-  /* Expanded, the stats take the screen and the times list stands down.
-     Measured rather than guessed: below the timer a phone has ~330px, the
-     collapsed peek alone is ~126 of it and the times list needs ~200 to show
-     anything at all, so there is no split where both are usable — trying to
-     find one is what pushed the list off the bottom of the page, into #app's
-     overflow, where it was simply gone. This way the figures get the whole
-     column and scroll inside it (components.css), and the list comes back the
-     moment you collapse them again. The full Statistics drawer is still on the
-     chart button either way. */
-  #stage:has(#panel-stats[data-collapsed="false"]) {
-    grid-template-rows: auto minmax(0, 1fr);
-  }
+  /* Expanded, the figures need the full width, and the times list stands down
+     for as long as they have it. Two half-width tiles cannot both be useful —
+     the stat grid alone is taller than a phone's whole lower third. The list is
+     back the moment the stats collapse, and the full Statistics drawer is on
+     the chart button either way. */
   #stage:has(#panel-stats[data-collapsed="false"]) #sidebar { display: none; }
+  #stage:has(#panel-stats[data-collapsed="false"]) #sidebar-right {
+    grid-column: 1 / -1; max-height: 46vh;
+  }
 
   .brand-text { display: none; }
   .topbar-center { gap: 5px; }
-  /* Below this the sidebar owns the bottom of the screen, and a row hanging
-     off the end of the timer block would land on top of it. The same two
-     figures are in the stats peek a few pixels away. */
+  /* Below this the tiles own the bottom of the screen, and a row hanging off
+     the end of the timer block would land on top of them. The same two figures
+     are in the stats peek a few pixels away. */
   #timer-avgs { display: none; }
   /* The hint stays. It used to go with them, which left a touch screen with no
      statement anywhere of how to start a solve — and unlike the averages it is
@@ -575,22 +589,20 @@ body.inspecting #last-delta, body.focus #last-delta { display: none; }
 
 /* ---- phones ---- */
 @media (max-width: 560px) {
-  #creator-chip .chip-txt { display: none; }
   /* Density, and it is not cosmetic. At desktop padding the times panel's own
      chrome — 18px of padding each side, three 12px gaps, a head, a column row
-     and a footer — added up to more than the height the column had, so the
-     solve list itself was allotted exactly zero pixels and the session looked
-     empty on a phone. Everything below buys that list its height back. */
-  :root { --pad: 12px; --gap: 8px; }
-  .panel { gap: 8px; }
+     and a footer — added up to more than the height the tile had, so the solve
+     list was allotted exactly zero pixels and the session looked empty on a
+     phone. Everything below buys that list its height back. */
+  :root { --pad: 11px; --gap: 8px; }
+  .panel { gap: 7px; }
   /* "SCRAMBLE" over an unmistakable row of notation is a label a phone cannot
-     afford. */
+     afford, and neither is 1.6 lines of leading on three lines of it. */
   .scramble-label { display: none; }
-  .scramble { padding: 10px 12px; line-height: 1.5; }
-  /* A floor, so the list is never squeezed out of existence again: three or
-     four solves are visible whatever else is on screen, and it scrolls from
-     there. */
-  #hist-list { min-height: 92px; }
+  .scramble { padding: 9px 11px; line-height: 1.45; }
+  /* A floor, so the list is never squeezed out of existence again: two or three
+     solves are visible whatever else is on screen, and it scrolls from there. */
+  #hist-list { min-height: 58px; }
 }
 
 /* ---- landscape on a phone ----
@@ -604,9 +616,11 @@ body.inspecting #last-delta, body.focus #last-delta { display: none; }
      its `display: flex` is declared there, and an equally specific rule in the
      earlier file loses no matter what media query it sits in. */
   #sidebar, .scramble-label, #timer-hint { display: none; }
-  #stage, #stage[data-sidebar="off"], #stage[data-left="off"], #stage[data-right="off"] {
-    grid-template-rows: minmax(0, 1fr) auto;
-  }
+  /* The times list is gone, so nothing is sharing the row — the figures may as
+     well have the width rather than sit in a half-tile with the other half
+     empty. (Not the data-attribute rules above: the list is hidden here by this
+     stylesheet, not by the setting those attributes track.) */
+  #sidebar-right { grid-column: 1 / -1; max-height: 44vh; }
   /* min(), not a flat size: --timer-size is written as an inline style from the
      size slider, so it cannot be overridden from a stylesheet at all — and
      should not be. Capping it against the viewport height keeps whatever the

@@ -187,6 +187,10 @@ export function applyTheme(s) {
   st.setProperty('--on-accent', (hexLuma(accent) ?? 0) > 0.6 ? '#0b0b12' : '#ffffff');
 
   document.body.classList.toggle('no-stats', !s.showStats);
+  // The right-hand rail reserves room at its foot for the preview floating in
+  // that corner. With the preview switched off there is nothing to reserve for,
+  // and `display: none` is not something a stylesheet can ask about.
+  document.body.classList.toggle('no-cube', !s.showCube);
   const stats = document.getElementById('panel-stats');
   const cube  = document.getElementById('panel-cube');
   const hist  = document.getElementById('panel-times');
