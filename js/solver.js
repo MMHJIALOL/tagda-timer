@@ -29,6 +29,7 @@
 import {
   MOVES, MOVE_NAMES, FACES, mulInto, applyAlg,
   faceEdges, toUserFace, facelets, parse,
+  slotsFor, CORNER_NAMES, EDGE_NAMES, CORNER_FACELETS, EDGE_FACELETS, IDENTITY_FRAME,
 } from './cube3.js';
 import { OLL, PLL } from './algs.js';
 import { OLL_ALGS, PLL_ALGS, ZBLL } from './algsets.js';
@@ -545,3 +546,401 @@ function dedupe(list) {
 
 /** Warm the table for a cross face before the panel needs it. */
 export const warm = (face) => { crossTable(face); };
+
+/* =========================================================
+   Cross + 1 — the cross and the first pair, searched together
+
+   This is not "solve the cross, then solve a pair". Those are two
+   separate optimalities stacked on each other, and stacking them
+   throws away the whole point: a cross move that also happens to
+   set a corner up is worth taking even when a shorter cross exists
+   without it. So the goal handed to the search is the joint one —
+   four cross edges home AND one corner-edge pair home — asked of
+   the scrambled position directly, with nothing solved yet.
+
+   It is the same machinery the reconstruction panel already uses on
+   the F2L slots (pairGoal, pairTable, the max-of-two-lower-bounds
+   heuristic); the only real change is where it starts from.
+
+   The four pairs are searched side by side, one depth at a time, so
+   the first answer that comes back is the shortest across all of
+   them — which is the question the trainer exists to ask. Searching
+   them one after another would have spent the whole budget proving
+   the first pair optimal before ever looking at the pair that was
+   two moves cheaper.
+   ========================================================= */
+
+/** Where each cubie currently sits, as position lookups. */
+function locate(s, cAt, eAt) {
+  for (let i = 0; i < 8; i++) cAt[s[i]] = i;
+  for (let i = 0; i < 12; i++) eAt[s[16 + i]] = i;
+}
+
+/** Is edge slot `ep` one of the three touching corner slot `cp`? */
+const touching = (cp, ep) => [...EDGE_NAMES[ep]].every(c => CORNER_NAMES[cp].includes(c));
+
+const cornerFacelet = (cp, f) => CORNER_FACELETS[cp][CORNER_NAMES[cp].indexOf(f)];
+const edgeFacelet   = (ep, f) => EDGE_FACELETS[ep][EDGE_NAMES[ep].indexOf(f)];
+
+/**
+ * Which of this cross's four F2L pairs are already built as a block.
+ *
+ * "Built" is exact, not a distance threshold: the corner and its edge are
+ * sitting next to each other, and on both faces they share they are showing
+ * the same colour. That is a pair the scramble handed you, and a cross that
+ * carelessly takes it apart has cost you something the move count alone will
+ * never show.
+ *
+ * Only *connected* pairs — adjacent, colours touching — are recognised. A
+ * corner and edge that are merely near each other are a real idea in CFOP
+ * with no single agreed test, and guessing at a threshold here would make
+ * this look exact while quietly being a matter of opinion.
+ *
+ * Returns the pairs' home-slot names, e.g. ['FR', 'BL'].
+ */
+export function connectedPairs(s, face) {
+  const fl = facelets(s);
+  const cAt = new Uint8Array(8), eAt = new Uint8Array(12);
+  locate(s, cAt, eAt);
+  const out = [];
+  for (const slot of slotsFor(face)) {
+    const cp = cAt[slot.corner], ep = eAt[slot.edge];
+    if (!touching(cp, ep)) continue;
+    let matched = true;
+    for (const f of EDGE_NAMES[ep]) {
+      if (fl[edgeFacelet(ep, f)] !== fl[cornerFacelet(cp, f)]) { matched = false; break; }
+    }
+    if (matched) out.push(slot.label);
+  }
+  return out;
+}
+
+/** Moves to bring one corner and its edge home, ignoring the rest of the cube. */
+function pairDistance(s, slot, pd, cAt, eAt) {
+  const cp = cAt[slot.corner], ep = eAt[slot.edge];
+  return pd[((cp * 3 + s[8 + cp]) * 12 + ep) * 2 + s[28 + ep]];
+}
+
+/** Run a move-index path and hand back where it lands. */
+function applyPath(start, path) {
+  let cur = Uint8Array.from(start), buf = new Uint8Array(40);
+  for (const m of path) { mulInto(buf, cur, MOVES[m]); [cur, buf] = [buf, cur]; }
+  return cur;
+}
+
+/* Every way of putting one face on the bottom. Searched rather than tabulated
+   so the answer cannot be subtly wrong: whichever of these actually lands the
+   cross face on D is the one used. z2 is ahead of x2 for the white cross
+   because it leaves the front face where it was, so the slots keep the names
+   the scramble picture gave them. */
+const TO_BOTTOM = ['', 'z2', 'x', "x'", 'z', "z'", 'x2'];
+const ROT_PROBE = new Uint8Array(40);
+
+/**
+ * The frame the moves should be written in.
+ *
+ * Nobody solves a white cross with white on top. `orient: 'bottom'` answers in
+ * the orientation the cross is actually built in — the cube already turned over
+ * in your hands, so a solver-frame U turn is written as the D turn your fingers
+ * would make. `'scramble'` answers in the orientation the scramble picture
+ * shows, for anyone who would rather read it that way.
+ */
+function frameFor(face, frame, orient) {
+  if (orient !== 'bottom') return frame;
+  return crossFrame(face, orient);
+}
+
+/**
+ * The rotation that puts `face` on the bottom — '' when it is already there or
+ * when the answers are being written the way the scramble picture shows it.
+ * Exported because a picture of the cube has to be turned over too: the net the
+ * trainer draws is only honest if it is drawn the way the moves are written.
+ */
+export function crossRotation(face, orient = 'bottom') {
+  if (orient !== 'bottom') return '';
+  for (const rot of TO_BOTTOM) {
+    const r = applyAlg(ROT_PROBE, rot, IDENTITY_FRAME);
+    if (r && toUserFace(r.frame, face) === 'D') return rot;
+  }
+  return '';
+}
+
+/** The frame those answers are written in — so a plan typed by hand is read
+    in the same orientation the trainer prints its own lines in. */
+export function crossFrame(face, orient = 'bottom') {
+  const rot = crossRotation(face, orient);
+  return applyAlg(ROT_PROBE, rot, IDENTITY_FRAME)?.frame || IDENTITY_FRAME;
+}
+
+/**
+ * A slot's name as the person holding the cube would say it: FR, DL, UB.
+ *
+ * Re-sorted into the order cube notation is written in — layer first, then
+ * front/back, then right/left — because mapping the letters straight through a
+ * rotation spells them in whatever order the original happened to be in, and
+ * "RF pair" is a slot nobody has ever called that.
+ */
+const NAME_ORDER = { U: 0, D: 1, F: 2, B: 3, R: 4, L: 5 };
+const slotLabel = (label, frame) => [...label]
+  .map(f => toUserFace(frame, f))
+  .sort((a, b) => NAME_ORDER[a] - NAME_ORDER[b])
+  .join('');
+
+/**
+ * Everything about a solution that depends on which way up you are holding it.
+ *
+ * Turn the cube and the same eight quarter-turns are spelt differently, finish
+ * a differently-named slot, and — the one that actually matters — get easier or
+ * harder: the B move you were rearranging your solution to avoid is an F move
+ * from over here. So none of this can be baked in at search time. The path and
+ * the pair distances are the facts; this is the reading.
+ */
+export function decorateSolution(raw, frame) {
+  const r = render(raw.path, frame);
+  return {
+    ...raw, ...r,
+    slot: slotLabel(raw.rawSlot, frame),
+    ergo: ergoOf(r.alg),
+    bMoves: countB(r.alg),
+    highTps: ergoOf(r.alg) === 0,
+    broke: raw.rawBroke.map(l => slotLabel(l, frame)),
+    preserves: raw.rawBroke.length === 0,
+    after: raw.rawAfter.map(a => ({ ...a, slot: slotLabel(a.raw, frame) })),
+  };
+}
+
+/**
+ * Re-read a whole result from a new orientation, without searching again.
+ *
+ * Rotating the cube in your hands changes how the answers are written, not
+ * what they are — so paying a second search for it would be paying for nothing.
+ */
+export function reframeResult(result, frame) {
+  if (!result) return result;
+  return {
+    ...result,
+    list: (result.list || []).map(s => decorateSolution(s, frame)),
+    built: (result.rawBuilt || []).map(l => slotLabel(l, frame)),
+    pairs: (result.pairs || []).map(p => ({ ...p, slot: slotLabel(p.rawSlot, frame) })),
+    faces: (result.faces || []).map(f => ({
+      ...f, slot: f.rawSlot ? slotLabel(f.rawSlot, frame) : '',
+    })),
+  };
+}
+
+/**
+ * How much the hands have to work, as a number that is 0 when a line is pure
+ * R, U, L and D.
+ *
+ * This started as a filter — keep only the lines with nothing but the four
+ * comfortable faces — and that turned out to be a filter that matches almost
+ * nothing: across three hundred lines from five scrambles, not one qualified.
+ * The reason is structural rather than bad luck. Two of the cross edges start
+ * life needing an F or a B to reach the bottom layer at all, so a line that
+ * avoids both faces entirely and still finishes inside eight moves is a
+ * curiosity, not something to rank by.
+ *
+ * A score discriminates where the filter could not. B is weighted heaviest
+ * because a B move in a cross is the one everybody actually rearranges their
+ * solution to avoid; F is a mild cost; the other four are free.
+ */
+const ERGO = { R: 0, U: 0, L: 0, D: 0, F: 1, B: 3 };
+const ergoOf = (alg) => alg.split(/\s+/).filter(Boolean)
+  .reduce((n, t) => n + (ERGO[t[0]] ?? 1), 0);
+const countB = (alg) => alg.split(/\s+/).filter(t => t[0] === 'B').length;
+
+/**
+ * Every short way to finish the cross and one F2L pair at the same time.
+ *
+ *   face     the cross face, or 'auto' to weigh up all six
+ *   orient   'bottom' (as you hold it) or 'scramble' (as the picture shows it)
+ *
+ * Comes back as:
+ *   face       the face these answers are for
+ *   crossBest  the optimal plain cross, exactly — a table lookup, not a search,
+ *              so "the pair cost me two extra moves" is a fact, not an estimate
+ *   best       the shortest joint cross+1 found
+ *   list       ranked lines, each carrying which pair it sets up, whether it
+ *              stays on the friendly faces, what it took apart, and how far the
+ *              other three pairs are left afterwards
+ *   pairs      one row per pair: the shortest line that goes for it
+ *   faces      per-face summary, when asked about all six
+ *   partial    the search ran out of budget before it ran out of depth
+ */
+export function suggestCrossPlusOne(state, frame = IDENTITY_FRAME, {
+  face = 'D', limit = 60, timeMs = 6000, maxDepth = 11, slack = null,
+  perSlot = 24, orient = 'bottom',
+} = {}) {
+  const started = performance.now();
+  const budget = { left: NODE_BUDGET };
+  const faces = face === 'auto' ? [...FACES] : [face];
+  /* All six colours is twenty-four searches sharing one budget, and running
+     out of it is what leaves a pair missing from the comparison the mode
+     exists for. One depth past the answer instead of two keeps that table
+     whole; on a single colour there is room for the extra depth, and the
+     alternatives it buys are worth having. */
+  if (slack === null) slack = faces.length > 1 ? 1 : 2;
+  const cAt = new Uint8Array(8), eAt = new Uint8Array(12);
+  const cross = [0, 0, 0, 0], crossO = [0, 0, 0, 0];
+  locate(state, cAt, eAt);
+
+  /* The optimal cross is already sitting in the pruning table — it is what the
+     table is a table of. No search, no approximation. */
+  const crossOf = {};
+  for (const f of faces) {
+    const t = crossTable(f);
+    crossOf[f] = t.dist[crossIndex(state, t.slotOf)];
+  }
+
+  /* One search per (face, pair). Cheapest first, so that if the budget does run
+     out it runs out on the lines that were never going to be the answer. */
+  const targets = [];
+  for (const f of faces) {
+    const table = crossTable(f);
+    for (const slot of slotsFor(f)) {
+      const pd = pairTable(slot.corner, slot.edge);
+      targets.push({
+        face: f, slot, table, pd, out: [],
+        lb: Math.max(crossOf[f], pairDistance(state, slot, pd, cAt, eAt)),
+        goal: pairGoal(table.homes, [], slot),
+        h: makeHeuristic(table, slot, pd, cAt, eAt, cross, crossO),
+      });
+    }
+  }
+  targets.sort((a, b) => a.lb - b.lb);
+
+  const out = {
+    face: faces.length === 1 ? face : 'auto',
+    crossBest: faces.length === 1 ? crossOf[face] : Math.min(...Object.values(crossOf)),
+    best: -1, list: [], pairs: [], faces: [], partial: false,
+  };
+
+  /* Depth by depth, across every pair at once. The first depth that yields
+     anything is the true joint optimum; `slack` more depths after it are what
+     turn one answer into a list worth choosing from. */
+  let best = -1;
+  const lowest = targets.length ? targets[0].lb : 0;
+  outer:
+  for (let d = lowest; d <= maxDepth; d++) {
+    for (const t of targets) {
+      if (t.lb > d || t.out.length >= perSlot) continue;
+      if (budget.left <= 0 || performance.now() - started > timeMs) { out.partial = true; break outer; }
+      searchDepth(state, t.goal, t.h, d, perSlot, t.out, budget);
+    }
+    if (best < 0 && targets.some(t => t.out.length)) best = d;
+    if (best >= 0 && d >= best + slack) break;
+  }
+  if (budget.left <= 0) out.partial = true;
+
+  /* What the lines actually cost you, beyond their length. */
+  const before = {};
+  for (const f of faces) before[f] = connectedPairs(state, f);
+
+  const all = [];
+  for (const t of targets) {
+    const rf = frameFor(t.face, frame, orient);
+    const others = slotsFor(t.face).filter(s => s.label !== t.slot.label);
+    for (const path of t.out) {
+      const after = applyPath(state, path);
+      const aAt = new Uint8Array(8), bAt = new Uint8Array(12);
+      locate(after, aAt, bAt);
+      const stillPaired = connectedPairs(after, t.face);
+      /* Split in two on purpose: what is true of a solution, and how that
+         solution reads from where you are standing. Only the second half
+         changes when the cube is turned over, and keeping it separable is what
+         lets a rotation re-label the answers instead of re-finding them. */
+      all.push(decorateSolution({
+        path: Array.from(path),
+        face: t.face,
+        rawSlot: t.slot.label,
+        rawBroke: before[t.face].filter(l => l !== t.slot.label && !stillPaired.includes(l)),
+        /* Where the remaining three pairs are left. This is the lookahead the
+           whole feature is for: not "was that cross short" but "what did it
+           hand me next". */
+        rawAfter: others.map(s => ({
+          raw: s.label,
+          corner: s.corner,
+          edge: s.edge,
+          dist: pairDistance(after, s, pairTable(s.corner, s.edge), aAt, bAt),
+        })).sort((a, b) => a.dist - b.dist),
+      }, rf));
+    }
+  }
+
+  const ranked = dedupe(all).sort(byNiceness);
+  out.best = ranked.length ? ranked[0].moves : -1;
+  out.list = ranked.slice(0, limit);
+
+  /* One row per pair, so "which pair should I go for" is a table you read
+     rather than a list you scan. Built off the ranked lines, so a pair with no
+     short line at all is shown as exactly that instead of silently missing. */
+  const seenPair = new Map();
+  for (const s of ranked) {
+    const key = `${s.face}|${s.rawSlot}`;
+    if (!seenPair.has(key)) {
+      seenPair.set(key, { face: s.face, slot: s.slot, rawSlot: s.rawSlot, best: s.moves, count: 0 });
+    }
+    seenPair.get(key).count++;
+  }
+  for (const t of targets) {
+    const key = `${t.face}|${t.slot.label}`;
+    if (seenPair.has(key)) continue;
+    seenPair.set(key, {
+      face: t.face, rawSlot: t.slot.label,
+      slot: slotLabel(t.slot.label, frameFor(t.face, frame, orient)),
+      best: -1, count: 0,
+    });
+  }
+  out.pairs = [...seenPair.values()].sort((a, b) =>
+    (a.best < 0) - (b.best < 0) || a.best - b.best || a.slot.localeCompare(b.slot));
+
+  out.faces = faces.map(f => {
+    const mine = ranked.filter(s => s.face === f);
+    return {
+      face: f, cross: crossOf[f], best: mine.length ? mine[0].moves : -1,
+      slot: mine[0]?.slot || '', rawSlot: mine[0]?.rawSlot || '',
+    };
+  }).sort((a, b) => (a.best < 0) - (b.best < 0) || a.best - b.best || a.cross - b.cross);
+
+  if (face === 'auto' && out.faces.length) out.face = out.faces[0].face;
+
+  /* Pairs the scramble handed you already built. Worth saying out loud on its
+     own — it is lookahead you are given for free — and it is also the only
+     thing that makes "don't break a built pair" mean anything: with none on the
+     cube every line trivially preserves them all, and a preference that is
+     always satisfied is one the panel should show as idle rather than let you
+     switch on and watch do nothing. Computed last, because until the face is
+     settled there is no cross to ask the question about. */
+  out.rawBuilt = before[out.face] || [];
+  out.built = out.rawBuilt.map(l => slotLabel(l, frameFor(out.face, frame, orient)));
+  return out;
+}
+
+/**
+ * Lower bound on what is left: the cross's exact distance, and the pair's
+ * exact distance, whichever is larger. Both are exact for their own subproblem
+ * and neither can be skipped, so the larger of the two is admissible — and it
+ * is what keeps a depth-11 search over four pairs finishing in a second rather
+ * than a minute.
+ *
+ * The scratch arrays are handed in rather than allocated: this runs at every
+ * node of every search, and allocating four typed arrays a node was, in the
+ * panel this borrows from, most of the cost.
+ */
+function makeHeuristic(table, slot, pd, cAt, eAt, cross, crossO) {
+  const { dist, slotOf } = table;
+  return (s) => {
+    for (let i = 0; i < 8; i++) cAt[s[i]] = i;
+    for (let i = 0; i < 12; i++) {
+      const p = s[16 + i];
+      eAt[p] = i;
+      const k = slotOf[p];
+      if (k >= 0) { cross[k] = i; crossO[k] = s[28 + i]; }
+    }
+    const n = dist[((((cross[0] * 12 + cross[1]) * 12 + cross[2]) * 12 + cross[3]) << 4)
+      | (crossO[0] << 3 | crossO[1] << 2 | crossO[2] << 1 | crossO[3])];
+    const cp = cAt[slot.corner], ep = eAt[slot.edge];
+    const d = pd[((cp * 3 + s[8 + cp]) * 12 + ep) * 2 + s[28 + ep]];
+    return d > n ? d : n;
+  };
+}
