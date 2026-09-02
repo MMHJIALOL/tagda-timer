@@ -119,9 +119,18 @@ class FirebaseTransport extends EventTarget {
 
     /* Reap a room nobody has been in for a while before counting heads.
        Without this an abandoned room keeps its ghosts forever and eventually
-       reports itself full to people who could otherwise have used the code. */
-    const existing = await S.get(this._ref(this._base));
-    const cur = existing.val();
+       reports itself full to people who could otherwise have used the code.
+
+       Fetched as two subtree reads rather than one read of the room node.
+       A read is authorised by a rule at that node or above it, so asking for
+       rooms/<id> asks for permission the rules withhold on purpose — and
+       granting it there would cascade down to `results` and undo the whole
+       reveal gate. `meta` and `players` each carry their own `.read`. */
+    const [metaSnap, playersSnap] = await Promise.all([
+      S.get(this._ref(`${this._base}/meta`)),
+      S.get(this._ref(`${this._base}/players`)),
+    ]);
+    const cur = { meta: metaSnap.val(), players: playersSnap.val() };
     if (cur?.players) {
       const now = Date.now();
       const dead = Object.entries(cur.players)

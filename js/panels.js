@@ -1269,6 +1269,9 @@ export function buildRace(app) {
             toast(`Joined ${id}`, { kind: 'good' });
             render();
           } catch (err) {
+            /* The toast has to stay short; the real cause (permission_denied,
+               unauthorized-domain, a dropped socket) only exists here. */
+            console.error('[race] join failed:', err);
             const why = err?.message === 'room-full' ? `That room is full (${race.ROOM_MAX} max)`
               : err?.message === 'bad-code' ? 'A room code is at least 3 characters'
               : err?.message === 'no-config' ? 'Real rooms are not configured — see RACE.md'
