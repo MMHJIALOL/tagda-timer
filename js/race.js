@@ -102,8 +102,10 @@ export class Race extends EventTarget {
     /** Rounds we have already celebrated / folded into standings. */
     this.settledRound = 0;
 
-    /** uid -> { wins, played, lastRank } for this visit to this room. */
+    /** uid -> { name, wins, played, best, lastRank } for this room. */
     this.standings = new Map();
+    /** roundNo -> the solve this client saved for it, so a row can edit it. */
+    this.mySolves = new Map();
     /** uid -> rank in the previous settled round, for the ▲▼ column. */
     this.prevRanks = new Map();
 
@@ -184,8 +186,14 @@ export class Race extends EventTarget {
     this.submittedRound = 0;
     this.servedRound = 0;
     this.settledRound = 0;
-    this.standings.clear();
+    /* Restored rather than cleared. Wins are the one thing in a room that
+       exists nowhere but the client that watched them happen — the snapshot
+       can rebuild everything else — so clearing here meant a reload, a
+       dropped socket or a rejoin reset the room to nobody having won
+       anything, which is the one number people are actually keeping. */
+    this.standings = this._loadStandings(roomId);
     this.prevRanks.clear();
+    this.mySolves.clear();
 
     await this.net.join(roomId, {
       name: nick,
@@ -348,6 +356,8 @@ export class Race extends EventTarget {
 
     this.submittedRound = r.no;
     this._lastStatus = null;
+    // Held so the row can open the solve menu on it once the round reveals.
+    this.mySolves.set(r.no, solve);
 
     await this.net.setProgress({ status: 'done' }).catch(() => {});
     try {
@@ -436,18 +446,49 @@ export class Race extends EventTarget {
     this._syncPanel();
   }
 
+  /* ---------------- standings, kept across reloads ---------------- */
+
+  _standingsKey(roomId = this.snap?.roomId) { return `race:standings:${roomId}`; }
+
+  /**
+   * Per room, and only in this browser. It is a scoreboard for the visit, not
+   * a record: putting it in the database would need write rules of its own,
+   * and a tally anybody in the room can write to is a tally anybody in the
+   * room can forge.
+   */
+  _loadStandings(roomId) {
+    try {
+      const raw = JSON.parse(localStorage.getItem(this._standingsKey(roomId)) || '{}');
+      return new Map(Object.entries(raw));
+    } catch { return new Map(); }
+  }
+
+  _saveStandings() {
+    if (!this.snap?.roomId) return;
+    try {
+      localStorage.setItem(this._standingsKey(), JSON.stringify(Object.fromEntries(this.standings)));
+    } catch { /* a blocked or full store costs the scoreboard, not the race */ }
+  }
+
   /** Fold a finished round into the standings, and celebrate if it was yours. */
   _settle(r) {
     const ranked = this.ranked(r);
     this.prevRanks = new Map(this.standings.size ? [...this.standings].map(([k, v]) => [k, v.lastRank]) : []);
 
     ranked.forEach((row, i) => {
-      const s = this.standings.get(row.uid) || { wins: 0, played: 0, lastRank: null };
+      const s = this.standings.get(row.uid) || { name: '', wins: 0, played: 0, best: null, lastRank: null };
       s.played += 1;
-      if (i === 0 && row.result && effOf(row.result) !== Infinity) s.wins += 1;
+      /* Carried on the entry so the table can still name somebody who has
+         since left. The player list only holds people who are still here,
+         and a winner who closed their tab should not vanish from the board. */
+      s.name = row.player?.name || s.name;
+      const e = effOf(row.result);
+      if (isFinite(e) && (s.best == null || e < s.best)) s.best = e;
+      if (i === 0 && row.result && e !== Infinity) s.wins += 1;
       s.lastRank = i + 1;
       this.standings.set(row.uid, s);
     });
+    this._saveStandings();
 
     const mine = ranked.findIndex(x => x.uid === this.uid);
     if (mine === 0 && ranked.length > 1) this._celebrate();
@@ -549,6 +590,7 @@ export class Race extends EventTarget {
         <div class="race-status"></div>
         <div class="race-rows" role="list"></div>
         <button class="race-more" type="button" hidden></button>
+        <div class="race-board" hidden></div>
         <div class="race-foot"></div>
       </div>`;
     host.append(node);
@@ -651,8 +693,54 @@ export class Race extends EventTarget {
     more.textContent = this._expanded ? 'show fewer' : `+${hidden} more`;
     more.onclick = () => { this._expanded = !this._expanded; this._syncPanel(); };
 
+    /* ---- standings ---- */
+    this._board(node.querySelector('.race-board'));
+
     /* ---- foot ---- */
     this._foot(node.querySelector('.race-foot'), { rows, done, live });
+  }
+
+  /**
+   * The scoreboard for the visit: who has won how many, and who is still here.
+   *
+   * Separate from the rows on purpose. The rows are this round — they change
+   * every few seconds and go blank between scrambles, which is what made a
+   * win look like it had been taken away the moment the next round opened.
+   * This survives the round, the reload and the player leaving.
+   */
+  _board(host) {
+    if (!host) return;
+    const entries = [...this.standings.entries()]
+      .filter(([, s]) => s.played > 0)
+      .sort((a, b) => b[1].wins - a[1].wins
+        || (a[1].best ?? Infinity) - (b[1].best ?? Infinity)
+        || b[1].played - a[1].played);
+
+    host.hidden = entries.length === 0;
+    if (host.hidden) { host.innerHTML = ''; return; }
+
+    const present = new Set(this.livePlayers().map(([uid]) => uid));
+    host.innerHTML = '';
+    host.append(el('div', { class: 'race-board-head' },
+      el('span', { text: 'Standings' }),
+      el('span', { text: `${entries.length} racer${entries.length === 1 ? '' : 's'}` }),
+    ));
+
+    entries.forEach(([uid, s], i) => {
+      const line = el('div', {
+        class: 'race-board-row',
+        dataset: { me: String(uid === this.uid), gone: String(!present.has(uid)) },
+      });
+      line.append(
+        el('span', { class: 'race-board-rank', text: String(i + 1) }),
+        el('span', { class: 'race-board-name', text: s.name || 'Cuber',
+          title: present.has(uid) ? s.name : `${s.name || 'Cuber'} — no longer in the room` }),
+        el('span', { class: 'race-board-best', text: s.best != null && isFinite(s.best) ? fmt(s.best) : '—' }),
+        el('span', { class: 'race-board-wins', text: `${s.wins}/${s.played}`,
+          title: `${s.wins} won of ${s.played} round${s.played === 1 ? '' : 's'}` }),
+      );
+      host.append(line);
+    });
   }
 
   _row(row, i) {
@@ -662,9 +750,16 @@ export class Race extends EventTarget {
       : status === 'done' ? 'locked'
       : status;
 
+    /* Won or lost, once the round is readable. The rank number carries the
+       same fact without colour, which is the point — the green/red is the
+       fast read, not the only one. */
+    const outcome = this.revealed && result
+      ? (i === 0 && effOf(result) !== Infinity ? 'win' : 'loss')
+      : '';
+
     const node = el('div', {
       class: 'race-row', role: 'listitem',
-      dataset: { state, me: String(isMe) },
+      dataset: { state, me: String(isMe), outcome },
       style: { animationDelay: `${Math.min(i, 8) * 45}ms` },
     });
     // Object.assign onto a style declaration drops custom properties on the
@@ -705,6 +800,19 @@ export class Race extends EventTarget {
     node.append(name);
 
     node.append(this._value(row, state));
+
+    /* Your own row opens the ordinary solve menu — penalty, comment, delete.
+       Race solves land in a real session like any other, so they were always
+       editable from the times list; this just puts the menu where you are
+       already looking. Only ever your own, and only the saved solve: the
+       result in the room is write-once by rule, so a +2 you add here corrects
+       your session and cannot rewrite a round other people have already read. */
+    const mine = isMe && this.mySolves.get(this.round?.no);
+    if (mine && this.revealed) {
+      node.classList.add('editable');
+      node.title = 'Edit this solve — penalty, comment, delete';
+      node.addEventListener('click', () => this.app.solveMenu?.(mine, node));
+    }
     return node;
   }
 

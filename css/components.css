@@ -1950,6 +1950,61 @@ body.focus #dock-bottom, body.focus #tile-float-layer { opacity: 0; pointer-even
 }
 .race-row[data-state="dnf"] .race-time { color: var(--danger); }
 
+/* Won or lost, in one glance. The rank number says the same thing without
+   relying on colour, so this is the fast read rather than the only one. */
+.race-row[data-outcome="win"] .race-time { color: var(--ok); }
+.race-row[data-outcome="loss"] .race-time { color: var(--danger); }
+.race-row[data-outcome="win"] {
+  border-color: color-mix(in srgb, var(--ok) 30%, transparent);
+  background: color-mix(in srgb, var(--ok) 8%, transparent);
+}
+/* data-me keeps its accent fill; the winner's border still reads on top. */
+.race-row[data-outcome="win"][data-me="true"] {
+  background: color-mix(in srgb, var(--ok) 13%, transparent);
+}
+
+.race-row.editable { cursor: pointer; }
+.race-row.editable:hover { border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+
+/* ---- standings ---- */
+.race-board {
+  display: flex; flex-direction: column; gap: 2px;
+  margin-top: 8px; padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+.race-board-head {
+  display: flex; justify-content: space-between; align-items: baseline;
+  font-size: .62rem; letter-spacing: .09em; text-transform: uppercase;
+  color: var(--text-faint); margin-bottom: 3px;
+}
+.race-board-row {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr) auto auto;
+  align-items: center; gap: 8px;
+  padding: 3px 7px; border-radius: var(--radius-sm);
+  font-size: .74rem;
+}
+.race-board-row[data-me="true"] { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+/* Somebody who has left keeps their wins and stops claiming to be here. */
+.race-board-row[data-gone="true"] { opacity: .5; }
+.race-board-rank {
+  font-size: .66rem; color: var(--text-faint);
+  font-variant-numeric: tabular-nums; text-align: right;
+}
+.race-board-row:first-of-type .race-board-rank { color: var(--gold); font-weight: 700; }
+.race-board-name {
+  color: var(--text); font-weight: 600;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.race-board-best {
+  font-family: ui-monospace, monospace; font-size: .7rem;
+  color: var(--text-faint); font-variant-numeric: tabular-nums;
+}
+.race-board-wins {
+  font-size: .7rem; font-weight: 700; color: var(--gold);
+  font-variant-numeric: tabular-nums;
+}
+
 .race-delta {
   font-style: normal; font-size: .62rem; font-weight: 650;
   font-variant-numeric: tabular-nums;

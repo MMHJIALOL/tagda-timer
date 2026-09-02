@@ -1515,6 +1515,7 @@ app.joinRace = async (code) => {
     const id = await ctl.join(code);
     toast(`Joined ${id}`, { kind: 'good' });
   } catch (err) {
+    console.error('[race] join failed:', err);
     toast(err?.message === 'room-full' ? 'That room is full' : 'Could not join that room', { kind: 'bad' });
   }
 };
