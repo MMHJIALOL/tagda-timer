@@ -27,7 +27,13 @@
  *
  * @type {null | {apiKey:string, authDomain:string, databaseURL:string, projectId:string, appId:string}}
  */
-export const FIREBASE_CONFIG = null;
+export const FIREBASE_CONFIG = {
+  apiKey: 'AIzaSyD2PUpGwlnvC244V7L11Z5yDrsMS0Xl8dU',
+  authDomain: 'tagda-timer.firebaseapp.com',
+  databaseURL: 'https://tagda-timer-default-rtdb.firebaseio.com',
+  projectId: 'tagda-timer',
+  appId: '1:1069147327222:web:f6e149b2b67cd82fa77ad7',
+};
 
 /** Pinned rather than 'latest': a surprise major bump should not break racing. */
 export const FIREBASE_VERSION = '10.12.0';
@@ -36,7 +42,10 @@ export const FIREBASE_VERSION = '10.12.0';
    Room shape
    --------------------------------------------------------- */
 
-/** Also enforced in the rules — a client-side cap alone is not a cap. */
+/**
+ * Checked on join in race-net.js. Client-side only: Realtime Database rules
+ * cannot count children, so this is a limit, not a guarantee. See RACE.md §2.
+ */
 export const ROOM_MAX = 24;
 
 /** Rows drawn individually before the rest collapse into "+N more". */

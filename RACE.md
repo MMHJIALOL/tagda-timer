@@ -57,7 +57,6 @@ No camera. No microphone. No screen recording. Ever. What there is:
 | `results/<uid>` write‑once | Submitting a decoy, peeking, then editing your time down |
 | `hash` must equal the round's `info/hash` | Claiming a time against a different, easier scramble |
 | `timeMs` checked against the server‑stamped solve window | Pausing the app and typing in a fabricated number afterwards |
-| Player cap in the rules, not just the UI | Scripting past the room limit |
 
 The timing check compares your submitted time against the gap between the `startedAt` and
 `finishedAt` stamps written with `ServerValue.TIMESTAMP` — a clock the client cannot move.
@@ -72,6 +71,9 @@ real solve. The job is to make fabricating a time inconvenient, not to referee a
   solve of the year to protect a stranger has its priorities backwards.
 - Joining a room forces the input source back to the real spacebar timer, so times cannot be
   typed in during a race.
+- The 24‑player room cap is checked by the client on join, not by the rules. Realtime Database
+  rules cannot count children — `numChildren()` is a JS SDK method, not a rules one — so a
+  genuinely enforced cap needs fixed seat slots or a Cloud Function. Neither is built.
 
 Closing Tier 2 properly would need real server compute (a Cloud Function re‑validating each
 submission). That is a genuine backend with code in it, not just rules, and it is not built.
