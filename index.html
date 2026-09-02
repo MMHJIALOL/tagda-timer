@@ -29,11 +29,11 @@
      perfect in incognito, which is a miserable thing to debug.
      /js/ is `must-revalidate` and does not depend on this, but keep the number
      in step anyway rather than leaving two answers to the same question. -->
-<link rel="modulepreload" href="js/main.js?v=38">
-<link rel="stylesheet" href="css/fonts.css?v=38">
-<link rel="stylesheet" href="css/tokens.css?v=38">
-<link rel="stylesheet" href="css/base.css?v=38">
-<link rel="stylesheet" href="css/components.css?v=38">
+<link rel="modulepreload" href="js/main.js?v=39">
+<link rel="stylesheet" href="css/fonts.css?v=39">
+<link rel="stylesheet" href="css/tokens.css?v=39">
+<link rel="stylesheet" href="css/base.css?v=39">
+<link rel="stylesheet" href="css/components.css?v=39">
 <link rel="icon" href="assets/favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="assets/logo-192.png">
 <link rel="apple-touch-icon" href="assets/logo-180.png">
@@ -149,6 +149,16 @@
           <path d="M7 9.1c3.3-1 7.2-.7 10.2.9"/>
           <path d="M7.7 12.3c2.7-.8 5.9-.5 8.4.8"/>
           <path d="M8.3 15.4c2.2-.6 4.6-.4 6.5.6"/>
+        </svg>
+      </button>
+      <!-- A chequered flag on a pole. Lights up while a room is open, which is
+           the only chrome that says a race is running once the panel is
+           docked out of the way or folded on a phone. -->
+      <button class="icon-btn" id="btn-race" title="Race someone">
+        <svg viewBox="0 0 24 24">
+          <path d="M5.2 21V3.4"/>
+          <path d="M5.2 4.1h13l-2.5 3.9 2.5 3.9h-13z"/>
+          <path d="M5.2 8h6.5M11.7 4.1v7.8"/>
         </svg>
       </button>
       <button class="icon-btn" id="btn-help" title="Keyboard shortcuts  (?)">
@@ -487,7 +497,7 @@
   </div>
 </div>
 
-<script type="module" src="js/main.js?v=38"></script>
+<script type="module" src="js/main.js?v=39"></script>
 <script>
 (function () {
   var isFile = location.protocol === 'file:';

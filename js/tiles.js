@@ -20,6 +20,7 @@ const SEL = {
   times:   '#panel-times',
   stats:   '#panel-stats',
   spotify: '#panel-spotify',
+  race:    '#panel-race',
 };
 export const TILE_IDS = Object.keys(SEL);
 
@@ -28,6 +29,7 @@ export const DEFAULT_TILES = {
   times:   { dock: 'left',  pos: null, w: null },
   stats:   { dock: 'right', pos: null, w: null },
   spotify: { dock: 'left',  pos: null, w: null },
+  race:    { dock: 'right', pos: null, w: null },
 };
 
 const HOST = {
@@ -38,7 +40,10 @@ const HOST = {
 };
 
 /** Stacking order inside a rail, so two tiles in one column keep a sane order. */
-const ORDER = ['times', 'spotify', 'stats'];
+/* Race goes first wherever it lands: while a room is open it is the thing you
+   are actually watching, and it is the only panel here that disappears again
+   when you are done with it. */
+const ORDER = ['race', 'times', 'spotify', 'stats'];
 
 const ZONE_LABEL = { left: 'left rail', right: 'right rail', bottom: 'bottom bar' };
 
@@ -54,6 +59,9 @@ const ALLOWED = {
   times:   ['left', 'right', 'float'],
   stats:   ['left', 'right', 'bottom', 'float'],
   spotify: ['left', 'right', 'bottom', 'float'],
+  /* Out of the bottom bar for the same reason the solve list is: a column of
+     one row per racer laid on its side in a 150px strip shows one racer. */
+  race:    ['left', 'right', 'float'],
 };
 
 const allows = (id, dock) => (ALLOWED[id] || []).includes(dock);
@@ -314,7 +322,7 @@ function placePreview() {
      moves to the opposite corner (see components.css), and treating it as one
      meant the left-hand corner always looked occupied and the preview never
      moved anywhere. */
-  const boxes = ['panel-times', 'panel-stats', 'panel-spotify']
+  const boxes = ['panel-times', 'panel-stats', 'panel-spotify', 'panel-race']
     .map(id => document.getElementById(id))
     .filter(n => n && !n.hidden && getComputedStyle(n).display !== 'none' && n.dataset.dock !== 'bottom')
     .map(n => n.getBoundingClientRect())

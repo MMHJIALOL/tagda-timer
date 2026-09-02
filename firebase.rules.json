@@ -1,0 +1,78 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+
+    "rooms": {
+      "$roomId": {
+        "meta": {
+          ".read": "auth != null",
+          ".write": "auth != null",
+          "round": {
+            ".validate": "!data.exists() || newData.val() === data.val() + 1"
+          },
+          "phase": {
+            ".validate": "newData.isString() && newData.val().length <= 12"
+          },
+          "$other": { ".validate": true }
+        },
+
+        "players": {
+          ".read": "auth != null",
+          "$uid": {
+            ".write": "auth != null && auth.uid === $uid && (!newData.exists() || data.exists() || newData.parent().numChildren() <= 24)",
+            ".validate": "!newData.exists() || newData.hasChildren(['name', 'joinedAt'])",
+            "name": { ".validate": "newData.isString() && newData.val().length <= 24" },
+            "color": { ".validate": "newData.isNumber()" },
+            "joinedAt": { ".validate": "newData.isNumber()" },
+            "lastSeen": { ".validate": "newData.isNumber()" },
+            "$other": { ".validate": false }
+          }
+        },
+
+        "rounds": {
+          "$roundId": {
+            "info": {
+              ".read": "auth != null",
+              ".write": "auth != null && !data.exists()",
+              ".validate": "newData.hasChildren(['scramble', 'hash'])",
+              "scramble": { ".validate": "newData.isString() && newData.val().length <= 600" },
+              "hash": { ".validate": "newData.isString() && newData.val().length <= 16" },
+              "event": { ".validate": "newData.isString() && newData.val().length <= 12" },
+              "startedAt": { ".validate": "newData.isNumber()" },
+              "$other": { ".validate": false }
+            },
+
+            "progress": {
+              ".read": "auth != null",
+              "$uid": {
+                ".write": "auth != null && auth.uid === $uid",
+                "status": { ".validate": "newData.isString() && newData.val().length <= 12" },
+                "startedAt": { ".validate": "newData.isNumber() && newData.val() <= now + 2000" },
+                "finishedAt": { ".validate": "newData.isNumber() && newData.val() <= now + 2000" },
+                "$other": { ".validate": false }
+              }
+            },
+
+            "results": {
+              ".read": "auth != null && data.child(auth.uid).exists()",
+
+              "$uid": {
+                ".write": "auth != null && auth.uid === $uid && !data.exists()",
+
+                ".validate": "newData.hasChildren(['timeMs', 'hash']) && newData.child('hash').val() === root.child('rooms/' + $roomId + '/rounds/' + $roundId + '/info/hash').val() && (!root.child('rooms/' + $roomId + '/rounds/' + $roundId + '/progress/' + auth.uid + '/startedAt').exists() || !root.child('rooms/' + $roomId + '/rounds/' + $roundId + '/progress/' + auth.uid + '/finishedAt').exists() || newData.child('timeMs').val() >= (root.child('rooms/' + $roomId + '/rounds/' + $roundId + '/progress/' + auth.uid + '/finishedAt').val() - root.child('rooms/' + $roomId + '/rounds/' + $roundId + '/progress/' + auth.uid + '/startedAt').val()) * 0.75 - 4000)",
+
+                "timeMs": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 36000000" },
+                "penalty": { ".validate": "newData.isString() && newData.val().length <= 8" },
+                "hash": { ".validate": "newData.isString() && newData.val().length <= 16" },
+                "suspect": { ".validate": "newData.isBoolean() || !newData.exists()" },
+                "submittedAt": { ".validate": "newData.isNumber()" },
+                "$other": { ".validate": false }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
