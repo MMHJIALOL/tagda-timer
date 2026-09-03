@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Alg library — verification</title>
+<!--
+  Rollout step 1: every algorithm that ships in js/alglibrary-*.js is executed
+  against its own case before the data is trusted. There is no Node in this
+  project, and the simulator is a browser module, so the harness is a page:
+
+      python serve.py --no-browser
+      open http://127.0.0.1:5173/tools/verify-alglibrary.html
+
+  Prints a pass/fail summary and the failing entries only — nothing else, so a
+  clean run is one line.
+-->
+<style>
+  body { background:#0e1116; color:#d7dde5; font:14px/1.6 ui-monospace, monospace; padding:24px; }
+  h1 { font-size:15px; letter-spacing:.14em; text-transform:uppercase; color:#8b94a3; }
+  .pass { color:#3ddc84; } .fail { color:#ff6b6b; }
+  li { margin:.3em 0; }
+</style>
+</head>
+<body>
+<h1>Alg library verification</h1>
+<pre id="out">running…</pre>
+<ul id="bad"></ul>
+
+<script type="module">
+import { SETS, auditLibrary, verifyAlgForCase } from '../js/alglibrary.js';
+
+const bad = auditLibrary();
+let total = 0;
+for (const set of Object.values(SETS)) {
+  for (const c of set.cases) total += (set.library[c.id]?.alternates || []).length;
+}
+
+/* The canonical algs in algs.js back every case that research has not reached,
+   so they are on the same hook as the researched ones. */
+const defaults = [];
+for (const set of Object.values(SETS)) {
+  for (const c of set.cases) {
+    if (!verifyAlgForCase(set.id, c.id, c.alg)) defaults.push(`${set.id} ${c.id} (algs.js default)`);
+  }
+}
+
+const ok = !bad.length && !defaults.length;
+document.getElementById('out').innerHTML =
+  `<span class="${ok ? 'pass' : 'fail'}">${ok ? 'PASS' : 'FAIL'}</span> — ` +
+  `${total - bad.length}/${total} library entries, ` +
+  `${defaults.length ? defaults.length + ' broken defaults' : 'all algs.js defaults ok'}`;
+
+const list = document.getElementById('bad');
+for (const b of bad) {
+  const li = document.createElement('li');
+  li.className = 'fail';
+  li.textContent = `${b.set} ${b.caseId}: ${b.alg}`;
+  list.appendChild(li);
+}
+for (const d of defaults) {
+  const li = document.createElement('li');
+  li.className = 'fail';
+  li.textContent = d;
+  list.appendChild(li);
+}
+window.__result = { ok, total, bad, defaults };
+</script>
+</body>
+</html>

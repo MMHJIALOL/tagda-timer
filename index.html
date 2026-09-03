@@ -29,11 +29,11 @@
      perfect in incognito, which is a miserable thing to debug.
      /js/ is `must-revalidate` and does not depend on this, but keep the number
      in step anyway rather than leaving two answers to the same question. -->
-<link rel="modulepreload" href="js/main.js?v=39">
-<link rel="stylesheet" href="css/fonts.css?v=39">
-<link rel="stylesheet" href="css/tokens.css?v=39">
-<link rel="stylesheet" href="css/base.css?v=39">
-<link rel="stylesheet" href="css/components.css?v=39">
+<link rel="modulepreload" href="js/main.js?v=40">
+<link rel="stylesheet" href="css/fonts.css?v=40">
+<link rel="stylesheet" href="css/tokens.css?v=40">
+<link rel="stylesheet" href="css/base.css?v=40">
+<link rel="stylesheet" href="css/components.css?v=40">
 <link rel="icon" href="assets/favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="assets/logo-192.png">
 <link rel="apple-touch-icon" href="assets/logo-180.png">
@@ -125,9 +125,30 @@
           <svg class="chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
         </button>
       </div>
+      <!-- The one picker that is a link rather than a dropdown: it opens a whole
+           page, so it ends in an arrow where the others carry a chevron. It sits
+           with the pickers because it is a place you go, not a switch you flip —
+           and this row already scrolls sideways on a phone, so a fourth one
+           costs the small screens nothing. -->
+      <div class="seg" id="algs-seg">
+        <a class="seg-btn" id="btn-algs" href="algs.html" title="Algorithm library — every PLL and OLL case">
+          <svg class="ico" viewBox="0 0 24 24"><path d="M5 4.6A1.6 1.6 0 016.6 3H19v14.4H6.6A1.6 1.6 0 005 19z"/><path d="M5 19a1.6 1.6 0 001.6 1.6H19v-3.2"/><path d="M8.6 7.4h6.8M8.6 10.8h4.6"/></svg>
+          <span>Alg library</span>
+          <svg class="chev" viewBox="0 0 24 24"><path d="M5 12h13M13 7l5 5-5 5"/></svg>
+        </a>
+      </div>
     </div>
 
-    <div class="topbar-right">
+    <!-- Below 860px the eight icons to the right stop fitting, so they fold into
+         this one button and drop down as a labelled list. Tablet and laptop keep
+         every icon inline exactly as before — this is a phone-crowding fix, not
+         a redesign, and it is why the button lives outside .topbar-right: that
+         row is what becomes the dropdown. -->
+    <button class="icon-btn" id="btn-menu" title="Menu" aria-expanded="false" aria-controls="topbar-right">
+      <svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+    </button>
+
+    <div class="topbar-right" id="topbar-right">
       <button class="icon-btn" id="btn-stats" title="Statistics  (A)">
         <svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>
       </button>
@@ -503,7 +524,7 @@
   </div>
 </div>
 
-<script type="module" src="js/main.js?v=39"></script>
+<script type="module" src="js/main.js?v=40"></script>
 <script>
 (function () {
   var isFile = location.protocol === 'file:';

@@ -40,6 +40,13 @@
 .icon-btn.on { color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); border-color: color-mix(in srgb, var(--accent) 34%, transparent); }
 
 .seg { display: flex; }
+/* The centre group is `overflow: hidden`, so a picker that does not fit is not
+   truncated — it is cut off mid-button, and the last one disappears entirely.
+   A flex item will not shrink below its content unless told to, and `.seg` is
+   the item; `.seg-btn span` already knows how to ellipsis once it is allowed
+   to. Without this the row silently loses a picker between 861px and roughly
+   1000px, which is an ordinary laptop window. */
+.topbar-center .seg { min-width: 0; }
 .seg-btn {
   display: flex; align-items: center; gap: 7px;
   height: 34px; padding: 0 11px; border-radius: 10px;
@@ -674,6 +681,42 @@ input[type="range"]::-moz-range-thumb {
   #creator-chip { display: none; }
 }
 
+/* ---------------- mobile topbar menu (§1.1) ---------------- */
+/* Eight icon buttons is fine on a laptop and impossible on a phone. Below the
+   breakpoint this file already uses, they fold behind one button and come back
+   as a labelled list — the label is each button's own `title`, so no button
+   needed a second copy of its own name in the markup. */
+#btn-menu { display: none; }
+
+@media (max-width: 860px) {
+  #topbar { position: relative; }
+  #btn-menu { display: flex; }
+  .topbar-right { display: none; }
+  .topbar-right.open {
+    display: flex; flex-direction: column; align-items: stretch; gap: 2px;
+    position: absolute; top: calc(100% + 8px); right: 0; z-index: 60;
+    min-width: 210px; padding: 6px; border-radius: var(--radius-sm);
+    background: color-mix(in srgb, var(--surface) 92%, transparent);
+    border: 1px solid var(--border);
+    backdrop-filter: blur(var(--panel-blur)); -webkit-backdrop-filter: blur(var(--panel-blur));
+    box-shadow: var(--shadow);
+  }
+  /* .icon-btn is a 34px grid box that centres one glyph; in the menu it has to
+     be a row of icon + label instead, so the display mode is swapped rather
+     than fought with. */
+  .topbar-right.open .icon-btn {
+    width: auto; height: auto;
+    display: flex; align-items: center; justify-content: flex-start; gap: 11px;
+    padding: 9px 11px; border-color: transparent; background: none;
+  }
+  .topbar-right.open .icon-btn::after {
+    content: attr(title);
+    font-size: .8rem; font-weight: 550; color: var(--text); white-space: nowrap;
+  }
+  .topbar-right.open .icon-btn:hover { background: color-mix(in srgb, var(--text) 8%, transparent); }
+  #btn-menu.on { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 34%, transparent); }
+}
+
 /* ---------------- big charts (stats drawer) ---------------- */
 .chart-card {
   padding: 14px; border-radius: var(--radius-sm);
@@ -725,18 +768,26 @@ input[type="range"]::-moz-range-thumb {
 }
 
 /* ---- narrow screens ----
-   At 375px the three pickers plus the six icon buttons do not fit, and the
-   centre group was being clipped by 118px -- the session picker simply could
-   not be reached. Drop the wordmark (the cube still identifies the app) and
-   let the pickers scroll sideways rather than truncate. */
+   At 375px the pickers plus the icon buttons do not fit, and the centre group
+   was being clipped by 118px -- the session picker simply could not be
+   reached. Drop the wordmark; the cube still identifies the app. */
 @media (max-width: 620px) {
   .brand-text { display: none; }
-  /* Sideways scrolling alone was not enough. Once the six icon buttons and the
-     brand had taken their width there were ~60px left for the centre group to
-     scroll inside — a slot too narrow to read one picker in, let alone three.
-     Give the pickers a row of their own instead: the brand and the icons keep
-     the first line, the three pickers get the full width of the second and
-     still scroll if a long session name overruns it. */
+}
+
+/* Sideways scrolling alone was not enough. Once the icon buttons and the brand
+   had taken their width there were ~60px left for the centre group to scroll
+   inside — a slot too narrow to read one picker in, let alone four. Give the
+   pickers a row of their own instead: the brand and the icons keep the first
+   line, the pickers get the full width of the second and still scroll if a
+   long session name overruns it.
+
+   The threshold was 620px when there were three pickers. Four of them at full
+   width, plus the wordmark and the icon row, need about 1040px on one line —
+   below that the last picker was being cut in half by the centre group's
+   `overflow: hidden`, on an ordinary laptop window. Two rows there rather than
+   a button nobody can read or reach. */
+@media (max-width: 1040px) {
   #topbar { flex-wrap: wrap; row-gap: 8px; }
   .topbar-right { margin-left: auto; }
   .topbar-center {

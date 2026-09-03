@@ -93,6 +93,22 @@ export const KV = {
   },
   async set(key, value) { return wrap((await tx('kv', 'readwrite')).put(value, key)); },
   async del(key)        { return wrap((await tx('kv', 'readwrite')).delete(key)); },
+  /**
+   * Every entry whose key starts with `prefix`, as a Map, in one transaction.
+   *
+   * For a namespace stored one key per item — the alg library keeps a row per
+   * case — asking for them individually is a transaction each, on the boot
+   * path, for data that is a few hundred bytes in total.
+   */
+  async prefixed(prefix) {
+    const store = await tx('kv');
+    const range = IDBKeyRange.bound(prefix, prefix + '￿');
+    const [keys, values] = await Promise.all([
+      wrap(store.getAllKeys(range)),
+      wrap(store.getAll(range)),
+    ]);
+    return new Map(keys.map((k, i) => [k, values[i]]));
+  },
 };
 
 /* ---------------- assets (background image/video blobs) ---------------- */

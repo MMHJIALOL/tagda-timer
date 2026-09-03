@@ -15,6 +15,7 @@ import { flash, shockwave, confetti, chime, callout, beep } from './fx.js';
 import { summarize, eff, DNF, bestSingle, bestAvg, trimmedIndices, byCase, sessionBests, rollingSeries, statWindow, STAT_LABELS } from './stats.js';
 import { renderMiniTrend } from './charts.js';
 import { DEFAULTS, loadSettings, saveSettings, applyTheme, applyBackground, themeColors, setAlbumTint } from './theme.js';
+import { loadLibraryPrefs } from './alglibrary.js';
 import { initTiles, applyTiles, measureLayout } from './tiles.js';
 import { SPOTIFY_CLIENT_ID, DEV_MODE_LIMIT, OWNER_NEEDS_PREMIUM } from './spotifyapp.js';
 import { popover, closePopover, popoverOpen } from './popover.js';
@@ -211,6 +212,11 @@ function bootFailure(err) {
 async function init() {
   app.settings = await loadSettings();
   applyTheme(app.settings);
+
+  /* Your alg-library order decides which alg a trainer scramble is built from
+     (algs.html, §6.1), and scramble generation is synchronous, so the handful
+     of stored orders is read once here rather than awaited mid-scramble. */
+  await loadLibraryPrefs();
 
   // sessions
   app.sessions = await Sessions.all();
@@ -2659,6 +2665,30 @@ function wireChrome() {
   $('#btn-help').addEventListener('click', () => openPanel('Keyboard shortcuts', 'buildShortcuts', { wide: true }));
   $('#btn-about').addEventListener('click', () => openPanel('About', 'buildAbout', undefined, app));
   $('#btn-open-history').addEventListener('click', () => openPanel('All solves', 'buildHistory', { wide: true }, app));
+
+  /* Mobile topbar menu. The panel is the icon row itself (see the CSS at the
+     bottom of components.css), so there is nothing to build here — only the
+     three ways it should close: picking something, pressing Escape, or
+     touching anything else. Above 860px the button is display:none and none
+     of this can fire. */
+  const menuBtn = $('#btn-menu');
+  const menuRow = $('#topbar-right');
+  const closeMenu = () => {
+    menuRow.classList.remove('open');
+    menuBtn.classList.remove('on');
+    menuBtn.setAttribute('aria-expanded', 'false');
+  };
+  menuBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const open = menuRow.classList.toggle('open');
+    menuBtn.classList.toggle('on', open);
+    menuBtn.setAttribute('aria-expanded', String(open));
+  });
+  menuRow.addEventListener('click', closeMenu);
+  document.addEventListener('click', (e) => {
+    if (menuRow.classList.contains('open') && !menuRow.contains(e.target)) closeMenu();
+  });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeMenu(); });
 
   // stats stay folded away until you ask for them
   const statsPanel = $('#panel-stats');

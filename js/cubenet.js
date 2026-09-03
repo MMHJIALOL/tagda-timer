@@ -88,6 +88,22 @@ const ROT   = { x: 'R', y: 'U', z: 'F' };
 
 const TOKEN = /^(\d*)([URFDLBurfdlbMESxyz])(w?)([2']*)$/;
 
+/**
+ * Tokenise a move sequence, or return `null` if anything in it is not a move
+ * this simulator understands.
+ *
+ * The simulator itself ignores junk tokens on purpose — a scramble preview
+ * should never blow up over one stray character. Anywhere the user is *typing*
+ * an algorithm, silence is the wrong answer, so this is the same grammar
+ * exposed as a yes/no rather than a shrug.
+ */
+export function parseAlg(text) {
+  const toks = String(text || '').trim().split(/\s+/).filter(Boolean);
+  if (!toks.length) return null;
+  for (const t of toks) if (!TOKEN.test(t)) return null;
+  return toks;
+}
+
 /** Apply one WCA/SiGN move token. Unknown tokens are ignored, never thrown. */
 function applyMove(stickers, n, tok) {
   const m = TOKEN.exec(tok);
