@@ -33,6 +33,14 @@
   [headers.values]
     Cache-Control = "public, max-age=0, must-revalidate"
 
+# The alg library is a second entry document with its own ?v= links, so it gets
+# the same treatment — cached immutably it would keep asking for last year's
+# stylesheets long after index.html had moved on.
+[[headers]]
+  for = "/algs.html"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
 # Webfont files never change in place — if a face is ever replaced, give the
 # new file a new name rather than editing this.
 [[headers]]
