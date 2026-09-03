@@ -164,6 +164,25 @@
 }
 #cube-grip svg { width: 15px; height: 15px; }
 #panel-cube:hover #cube-grip { opacity: .75; }
+
+/* Dismiss, in the corner of the thing being dismissed. Pinned rather than in
+   the flow so it cannot change the widget's measured height — placePreview
+   works off that rect, and a row that appeared on hover would have moved the
+   rails every time the pointer crossed it. */
+#cube-close {
+  position: absolute; top: -2px; right: -4px; z-index: 2;
+  display: flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px; border-radius: 50%;
+  color: var(--text-faint);
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  opacity: 0; transition: opacity var(--dur) var(--ease), color var(--dur-fast) var(--ease);
+}
+#cube-close svg { width: 11px; height: 11px; }
+#panel-cube:hover #cube-close { opacity: .8; }
+#cube-close:hover { opacity: 1; color: var(--danger); }
+#panel-cube.dragging #cube-close { opacity: 0; pointer-events: none; }
 #cube-grip:hover { opacity: 1; color: var(--text); }
 #cube-holder { cursor: grab; touch-action: none; }
 #cube-holder:active { cursor: grabbing; }
@@ -235,6 +254,8 @@
      left the widget with no visible way to move it and no visible 2D/3D
      switch. The grip is also a touch target now, not a 34x13 sliver. */
   #cube-grip { opacity: .55; width: 52px; height: 20px; }
+  #cube-close { opacity: .75; width: 24px; height: 24px; top: -4px; right: -8px; }
+  #cube-close svg { width: 13px; height: 13px; }
   .view-toggle { opacity: 1; }
 
   /* Expanded, the stats tile is 46vh rather than 34, and the preview was left
@@ -1687,6 +1708,10 @@ body.focus #dock-bottom, body.focus #tile-float-layer { opacity: 0; pointer-even
 /* The escape hatch: placePreview() flips this on only while the preview's usual
    corner is occupied and this one is not. */
 #panel-cube[data-side="left"] { right: auto; left: 18px; }
+/* ...and when both corners are occupied — a race panel down the right rail and
+   the solve list down the left — the empty strip between the two rails, which
+   is the timer's own floor. --cube-x is measured and written by placePreview. */
+#panel-cube[data-side="centre"] { right: auto; left: var(--cube-x, 50%); }
 @media (max-width: 860px) {
   #panel-cube[data-side="left"] { right: auto; left: 10px; }
 }
@@ -2086,6 +2111,19 @@ body.focus #dock-bottom, body.focus #tile-float-layer { opacity: 0; pointer-even
   border-left: 2px solid currentColor; padding-left: 6px; opacity: .85;
 }
 
+/* Ending the race and leaving the room, in the panel rather than three clicks
+   away in the drawer. Short and quiet: they sit under a foot that is already
+   telling you what the room is waiting for, and neither is the thing you came
+   to this panel to read. */
+.race-actions {
+  display: flex; gap: 6px; margin-top: 8px;
+  padding-top: 8px; border-top: 1px solid var(--border);
+}
+.race-actions .btn {
+  flex: 1; min-width: 0; height: 28px; padding: 0 8px;
+  font-size: .7rem; border-radius: 8px;
+}
+
 /* ---------------- the drawer ---------------- */
 .race-hero {
   display: flex; align-items: flex-start; gap: 12px;
@@ -2139,5 +2177,6 @@ body.focus #dock-bottom, body.focus #tile-float-layer { opacity: 0; pointer-even
   #panel-race[data-collapsed="true"] .race-body { display: flex; }
   #panel-race[data-collapsed="true"] .race-rows,
   #panel-race[data-collapsed="true"] .race-more,
-  #panel-race[data-collapsed="true"] .race-foot { display: none; }
+  #panel-race[data-collapsed="true"] .race-foot,
+  #panel-race[data-collapsed="true"] .race-actions { display: none; }
 }

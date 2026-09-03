@@ -154,6 +154,18 @@ client can attempt it and the duplicates are harmless.
 every client derives that from the same player list, so it re‑resolves for free when the host
 leaves.
 
+**Ending a race is not leaving the room.** The host's **End race** puts `meta/phase` back to
+`lobby` and bumps `meta/round` in the same write — the pointer has to move, because a round's
+scramble is write‑once and its results are write‑once per player, so restarting on the same
+number would replay a scramble everybody had already raced and then have their times refused.
+Everyone drops back to the lobby with the standings intact and the timer's own scrambles back;
+the host can start again whenever. **Leave room**, next to it, is the other thing entirely: it
+retires your player and puts you back in your own session.
+
+**A reload leaves the room.** Nothing rejoins on its own — the invite link is stripped from the
+address bar for exactly that reason — so a tab that comes back up is put back in the session it
+was in before the race, rather than sitting in `Race · <CODE>` with no room behind it.
+
 ---
 
 ## 6. Where race solves go

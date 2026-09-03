@@ -223,6 +223,9 @@ async function init() {
   app.session = app.sessions.find(s => s.id === app.settings.sessionId) || app.sessions[0];
   app.settings.sessionId = app.session.id;
   if (app.session.event) app.settings.event = app.session.event;
+  // A reload leaves the room behind, so it has to leave the room's session
+  // behind too — see restoreFromRace.
+  restoreFromRace();
 
   app.solves = await Solves.bySession(app.session.id);
 
@@ -1482,21 +1485,53 @@ app.enterRaceSession = async (roomId) => {
     app.sessions.push(s);
   }
   if (app.session.id !== s.id) {
-    app.raceReturnSession = app.session.id;
+    /* In settings, not on the app object. A reload wipes anything held in
+       memory, and the session itself survives it — so the tab came back up
+       still filed under "Race · XXXX", with no room, no panel and no way back
+       to your own session except finding it in the drawer by hand. Persisting
+       where you came from is what lets restoreFromRace put you back. */
+    app.setSetting('raceReturnSession', app.session.id);
     await app.switchSession(s.id);
   }
 };
 
 /** ...and put you back where you were when you leave. */
 app.leaveRaceSession = async () => {
-  const back = app.raceReturnSession;
-  app.raceReturnSession = null;
+  const back = app.settings.raceReturnSession;
+  app.setSetting('raceReturnSession', null);
   if (back && back !== app.session.id && app.sessions.some(x => x.id === back)) {
     await app.switchSession(back);
     return true;
   }
   return false;
 };
+
+/**
+ * A reload is not a race.
+ *
+ * Nothing rejoins a room on its own — the invite link is stripped from the
+ * address bar precisely so it cannot — so a tab that comes back up in a race
+ * session is in the leftovers of a race, not in one. Put it back where it
+ * started before anything is drawn, so "reload" means what people expect it
+ * to mean: out.
+ *
+ * Runs while the session is still only being chosen, before anything has been
+ * loaded off the back of it — so it is a change of mind about which session to
+ * open, not a switch away from one, and it costs nothing and says nothing. A
+ * ?race= link later in the boot joins its room and takes the tab back into the
+ * room's session, this time with a room behind it.
+ */
+function restoreFromRace() {
+  if (!app.session?.race) return;
+  const back = app.settings.raceReturnSession;
+  const target = (back && app.sessions.find(x => x.id === back))
+    || app.sessions.find(x => !x.race);
+  app.settings.raceReturnSession = null;
+  if (!target || target.id === app.session.id) return;
+  app.session = target;
+  app.settings.sessionId = target.id;
+  if (target.event) app.settings.event = target.event;
+}
 
 /** The race panel builds itself on first use, so the tile system meets it late. */
 app.registerRaceTile = () => { applyTiles(app.settings); applyTheme(app.settings); measureLayout(); };
@@ -2677,6 +2712,15 @@ function wireChrome() {
 
   $$('#view-toggle button[data-view="3D"], #view-toggle button[data-view="2D"]').forEach(b =>
     b.addEventListener('click', () => app.setSetting('cubeView', b.dataset.view)));
+
+  /* Hide the preview from the preview itself. The same switch the settings
+     panel writes, so it is not a second piece of state — and the toast says
+     where it went, because a widget that vanishes with no way back is worse
+     than one that was in the way. */
+  $('#cube-close')?.addEventListener('click', () => {
+    app.setSetting('showCube', false);
+    toast('Preview hidden — Appearance › Layout › Scramble preview brings it back', { long: true });
+  });
 
   // Drag the preview anywhere on screen; the 2D/3D buttons inside it stay
   // clickable, and the position survives a reload.

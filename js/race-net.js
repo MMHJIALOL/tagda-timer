@@ -102,6 +102,17 @@ class FirebaseTransport extends EventTarget {
 
     this._sdk = { ...dbMod, db };
     this.snap.uid = cred.user.uid;
+
+    /* Open the socket now, while nobody is waiting for it.
+     *
+     * The database client does not connect until something asks it for data,
+     * so the first read of a join was paying for the websocket handshake as
+     * well as itself — a second of it, on top of the sign-in, after the
+     * button had already been pressed. `.info/connected` is a synthetic node
+     * with no rules to satisfy and nothing to download; subscribing to it
+     * exists purely to make the connection happen here instead of there. */
+    this._unsubs.push(dbMod.onValue(dbMod.ref(db, '.info/connected'), () => {}, () => {}));
+
     return { uid: cred.user.uid };
   }
 
@@ -116,6 +127,17 @@ class FirebaseTransport extends EventTarget {
     const S = this._sdk;
     this.snap.roomId = roomId;
     const uid = this.snap.uid;
+
+    /* Subscribe first, write second.
+     *
+     * Every step below is a round trip to the same server and none of them
+     * depends on the subscription, so starting it here means the room's own
+     * state is already on its way back while our player row is still going
+     * out. That ordering is most of the wait people felt between pressing
+     * Join and the panel showing anything at all: it used to be four serial
+     * round trips (read, reap, create meta, write player) before a single
+     * listener was attached. */
+    this._listen();
 
     /* Reap a room nobody has been in for a while before counting heads.
        Without this an abandoned room keeps its ghosts forever and eventually
@@ -135,29 +157,40 @@ class FirebaseTransport extends EventTarget {
       const now = Date.now();
       const dead = Object.entries(cur.players)
         .filter(([, p]) => now - (p.lastSeen || 0) > STALE_ROOM_MS);
-      await Promise.all(dead.map(([id]) => S.remove(this._ref(`${this._base}/players/${id}`))));
+      /* Not awaited. Clearing out ghosts is housekeeping for whoever reads
+         this room next, and holding our own join behind a write we do not
+         need the answer to bought nothing but the wait. */
+      dead.forEach(([id]) => S.remove(this._ref(`${this._base}/players/${id}`)).catch(() => {}));
       const live = Object.keys(cur.players).length - dead.length;
-      if (live >= ROOM_MAX && !cur.players[uid]) throw new Error('room-full');
-    }
-
-    if (!cur?.meta) {
-      await S.set(this._ref(`${this._base}/meta`), {
-        createdAt: S.serverTimestamp(), event: player.event, mode: player.mode, round: 1,
-      });
+      if (live >= ROOM_MAX && !cur.players[uid]) {
+        // Undo the early subscription — we are not going to be in this room.
+        this._teardown();
+        this.snap = { ...emptySnapshot(), uid };
+        throw new Error('room-full');
+      }
     }
 
     const me = this._ref(`${this._base}/players/${uid}`);
-    await S.set(me, {
-      name: player.name, color: player.color,
-      joinedAt: S.serverTimestamp(), lastSeen: S.serverTimestamp(),
-    });
     /* The one thing a client genuinely cannot do for itself: tell the room it
        has gone when the tab is closed, the laptop lid comes down, or the
        connection simply stops. Registered with the server up front and fired
        by the server when the socket drops. */
     S.onDisconnect(me).remove();
 
-    this._listen();
+    /* Both writes at once. Creating the room and taking a seat in it are
+       independent nodes with independent rules, and running them one after
+       the other made creating a room measurably slower than joining one for
+       no reason anybody could see. */
+    await Promise.all([
+      cur?.meta ? null : S.set(this._ref(`${this._base}/meta`), {
+        createdAt: S.serverTimestamp(), event: player.event, mode: player.mode, round: 1,
+      }),
+      S.set(me, {
+        name: player.name, color: player.color,
+        joinedAt: S.serverTimestamp(), lastSeen: S.serverTimestamp(),
+      }),
+    ]);
+
     this._startHeartbeat();
   }
 

@@ -162,11 +162,36 @@ export class Race extends EventTarget {
 
   async connect(prefer = 'auto') {
     if (this.net) return;
-    this.net = createTransport(prefer);
-    this.kind = this.net.kind;
-    const { uid } = await this.net.init();
-    this.uid = uid;
-    this.net.addEventListener('room', (e) => this._onRoom(e.detail));
+    /* One connection attempt at a time.
+     *
+     * warm() and join() both ask for this, and without the guard opening the
+     * drawer and pressing Join in quick succession built two transports,
+     * signed in twice and left the first one listening to nothing. */
+    if (this._connecting) return this._connecting;
+    this._connecting = (async () => {
+      const net = createTransport(prefer);
+      const { uid } = await net.init();
+      this.net = net;
+      this.kind = net.kind;
+      this.uid = uid;
+      net.addEventListener('room', (e) => this._onRoom(e.detail));
+    })().finally(() => { this._connecting = null; });
+    return this._connecting;
+  }
+
+  /**
+   * Get the connection out of the way before anybody presses a button.
+   *
+   * Joining a room used to pay for the whole of init() — three module
+   * downloads and an anonymous sign-in — after the click, which is why
+   * creating a room felt like it had not registered. Opening the race drawer
+   * is a second or two ahead of the button and costs nothing if the drawer is
+   * closed again, so the handshake happens there instead.
+   */
+  warm() {
+    if (this.net || this._connecting) return;
+    this.connect(this.app.settings.racePrefer || 'auto')
+      .catch((err) => console.warn('[race] warm-up failed', err?.code || err));
   }
 
   async join(code, { name } = {}) {
@@ -186,6 +211,8 @@ export class Race extends EventTarget {
     this.submittedRound = 0;
     this.servedRound = 0;
     this.settledRound = 0;
+    this._prevRound = undefined;
+    this._prevPhase = undefined;
     /* Restored rather than cleared. Wins are the one thing in a room that
        exists nowhere but the client that watched them happen — the snapshot
        can rebuild everything else — so clearing here meant a reload, a
@@ -211,10 +238,20 @@ export class Race extends EventTarget {
     }
 
     this.app.setSetting('raceLastRoom', roomId);
-    await this.app.enterRaceSession?.(roomId);
+
+    /* The panel goes up before the session switch, not after.
+     *
+     * enterRaceSession creates a session, writes it and re-reads the solve
+     * list, which is IndexedDB work measured in hundreds of milliseconds —
+     * and it used to sit between "we are in the room" and "the room is on
+     * screen". Nothing about drawing the panel needs the session, so it no
+     * longer waits for it. */
     this._ensurePanel();
     this._startTicking();
+    this._syncPanel();
     this.dispatchEvent(new CustomEvent('change'));
+
+    await this.app.enterRaceSession?.(roomId);
     return roomId;
   }
 
@@ -228,6 +265,8 @@ export class Race extends EventTarget {
     this.graceAt = 0;
     this.submittedRound = 0;
     this.servedRound = 0;
+    this._prevRound = undefined;
+    this._prevPhase = undefined;
     this._syncPanel();
     // Back to the session you were in, and to the app's own scrambles. The
     // session switch already pulls a fresh one, so only ask when it did not.
@@ -243,8 +282,34 @@ export class Race extends EventTarget {
   /* ---------------- room updates ---------------- */
 
   _onRoom(snap) {
-    const prevRound = this.round?.no;
+    /* Remembered here rather than read back off the snapshot.
+     *
+     * Both transports update the object they already handed us and then emit
+     * it, so `this.snap` and `snap` are the same object and "what it said a
+     * moment ago" is not a question it can answer — reading the round off it
+     * before the assignment gave the NEW round every time, and the round-change
+     * branch below could therefore never run. That is what stopped a reload
+     * mid-round from noticing it had already submitted. */
+    const prevRound = this._prevRound;
+    const prevPhase = this._prevPhase;
     this.snap = snap;
+    this._prevRound = this.round?.no;
+    this._prevPhase = this.phase;
+
+    /* The race was ended under us — by the host, or by this client's own
+       End race. Give the timer its own scrambles back and forget the round
+       we were part-way through; the standings survive, which is the whole
+       reason ending is not the same thing as leaving. */
+    if (prevPhase === 'racing' && this.phase === 'lobby') {
+      this.settleAt = 0;
+      this.graceAt = 0;
+      this.settleFrom = 0;
+      this.submittedRound = 0;
+      this.servedRound = 0;
+      this.settledRound = 0;
+      this._lastStatus = null;
+      this.app.nextScramble?.();
+    }
 
     // A new round: reset the local per-round bookkeeping and put its scramble
     // on screen. Everything else follows from the snapshot.
@@ -592,6 +657,7 @@ export class Race extends EventTarget {
         <button class="race-more" type="button" hidden></button>
         <div class="race-board" hidden></div>
         <div class="race-foot"></div>
+        <div class="race-actions"></div>
       </div>`;
     host.append(node);
     this._node = node;
@@ -620,6 +686,21 @@ export class Race extends EventTarget {
     // The top-bar flag is the one piece of chrome that survives the panel
     // being folded, docked away or hidden behind a phone's bottom sheet.
     document.getElementById('btn-race')?.classList.toggle('live', on);
+
+    /* Appearing and disappearing is a layout event, not a repaint.
+     *
+     * Whether a rail is displayed at all, and which grid columns the stage
+     * has, are decided by applyTheme from what is actually visible in each
+     * rail — and refreshLayout only re-measures, it never asks that question
+     * again. So a panel that showed up after boot landed in a rail whose
+     * width had been computed without it: the race card drew over the stats
+     * card and the scramble preview, and only a reload put it right. Ask the
+     * layout to be recomputed on the two ticks where the answer changed. */
+    if (on !== this._lastOn) {
+      this._lastOn = on;
+      this.app.registerRaceTile?.();
+    }
+
     if (!on) { this.app.refreshLayout?.(); return; }
     this._render(node);
     this.app.refreshLayout?.();
@@ -639,6 +720,7 @@ export class Race extends EventTarget {
   _sig(rows) {
     return [
       this.snap.roomId, this.phase, this.round?.no, this.revealed, this._expanded, this.collapsed,
+      this.isHost,
       ...rows.map(x => `${x.uid}:${x.status}:${x.eff ?? ''}:${x.standing?.wins ?? 0}:${x.clockOff ? 1 : 0}`),
     ].join('|');
   }
@@ -698,6 +780,63 @@ export class Race extends EventTarget {
 
     /* ---- foot ---- */
     this._foot(node.querySelector('.race-foot'), { rows, done, live });
+
+    /* ---- room controls ---- */
+    this._actions(node.querySelector('.race-actions'));
+  }
+
+  /**
+   * The two ways out of a room, where you are already looking.
+   *
+   * Leaving used to mean opening the race drawer and finding the button in
+   * it, and ending a race was not a thing you could do at all — a room that
+   * had started racing kept handing out scrambles until the last person shut
+   * their tab. Rebuilt only from _render, which the signature guards, so
+   * neither button is ever replaced between a press and a release.
+   */
+  _actions(host) {
+    if (!host) return;
+    host.innerHTML = '';
+
+    if (this.phase === 'racing' && this.isHost) {
+      host.append(el('button', {
+        class: 'btn', text: 'End race',
+        title: 'Take the whole room back to the lobby — standings are kept',
+        onclick: async () => {
+          if (!await confirmToast('End the race for everyone in the room?', 'end it')) return;
+          await this._end();
+        },
+      }));
+    }
+
+    host.append(el('button', {
+      class: 'btn danger', text: 'Leave room',
+      title: 'Leave this room and go back to your own session',
+      onclick: async () => {
+        if (!await confirmToast(`Leave room ${this.snap?.roomId || ''}?`, 'leave')) return;
+        await this.leave();
+        toast('Left the room');
+      },
+    }));
+  }
+
+  /**
+   * Back to the lobby, for everybody.
+   *
+   * The round pointer moves on as well as the phase. A round's scramble is
+   * write-once and a result is write-once per player, so restarting on the
+   * same round number would have replayed a scramble everyone had already
+   * raced and then had their times refused by the rules. Both fields are
+   * written in one update, which is also the only way the "exactly one" rule
+   * on `round` will accept it.
+   */
+  async _end() {
+    const n = this.round?.no || 1;
+    this.settleAt = 0;
+    this.graceAt = 0;
+    this.settleFrom = 0;
+    await this.net.setMeta({ phase: 'lobby', round: n + 1 });
+    toast('Race ended — back in the lobby', { long: true });
   }
 
   /**
