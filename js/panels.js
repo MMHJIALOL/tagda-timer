@@ -1218,6 +1218,12 @@ export function buildRace(app) {
       const cloud = race.cloudAvailable();
       const ok = raceable(S.event);
 
+      /* Sign in and pull the SDK down now rather than when Join is pressed.
+         Everything in this drawer is a second or two of reading, and that is
+         exactly the handshake that used to happen after the click — which is
+         why creating a room felt like nothing had happened. */
+      if (!inRoom && ok) ctl.warm();
+
       body.innerHTML = '';
 
       /* ---- where you are ---- */

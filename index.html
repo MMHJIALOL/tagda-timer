@@ -399,6 +399,12 @@
     <div id="cube-grip" title="Drag to move the preview">
       <svg viewBox="0 0 24 24"><path d="M7 9h10M7 15h10"/></svg>
     </div>
+    <!-- Hiding the preview used to mean opening Settings and finding the
+         switch. It is the one widget on this page that sits on top of
+         everything else, so the way to get rid of it belongs on it. -->
+    <button id="cube-close" type="button" title="Hide the scramble preview" aria-label="Hide the scramble preview">
+      <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    </button>
     <div id="cube-holder">
       <div id="cube-fallback" hidden>
         <svg viewBox="0 0 24 24" class="ico-big"><path d="M12 2l9 5v10l-9 5-9-5V7z"/><path d="M3 7l9 5 9-5M12 12v10"/></svg>

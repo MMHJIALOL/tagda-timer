@@ -145,6 +145,7 @@ export const DEFAULTS = {
   racePrefer: 'auto',           // auto | firebase | local — 'local' is same-browser tabs
   raceLastRoom: '',             // offered back as the default the next time you join
   raceOwnSession: true,         // race solves land in a session of the room's own
+  raceReturnSession: null,      // the session to put you back in when the race ends
 
   // session
   event: '333',
