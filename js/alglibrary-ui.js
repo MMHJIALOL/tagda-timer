@@ -10,7 +10,7 @@
    you touch every solve. It costs the timer screen nothing.
    =========================================================== */
 
-import { $, el } from './util.js';
+import { $, el, copy } from './util.js';
 import { SCHEME, stickerAt } from './cubenet.js';
 import { loadSettings, applyTheme } from './theme.js';
 import { toast } from './toast.js';
@@ -18,6 +18,7 @@ import {
   SETS, loadSet, caseOf, caseFacelets, displayOrder, loadLibraryPrefs,
   saveOrder, resetOrder, hasCustomOrder, addCustom, removeCustom, moveCount,
 } from './alglibrary.js';
+import { setupFor } from './alglibrary-setup.js';
 
 /* ---------------------------------------------------------
    Case pictures
@@ -389,16 +390,19 @@ function openCase(caseId) {
   back.addEventListener('click', renderGrid);
 
   const canvas = el('canvas', { class: 'case-pic big' });
+  const setup = el('section', { class: 'setup-box' });
+  /* The setup belongs to the case, not to the list of algorithms, so it sits
+     inside the heading block with the picture and the name rather than
+     floating between the two as its own band — which read as unattached to
+     either. It replaces the note that used to be here: the drag hint is on the
+     grip and in the page footer, and it was explaining a mechanism nobody had
+     asked about yet at the moment they opened a case. */
   const head = el('div', { class: 'case-head' },
     canvas,
-    el('div', {},
+    el('div', { class: 'case-info' },
       el('h2', { text: set.caseLabel(c) }),
       el('p', { class: 'case-desc', text: set.describe(c) }),
-      /* Only PLL and OLL have a trainer mode. Telling someone their ZBLL
-         reorder changes what the trainer drills would be a straight lie. */
-      el('p', { class: 'case-note', text: set.trained
-        ? 'Position 1 is the alg the trainer builds this case from. Drag to change it.'
-        : 'Drag to keep these in your own order. The trainer has no mode for this set yet, so position 1 is for your reference.' }),
+      setup,
     ),
   );
 
@@ -406,6 +410,10 @@ function openCase(caseId) {
   const rebuild = () => {
     list.textContent = '';
     displayOrder(set.id, caseId).forEach((a, i) => list.appendChild(algRow(set.id, caseId, a, i, rebuild)));
+    /* Rebuilt with the list, not once on open: the setup is chosen against
+       whichever alg is currently first (see alglibrary-setup.js rule 2), so a
+       drag that changes your first alg can change the setup under it. */
+    paintSetup(setup, set.id, caseId);
   };
   rebuild();
 
@@ -425,6 +433,60 @@ function openCase(caseId) {
   host.append(back, head, list, addRow(set.id, caseId, rebuild));
   if (hasCustomOrder(caseId)) host.appendChild(reset);
   requestAnimationFrame(() => drawCase(canvas, set.id, caseId));
+}
+
+/* ---------------------------------------------------------
+   Setup moves
+   --------------------------------------------------------- */
+
+const ORDINAL = ['1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th', '9th', '10th'];
+
+/**
+ * The moves that put the case on the cube, above the algorithms that take it
+ * off again.
+ *
+ * It sits directly under the picture and above the list, because that is the
+ * order you do things in: look at the case, build it, then try to solve it.
+ * Practising a case used to mean reading the first alg backwards a move at a
+ * time; this is the sequence that saves you doing that.
+ */
+function paintSetup(host, setId, caseId) {
+  host.textContent = '';
+  const s = setupFor(setId, caseId);
+  /* No setup rather than a wrong one. Nothing is printed here that has not
+     been executed against the case, so a case the search cannot place simply
+     shows the algorithms, exactly as before this feature existed. */
+  if (!s) { host.hidden = true; return; }
+  host.hidden = false;
+
+  const btn = el('button', { class: 'btn ghost small setup-copy', text: 'Copy' });
+  btn.addEventListener('click', async () => {
+    const ok = await copy(s.setup);
+    toast(ok ? 'Setup copied' : 'Your browser blocked the clipboard', ok ? {} : { kind: 'bad' });
+  });
+
+  const where = displayOrder(setId, caseId).findIndex(a => a.alg === s.from);
+  const note = s.reversesFirst
+    /* Said out loud, because it looks like the feature failed otherwise. It has
+       not: on a case whose best alg is also its shortest, its reverse is the
+       shortest possible setup, and a longer one would be worse for the sake of
+       looking different. */
+    ? (s.alternative
+        ? `Your 1st algorithm backwards — the shortest setup that is not is ${s.alternative.moves} moves (${s.alternative.setup}).`
+        : 'Your 1st algorithm backwards. Nothing shorter sets this case up.')
+    : where < 0
+      ? 'It is not the algorithm you are drilling, in reverse.'
+      : `Taken from the ${ORDINAL[where] || `${where + 1}th`} algorithm below, so it is not the one you are drilling in reverse.`;
+
+  host.append(
+    el('div', { class: 'setup-head' },
+      el('h3', { text: 'Setup moves' }),
+      el('span', { class: 'setup-count', text: `${s.moves} moves` }),
+      btn,
+    ),
+    el('code', { class: 'setup-moves', text: s.setup }),
+    el('p', { class: 'setup-note', text: 'Do these on a solved cube and the case above is what you are holding. ' + note }),
+  );
 }
 
 const icon = (d) => {
