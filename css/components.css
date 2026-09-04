@@ -40,6 +40,13 @@
 .icon-btn.on { color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); border-color: color-mix(in srgb, var(--accent) 34%, transparent); }
 
 .seg { display: flex; }
+/* The centre group is `overflow: hidden`, so a picker that does not fit is not
+   truncated — it is cut off mid-button, and the last one disappears entirely.
+   A flex item will not shrink below its content unless told to, and `.seg` is
+   the item; `.seg-btn span` already knows how to ellipsis once it is allowed
+   to. Without this the row silently loses a picker between 861px and roughly
+   1000px, which is an ordinary laptop window. */
+.topbar-center .seg { min-width: 0; }
 .seg-btn {
   display: flex; align-items: center; gap: 7px;
   height: 34px; padding: 0 11px; border-radius: 10px;
@@ -164,6 +171,25 @@
 }
 #cube-grip svg { width: 15px; height: 15px; }
 #panel-cube:hover #cube-grip { opacity: .75; }
+
+/* Dismiss, in the corner of the thing being dismissed. Pinned rather than in
+   the flow so it cannot change the widget's measured height — placePreview
+   works off that rect, and a row that appeared on hover would have moved the
+   rails every time the pointer crossed it. */
+#cube-close {
+  position: absolute; top: -2px; right: -4px; z-index: 2;
+  display: flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px; border-radius: 50%;
+  color: var(--text-faint);
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  opacity: 0; transition: opacity var(--dur) var(--ease), color var(--dur-fast) var(--ease);
+}
+#cube-close svg { width: 11px; height: 11px; }
+#panel-cube:hover #cube-close { opacity: .8; }
+#cube-close:hover { opacity: 1; color: var(--danger); }
+#panel-cube.dragging #cube-close { opacity: 0; pointer-events: none; }
 #cube-grip:hover { opacity: 1; color: var(--text); }
 #cube-holder { cursor: grab; touch-action: none; }
 #cube-holder:active { cursor: grabbing; }
@@ -235,6 +261,8 @@
      left the widget with no visible way to move it and no visible 2D/3D
      switch. The grip is also a touch target now, not a 34x13 sliver. */
   #cube-grip { opacity: .55; width: 52px; height: 20px; }
+  #cube-close { opacity: .75; width: 24px; height: 24px; top: -4px; right: -8px; }
+  #cube-close svg { width: 13px; height: 13px; }
   .view-toggle { opacity: 1; }
 
   /* Expanded, the stats tile is 46vh rather than 34, and the preview was left
@@ -653,6 +681,42 @@ input[type="range"]::-moz-range-thumb {
   #creator-chip { display: none; }
 }
 
+/* ---------------- mobile topbar menu (§1.1) ---------------- */
+/* Eight icon buttons is fine on a laptop and impossible on a phone. Below the
+   breakpoint this file already uses, they fold behind one button and come back
+   as a labelled list — the label is each button's own `title`, so no button
+   needed a second copy of its own name in the markup. */
+#btn-menu { display: none; }
+
+@media (max-width: 860px) {
+  #topbar { position: relative; }
+  #btn-menu { display: flex; }
+  .topbar-right { display: none; }
+  .topbar-right.open {
+    display: flex; flex-direction: column; align-items: stretch; gap: 2px;
+    position: absolute; top: calc(100% + 8px); right: 0; z-index: 60;
+    min-width: 210px; padding: 6px; border-radius: var(--radius-sm);
+    background: color-mix(in srgb, var(--surface) 92%, transparent);
+    border: 1px solid var(--border);
+    backdrop-filter: blur(var(--panel-blur)); -webkit-backdrop-filter: blur(var(--panel-blur));
+    box-shadow: var(--shadow);
+  }
+  /* .icon-btn is a 34px grid box that centres one glyph; in the menu it has to
+     be a row of icon + label instead, so the display mode is swapped rather
+     than fought with. */
+  .topbar-right.open .icon-btn {
+    width: auto; height: auto;
+    display: flex; align-items: center; justify-content: flex-start; gap: 11px;
+    padding: 9px 11px; border-color: transparent; background: none;
+  }
+  .topbar-right.open .icon-btn::after {
+    content: attr(title);
+    font-size: .8rem; font-weight: 550; color: var(--text); white-space: nowrap;
+  }
+  .topbar-right.open .icon-btn:hover { background: color-mix(in srgb, var(--text) 8%, transparent); }
+  #btn-menu.on { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 34%, transparent); }
+}
+
 /* ---------------- big charts (stats drawer) ---------------- */
 .chart-card {
   padding: 14px; border-radius: var(--radius-sm);
@@ -704,18 +768,26 @@ input[type="range"]::-moz-range-thumb {
 }
 
 /* ---- narrow screens ----
-   At 375px the three pickers plus the six icon buttons do not fit, and the
-   centre group was being clipped by 118px -- the session picker simply could
-   not be reached. Drop the wordmark (the cube still identifies the app) and
-   let the pickers scroll sideways rather than truncate. */
+   At 375px the pickers plus the icon buttons do not fit, and the centre group
+   was being clipped by 118px -- the session picker simply could not be
+   reached. Drop the wordmark; the cube still identifies the app. */
 @media (max-width: 620px) {
   .brand-text { display: none; }
-  /* Sideways scrolling alone was not enough. Once the six icon buttons and the
-     brand had taken their width there were ~60px left for the centre group to
-     scroll inside — a slot too narrow to read one picker in, let alone three.
-     Give the pickers a row of their own instead: the brand and the icons keep
-     the first line, the three pickers get the full width of the second and
-     still scroll if a long session name overruns it. */
+}
+
+/* Sideways scrolling alone was not enough. Once the icon buttons and the brand
+   had taken their width there were ~60px left for the centre group to scroll
+   inside — a slot too narrow to read one picker in, let alone four. Give the
+   pickers a row of their own instead: the brand and the icons keep the first
+   line, the pickers get the full width of the second and still scroll if a
+   long session name overruns it.
+
+   The threshold was 620px when there were three pickers. Four of them at full
+   width, plus the wordmark and the icon row, need about 1040px on one line —
+   below that the last picker was being cut in half by the centre group's
+   `overflow: hidden`, on an ordinary laptop window. Two rows there rather than
+   a button nobody can read or reach. */
+@media (max-width: 1040px) {
   #topbar { flex-wrap: wrap; row-gap: 8px; }
   .topbar-right { margin-left: auto; }
   .topbar-center {
@@ -1687,6 +1759,10 @@ body.focus #dock-bottom, body.focus #tile-float-layer { opacity: 0; pointer-even
 /* The escape hatch: placePreview() flips this on only while the preview's usual
    corner is occupied and this one is not. */
 #panel-cube[data-side="left"] { right: auto; left: 18px; }
+/* ...and when both corners are occupied — a race panel down the right rail and
+   the solve list down the left — the empty strip between the two rails, which
+   is the timer's own floor. --cube-x is measured and written by placePreview. */
+#panel-cube[data-side="centre"] { right: auto; left: var(--cube-x, 50%); }
 @media (max-width: 860px) {
   #panel-cube[data-side="left"] { right: auto; left: 10px; }
 }
@@ -1821,3 +1897,337 @@ body.focus #dock-bottom, body.focus #tile-float-layer { opacity: 0; pointer-even
 /* The session bests open the same drawer the stat grid does, so they get the
    same affordance — they used to be figures you could read but not follow. */
 .bst { cursor: pointer; }
+
+/* ===========================================================
+   RACE MODE
+
+   Two jobs that pull in opposite directions. While you are still solving
+   the panel has to convey pressure — how much of the room is already
+   done — while giving away nothing at all about how fast any of them
+   were. The moment you finish it becomes a leaderboard and everything
+   unlocks at once. That switch is the whole visual design.
+   =========================================================== */
+
+#btn-race { position: relative; }
+/* The flag picks up the accent while a room is open, so a panel that has
+   been docked away or folded on a phone is never the only sign a race is
+   actually running. */
+#btn-race.live { color: var(--accent); }
+#btn-race.live::after {
+  content: ''; position: absolute; top: 5px; right: 5px;
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--accent); box-shadow: 0 0 0 2px var(--bg);
+}
+
+#panel-race .race-title { display: inline-flex; align-items: center; gap: 7px; }
+#panel-race .race-flag { width: 14px; height: 14px; flex: none; }
+#panel-race .race-code {
+  font-family: ui-monospace, monospace;
+  letter-spacing: .14em; color: var(--accent);
+}
+#panel-race .race-body { display: flex; flex-direction: column; gap: 7px; }
+#panel-race[data-collapsed="true"] .race-body { display: none; }
+#panel-race[data-collapsed="true"] .race-head .chev { transform: rotate(-90deg); }
+
+/* ---- the pressure meter ----
+   How much of the room has finished, and nothing else. This is the one
+   thing you are allowed to know mid-solve, so it is the one thing drawn
+   to be readable without looking away from the timer. */
+.race-meter {
+  height: 3px; border-radius: 3px; overflow: hidden;
+  background: color-mix(in srgb, var(--border) 70%, transparent);
+}
+.race-meter > i {
+  display: block; height: 100%; width: 0;
+  background: var(--accent); border-radius: inherit;
+  transition: width .45s cubic-bezier(.22,1,.36,1), background-color .3s;
+}
+.race-meter[data-state="pressure"] > i { background: var(--warn); }
+.race-meter[data-state="revealed"] > i { background: var(--ok); }
+
+.race-status {
+  display: flex; align-items: baseline; justify-content: space-between;
+  font-size: .74rem; letter-spacing: .04em;
+}
+.race-round { color: var(--text); font-weight: 650; }
+.race-count { color: var(--text-faint); font-variant-numeric: tabular-nums; }
+
+/* ---- rows ---- */
+.race-rows { display: flex; flex-direction: column; gap: 3px; }
+
+.race-row {
+  display: grid;
+  grid-template-columns: 14px 22px minmax(0, 1fr) auto;
+  align-items: center; gap: 8px;
+  padding: 5px 7px; border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  font-size: .8rem; min-height: 32px;
+}
+.race-row[data-me="true"] {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 26%, transparent);
+}
+
+.race-rank {
+  font-size: .68rem; color: var(--text-faint);
+  font-variant-numeric: tabular-nums; text-align: right;
+}
+.race-row:nth-child(1) .race-rank:not(:empty) { color: var(--gold); font-weight: 700; }
+.race-row:nth-child(2) .race-rank:not(:empty),
+.race-row:nth-child(3) .race-rank:not(:empty) { color: var(--text-dim); font-weight: 650; }
+
+.race-av {
+  width: 22px; height: 22px; border-radius: 50%;
+  display: grid; place-items: center;
+  font-size: .58rem; font-weight: 750;
+  color: #fff;
+  background: hsl(var(--av-h, 260) 58% 42%);
+  box-shadow: inset 0 0 0 1px hsl(var(--av-h, 260) 58% 62% / .55);
+}
+
+/* The host ring. Says the same thing a "host" chip did and takes none of
+   the width the name needs. */
+.race-av.host {
+  box-shadow: inset 0 0 0 1px hsl(var(--av-h, 260) 58% 62% / .55),
+              0 0 0 1.5px var(--gold);
+}
+
+/* overflow:hidden is the guarantee, not the plan. The children that do not
+   shrink (the wins badge) were painting outside this box and straight over
+   the time column; clipping means the worst case is a trimmed badge rather
+   than two numbers on top of each other. */
+.race-name { display: flex; align-items: center; gap: 5px; min-width: 0; overflow: hidden; }
+.race-name > b {
+  font-weight: 600; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  /* A floor, so a crowded row truncates to "Cuber…" rather than collapsing
+     to a sliver. In a 200px rail something has to give, and an ellipsis is
+     a far better answer than a name nobody can read at all. */
+  min-width: 2.8em;
+}
+.race-tag {
+  font-style: normal; font-size: .58rem; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--text-faint);
+  border: 1px solid var(--border); border-radius: 4px;
+  padding: 1px 4px; flex: none;
+}
+.race-tag.me { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
+.race-wins {
+  font-style: normal; font-size: .6rem; font-weight: 700;
+  color: var(--gold); flex: none; font-variant-numeric: tabular-nums;
+}
+
+/* ---- the right-hand column ---- */
+.race-val { display: flex; align-items: center; gap: 6px; justify-self: end; }
+.race-time {
+  font-family: ui-monospace, monospace;
+  font-size: .84rem; font-weight: 650; font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+.race-row[data-state="dnf"] .race-time { color: var(--danger); }
+
+/* Won or lost, in one glance. The rank number says the same thing without
+   relying on colour, so this is the fast read rather than the only one. */
+.race-row[data-outcome="win"] .race-time { color: var(--ok); }
+.race-row[data-outcome="loss"] .race-time { color: var(--danger); }
+.race-row[data-outcome="win"] {
+  border-color: color-mix(in srgb, var(--ok) 30%, transparent);
+  background: color-mix(in srgb, var(--ok) 8%, transparent);
+}
+/* data-me keeps its accent fill; the winner's border still reads on top. */
+.race-row[data-outcome="win"][data-me="true"] {
+  background: color-mix(in srgb, var(--ok) 13%, transparent);
+}
+
+.race-row.editable { cursor: pointer; }
+.race-row.editable:hover { border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+
+/* ---- standings ---- */
+.race-board {
+  display: flex; flex-direction: column; gap: 2px;
+  margin-top: 8px; padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+.race-board-head {
+  display: flex; justify-content: space-between; align-items: baseline;
+  font-size: .62rem; letter-spacing: .09em; text-transform: uppercase;
+  color: var(--text-faint); margin-bottom: 3px;
+}
+.race-board-row {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr) auto auto;
+  align-items: center; gap: 8px;
+  padding: 3px 7px; border-radius: var(--radius-sm);
+  font-size: .74rem;
+}
+.race-board-row[data-me="true"] { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+/* Somebody who has left keeps their wins and stops claiming to be here. */
+.race-board-row[data-gone="true"] { opacity: .5; }
+.race-board-rank {
+  font-size: .66rem; color: var(--text-faint);
+  font-variant-numeric: tabular-nums; text-align: right;
+}
+.race-board-row:first-of-type .race-board-rank { color: var(--gold); font-weight: 700; }
+.race-board-name {
+  color: var(--text); font-weight: 600;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.race-board-best {
+  font-family: ui-monospace, monospace; font-size: .7rem;
+  color: var(--text-faint); font-variant-numeric: tabular-nums;
+}
+.race-board-wins {
+  font-size: .7rem; font-weight: 700; color: var(--gold);
+  font-variant-numeric: tabular-nums;
+}
+
+.race-delta {
+  font-style: normal; font-size: .62rem; font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  padding: 1px 4px; border-radius: 4px;
+}
+/* A glyph as well as a colour, every time. A red/green pair on its own is
+   not a difference every reader can actually see. */
+.race-delta.faster { color: var(--ok);     background: color-mix(in srgb, var(--ok) 14%, transparent); }
+.race-delta.slower { color: var(--danger); background: color-mix(in srgb, var(--danger) 14%, transparent); }
+.race-delta.tie    { color: var(--text-faint); }
+
+.race-badge {
+  font-style: normal; font-size: .64rem; letter-spacing: .06em;
+  color: var(--text-faint);
+}
+.race-lock { display: inline-flex; color: var(--accent); flex: none; }
+.race-lock svg { width: 11px; height: 11px; }
+.race-flagmark { font-style: normal; font-size: .7rem; color: var(--warn); cursor: help; }
+
+/* ---- per-state treatment ---- */
+.race-row[data-state="inspecting"] .race-badge { color: var(--warn); }
+.race-row[data-state="solving"] .race-badge { color: var(--accent); }
+.race-row[data-state="solving"] { border-color: color-mix(in srgb, var(--accent) 22%, transparent); }
+.race-row[data-state="solving"] .race-av { animation: race-pulse 1.6s ease-in-out infinite; }
+
+/* Somebody is done and you are not. Deliberately the loudest thing on the
+   panel while carrying not one digit about how fast they were — that is
+   the entire feeling the mode is built on. */
+.race-row[data-state="locked"] {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+}
+.race-row[data-state="locked"] .race-badge { color: var(--accent); font-weight: 650; }
+.race-row[data-state="locked"] .race-av { box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent); }
+
+@keyframes race-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: .55; }
+}
+
+/* The reveal. Rows cascade in rank order rather than all repainting at
+   once, which is what makes finishing read as an event rather than a
+   table refresh. The per-row delay is set in race.js. */
+.race-row[data-state="revealed"], .race-row[data-state="dnf"] {
+  animation: race-reveal .42s cubic-bezier(.22,1,.36,1) backwards;
+}
+@keyframes race-reveal {
+  from { opacity: 0; transform: translateX(8px); }
+  to   { opacity: 1; transform: none; }
+}
+
+[data-motion="off"] .race-row,
+[data-motion="off"] .race-av { animation: none !important; }
+[data-motion="off"] .race-meter > i { transition: none; }
+@media (prefers-reduced-motion: reduce) {
+  .race-row, .race-av { animation: none !important; }
+  .race-meter > i { transition: none; }
+}
+
+/* ---- foot ---- */
+.race-more {
+  background: none; border: none; cursor: pointer;
+  font: inherit; font-size: .68rem; letter-spacing: .04em;
+  color: var(--text-faint); padding: 2px; text-align: left;
+}
+.race-more:hover { color: var(--accent); }
+
+.race-foot { display: flex; flex-direction: column; gap: 6px; }
+.race-note { font-size: .68rem; line-height: 1.45; color: var(--text-faint); }
+.race-note.strong { color: var(--text-dim); }
+.race-wait { font-size: .68rem; color: var(--text-faint); font-style: italic; }
+.race-next {
+  font-size: .7rem; color: var(--text-dim);
+  display: flex; align-items: baseline; gap: 4px;
+}
+.race-next b { color: var(--accent); font-variant-numeric: tabular-nums; }
+.race-local {
+  font-size: .62rem; line-height: 1.4; color: var(--warn);
+  border-left: 2px solid currentColor; padding-left: 6px; opacity: .85;
+}
+
+/* Ending the race and leaving the room, in the panel rather than three clicks
+   away in the drawer. Short and quiet: they sit under a foot that is already
+   telling you what the room is waiting for, and neither is the thing you came
+   to this panel to read. */
+.race-actions {
+  display: flex; gap: 6px; margin-top: 8px;
+  padding-top: 8px; border-top: 1px solid var(--border);
+}
+.race-actions .btn {
+  flex: 1; min-width: 0; height: 28px; padding: 0 8px;
+  font-size: .7rem; border-radius: 8px;
+}
+
+/* ---------------- the drawer ---------------- */
+.race-hero {
+  display: flex; align-items: flex-start; gap: 12px;
+  padding: 14px; border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+}
+.race-hero > div:nth-child(2) { flex: 1; min-width: 0; }
+.race-hero-dot {
+  width: 9px; height: 9px; border-radius: 50%; flex: none; margin-top: 5px;
+  background: var(--text-faint);
+}
+.race-hero.on .race-hero-dot {
+  background: var(--ok);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--ok) 22%, transparent);
+}
+.race-hero-title { font-size: .95rem; font-weight: 650; margin-bottom: 4px; }
+.race-hero-sub { font-size: .78rem; line-height: 1.5; color: var(--text-dim); }
+.race-hero-warn {
+  font-size: .76rem; line-height: 1.5; color: var(--text-dim);
+  border-left: 2px solid var(--warn);
+  padding-left: 9px; margin-top: 9px;
+}
+
+.race-code-big {
+  font-family: ui-monospace, monospace;
+  font-size: 1.4rem; font-weight: 700; letter-spacing: .22em;
+  color: var(--accent);
+}
+.btn-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.btn-row > .btn { flex: 1; min-width: 130px; }
+
+/* ---------------- below the tile breakpoint ----------------
+   tiles.js switches dragging off under 860px, so there is nowhere
+   sensible to park this and the rails are two short strips under the
+   timer. It becomes a sheet across the foot of the screen instead,
+   folded to its own header until it is tapped — and folded, that header
+   still answers the only two questions a phone has room for: which room,
+   and how much of it is already done. */
+@media (max-width: 860px) {
+  #panel-race {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 60;
+    border-radius: var(--radius) var(--radius) 0 0;
+    border-bottom: none;
+    max-height: 62vh; overflow-y: auto;
+    box-shadow: 0 -14px 40px -20px rgba(0,0,0,.75);
+    padding-bottom: max(10px, env(safe-area-inset-bottom));
+  }
+  #panel-race .tile-grip { display: none; }
+  #panel-race .race-head { position: sticky; top: 0; z-index: 1; }
+  #panel-race[data-collapsed="true"] { max-height: none; }
+  #panel-race[data-collapsed="true"] .race-body { display: flex; }
+  #panel-race[data-collapsed="true"] .race-rows,
+  #panel-race[data-collapsed="true"] .race-more,
+  #panel-race[data-collapsed="true"] .race-foot,
+  #panel-race[data-collapsed="true"] .race-actions { display: none; }
+}

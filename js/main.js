@@ -15,6 +15,7 @@ import { flash, shockwave, confetti, chime, callout, beep } from './fx.js';
 import { summarize, eff, DNF, bestSingle, bestAvg, trimmedIndices, byCase, sessionBests, rollingSeries, statWindow, STAT_LABELS } from './stats.js';
 import { renderMiniTrend } from './charts.js';
 import { DEFAULTS, loadSettings, saveSettings, applyTheme, applyBackground, themeColors, setAlbumTint } from './theme.js';
+import { loadLibraryPrefs } from './alglibrary.js';
 import { initTiles, applyTiles, measureLayout } from './tiles.js';
 import { SPOTIFY_CLIENT_ID, DEV_MODE_LIMIT, OWNER_NEEDS_PREMIUM } from './spotifyapp.js';
 import { popover, closePopover, popoverOpen } from './popover.js';
@@ -90,6 +91,16 @@ const loadRecon = lazy(() => import('./recon.js'), m => (_recon = m));
 
 let _xp1 = null;
 const loadXp1 = lazy(() => import('./xplus1.js'), m => (_xp1 = m));
+
+/* Race mode, and the transport under it, are the largest thing on this list
+   and the one fewest sessions ever touch — nothing about it is fetched until
+   somebody opens the panel or arrives on a ?race= link. */
+let _race = null;
+const loadRace = lazy(() => import('./race.js'), m => (_race = m));
+app.raceModule = () => loadRace();
+
+/** The live controller, or null if race.js has never been loaded. */
+const raceCtl = () => (_race ? _race.getRace(app) : null);
 
 /** Nothing to open is better than a click that silently does nothing. */
 function lazyFailed(what, err) {
@@ -224,6 +235,11 @@ async function init() {
   app.settings = await loadSettings();
   applyTheme(app.settings);
 
+  /* Your alg-library order decides which alg a trainer scramble is built from
+     (algs.html, §6.1), and scramble generation is synchronous, so the handful
+     of stored orders is read once here rather than awaited mid-scramble. */
+  await loadLibraryPrefs();
+
   // sessions
   app.sessions = await Sessions.all();
   if (!app.sessions.length) {
@@ -235,6 +251,9 @@ async function init() {
   app.session = app.sessions.find(s => s.id === app.settings.sessionId) || app.sessions[0];
   app.settings.sessionId = app.session.id;
   if (app.session.event) app.settings.event = app.session.event;
+  // A reload leaves the room behind, so it has to leave the room's session
+  // behind too — see restoreFromRace.
+  restoreFromRace();
 
   app.solves = await Solves.bySession(app.session.id);
 
@@ -319,6 +338,15 @@ async function init() {
 
   watchScrambleWidth();
   sizeRing();
+
+  /* An invite link joins the room it names rather than dropping you on the
+     timer to type the code in by hand. Stripped from the address bar straight
+     after, so a reload does not silently rejoin a room you have since left. */
+  const invited = new URLSearchParams(location.search).get('race');
+  if (invited) {
+    history.replaceState(null, '', location.pathname);
+    app.joinRace(invited);
+  }
 }
 
 /** Animations are only safe to run when the document timeline is actually moving. */
@@ -354,6 +382,16 @@ function refreshQueue() {
   });
 }
 app.refreshQueue = () => { refreshQueue(); nextScramble(); };
+app.nextScramble = (opts) => nextScramble(opts);
+
+/**
+ * One scramble for the race host to publish to the room.
+ *
+ * Deliberately the same queue everything else draws from — there is no second
+ * generator and no second definition of what an official scramble is, so what
+ * a room races is exactly what this app would have handed you anyway.
+ */
+app.makeScramble = () => queue.next();
 
 let scrambleToken = 0;
 
@@ -367,6 +405,18 @@ async function nextScramble({ clear = false } = {}) {
     node.classList.remove('multiline', 'long');
     $('#case-label').hidden = true;
   }
+  /* A live race round outranks everything, pasted lists included: the whole
+     point is that the room is solving one scramble, and the moment this client
+     showed a different one it would not be a race any more. */
+  const raced = raceCtl()?.takeScramble();
+  if (raced) {
+    app.scrambleHistory.push(raced);
+    if (app.scrambleHistory.length > 40) app.scrambleHistory.shift();
+    app.historyPos = app.scrambleHistory.length - 1;
+    showScramble(raced);
+    return;
+  }
+
   // A pasted list always wins: while one is loaded, the generator is not
   // consulted at all, so the order you pasted is the order you get.
   const own = takeCustom();
@@ -620,6 +670,10 @@ function wireTimer() {
 
   timer.addEventListener('state', (e) => {
     const st = e.detail.state;
+    /* The room learns that you are inspecting or solving, and never how far
+       into it you are. A tick broadcast would be a live time by another name,
+       which is the exact thing race mode exists not to leak. */
+    raceCtl()?.onTimerState(st);
     display.className = `state-${st === 'cooldown' ? 'idle' : st}`;
 
     // The countdown owns the screen from the moment inspection starts until the
@@ -862,6 +916,9 @@ async function recordSolve({ timeMs, penalty = 'none', inspectionMs = 0 }) {
   const prevAo5  = bestAvg(app.solves, 5).value;
   const prevAo12 = bestAvg(app.solves, 12).value;
 
+  const race = raceCtl();
+  const racing = !!(race?.inRoom && app.scramble?.race);
+
   const solve = {
     id: uid(),
     sessionId: app.session.id,
@@ -875,9 +932,15 @@ async function recordSolve({ timeMs, penalty = 'none', inspectionMs = 0 }) {
     inspectionMs,
     comment: '',
     createdAt: Date.now(),
+    // Tagged so a race time is always tellable from practice later, whichever
+    // session it landed in.
+    ...(racing ? { race: true, roomId: race.snap?.roomId || null } : {}),
   };
   app.solves.push(solve);
   await Solves.put(solve);
+  /* Submitted after the local write, never before: the solve is yours whatever
+     the room makes of it, and a refused upload must not cost you the time. */
+  if (racing) race.onSolveRecorded(solve).catch(err => console.warn('[race] submit failed', err));
   app.sessionCounts.set(app.session.id, app.solves.length);
 
   // You have just finished a solve, so you are looking at the timer, not at row
@@ -1428,6 +1491,98 @@ app.newSession = async () => {
 
 app.saveSession = async (s) => { await Sessions.put(s); updateLabels(); };
 
+/* ---------------- race mode plumbing ----------------
+   Four small favours race.js asks of the app, kept here rather than reaching
+   into main.js's internals from the other side of the lazy import. */
+
+/**
+ * Park a room's solves in a session of their own.
+ *
+ * A race is somebody else's scramble at somebody else's pace, and folding it
+ * into the averages you are trying to read is how a practice session stops
+ * meaning anything. The times are still saved, still browsable, still yours —
+ * just filed under the room they happened in.
+ */
+app.enterRaceSession = async (roomId) => {
+  if (!app.settings.raceOwnSession || !roomId) return;
+  const name = `Race · ${roomId}`;
+  let s = app.sessions.find(x => x.name === name && x.event === app.settings.event);
+  if (!s) {
+    s = { id: uid(), name, event: app.settings.event, createdAt: Date.now(), order: app.sessions.length, race: true };
+    await Sessions.put(s);
+    app.sessions.push(s);
+  }
+  if (app.session.id !== s.id) {
+    /* In settings, not on the app object. A reload wipes anything held in
+       memory, and the session itself survives it — so the tab came back up
+       still filed under "Race · XXXX", with no room, no panel and no way back
+       to your own session except finding it in the drawer by hand. Persisting
+       where you came from is what lets restoreFromRace put you back. */
+    app.setSetting('raceReturnSession', app.session.id);
+    await app.switchSession(s.id);
+  }
+};
+
+/** ...and put you back where you were when you leave. */
+app.leaveRaceSession = async () => {
+  const back = app.settings.raceReturnSession;
+  app.setSetting('raceReturnSession', null);
+  if (back && back !== app.session.id && app.sessions.some(x => x.id === back)) {
+    await app.switchSession(back);
+    return true;
+  }
+  return false;
+};
+
+/**
+ * A reload is not a race.
+ *
+ * Nothing rejoins a room on its own — the invite link is stripped from the
+ * address bar precisely so it cannot — so a tab that comes back up in a race
+ * session is in the leftovers of a race, not in one. Put it back where it
+ * started before anything is drawn, so "reload" means what people expect it
+ * to mean: out.
+ *
+ * Runs while the session is still only being chosen, before anything has been
+ * loaded off the back of it — so it is a change of mind about which session to
+ * open, not a switch away from one, and it costs nothing and says nothing. A
+ * ?race= link later in the boot joins its room and takes the tab back into the
+ * room's session, this time with a room behind it.
+ */
+function restoreFromRace() {
+  if (!app.session?.race) return;
+  const back = app.settings.raceReturnSession;
+  const target = (back && app.sessions.find(x => x.id === back))
+    || app.sessions.find(x => !x.race);
+  app.settings.raceReturnSession = null;
+  if (!target || target.id === app.session.id) return;
+  app.session = target;
+  app.settings.sessionId = target.id;
+  if (target.event) app.settings.event = target.event;
+}
+
+/** The race panel builds itself on first use, so the tile system meets it late. */
+app.registerRaceTile = () => { applyTiles(app.settings); applyTheme(app.settings); measureLayout(); };
+
+/* Debounced: the race panel re-renders on a one-second tick, and measureLayout
+   is three passes plus a settle timer every time it runs. */
+app.refreshLayout = debounce(() => measureLayout(), 200);
+
+/** Open a room by code, fetching race.js on the way. */
+app.joinRace = async (code) => {
+  let m;
+  try { m = await loadRace(); }
+  catch (err) { return lazyFailed('race mode', err); }
+  const ctl = m.getRace(app);
+  try {
+    const id = await ctl.join(code);
+    toast(`Joined ${id}`, { kind: 'good' });
+  } catch (err) {
+    console.error('[race] join failed:', err);
+    toast(err?.message === 'room-full' ? 'That room is full' : 'Could not join that room', { kind: 'bad' });
+  }
+};
+
 app.deleteSession = async (id) => {
   await Solves.clearSession(id);
   await Sessions.del(id);
@@ -1460,8 +1615,15 @@ async function clearSession() {
    Input source — spacebar, typed, or a Stackmat on the aux jack
    ========================================================= */
 
-/** True when the keyboard/touch timer should be live at all. */
-const timerInputLive = () => app.settings.inputMode === 'timer';
+/**
+ * True when the keyboard/touch timer should be live at all.
+ *
+ * Race mode holds this shut between submitting your time and the next round
+ * opening. Both the keyboard and the pointer path go through here, so it is
+ * the one place that has to know — and it is also what stops a second attempt
+ * being timed against a scramble you have already sent a result for.
+ */
+const timerInputLive = () => app.settings.inputMode === 'timer' && !raceCtl()?.locked();
 
 function applyInputMode() {
   const mode = app.settings.inputMode || 'timer';
@@ -2522,9 +2684,34 @@ function wireChrome() {
   $('#btn-theme').addEventListener('click', () => openPanel('Appearance', 'buildAppearance', undefined, app));
   $('#btn-settings').addEventListener('click', () => openPanel('Settings', 'buildSettings', undefined, app));
   $('#btn-spotify').addEventListener('click', () => openPanel('Spotify', 'buildSpotify', undefined, app));
+  $('#btn-race').addEventListener('click', () => openPanel('Race', 'buildRace', undefined, app));
   $('#btn-help').addEventListener('click', () => openPanel('Keyboard shortcuts', 'buildShortcuts', { wide: true }));
   $('#btn-about').addEventListener('click', () => openPanel('About', 'buildAbout', undefined, app));
   $('#btn-open-history').addEventListener('click', () => openPanel('All solves', 'buildHistory', { wide: true }, app));
+
+  /* Mobile topbar menu. The panel is the icon row itself (see the CSS at the
+     bottom of components.css), so there is nothing to build here — only the
+     three ways it should close: picking something, pressing Escape, or
+     touching anything else. Above 860px the button is display:none and none
+     of this can fire. */
+  const menuBtn = $('#btn-menu');
+  const menuRow = $('#topbar-right');
+  const closeMenu = () => {
+    menuRow.classList.remove('open');
+    menuBtn.classList.remove('on');
+    menuBtn.setAttribute('aria-expanded', 'false');
+  };
+  menuBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const open = menuRow.classList.toggle('open');
+    menuBtn.classList.toggle('on', open);
+    menuBtn.setAttribute('aria-expanded', String(open));
+  });
+  menuRow.addEventListener('click', closeMenu);
+  document.addEventListener('click', (e) => {
+    if (menuRow.classList.contains('open') && !menuRow.contains(e.target)) closeMenu();
+  });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeMenu(); });
 
   // stats stay folded away until you ask for them
   const statsPanel = $('#panel-stats');
@@ -2578,6 +2765,15 @@ function wireChrome() {
 
   $$('#view-toggle button[data-view="3D"], #view-toggle button[data-view="2D"]').forEach(b =>
     b.addEventListener('click', () => app.setSetting('cubeView', b.dataset.view)));
+
+  /* Hide the preview from the preview itself. The same switch the settings
+     panel writes, so it is not a second piece of state — and the toast says
+     where it went, because a widget that vanishes with no way back is worse
+     than one that was in the way. */
+  $('#cube-close')?.addEventListener('click', () => {
+    app.setSetting('showCube', false);
+    toast('Preview hidden — Appearance › Layout › Scramble preview brings it back', { long: true });
+  });
 
   // Drag the preview anywhere on screen; the 2D/3D buttons inside it stay
   // clickable, and the position survives a reload.
@@ -2832,6 +3028,7 @@ function openPaletteWithCommands() {
       { kind: 'go', label: 'About', key: 'B', run: () => $('#btn-about').click() },
       { kind: 'go', label: 'Reconstruct a scramble', key: 'Y', run: () => $('#btn-recon').click() },
       { kind: 'go', label: 'Cross + 1 trainer', key: 'L', keywords: 'cross plus one f2l lookahead first pair', run: () => $('#btn-xp1').click() },
+      { kind: 'go', label: 'Race', keywords: 'room multiplayer versus head to head', run: () => $('#btn-race').click() },
       { kind: 'do', label: 'Reconstruct the last solve', run: () => app.solves.at(-1) ? reconstructSolve(app.solves.at(-1)) : toast('No solves yet') },
       { kind: 'go', label: 'Pick trainer cases', key: 'K', run: () => setFor(app.settings.mode) ? openPanel('Cases', 'buildCases', undefined, app) : toast('Current mode has no case list') },
       { kind: 'do', label: 'New session', run: () => app.newSession() },

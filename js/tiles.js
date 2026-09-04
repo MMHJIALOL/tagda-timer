@@ -20,6 +20,7 @@ const SEL = {
   times:   '#panel-times',
   stats:   '#panel-stats',
   spotify: '#panel-spotify',
+  race:    '#panel-race',
 };
 export const TILE_IDS = Object.keys(SEL);
 
@@ -28,6 +29,7 @@ export const DEFAULT_TILES = {
   times:   { dock: 'left',  pos: null, w: null },
   stats:   { dock: 'right', pos: null, w: null },
   spotify: { dock: 'left',  pos: null, w: null },
+  race:    { dock: 'right', pos: null, w: null },
 };
 
 const HOST = {
@@ -38,7 +40,10 @@ const HOST = {
 };
 
 /** Stacking order inside a rail, so two tiles in one column keep a sane order. */
-const ORDER = ['times', 'spotify', 'stats'];
+/* Race goes first wherever it lands: while a room is open it is the thing you
+   are actually watching, and it is the only panel here that disappears again
+   when you are done with it. */
+const ORDER = ['race', 'times', 'spotify', 'stats'];
 
 const ZONE_LABEL = { left: 'left rail', right: 'right rail', bottom: 'bottom bar' };
 
@@ -54,6 +59,9 @@ const ALLOWED = {
   times:   ['left', 'right', 'float'],
   stats:   ['left', 'right', 'bottom', 'float'],
   spotify: ['left', 'right', 'bottom', 'float'],
+  /* Out of the bottom bar for the same reason the solve list is: a column of
+     one row per racer laid on its side in a 150px strip shows one racer. */
+  race:    ['left', 'right', 'float'],
 };
 
 const allows = (id, dock) => (ALLOWED[id] || []).includes(dock);
@@ -314,7 +322,7 @@ function placePreview() {
      moves to the opposite corner (see components.css), and treating it as one
      meant the left-hand corner always looked occupied and the preview never
      moved anywhere. */
-  const boxes = ['panel-times', 'panel-stats', 'panel-spotify']
+  const boxes = ['panel-times', 'panel-stats', 'panel-spotify', 'panel-race']
     .map(id => document.getElementById(id))
     .filter(n => n && !n.hidden && getComputedStyle(n).display !== 'none' && n.dataset.dock !== 'bottom')
     .map(n => n.getBoundingClientRect())
@@ -327,24 +335,37 @@ function placePreview() {
   const rightBlocked = clashes(rightX);
   const leftBlocked = clashes(leftX);
 
-  // Right is where it lives; left is the escape hatch, taken only when the
-  // usual corner is occupied and the other one is not.
-  const side = (rightBlocked && !leftBlocked) ? 'left' : 'right';
-  if (side === 'left') cube.dataset.side = 'left';
-  else cube.removeAttribute('data-side');
-
-  /* Both corners occupied — a panel in each rail, both long enough to reach
-     down here. There is nowhere left to move to, so this is the one case where
-     the rail gives way instead, exactly as far as the preview's own top edge.
-     It costs that rail some height, which is why it is the last resort rather
-     than the standing arrangement. */
   const root = document.documentElement;
   root.style.setProperty('--cube-clear-left', '0px');
   root.style.setProperty('--cube-clear-right', '0px');
-  if (rightBlocked && leftBlocked) {
-    root.style.setProperty(side === 'left' ? '--cube-clear-left' : '--cube-clear-right',
-      `${Math.max(0, Math.round(innerHeight - r.top + 10))}px`);
+
+  // Right is where it lives; left is the first escape hatch, taken only when
+  // the usual corner is occupied and the other one is not.
+  if (!rightBlocked) { cube.removeAttribute('data-side'); return; }
+  if (!leftBlocked) { cube.dataset.side = 'left'; return; }
+
+  /* Both corners occupied — a panel in each rail, both long enough to reach
+     down here. That is the ordinary shape of a race: the room panel makes the
+     right-hand rail tall enough to reach the preview's corner while the solve
+     list already owns the left one, and the preview simply sat on top of the
+     panel it had nowhere to move away from.
+     *
+     * The strip between the rails is the answer, because it is empty by
+     * definition — it is the timer's own floor, below the digits. Only if that
+     * strip is too narrow to hold the preview does the rail give way instead,
+     * which costs that rail some height and is why it is now genuinely the
+     * last resort rather than the second one. */
+  const z = bottomZone();
+  const centreX = z ? Math.round(z.x + (z.w - w) / 2) : null;
+  if (centreX != null && z.w >= w + 24 && !clashes(centreX)) {
+    cube.dataset.side = 'centre';
+    cube.style.setProperty('--cube-x', `${centreX}px`);
+    return;
   }
+
+  cube.removeAttribute('data-side');
+  root.style.setProperty('--cube-clear-right',
+    `${Math.max(0, Math.round(innerHeight - r.top + 10))}px`);
 }
 
 let settleFrame = 0;

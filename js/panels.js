@@ -1199,4 +1199,139 @@ export function buildSessions(app) {
   };
 }
 
+/* =========================================================
+   RACE
+
+   The lobby: who you are, which room, and the two facts about race mode that
+   are worth knowing before you join rather than after.
+   ========================================================= */
+export function buildRace(app) {
+  return (body) => {
+    const S = app.settings;
+    const set = (k, v) => app.setSetting(k, v);
+
+    const render = async () => {
+      const race = await app.raceModule();
+      const { randomCode, normaliseCode, raceable } = race;
+      const ctl = race.getRace(app);
+      const inRoom = ctl.inRoom;
+      const cloud = race.cloudAvailable();
+      const ok = raceable(S.event);
+
+      /* Sign in and pull the SDK down now rather than when Join is pressed.
+         Everything in this drawer is a second or two of reading, and that is
+         exactly the handshake that used to happen after the click — which is
+         why creating a room felt like nothing had happened. */
+      if (!inRoom && ok) ctl.warm();
+
+      body.innerHTML = '';
+
+      /* ---- where you are ---- */
+      body.append(group('Race',
+        el('div', { class: `race-hero ${inRoom ? 'on' : ''}` },
+          el('div', { class: 'race-hero-dot' }),
+          el('div', {},
+            el('div', { class: 'race-hero-title', text: inRoom ? `Room ${ctl.snap.roomId}` : 'Not in a room' }),
+            el('div', { class: 'race-hero-sub', text: inRoom
+              ? 'Everyone here races the same scramble. Nobody’s time appears until you have finished it too.'
+              : 'Same scramble for everyone in the room. You see their times only once you have solved it yourself — and they see yours on the same terms.' }),
+            !cloud ? el('div', { class: 'race-hero-warn', text:
+              'No Firebase project is configured on this deployment, so rooms are local: '
+              + 'other tabs of this browser can join, but nobody on another machine can. '
+              + 'See RACE.md to turn on real rooms.' }) : null,
+            !ok ? el('div', { class: 'race-hero-warn', text:
+              `${EVENTS[S.event]?.name || S.event} cannot be raced — it does not end in one time to compare. `
+              + 'Switch to a normal speed event first.' }) : null,
+          ),
+          inRoom
+            ? el('button', { class: 'btn danger', text: 'Leave',
+                onclick: async () => { await ctl.leave(); render(); } })
+            : null,
+        ),
+      ));
+
+      /* ---- identity ---- */
+      const nameInput = el('input', {
+        class: 'inp', type: 'text', maxlength: 18, placeholder: ctl.nickname(),
+        value: S.raceName || '',
+      });
+      nameInput.addEventListener('change', () => set('raceName', nameInput.value.trim().slice(0, 18)));
+      body.append(group('You',
+        row('Display name', nameInput, 'what the room calls you — no account, nothing stored anywhere else'),
+      ));
+
+      /* ---- joining ---- */
+      if (!inRoom) {
+        const code = el('input', {
+          class: 'inp', type: 'text', maxlength: 12, placeholder: 'room code',
+          value: S.raceLastRoom || '', spellcheck: 'false', autocapitalize: 'characters',
+        });
+        code.addEventListener('input', () => { code.value = normaliseCode(code.value); });
+
+        const go = async (id) => {
+          if (!ok) { toast('This event cannot be raced', { kind: 'bad' }); return; }
+          try {
+            await ctl.join(id);
+            toast(`Joined ${id}`, { kind: 'good' });
+            render();
+          } catch (err) {
+            /* The toast has to stay short; the real cause (permission_denied,
+               unauthorized-domain, a dropped socket) only exists here. */
+            console.error('[race] join failed:', err);
+            const why = err?.message === 'room-full' ? `That room is full (${race.ROOM_MAX} max)`
+              : err?.message === 'bad-code' ? 'A room code is at least 3 characters'
+              : err?.message === 'no-config' ? 'Real rooms are not configured — see RACE.md'
+              : 'Could not join that room';
+            toast(why, { kind: 'bad' });
+          }
+        };
+
+        body.append(group('Join a room',
+          row('Room code', code),
+          el('div', { class: 'btn-row' },
+            el('button', { class: 'btn primary', text: 'Join', onclick: () => go(normaliseCode(code.value)) }),
+            el('button', { class: 'btn', text: 'Create a room', onclick: () => go(randomCode()) }),
+          ),
+          el('div', { class: 'hint-note', text:
+            'A room code is all anybody needs to get in — there is no sign-in and no account. '
+            + 'Anyone with the code can join, so treat it like the door key it is.' }),
+        ));
+      } else {
+        const link = `${location.origin}${location.pathname}?race=${ctl.snap.roomId}`;
+        body.append(group('Invite',
+          row('Room code', el('div', { class: 'race-code-big', text: ctl.snap.roomId })),
+          el('div', { class: 'btn-row' },
+            el('button', { class: 'btn primary', text: 'Copy invite link',
+              onclick: () => app.copyToast(link, 'Invite link') }),
+            el('button', { class: 'btn', text: 'Copy code',
+              onclick: () => app.copyToast(ctl.snap.roomId, 'Room code') }),
+          ),
+          el('div', { class: 'hint-note', text: ctl.kind === 'local'
+            ? 'This is a local room. The link only works in another tab of this same browser.'
+            : 'Opening that link joins this room straight away.' }),
+        ));
+      }
+
+      /* ---- how it behaves ---- */
+      body.append(group('While racing',
+        row('Give each room its own session',
+          toggle(S.raceOwnSession, v => set('raceOwnSession', v)),
+          'keeps your practice averages clean — race times are still saved, in a session named after the room'),
+        cloud ? row('Connection', chips([
+          { value: 'auto', label: 'Auto' },
+          { value: 'firebase', label: 'Online' },
+          { value: 'local', label: 'This browser' },
+        ], S.racePrefer, v => set('racePrefer', v)),
+          '“This browser” races other tabs on this machine — useful for testing') : null,
+        el('div', { class: 'hint-note', text:
+          'Race mode never asks for a camera or a microphone. What it does check: the time you '
+          + 'submit is bound to the exact scramble it was solved on, it can only be written once, '
+          + 'and it is compared against the window the server itself timed it in.' }),
+      ));
+    };
+
+    render();
+  };
+}
+
 export { toast, Solves };

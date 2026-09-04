@@ -35,7 +35,7 @@ export const FEATURED_REEL = 'https://www.instagram.com/reel/DZzyIGcBQjD/';
  * existing profile carries the OLD default forever and simply editing
  * DEFAULTS would never reach anyone who has used the app before.
  */
-const SETTINGS_VERSION = 6;
+const SETTINGS_VERSION = 7;
 
 const MIGRATIONS = {
   // v2 — the pace ghost is now opt-in rather than on by default.
@@ -64,6 +64,14 @@ const MIGRATIONS = {
     // A short-lived second player widget lived here; the now-playing panel it
     // duplicated does the job, so the switch that hid it is dropped.
     delete s.showSpotifyBar;
+  },
+  // v7 — race mode. Nothing connects to anything until a room is joined by
+  // hand, so all of this is inert for anyone who never opens the panel.
+  7: (s) => {
+    s.raceName ??= '';
+    s.racePrefer ??= 'auto';
+    s.raceLastRoom ??= '';
+    s.raceOwnSession ??= true;
   },
 };
 
@@ -131,6 +139,13 @@ export const DEFAULTS = {
   spotifyNowPlaying: false,     // print the track under the scramble
   showSpotifyPanel: true,       // the now-playing card in the sidebar
   featuredReel: FEATURED_REEL,  // an Instagram reel URL pinned in the About panel
+
+  // race mode (see RACE.md)
+  raceName: '',                 // what the room calls you; blank = a generated one
+  racePrefer: 'auto',           // auto | firebase | local — 'local' is same-browser tabs
+  raceLastRoom: '',             // offered back as the default the next time you join
+  raceOwnSession: true,         // race solves land in a session of the room's own
+  raceReturnSession: null,      // the session to put you back in when the race ends
 
   // session
   event: '333',

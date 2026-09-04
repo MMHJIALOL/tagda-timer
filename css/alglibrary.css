@@ -1,0 +1,213 @@
+/* ===========================================================
+   Tagda Timer — algorithm library page (algs.html)
+
+   Loaded last, and only on that page. base.css locks the body so a solve
+   cannot scroll the timer out from under you; a reference page is the one
+   place in this app that genuinely is a document, so it takes the lock off
+   for itself rather than weakening the rule for the timer.
+   =========================================================== */
+
+body.alglib-page {
+  overflow: auto;
+  overscroll-behavior: auto;
+  background:
+    radial-gradient(1200px 700px at 15% -10%, color-mix(in srgb, var(--accent) 13%, transparent), transparent 70%),
+    radial-gradient(900px 600px at 95% 8%, color-mix(in srgb, var(--accent-2) 9%, transparent), transparent 70%),
+    var(--bg);
+  padding: clamp(18px, 4vw, 46px) clamp(14px, 5vw, 56px) 80px;
+}
+body.alglib-page ::selection { background: color-mix(in srgb, var(--accent) 42%, transparent); }
+
+/* ---------------- header ---------------- */
+#alglib-top { max-width: 1180px; margin: 0 auto 20px; }
+#alglib-top h1 {
+  font-size: clamp(1.5rem, 4vw, 2.2rem); font-weight: 700; letter-spacing: -.02em;
+  margin-top: 16px;
+}
+#alglib-top .sub { color: var(--text-dim); font-size: .86rem; margin-top: 4px; }
+
+.btn.back { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px 6px 8px; font-size: .78rem; }
+.btn.ghost { background: transparent; }
+.btn.small { font-size: .74rem; padding: 6px 12px; }
+
+/* ---------------- tabs + search ---------------- */
+#alglib-bar {
+  max-width: 1180px; margin: 0 auto 22px;
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  position: sticky; top: 0; z-index: 5;
+  padding: 10px 0;
+  background: linear-gradient(var(--bg) 62%, transparent);
+}
+#alglib-tabs { display: flex; gap: 6px; }
+#alglib-tabs .seg-btn.on {
+  color: var(--accent); border-color: color-mix(in srgb, var(--accent) 42%, transparent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+/* Second-level nav (ZBLL subsets, F2L pair states). Deliberately lighter than
+   the set tabs above it: this picks a slice of the set you are already in, and
+   reading as a second row of equals would make the page feel like eight tabs. */
+#alglib-groups {
+  max-width: 1180px; margin: -10px auto 20px;
+  display: flex; gap: 6px; flex-wrap: wrap;
+}
+.group-chip {
+  font: inherit; font-size: .78rem; cursor: pointer;
+  padding: 5px 12px; border-radius: 99px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface) 55%, transparent);
+  color: var(--text-dim);
+}
+.group-chip:hover { color: var(--text); }
+.group-chip.on {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 42%, transparent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.alglib-search {
+  display: flex; align-items: center; gap: 8px; flex: 1; min-width: 190px; max-width: 340px;
+  padding: 7px 12px; border-radius: 99px;
+  border: 1px solid var(--border); background: color-mix(in srgb, var(--surface) 60%, transparent);
+  color: var(--text-faint);
+}
+.alglib-search input { flex: 1; border: 0; outline: 0; background: none; font-size: .82rem; color: var(--text); }
+.alglib-search input::-webkit-search-cancel-button { filter: invert(.6); }
+
+/* ---------------- case grid ---------------- */
+#alglib-grid {
+  max-width: 1180px; margin: 0 auto;
+  display: grid; gap: 14px;
+  grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+}
+.case-card {
+  position: relative;
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 16px 12px 14px; text-align: center;
+  border-radius: var(--radius-sm); border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface) 55%, transparent);
+  color: var(--text);
+  transition: transform var(--dur) var(--ease), border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+}
+.case-card:hover {
+  transform: translateY(-3px);
+  border-color: color-mix(in srgb, var(--accent) 46%, transparent);
+  box-shadow: 0 16px 34px -20px var(--accent);
+}
+.case-pic { width: 96px; height: 96px; margin-bottom: 8px; }
+.case-pic.big { width: clamp(120px, 26vw, 168px); height: clamp(120px, 26vw, 168px); flex: none; }
+.case-name { font-size: .92rem; font-weight: 650; letter-spacing: -.01em; }
+/* The letter is metadata; this line is what the picture actually means. */
+.case-desc { font-size: .7rem; line-height: 1.35; color: var(--text-dim); }
+.case-flag {
+  position: absolute; top: 8px; right: 8px;
+  font-size: .56rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--accent-2);
+}
+.alglib-empty { max-width: 1180px; margin: 0 auto; color: var(--text-dim); font-size: .86rem; }
+
+/* ---------------- detail ---------------- */
+#alglib-detail { max-width: 860px; margin: 0 auto; display: flex; flex-direction: column; gap: 18px; align-items: flex-start; }
+#alglib-detail .btn.back { align-self: flex-start; }
+.case-head { display: flex; gap: 20px; align-items: center; flex-wrap: wrap; }
+.case-head h2 { font-size: 1.5rem; font-weight: 700; letter-spacing: -.02em; }
+.case-head .case-desc { font-size: .84rem; margin-top: 2px; }
+/* The name, what it is, and how to build it are one block beside the picture.
+   `min-width` is what makes it drop below the diagram rather than squeezing the
+   setup into a two-word-per-line column on a narrow screen. */
+.case-info { flex: 1; min-width: 270px; }
+
+/* ---------------- setup moves ----------------
+   Inside the heading block, under the case's name: it describes the case in
+   front of you, not one of the ways of solving it, and as its own band between
+   the picture and the list it looked attached to neither. Tinted rather than
+   bordered like an alg row, so it never reads as the first entry in a list you
+   can drag. */
+.setup-box {
+  width: 100%; display: flex; flex-direction: column; gap: 8px;
+  margin-top: 12px;
+  padding: 12px 14px; border-radius: var(--radius-sm);
+  border: 1px solid color-mix(in srgb, var(--accent-2) 30%, transparent);
+  background: color-mix(in srgb, var(--accent-2) 8%, transparent);
+}
+/* `display: flex` above outranks the browser's own [hidden] rule, so a case
+   with no setup would otherwise leave an empty tinted box under the picture. */
+.setup-box[hidden] { display: none; }
+.setup-head { display: flex; align-items: center; gap: 10px; }
+.setup-head h3 { font-size: .78rem; font-weight: 650; color: var(--text-dim); }
+.setup-count { font-size: .7rem; font-family: var(--font-mono); color: var(--text-faint); }
+.setup-copy { margin-left: auto; }
+.setup-moves {
+  font-family: var(--font-mono); font-size: .92rem; line-height: 1.5;
+  word-spacing: .18em; overflow-wrap: anywhere;
+  color: var(--accent-2);
+}
+.setup-note { font-size: .72rem; line-height: 1.55; color: var(--text-dim); }
+
+.alg-list { width: 100%; display: flex; flex-direction: column; gap: 8px; }
+.alg-list.dragging { cursor: grabbing; }
+.alg-row {
+  display: flex; align-items: flex-start; gap: 12px;
+  padding: 12px 14px; border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface) 55%, transparent);
+  transition: border-color var(--dur-fast), background var(--dur-fast);
+}
+.alg-row:first-child { border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
+.alg-row.dragging {
+  position: relative; z-index: 3; cursor: grabbing;
+  border-color: var(--accent); background: var(--surface-2);
+  box-shadow: var(--shadow);
+}
+.alg-grip {
+  flex: none; margin-top: 2px; padding: 2px; cursor: grab;
+  color: var(--text-faint); touch-action: none;
+}
+.alg-grip:hover { color: var(--text); }
+.alg-grip svg { stroke-width: 2.6; }
+.alg-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.alg-moves {
+  font-family: var(--font-mono); font-size: .84rem; line-height: 1.45;
+  word-spacing: .18em; overflow-wrap: anywhere;
+}
+.alg-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.alg-count { font-size: .7rem; color: var(--text-faint); font-family: var(--font-mono); }
+.alg-badge {
+  font-size: .58rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+  padding: 2px 7px; border-radius: 99px;
+}
+.alg-badge.first { color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, transparent); }
+.alg-badge.yours { color: var(--accent-2); background: color-mix(in srgb, var(--accent-2) 15%, transparent); }
+.alg-notes { font-size: .74rem; line-height: 1.5; color: var(--text-dim); }
+.alg-del {
+  flex: none; width: 26px; height: 26px; border-radius: 8px;
+  color: var(--text-faint); font-size: 1.05rem; line-height: 1;
+}
+.alg-del:hover { color: var(--danger); background: color-mix(in srgb, var(--danger) 14%, transparent); }
+
+/* ---------------- add your own ---------------- */
+.alg-add {
+  width: 100%; padding: 14px; border-radius: var(--radius-sm);
+  border: 1px dashed var(--border);
+  display: flex; flex-direction: column; gap: 10px;
+}
+.alg-add h3 { font-size: .78rem; font-weight: 650; color: var(--text-dim); }
+.alg-add-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.alg-input {
+  flex: 1; min-width: 200px;
+  padding: 9px 12px; border-radius: var(--radius-sm);
+  border: 1px solid var(--border); background: color-mix(in srgb, var(--bg-2) 70%, transparent);
+  font-family: var(--font-mono); font-size: .8rem; outline: 0;
+}
+.alg-input:focus { border-color: var(--accent); }
+.alg-error { font-size: .74rem; color: var(--danger); }
+
+/* ---------------- footer ---------------- */
+#alglib-foot {
+  max-width: 860px; margin: 46px auto 0;
+  font-size: .72rem; line-height: 1.6; color: var(--text-faint);
+}
+
+@media (max-width: 560px) {
+  #alglib-grid { grid-template-columns: repeat(auto-fill, minmax(126px, 1fr)); }
+  .case-pic { width: 78px; height: 78px; }
+}

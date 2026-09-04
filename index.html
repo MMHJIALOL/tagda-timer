@@ -29,11 +29,11 @@
      perfect in incognito, which is a miserable thing to debug.
      /js/ is `must-revalidate` and does not depend on this, but keep the number
      in step anyway rather than leaving two answers to the same question. -->
-<link rel="modulepreload" href="js/main.js?v=38">
-<link rel="stylesheet" href="css/fonts.css?v=38">
-<link rel="stylesheet" href="css/tokens.css?v=38">
-<link rel="stylesheet" href="css/base.css?v=38">
-<link rel="stylesheet" href="css/components.css?v=38">
+<link rel="modulepreload" href="js/main.js?v=41">
+<link rel="stylesheet" href="css/fonts.css?v=41">
+<link rel="stylesheet" href="css/tokens.css?v=41">
+<link rel="stylesheet" href="css/base.css?v=41">
+<link rel="stylesheet" href="css/components.css?v=41">
 <link rel="icon" href="assets/favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="assets/logo-192.png">
 <link rel="apple-touch-icon" href="assets/logo-180.png">
@@ -46,6 +46,16 @@
 <meta property="og:image" content="https://tagdatimer.vercel.app/assets/og.png">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="https://tagdatimer.vercel.app/assets/og.png">
+<!-- Vercel Speed Insights -->
+<script>
+  window.si = window.si || function () { (window.siq = window.siq || []).push(arguments); };
+</script>
+<script defer src="/_vercel/speed-insights/script.js"></script>
+<!-- Vercel Web Analytics -->
+<script>
+  window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
+</script>
+<script defer src="/_vercel/insights/script.js"></script>
 <style>
 #boot-error[hidden] { display: none !important; }
 #boot-error {
@@ -115,9 +125,30 @@
           <svg class="chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
         </button>
       </div>
+      <!-- The one picker that is a link rather than a dropdown: it opens a whole
+           page, so it ends in an arrow where the others carry a chevron. It sits
+           with the pickers because it is a place you go, not a switch you flip —
+           and this row already scrolls sideways on a phone, so a fourth one
+           costs the small screens nothing. -->
+      <div class="seg" id="algs-seg">
+        <a class="seg-btn" id="btn-algs" href="algs.html" title="Algorithm library — every PLL and OLL case">
+          <svg class="ico" viewBox="0 0 24 24"><path d="M5 4.6A1.6 1.6 0 016.6 3H19v14.4H6.6A1.6 1.6 0 005 19z"/><path d="M5 19a1.6 1.6 0 001.6 1.6H19v-3.2"/><path d="M8.6 7.4h6.8M8.6 10.8h4.6"/></svg>
+          <span>Alg library</span>
+          <svg class="chev" viewBox="0 0 24 24"><path d="M5 12h13M13 7l5 5-5 5"/></svg>
+        </a>
+      </div>
     </div>
 
-    <div class="topbar-right">
+    <!-- Below 860px the eight icons to the right stop fitting, so they fold into
+         this one button and drop down as a labelled list. Tablet and laptop keep
+         every icon inline exactly as before — this is a phone-crowding fix, not
+         a redesign, and it is why the button lives outside .topbar-right: that
+         row is what becomes the dropdown. -->
+    <button class="icon-btn" id="btn-menu" title="Menu" aria-expanded="false" aria-controls="topbar-right">
+      <svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+    </button>
+
+    <div class="topbar-right" id="topbar-right">
       <button class="icon-btn" id="btn-stats" title="Statistics  (A)">
         <svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>
       </button>
@@ -143,6 +174,16 @@
           <path d="M7 9.1c3.3-1 7.2-.7 10.2.9"/>
           <path d="M7.7 12.3c2.7-.8 5.9-.5 8.4.8"/>
           <path d="M8.3 15.4c2.2-.6 4.6-.4 6.5.6"/>
+        </svg>
+      </button>
+      <!-- A chequered flag on a pole. Lights up while a room is open, which is
+           the only chrome that says a race is running once the panel is
+           docked out of the way or folded on a phone. -->
+      <button class="icon-btn" id="btn-race" title="Race someone">
+        <svg viewBox="0 0 24 24">
+          <path d="M5.2 21V3.4"/>
+          <path d="M5.2 4.1h13l-2.5 3.9 2.5 3.9h-13z"/>
+          <path d="M5.2 8h6.5M11.7 4.1v7.8"/>
         </svg>
       </button>
       <button class="icon-btn" id="btn-help" title="Keyboard shortcuts  (?)">
@@ -383,6 +424,12 @@
     <div id="cube-grip" title="Drag to move the preview">
       <svg viewBox="0 0 24 24"><path d="M7 9h10M7 15h10"/></svg>
     </div>
+    <!-- Hiding the preview used to mean opening Settings and finding the
+         switch. It is the one widget on this page that sits on top of
+         everything else, so the way to get rid of it belongs on it. -->
+    <button id="cube-close" type="button" title="Hide the scramble preview" aria-label="Hide the scramble preview">
+      <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    </button>
     <div id="cube-holder">
       <div id="cube-fallback" hidden>
         <svg viewBox="0 0 24 24" class="ico-big"><path d="M12 2l9 5v10l-9 5-9-5V7z"/><path d="M3 7l9 5 9-5M12 12v10"/></svg>
@@ -481,7 +528,7 @@
   </div>
 </div>
 
-<script type="module" src="js/main.js?v=38"></script>
+<script type="module" src="js/main.js?v=41"></script>
 <script>
 (function () {
   var isFile = location.protocol === 'file:';
