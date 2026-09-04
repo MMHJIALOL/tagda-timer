@@ -196,6 +196,15 @@ function isFirstTwoLayers(f) {
    OLL only has to orient; F2L only has to fill the slot. */
 const DONE = { OLL: isOriented, F2L: isFirstTwoLayers };
 
+/**
+ * Has this state finished the job, by the standard of its own set?
+ *
+ * Exported for alglibrary-setup.js, whose audit asks the end-to-end question
+ * this feature actually promises: do the setup, do the algorithm printed under
+ * the picture, and the case is gone.
+ */
+export const isCaseSolved = (setId, facelets) => (DONE[setId] || isSolved)(facelets);
+
 /* F2L is the one set where the slot the alg is written for may not be the slot
    the case is drawn in — the same pair state occurs in all four, and
    SpeedCubeDB lists algs for each. A cube rotation is free there in a way it is

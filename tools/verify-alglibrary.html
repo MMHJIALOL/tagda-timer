@@ -28,6 +28,7 @@
 
 <script type="module">
 import { SETS, SET_IDS, loadSet, auditLibrary, verifyAlgForCase } from '../js/alglibrary.js';
+import { auditSetups } from '../js/alglibrary-setup.js';
 
 /* ZBLL and F2L are dynamic imports, so they are absent from SETS until asked
    for. Without this the harness would report a clean run purely by never
@@ -49,10 +50,19 @@ for (const set of Object.values(SETS)) {
   }
 }
 
-const ok = !bad.length && !defaults.length;
+/* Setup moves are held to the end-to-end promise the page makes: do the setup,
+   do the first algorithm listed under the picture, and the case is gone. A
+   setup that merely looks plausible is the one thing worse than no setup —
+   it wastes a practice session and blames the solver. */
+const setups = auditSetups(SET_IDS.map(id => SETS[id]));
+let cases = 0;
+for (const set of Object.values(SETS)) cases += set.cases.length;
+
+const ok = !bad.length && !defaults.length && !setups.length;
 document.getElementById('out').innerHTML =
   `<span class="${ok ? 'pass' : 'fail'}">${ok ? 'PASS' : 'FAIL'}</span> — ` +
   `${total - bad.length}/${total} library entries, ` +
+  `${cases - setups.length}/${cases} setups, ` +
   `${defaults.length ? defaults.length + ' broken defaults' : 'all algs.js defaults ok'}`;
 
 const list = document.getElementById('bad');
@@ -68,7 +78,13 @@ for (const d of defaults) {
   li.textContent = d;
   list.appendChild(li);
 }
-window.__result = { ok, total, bad, defaults };
+for (const s of setups) {
+  const li = document.createElement('li');
+  li.className = 'fail';
+  li.textContent = `${s.set} ${s.caseId} setup: ${s.why}`;
+  list.appendChild(li);
+}
+window.__result = { ok, total, bad, defaults, setups };
 </script>
 </body>
 </html>

@@ -111,7 +111,37 @@ body.alglib-page ::selection { background: color-mix(in srgb, var(--accent) 42%,
 .case-head { display: flex; gap: 20px; align-items: center; flex-wrap: wrap; }
 .case-head h2 { font-size: 1.5rem; font-weight: 700; letter-spacing: -.02em; }
 .case-head .case-desc { font-size: .84rem; margin-top: 2px; }
-.case-note { font-size: .74rem; color: var(--text-faint); margin-top: 10px; max-width: 40ch; }
+/* The name, what it is, and how to build it are one block beside the picture.
+   `min-width` is what makes it drop below the diagram rather than squeezing the
+   setup into a two-word-per-line column on a narrow screen. */
+.case-info { flex: 1; min-width: 270px; }
+
+/* ---------------- setup moves ----------------
+   Inside the heading block, under the case's name: it describes the case in
+   front of you, not one of the ways of solving it, and as its own band between
+   the picture and the list it looked attached to neither. Tinted rather than
+   bordered like an alg row, so it never reads as the first entry in a list you
+   can drag. */
+.setup-box {
+  width: 100%; display: flex; flex-direction: column; gap: 8px;
+  margin-top: 12px;
+  padding: 12px 14px; border-radius: var(--radius-sm);
+  border: 1px solid color-mix(in srgb, var(--accent-2) 30%, transparent);
+  background: color-mix(in srgb, var(--accent-2) 8%, transparent);
+}
+/* `display: flex` above outranks the browser's own [hidden] rule, so a case
+   with no setup would otherwise leave an empty tinted box under the picture. */
+.setup-box[hidden] { display: none; }
+.setup-head { display: flex; align-items: center; gap: 10px; }
+.setup-head h3 { font-size: .78rem; font-weight: 650; color: var(--text-dim); }
+.setup-count { font-size: .7rem; font-family: var(--font-mono); color: var(--text-faint); }
+.setup-copy { margin-left: auto; }
+.setup-moves {
+  font-family: var(--font-mono); font-size: .92rem; line-height: 1.5;
+  word-spacing: .18em; overflow-wrap: anywhere;
+  color: var(--accent-2);
+}
+.setup-note { font-size: .72rem; line-height: 1.55; color: var(--text-dim); }
 
 .alg-list { width: 100%; display: flex; flex-direction: column; gap: 8px; }
 .alg-list.dragging { cursor: grabbing; }

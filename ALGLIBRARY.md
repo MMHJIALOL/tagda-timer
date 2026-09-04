@@ -28,6 +28,10 @@
 - Your #1-ranked alg per case is what the app's trainer mode actually feeds
   you as "the" algorithm for that case wherever it needs one (§6) — so
   reordering isn't just cosmetic, it's the thing that decides what you drill.
+- Every case shows its **setup moves** (§10) — the sequence that builds the
+  case on a solved cube, so practising it is not "read the alg backwards in
+  your head". It is never simply your first alg reversed unless nothing
+  shorter exists.
 - Every algorithm — researched or user-submitted — is checked against a
   solved cube before it's trusted, using the solver the app already has
   (§7). Nothing gets shown as valid without passing that check.
@@ -540,9 +544,13 @@ Two things the implementation had to decide that this document did not:
   The objection was right about the browsing model and wrong about the case
   count: F2L does have a fixed 41, but it is browsed by the six pair states
   rather than by number, exactly as predicted. ZBLL came with it. The one thing
-  neither has is a trainer mode, so their detail view does not claim position 1
-  feeds the trainer the way §6.1 describes for PLL and OLL — it says what it
-  actually is, your own reference order.
+  neither has is a trainer mode, and their detail view used to say so in a note
+  under the case name, so that it never claimed position 1 feeds the trainer the
+  way §6.1 describes for PLL and OLL. That note is gone — §10.5 — and with it
+  the only place the page explained the consequence of dragging. The claim it
+  was avoiding is not being made anywhere else, so nothing has become untrue;
+  what is lost is the explanation, which the `★ 1st` marker and the grip only
+  imply.
 - **Case coverage beyond 3x3 PLL/OLL**: this doc assumes 3x3 only, matching
   where `js/algs.js` currently lives. Other events are not addressed.
 - **Sharing/export of your custom algs**: not designed here — today this is
@@ -551,3 +559,116 @@ Two things the implementation had to decide that this document did not:
   on this app's existing export/import (`db.js` `exportAll`/`importAll`),
   not a new mechanism — worth confirming that's sufficient rather than
   building alg-specific sync.
+
+## 10. Setup moves
+
+The library answered "how do I solve this case" and left the other half of
+practising it to the solver: getting the case onto the cube in the first place.
+The only way to do that from this page was to read the first algorithm
+backwards a move at a time, inverting each one as you went. That is the work
+this section removes.
+
+Every case detail view now carries one setup — the moves that, done on a solved
+cube, leave you looking at exactly the picture above them. Implemented in
+`js/alglibrary-setup.js`; nothing is stored, it is derived when the case is
+opened.
+
+### 10.1 Where the candidates come from
+
+No search over the cube group, and no scraped second data set to keep honest:
+every algorithm a case lists *solves* that case, so every one of them,
+inverted, *sets it up*. A case with six alternates therefore starts with six
+candidate setups, all of them made of algorithms this library already ships and
+already verified (§7). The shortest one that is not your own alg backwards is
+almost always among them.
+
+Two things are done to each candidate before it counts:
+
+- **AUF, both ends.** An alg is verified as solving the case from *some* U
+  turn, so its inverse builds the case at *some* U turn. All sixteen pre/post
+  combinations are tried and the one matching the drawn case is kept. They also
+  pay for themselves — a leading `U'` that cancels into the alg's own first
+  move comes out a move shorter than the raw inverse.
+- **Orientation.** An alg containing a `y` it never undoes inverts into a
+  sequence that builds the right state on a cube left facing the wrong way.
+  The rotation needed to put it back is read off the centres rather than
+  searched for, then appended.
+
+### 10.2 The rule that makes this worth having
+
+**A setup that is your first algorithm written backwards is the last resort,
+not the default.** Reversing the alg you are about to practise is exactly the
+work this feature exists to remove, and a cube set up that way is a cube you
+just watched yourself solve — you have executed the solution before you start.
+
+It is still used when nothing else is shorter. Ua is the clean example: its
+first alg is `y2 M2 U M U2 M' U M2`, whose reverse is seven moves, and the
+shortest setup from any other listed alg is nine. Printing the nine-move one to
+avoid looking lazy would be a worse setup chosen for cosmetic reasons. So the
+seven wins, and the page says out loud what it is and what the alternative
+would have cost. 23 of the 78 PLL and OLL cases resolve this way; the other 55
+get a genuinely different sequence.
+
+Ergonomics is a tiebreak that can move a setup by about a move: a twelve-move
+setup with two cube rotations in it is worse to do than a thirteen-move one
+without, but no amount of tidiness beats being clearly shorter.
+
+The setup is chosen against whichever alg is currently **first**, so it is
+recomputed with the list — drag a different alg to position 1 (§6.1) and the
+setup under the picture can change with it. That follows from the rule rather
+than being a separate feature: "your first alg backwards" means *your* order.
+
+### 10.3 Verified, like everything else here
+
+Two claims are made to somebody holding a cube — the setup builds the case, and
+the algorithm printed under it then solves it — and both are executed rather
+than reasoned about:
+
+- `auditSetups()` runs in `tools/verify-alglibrary.html` over all 591 cases of
+  all four sets. It compares the state the setup produces against the case's
+  own diagram (§10.4) and then runs the first algorithm from there.
+- `test.html` re-runs the PLL and OLL half on **cubing.js's kpuzzle** — a
+  different engine with a different state representation from the facelet
+  simulator that picked the setups. Checking them on the simulator that chose
+  them would be marking its own homework.
+
+That second harness caught the one thing worth recording here, and it was in
+the test rather than the feature: 20 cases "failed" because their first alg
+starts with a `y`, so the cube ends solved but held differently and every piece
+sits at an index it does not own. The state is now turned upright before it is
+judged. A rotation-blind solved-check is the easiest way to write a cubing test
+that is wrong.
+
+### 10.4 "The same case" is not the same question per set
+
+A setup is accepted when the state it produces would draw the same card you
+clicked on — which is a different comparison for each set, for the same reasons
+§7.1 gives about what counts as solving one:
+
+| Set | What has to match |
+|---|---|
+| PLL, ZBLL | The last layer exactly: colours of the U face and the top row of all four sides, over an intact F2L. |
+| OLL | Which of those face up, not what colour they are — the convention the diagrams already use, and why two OLL setups that leave the last layer permuted differently are both correct. |
+| F2L | Where the pair is, and the two layers below it built except for the slot. **Not** the last layer: what an F2L alg leaves up there is incidental, two correct algs for one case routinely differ, and so do their inverses. |
+
+Getting F2L wrong in the strict direction is the failure worth naming: demand
+a whole matching state and every F2L case reports exactly one possible setup —
+its first alg reversed — which is precisely the outcome §10.2 exists to
+prevent.
+
+### 10.5 Where it sits, and what it replaced
+
+Under the case's name, inside the heading block with the diagram — not as its
+own band between the picture and the algorithm list, which is where it shipped
+first and where it read as belonging to neither. The setup describes *the case
+in front of you*, the same thing the picture and the name describe; it is not
+one of the ways of solving it.
+
+It takes the place of the note that used to sit there ("Position 1 is the alg
+the trainer builds this case from. Drag to change it."), removed on the same
+call. Worth being honest about the trade: that note was the page's only
+explanation of §6.1, and dragging now has a consequence the page never spells
+out. The `★ 1st` badge and the drag grip imply it; the footer still says to
+drag them into your order. If reordering turns out to be a thing people do not
+discover, that is the sentence that has to come back somewhere — but under a
+case name is where you are looking at a cube, not reading about a mechanism.

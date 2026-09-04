@@ -148,6 +148,75 @@ const A = await import('./js/algs.js');
   check('the OLL set is 57 distinct cases', sigs.size === 57, `${sigs.size} distinct`);
 }
 
+/* The library page prints setup moves — what to do to a solved cube to get the
+   case in front of you — and they are chosen by a search that runs on the app's
+   own facelet simulator. Checking them there would be marking its own homework,
+   so they are re-executed here on cubing.js's kpuzzle instead: a different
+   engine, a different representation, the same question.
+
+   Two claims are being made to someone holding a cube, and both are tested:
+   the setup builds the case, and the algorithm printed under it then solves it.
+   The third check is the rule that makes the feature worth having — a setup
+   that is just your first algorithm backwards is only allowed when nothing
+   shorter exists. */
+{
+  const L = await import('./js/alglibrary.js');
+  const SU = await import('./js/alglibrary-setup.js');
+  const solvedNow = (d) => okAt(d, 'EDGES', nonU('EDGES')) && okAt(d, 'CORNERS', nonU('CORNERS'))
+                        && oriented(d, 'EDGES') && oriented(d, 'CORNERS')
+                        && okAt(d, 'EDGES', UL) && okAt(d, 'CORNERS', UL);
+  const orientedNow = (d) => okAt(d, 'EDGES', nonU('EDGES')) && okAt(d, 'CORNERS', nonU('CORNERS'))
+                          && oriented(d, 'EDGES') && oriented(d, 'CORNERS');
+
+  /* Half these algorithms start with a `y`, so the cube ends solved but held
+     differently, and every piece is at an index it does not own. The state is
+     turned upright before it is judged — which rotation to undo is read off the
+     centres rather than searched for. Without this the test fails 20 cases for
+     the crime of the solver having turned the cube in their hands. */
+  const ROTS = [];
+  for (const flip of ['', 'x', "x'", 'x2', 'z', "z'"]) {
+    for (const spin of ['', 'y', 'y2', "y'"]) ROTS.push([flip, spin].filter(Boolean).join(' ') || 'U U\'');
+  }
+  const centreKey = (d) => JSON.stringify([d.CENTERS.pieces, d.CENTERS.orientation]);
+  const ROTMAP = new Map(ROTS.map(r => [centreKey(pd(r)), r]));
+  const upright = (seq) => {
+    const r = ROTMAP.get(centreKey(pd(seq)));
+    return r === undefined ? null : pd(`${seq} ${U.invert(r)}`);
+  };
+
+  const broken = [], lazy = [];
+  let reversals = 0, total = 0;
+  for (const setId of ['PLL', 'OLL']) {
+    const done = setId === 'PLL' ? solvedNow : orientedNow;
+    for (const c of L.SETS[setId].cases) {
+      total++;
+      const s = SU.setupFor(setId, c.id);
+      if (!s) { broken.push(`${c.id} (none)`); continue; }
+      const alg = L.displayOrder(setId, c.id)[0].alg;
+      // A U turn either side is free on a real cube and every alg sheet assumes it.
+      const ok = AUF.some(p => AUF.some(q => {
+        const d = upright(`${s.setup} ${p} ${alg} ${q}`);
+        return d && done(d);
+      }));
+      /* And the setup on its own has to leave a case, not a mess: the first two
+         layers still built, and a last layer that is not already finished. A
+         setup that quietly solved the cube would pass the test above. */
+      const after = upright(s.setup);
+      const isCase = after && okAt(after, 'EDGES', nonU('EDGES')) && okAt(after, 'CORNERS', nonU('CORNERS'))
+                  && !(setId === 'PLL' ? solvedNow(after) : orientedNow(after));
+      if (!ok || !isCase) broken.push(c.id);
+      if (s.reversesFirst) {
+        reversals++;
+        if (s.alternative && s.alternative.moves <= s.moves) lazy.push(c.id);
+      }
+    }
+  }
+  check('every setup builds its case and the first alg then solves it',
+        broken.length === 0, broken.join(' ') || `${total} cases, checked on cubing.js`);
+  check('a setup is only the first alg reversed when nothing shorter exists',
+        lazy.length === 0, lazy.join(' ') || `${reversals}/${total} are reversals`);
+}
+
 /* ---------------- generated scrambles ---------------- */
 section('generated scrambles');
 const G = await import('./js/scramble.js');
