@@ -138,8 +138,8 @@ picture; the name is supporting metadata, not the headline.
 - Card subtitle is a plain-English descriptor ("opposite swaps", "adjacent
   swap") alongside the formal name/letter, so it reads correctly to someone
   who's never learned PLL naming *and* to someone who has.
-- PLL and OLL are separate tabs (F2L/other subsets are future work, not v1 —
-  see §8). Search filters by name, letter, or descriptor text.
+- PLL, OLL, ZBLL and F2L are separate tabs; the two big sets add a second row
+  of chips beneath (§8.1). Search filters by name, letter, or descriptor text.
 
 ---
 
@@ -184,7 +184,38 @@ cases) may legitimately show only 2-3 alternates. That's correct, not a gap.
 | Set | Status | Cases | File |
 |---|---|---|---|
 | PLL | Researched, then verified against a cube | 21/21, 3-4 alternates each, none below 3 | [`js/alglibrary-pll.js`](js/alglibrary-pll.js) |
-| OLL | Not started — falls back to `algs.js` | 0/57 | [`js/alglibrary-oll.js`](js/alglibrary-oll.js) (empty) |
+| OLL | Scraped, corrected, verified | 57/57, 185 algs, 3-5 each | [`js/alglibrary-oll.js`](js/alglibrary-oll.js) |
+| ZBLL | Scraped, corrected, verified | 472/472, 1791 algs | [`js/alglibrary-zbll.js`](js/alglibrary-zbll.js) |
+| F2L | Scraped, verified | 41/41, 622 algs, 10-16 each | [`js/alglibrary-f2l.js`](js/alglibrary-f2l.js) |
+
+2680 entries across the four sets, every one of them executed against its own
+case by the harness in §7 before being committed.
+
+### 3.4 What executing the data caught
+
+The three scraped sets were not usable as scraped, and none of the problems
+were visible by reading the files — each was found by running the algorithms:
+
+- **Finger-trick parentheses.** SpeedCubeDB prints algs as
+  `(R U R' U') (R' F R F')`. Parentheses are not move notation, so 100 OLL rows
+  failed to parse. Stripped; most then turned out to be duplicates of the same
+  case's unparenthesised entry, which is why OLL ships 185 algs rather than 285.
+- **Setups filed as solutions.** 50 of the 285 OLL rows were the *inverse* of an
+  algorithm — the moves that create the case, not the ones that solve it. They
+  were caught because each oriented some *other* OLL case, and inverting all 50
+  made every one solve the case it was filed under.
+- **Three ZBLL algs written from another angle**, fixed by storing the `y`
+  rotation as part of the algorithm so the moves are true for the picture shown.
+- **Three F2L cases anchored to the wrong slot.** A case's picture is its
+  canonical alg run backwards, so cases 13, 18 and 20 — whose first listed alg
+  was a left-slot variant — put the pair in the front-left slot, where the
+  three-quarter view shows two of its five stickers. All three rendered as the
+  same grey cube. Each is now anchored to the first alternate that leaves both
+  pieces in the U layer or the front-right slot. All 41 diagrams are distinct.
+- **Nine unparseable ZBLL algs** containing `R3`, which is not a move. Dropped;
+  no case lost an entire entry.
+
+The F2L failures were not the data's fault at all — see §7.1.
 
 Running the harness in §7 over the first PLL pass found more than the one
 error the spot-check had caught, which is the argument for the harness:
@@ -385,6 +416,33 @@ or fed to the trainer without having passed this. This is a hard requirement,
 not a nice-to-have: a wrong algorithm in a cubing app actively teaches
 someone the wrong thing, which is worse than the feature not existing.
 
+### 7.1 "Solved" is not the same question for every set
+
+The check above says `isSolved(result)`, and that is right for PLL and ZBLL and
+wrong for the other two. Each set finishes a different job:
+
+| Set | What counts as done |
+|---|---|
+| PLL, ZBLL | whole cube solved |
+| OLL | U face one colour, lower layers untouched |
+| F2L | bottom layer and both lower rows of every side face — **U ignored** |
+
+F2L is the one that bites, and it cost a full debugging pass: 562 of its 622
+algorithms were reported as failures on the first run. They were all fine. An
+F2L alg pairs a corner with its edge and puts them in a slot; whatever it does
+to the last layer on the way is incidental, and two correct algs for the same
+case routinely leave the U layer permuted differently. Demanding a solved cube
+therefore only ever accepts the single alg the case state was built from — so
+every case would appear to have exactly one solution, which is the precise
+opposite of the truth for the set whose whole character is having a dozen ways
+into the same slot.
+
+F2L also gets a cube rotation in the search, which the last-layer sets do not.
+The same pair state occurs in all four slots and SpeedCubeDB lists algs for
+each; turning the cube to bring a slot to the front is free, and is what the
+`y`s already inside those algs are doing. Rotations that would take the cross
+off the bottom are not free and are not tried.
+
 ---
 
 ## 8. Rollout order
@@ -408,10 +466,59 @@ someone the wrong thing, which is worse than the feature not existing.
 
 ### 8.1 What shipped
 
-Steps 1-4 and 6, in that order. Step 5 (the OLL research pass) is not done, so
-the OLL tab shows every case's picture with the canonical algorithm from
-`js/algs.js` as its single entry — you can still reorder nothing and add your
-own, both verified. `js/alglibrary-oll.js` is the empty file waiting for it.
+All six steps. Step 5 (OLL) landed together with two sets this document had put
+out of scope — ZBLL and F2L — once scraped data for all three existed; §3.4 is
+what it took to make that data trustworthy.
+
+Four things the implementation had to decide beyond what step 5 described:
+
+- **Yellow on top.** Every case picture was drawn white-face-up, because the
+  simulator in `cubenet.js` keeps white on U — correct for a scramble preview,
+  upside down for a case you only ever see after solving the cross. The fix is
+  `z2` (the rotation SpeedCubeDB itself stores as these cases' setup) applied as
+  a *recolour* rather than a move: rotating the state for real would put the
+  case on the D face and mirror every side bar, because the side-strip winding
+  in `drawCase` is derived from the face geometry.
+- **The two big sets are lazy-loaded.** `js/main.js` imports `alglibrary.js` on
+  the timer's boot path, and ZBLL alone is bigger than every other alg list in
+  the app combined. Both are dynamic imports, fetched when their tab is first
+  opened, so the timer never pays for a page most sessions never open. They also
+  carry their own case lists, since neither set exists in `algs.js`.
+- **A second level of navigation.** 472 cards in one scroll is not navigation,
+  so ZBLL opens on a subset (T/U/L/Pi/H/S/AS) and F2L offers its six pair states
+  plus All. Search reaches across the whole set regardless of the chip, capped
+  at 96 cards — obeying the chip would mean typing a case's own name and being
+  told it does not exist.
+- **F2L needed a different picture.** The last-layer diagram is the U face
+  ringed by four side strips, which simply does not show a case that lives down
+  the front and right faces. F2L is drawn the way CubeRoot draws it: the cube in
+  isometric three-quarter view, with the last layer greyed out.
+
+  Three things are in colour, and the third took a correction to get right —
+  the pair's corner, its edge, and **the first two layers already built**.
+  Greying the built layers was the first attempt and it was wrong: the pair on
+  its own says what you are holding but not where it is going, and the
+  destination is half of what you read when you recognise an F2L case. Drawing
+  the finished layers solid leaves the empty slot as a notch in them, and that
+  notch is the target. Nothing marks the slot out explicitly — it is drawn by
+  not drawing it.
+
+  Two things this needs that a facelet grid cannot answer on its own:
+
+  - **Which pieces are the pair**, found by colour rather than position — the
+    corner carrying the cross colour plus both slot colours, the edge carrying
+    just the slot colours — because the case *is* a statement about where those
+    two have ended up.
+  - **Whether a piece is home**, tested per piece and never per sticker. A
+    displaced last-layer corner sitting in the slot can easily show the front
+    colour on the front face; one matching sticker was enough in the first
+    version, so the slot was painted as finished F2L and stopped reading as
+    empty. A piece counts as built only when every one of its stickers faces
+    the right way.
+
+  Both need stickers grouped into the piece they belong to before anything is
+  drawn, which is what `stickerAt()` in `cubenet.js` is for: a facelet on its
+  own carries a colour, not an identity.
 
 Two things the implementation had to decide that this document did not:
 
@@ -429,9 +536,13 @@ Two things the implementation had to decide that this document did not:
 
 ## 9. Open questions (answered by shipping v1 as written)
 
-- **F2L / other subsets**: explicitly out of scope for v1 (§2) — confirm
-  that's right, since F2L has no fixed "case count" the way PLL/OLL do and
-  would need a different browsing model (by slot + pattern, not a flat grid).
+- ~~**F2L / other subsets**: explicitly out of scope for v1 (§2)~~ — **shipped.**
+  The objection was right about the browsing model and wrong about the case
+  count: F2L does have a fixed 41, but it is browsed by the six pair states
+  rather than by number, exactly as predicted. ZBLL came with it. The one thing
+  neither has is a trainer mode, so their detail view does not claim position 1
+  feeds the trainer the way §6.1 describes for PLL and OLL — it says what it
+  actually is, your own reference order.
 - **Case coverage beyond 3x3 PLL/OLL**: this doc assumes 3x3 only, matching
   where `js/algs.js` currently lives. Other events are not addressed.
 - **Sharing/export of your custom algs**: not designed here — today this is

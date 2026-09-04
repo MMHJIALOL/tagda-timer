@@ -4,17 +4,17 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Algorithm library — Tagda Timer</title>
-<meta name="description" content="Every PLL and OLL case, shown as a picture, with community-ranked alternate algorithms you can reorder and add to.">
+<meta name="description" content="Every F2L, OLL, PLL and ZBLL case, shown as a picture, with community-ranked alternate algorithms you can reorder and add to.">
 <link rel="preload" href="assets/fonts/inter-latin.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="assets/fonts/jetbrains-mono-latin.woff2" as="font" type="font/woff2" crossorigin>
 <!-- Same ?v= discipline as index.html: bump every stylesheet here whenever
      anything under css/ changes, or a returning visitor renders this page
      against a year-old cached stylesheet. -->
-<link rel="stylesheet" href="css/fonts.css?v=40">
-<link rel="stylesheet" href="css/tokens.css?v=40">
-<link rel="stylesheet" href="css/base.css?v=40">
-<link rel="stylesheet" href="css/components.css?v=40">
-<link rel="stylesheet" href="css/alglibrary.css?v=40">
+<link rel="stylesheet" href="css/fonts.css?v=41">
+<link rel="stylesheet" href="css/tokens.css?v=41">
+<link rel="stylesheet" href="css/base.css?v=41">
+<link rel="stylesheet" href="css/components.css?v=41">
+<link rel="stylesheet" href="css/alglibrary.css?v=41">
 <link rel="icon" href="assets/favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="assets/logo-192.png">
 <link rel="apple-touch-icon" href="assets/logo-180.png">
@@ -35,12 +35,19 @@
   <div class="seg" id="alglib-tabs" role="tablist">
     <button class="seg-btn" data-set="PLL" role="tab">PLL</button>
     <button class="seg-btn" data-set="OLL" role="tab">OLL</button>
+    <button class="seg-btn" data-set="ZBLL" role="tab">ZBLL</button>
+    <button class="seg-btn" data-set="F2L" role="tab">F2L</button>
   </div>
   <label class="alglib-search">
     <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><circle cx="11" cy="11" r="6.6"/><path d="M15.8 15.8L21 21"/></svg>
     <input id="alglib-q" type="search" placeholder="search name, letter or shape" autocomplete="off" spellcheck="false">
   </label>
 </nav>
+
+<!-- Second-level navigation, shown only for the sets that need it. ZBLL is 472
+     cases, which is not a list anybody scrolls; F2L is taught by the state of
+     the pair rather than by case number. -->
+<nav id="alglib-groups" hidden></nav>
 
 <main id="alglib-grid" aria-live="polite"></main>
 
@@ -54,6 +61,6 @@
 
 <div id="toasts"></div>
 
-<script type="module" src="js/alglibrary-ui.js?v=40"></script>
+<script type="module" src="js/alglibrary-ui.js?v=41"></script>
 </body>
 </html>

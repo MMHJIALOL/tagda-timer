@@ -64,6 +64,11 @@ export const SETS = {
     title: 'Permutation of the last layer',
     cases: PLL,
     library: PLL_LIBRARY,
+    /* The trainer can generate a scramble for this set, so position 1 here has
+       the consequence the detail view advertises. ZBLL and F2L have no trainer
+       mode, and the page must not claim otherwise. */
+    trained: true,
+    caseLabel: (c) => `${c.name} perm`,
     describe: (c) => PLL_DESC[c.id] || c.group,
   },
   OLL: {
@@ -72,9 +77,48 @@ export const SETS = {
     title: 'Orientation of the last layer',
     cases: OLL,
     library: OLL_LIBRARY,
+    trained: true,
+    caseLabel: (c) => `OLL ${c.name}`,
     describe: (c) => (c.label ? c.label.toLowerCase() : c.group),
   },
 };
+
+/* ---------------------------------------------------------
+   The big sets, loaded only when asked for
+   --------------------------------------------------------- */
+
+/**
+ * ZBLL and F2L are not statically imported, and that is not tidiness.
+ *
+ * js/main.js imports this module on the timer's boot path, for
+ * `loadLibraryPrefs()` and `preferredAlg()`. ZBLL alone is 472 cases — bigger
+ * than everything else in the app's alg data combined — and F2L is another 622
+ * algorithms. Importing them here would put all of it in front of the first
+ * scramble of every session, to serve a page most sessions never open.
+ *
+ * They also differ from PLL/OLL in carrying their own case lists: neither set
+ * exists in algs.js, because the trainer has no mode for either.
+ */
+const LAZY = {
+  ZBLL: () => import('./alglibrary-zbll.js'),
+  F2L:  () => import('./alglibrary-f2l.js'),
+};
+
+/** Every set the library page offers a tab for, in tab order. */
+export const SET_IDS = ['PLL', 'OLL', 'ZBLL', 'F2L'];
+
+/**
+ * Get a set, fetching its module the first time it is asked for.
+ * Already-loaded and always-loaded sets resolve without a network round trip.
+ */
+export async function loadSet(id) {
+  if (SETS[id]) return SETS[id];
+  const load = LAZY[id];
+  if (!load) return null;
+  const mod = await load();
+  SETS[id] = mod.SET;
+  return SETS[id];
+}
 
 /** Which set a case id belongs to. Case ids are unique across both sets. */
 export function setOf(caseId) {
@@ -121,6 +165,26 @@ function isOriented(f) {
 }
 
 /**
+ * First two layers built, last layer ignored.
+ *
+ * This is the one test that cannot be "cube solved", and getting it wrong
+ * silently rejects almost every real F2L algorithm. An F2L alg pairs a corner
+ * with its edge and puts them in a slot; what it does to the last layer on the
+ * way is incidental, and two correct algs for the same case routinely leave the
+ * U layer permuted differently. Demanding a solved cube would therefore only
+ * ever accept the single alg the case state was built from — the case would
+ * appear to have exactly one solution, which is the opposite of the truth for a
+ * set whose whole character is having a dozen ways into the same slot.
+ *
+ * So: bottom layer complete, both lower rows of every side face complete, and
+ * nothing said about U at all.
+ */
+function isFirstTwoLayers(f) {
+  if (!uniform(f.D)) return false;
+  return ['R', 'F', 'L', 'B'].every(face => uniform(f[face].slice(1)));
+}
+
+/**
  * Does `alg` solve `caseId`?
  *
  * The AUF search is not leniency — a U turn before or after is free on a real
@@ -128,14 +192,29 @@ function isOriented(f) {
  * perfectly good community algs would be rejected for starting from a
  * different recognition angle.
  */
+/* What counts as having solved a case, per set. PLL and ZBLL finish the cube;
+   OLL only has to orient; F2L only has to fill the slot. */
+const DONE = { OLL: isOriented, F2L: isFirstTwoLayers };
+
+/* F2L is the one set where the slot the alg is written for may not be the slot
+   the case is drawn in — the same pair state occurs in all four, and
+   SpeedCubeDB lists algs for each. A cube rotation is free there in a way it is
+   not for a last-layer case: you turn the cube to put the slot in front, which
+   is what the `y`s already inside these algs are doing. Rotations that would
+   move the cross off the bottom are not free and are not tried. */
+const F2L_ROTS = ['', 'y', "y'", 'y2'];
+
 export function verifyAlgForCase(setId, caseId, alg) {
   const pattern = casePattern(setId, caseId);
   if (!pattern || !parseAlg(alg)) return false;
-  const done = setId === 'OLL' ? isOriented : isSolved;
-  for (const pre of AUFS) {
-    for (const post of AUFS) {
-      const seq = [pattern, pre, alg, post].filter(Boolean).join(' ');
-      if (done(faceletsFor(seq, 3))) return true;
+  const done = DONE[setId] || isSolved;
+  const rots = setId === 'F2L' ? F2L_ROTS : [''];
+  for (const rot of rots) {
+    for (const pre of AUFS) {
+      for (const post of AUFS) {
+        const seq = [pattern, pre, rot, alg, post].filter(Boolean).join(' ');
+        if (done(faceletsFor(seq, 3))) return true;
+      }
     }
   }
   return false;
