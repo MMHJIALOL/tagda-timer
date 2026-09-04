@@ -257,6 +257,14 @@ const EF = [[5, 10], [7, 19], [3, 37], [1, 46], [32, 16], [28, 25],
 const CC = CORNER_NAMES.map(n => [...n]);
 const EC = EDGE_NAMES.map(n => [...n]);
 
+/* Which facelets a slot owns, in the order its name spells them: CORNER_FACELETS[i][k]
+   is the sticker of corner slot i that faces CORNER_NAMES[i][k]. That is what makes
+   "are these two pieces showing the same colour on the face they share?" — the
+   question that decides whether an F2L pair is already built — a lookup rather than
+   a geometry problem. */
+export const CORNER_FACELETS = CF;
+export const EDGE_FACELETS = EF;
+
 /** 54 face letters, in U R F D L B order. Centres never move, so a sticker
     matching its face letter is a sticker that is home. */
 export function facelets(s) {

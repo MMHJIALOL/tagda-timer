@@ -89,6 +89,9 @@ const loadShare = lazy(() => import('./sharedlg.js'), m => (_share = m));
 let _recon = null;
 const loadRecon = lazy(() => import('./recon.js'), m => (_recon = m));
 
+let _xp1 = null;
+const loadXp1 = lazy(() => import('./xplus1.js'), m => (_xp1 = m));
+
 /* Race mode, and the transport under it, are the largest thing on this list
    and the one fewest sessions ever touch — nothing about it is fetched until
    somebody opens the panel or arrives on a ?race= link. */
@@ -138,6 +141,25 @@ const shareOpen   = () => !!_share && _share.shareOpen();
 const closeShare  = () => { _share?.closeShare(); };
 const reconOpen   = () => !!_recon && _recon.reconOpen();
 const closeRecon  = () => _recon ? _recon.closeRecon() : false;
+const xp1Open     = () => !!_xp1 && _xp1.xp1Open();
+const closeXp1    = () => _xp1 ? _xp1.closeXp1() : false;
+
+/**
+ * The Cross+1 trainer. Loaded on demand like the workbench — it drags in the
+ * solver and a second timer, and most sessions never ask for it.
+ *
+ * It gets a *function* for the current scramble rather than the scramble
+ * itself, because the panel outlives the scramble it opened on: leaving it set
+ * to "use the timer's scramble" and pressing N on the timer screen behind
+ * should hand it the new one, not the one that was there when it opened.
+ */
+async function openXp1() {
+  let m;
+  try { m = await loadXp1(); }
+  catch (err) { return lazyFailed('the Cross + 1 trainer', err); }
+  timer.reset?.();
+  return m.openXp1({ timerScramble: () => app.scramble?.scramble || '' });
+}
 
 /**
  * The reconstruction workbench. Nothing about it is loaded until somebody asks
@@ -2485,7 +2507,7 @@ const isTyping = () => {
   // whole keyboard — spacebar included — goes dead.
   return editable && a.offsetParent !== null;
 };
-const modalOpen = () => drawerOpen() || paletteOpen() || popoverOpen() || shareOpen() || reconOpen();
+const modalOpen = () => drawerOpen() || paletteOpen() || popoverOpen() || shareOpen() || reconOpen() || xp1Open();
 
 function wireInput() {
   let spaceDown = false;
@@ -2657,6 +2679,7 @@ function wireChrome() {
     title: 'Reconstruct',
     library: reconLibrary(),
   }));
+  $('#btn-xp1').addEventListener('click', () => openXp1());
   $('#btn-stats').addEventListener('click', () => openPanel('Statistics', 'buildStats', { wide: true }, app));
   $('#btn-theme').addEventListener('click', () => openPanel('Appearance', 'buildAppearance', undefined, app));
   $('#btn-settings').addEventListener('click', () => openPanel('Settings', 'buildSettings', undefined, app));
@@ -2893,6 +2916,9 @@ function wireShortcuts() {
     if (mod && e.shiftKey && (k === 'Delete' || k === 'Backspace')) { e.preventDefault(); return clearSession(); }
 
     if (k === 'Escape') {
+      // The trainer handles its own Escape first when an attempt is in flight,
+      // and stops the event there; reaching here means it wants to close.
+      if (xp1Open()) return void closeXp1();
       if (reconOpen()) return void closeRecon();
       if (shareOpen()) return closeShare();
       if (paletteOpen()) return closePalette();
@@ -2948,6 +2974,7 @@ function wireShortcuts() {
       case '?':           e.preventDefault(); $('#btn-help').click(); break;
       case 'b': case 'B': e.preventDefault(); $('#btn-about').click(); break;
       case 'y': case 'Y': e.preventDefault(); $('#btn-recon').click(); break;
+      case 'l': case 'L': e.preventDefault(); $('#btn-xp1').click(); break;
       case 'p': case 'P': e.preventDefault(); $('#btn-spotify').click(); break;
       case 'k': case 'K':
         e.preventDefault();
@@ -3000,6 +3027,7 @@ function openPaletteWithCommands() {
       { kind: 'go', label: 'Keyboard shortcuts', key: '?', run: () => $('#btn-help').click() },
       { kind: 'go', label: 'About', key: 'B', run: () => $('#btn-about').click() },
       { kind: 'go', label: 'Reconstruct a scramble', key: 'Y', run: () => $('#btn-recon').click() },
+      { kind: 'go', label: 'Cross + 1 trainer', key: 'L', keywords: 'cross plus one f2l lookahead first pair', run: () => $('#btn-xp1').click() },
       { kind: 'go', label: 'Race', keywords: 'room multiplayer versus head to head', run: () => $('#btn-race').click() },
       { kind: 'do', label: 'Reconstruct the last solve', run: () => app.solves.at(-1) ? reconstructSolve(app.solves.at(-1)) : toast('No solves yet') },
       { kind: 'go', label: 'Pick trainer cases', key: 'K', run: () => setFor(app.settings.mode) ? openPanel('Cases', 'buildCases', undefined, app) : toast('Current mode has no case list') },
