@@ -27,7 +27,12 @@
 <ul id="bad"></ul>
 
 <script type="module">
-import { SETS, auditLibrary, verifyAlgForCase } from '../js/alglibrary.js';
+import { SETS, SET_IDS, loadSet, auditLibrary, verifyAlgForCase } from '../js/alglibrary.js';
+
+/* ZBLL and F2L are dynamic imports, so they are absent from SETS until asked
+   for. Without this the harness would report a clean run purely by never
+   having looked at two thirds of the algorithms in the app. */
+for (const id of SET_IDS) await loadSet(id);
 
 const bad = auditLibrary();
 let total = 0;

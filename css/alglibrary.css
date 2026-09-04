@@ -43,6 +43,27 @@ body.alglib-page ::selection { background: color-mix(in srgb, var(--accent) 42%,
   color: var(--accent); border-color: color-mix(in srgb, var(--accent) 42%, transparent);
   background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
+/* Second-level nav (ZBLL subsets, F2L pair states). Deliberately lighter than
+   the set tabs above it: this picks a slice of the set you are already in, and
+   reading as a second row of equals would make the page feel like eight tabs. */
+#alglib-groups {
+  max-width: 1180px; margin: -10px auto 20px;
+  display: flex; gap: 6px; flex-wrap: wrap;
+}
+.group-chip {
+  font: inherit; font-size: .78rem; cursor: pointer;
+  padding: 5px 12px; border-radius: 99px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface) 55%, transparent);
+  color: var(--text-dim);
+}
+.group-chip:hover { color: var(--text); }
+.group-chip.on {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 42%, transparent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
 .alglib-search {
   display: flex; align-items: center; gap: 8px; flex: 1; min-width: 190px; max-width: 340px;
   padding: 7px 12px; border-radius: 99px;
