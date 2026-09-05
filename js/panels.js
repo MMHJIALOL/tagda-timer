@@ -7,12 +7,16 @@
 import { $, el, fmt, fmtDate, download, parseScrambleList } from './util.js';
 import { PRESETS, TIMER_FONTS, exportTheme, importTheme } from './theme.js';
 import { SHADER_NAMES } from './bg.js';
-import { summarize, byCase, eff, DNF, bestAvg, statWindow } from './stats.js';
+import { summarize, byCase, eff, DNF, bestAvg, statWindow, bldSummary } from './stats.js';
 import { renderTrend, renderHistogram, renderHeatmap, renderCaseBars } from './charts.js';
 import { MODES, EVENTS } from './events.js';
 import { setFor } from './scramble.js';
 import { toast, confirmToast } from './toast.js';
-import { exportAll, Assets, Solves } from './db.js';
+import { exportAll, Assets, Solves, LetterPairs } from './db.js';
+import { DEFAULT_SPEFFZ_MAP, DEFAULT_BLD, CORNER_STICKER_KEYS, EDGE_STICKER_KEYS,
+         frontsFor, cornerStickerName, edgeStickerName, pieceAtFacelet, faceletsOfPiece,
+         pieceName, samePiece, diagnose } from './bldtrace.js';
+import { CORNER_NAMES, EDGE_NAMES, FACES } from './cube3.js';
 
 /* ---------------- drawer shell ---------------- */
 
@@ -639,6 +643,25 @@ export function buildSettings(app) {
         row('Cubes per attempt', slider(S.multiCount, 2, 20, 1, v => set('multiCount', v))),
       ),
 
+      group('Blindsolving',
+        el('div', { class: 'row' },
+          el('div', { class: 'lbl' },
+            el('span', { text: 'Buffers, orientation, letters' }),
+            el('span', { class: 'sub', text: 'and the memo/execution split' })),
+          el('button', {
+            class: 'ghost-btn', text: 'open',
+            onclick: () => openDrawer('Blindsolving', buildBlindsolving(app)),
+          })),
+        el('div', { class: 'row' },
+          el('div', { class: 'lbl' },
+            el('span', { text: 'Letter pairs' }),
+            el('span', { class: 'sub', text: 'words, images and your own algs' })),
+          el('button', {
+            class: 'ghost-btn', text: 'open',
+            onclick: () => openDrawer('Letter pairs', buildLetterPairs(app), { wide: true }),
+          })),
+      ),
+
       group('Data',
         el('div', { class: 'row' },
           el('div', { class: 'lbl' }, el('span', { text: 'Backup' }), el('span', { class: 'sub', text: 'every session and solve as JSON' })),
@@ -794,12 +817,479 @@ export function buildStats(app) {
     heatHost.refresh = drawHeat;
     drawHeat();
 
+    const bs = bldSummary(solves);
+    if (bs) {
+      const pct = (v) => Math.round(v * 100);
+      /* The headline share is worked out from the very means printed beside
+         it, not from bs.ratio: a mean of per-solve shares is the better
+         statistic but it does not divide the two figures on screen, and a
+         "memo 4.10 · exec 4.19 · 59% memo" card reads as a bug. bs.ratio
+         still drives the drift and the trend, where the direction is the
+         point and one long solve should not own the answer. */
+      const share = bs.memo / Math.max(1, bs.memo + bs.exec);
+      const drift = bs.drift === null ? null : pct(bs.drift);
+      /* A bar rather than a chart: it is one number, and the only comparison
+         that matters is memo against exec inside the same solve. */
+      const bar = el('div', { class: 'me-bar' },
+        el('span', { class: 'me-memo', style: { width: pct(share) + '%' } }),
+        el('span', { class: 'me-exec', style: { width: (100 - pct(share)) + '%' } }));
+
+      const trend = el('div', { class: 'me-trend' });
+      for (const r of bs.ratios.slice(-40)) {
+        trend.append(el('i', { style: { height: Math.max(4, Math.round(r * 100)) + '%' } }));
+      }
+
+      const verdict = drift === null
+        ? 'Not enough blind solves yet to say which way it is drifting.'
+        : Math.abs(drift) < 3
+          ? 'Your split is holding steady across the session.'
+          : drift > 0
+            ? 'Your memo is taking proportionally longer than it was earlier in the session — ' +
+              (bs.count >= 6 ? 'up ' + drift + ' points over the last ' + bs.window + ' solves.' : '')
+            : 'Execution is taking proportionally longer than it was earlier — ' +
+              'down ' + Math.abs(drift) + ' points over the last ' + bs.window + ' solves, so ' +
+              'your turning rather than your memo is the slower half tonight.';
+
+      body.append(el('div', { class: 'chart-card' },
+        el('h4', { text: 'Memo and execution — ' + bs.count + ' blind solves' }),
+        el('div', { class: 'big-stats' },
+          cell('memo', fmt(bs.memo), pct(share) + '% of the solve'),
+          cell('exec', fmt(bs.exec), (100 - pct(share)) + '% of the solve'),
+          cell('split', pct(share) + '/' + (100 - pct(share)),
+            drift === null ? 'no trend yet' : (drift > 0 ? '+' : '') + drift + ' pts recently')),
+        bar,
+        el('div', { class: 'bs-sub', text: 'memo share, one bar per solve (last 40)' }),
+        trend,
+        el('div', { class: 'hint-note', text: verdict + ' Elite blind solvers often sit near 30/70, ' +
+          'but that is a reference point, not a target — the number worth watching is your own drift.' })));
+    }
+
     if (cases.length) {
       const caseHost = el('div');
       body.append(el('div', { class: 'chart-card' },
         el('h4', { text: 'Slowest cases in this session' }), caseHost));
       renderCaseBars(caseHost, cases);
     }
+  };
+}
+
+
+/* =========================================================
+   BLINDSOLVING
+
+   Buffers, orientation and the letter scheme. Reached from the gear on the
+   breakdown panel as well as from Settings, because hunting through a
+   general settings drawer mid-session is exactly what this is meant to
+   replace.
+   ========================================================= */
+
+/** Every sticker of a piece type, as face-first names — a buffer is a sticker. */
+const CORNER_STICKERS = CORNER_NAMES.flatMap((_, i) => [0, 1, 2].map(j => cornerStickerName(i, j)));
+const EDGE_STICKERS   = EDGE_NAMES.flatMap((_, i) => [0, 1].map(j => edgeStickerName(i, j)));
+
+export function buildBlindsolving(app) {
+  return (body) => {
+    const bld = () => app.settings.bld;
+    /* One object, written whole. The tracer reads several of these keys
+       together, so half-applied changes are not a state worth having. */
+    const set = (patch) => {
+      app.setSetting('bld', { ...bld(), ...patch });
+      app.bldChanged?.();
+    };
+    const redraw = () => openDrawer('Blindsolving', buildBlindsolving(app));
+
+    const lettersOf = () => ({ ...DEFAULT_SPEFFZ_MAP, ...(bld().letters || {}) });
+
+    /* The scheme editor. Corners and edges each carry their own A-X, so
+       duplicates are only duplicates within one of the two halves. */
+    const schemeGrid = (keys, title) => {
+      const wrap = el('div', { class: 'scheme-grid' });
+      const inputs = new Map();
+      const validate = () => {
+        const seen = new Map();
+        for (const [k, inp] of inputs) {
+          const v = inp.value.trim().toUpperCase();
+          if (!v) continue;
+          seen.set(v, (seen.get(v) || 0) + 1);
+          void k;
+        }
+        for (const [, inp] of inputs) {
+          const v = inp.value.trim().toUpperCase();
+          inp.closest('.scheme-cell').classList.toggle('dupe', !!v && seen.get(v) > 1);
+        }
+      };
+      for (const k of keys) {
+        const inp = el('input', { class: 'inp scheme-inp', maxlength: 1, value: lettersOf()[k] || '' });
+        inp.addEventListener('input', () => {
+          inp.value = inp.value.replace(/[^A-Za-z]/g, '').toUpperCase().slice(0, 1);
+          validate();
+          if (!inp.value) return;
+          // Any edit at all means the scheme is the solver's own now — the
+          // same rule the theme editor uses for "custom".
+          set({ scheme: 'custom', letters: { ...lettersOf(), [k]: inp.value } });
+        });
+        inputs.set(k, inp);
+        wrap.append(el('label', { class: 'scheme-cell' }, el('span', { text: k }), inp));
+      }
+      validate();
+      return el('div', { class: 'scheme-block' }, el('h4', { text: title }), wrap);
+    };
+
+    const up = bld().orientation?.up || 'U';
+    const front = bld().orientation?.front || 'F';
+
+    body.append(
+      el('div', { class: 'hint-note', html:
+        'These are the letters and buffers <b>you</b> learned. Nothing below is baked into the ' +
+        'tracer — change a buffer and every breakdown from the next scramble on is re-read against it.' }),
+
+      group('Buffers',
+        row('Edge buffer', select(EDGE_STICKERS.map(v => ({ value: v, label: v })), bld().edgeBuffer,
+          v => set({ edgeBuffer: v })), 'the sticker you shoot from, not just the piece'),
+        row('Corner buffer', select(CORNER_STICKERS.map(v => ({ value: v, label: v })), bld().cornerBuffer,
+          v => set({ cornerBuffer: v }))),
+      ),
+
+      group('Orientation',
+        row('Up face', select(FACES.map(f => ({ value: f, label: f })), up, (v) => {
+          const fronts = frontsFor(v);
+          set({ orientation: { up: v, front: fronts.includes(front) ? front : fronts[0] } });
+          redraw();
+        }), 'which face was up when you assigned the letters'),
+        row('Front face', select(frontsFor(up).map(f => ({ value: f, label: f })), front,
+          v => set({ orientation: { up, front: v } }))),
+        el('div', { class: 'hint-note', text:
+          'The default is the WCA one — white on top, green on front. A scramble is always applied ' +
+          'in that orientation, so this says how you hold the cube afterwards, not how it was scrambled.' }),
+      ),
+
+      group('Letter scheme',
+        row('Scheme', el('div', { class: 'lbl' },
+          el('span', { text: bld().scheme === 'custom' ? 'Custom' : 'Speffz' })),
+          'editing any cell below makes it custom'),
+        el('div', { class: 'row' },
+          el('div', { class: 'lbl' },
+            el('span', { text: 'Reset' }),
+            el('span', { class: 'sub', text: 'back to standard Speffz' })),
+          el('button', {
+            class: 'ghost-btn', text: 'reset to Speffz',
+            onclick: () => {
+              set({ scheme: 'speffz', letters: { ...DEFAULT_SPEFFZ_MAP } });
+              redraw();
+              toast('Letters back to Speffz', { kind: 'good' });
+            },
+          })),
+        schemeGrid(CORNER_STICKER_KEYS, 'Corners'),
+        schemeGrid(EDGE_STICKER_KEYS, 'Edges'),
+      ),
+
+      group('Breakdown',
+        row('Show breakdown by default', toggle(bld().showBreakdownByDefault, v => set({ showBreakdownByDefault: v })),
+          'off means the panel starts collapsed every session'),
+        row('Memo / execution split', toggle(bld().memoExecSplit, v => set({ memoExecSplit: v })),
+          'the first press mid-solve ends the memo instead of the solve'),
+      ),
+
+      group('Letter pairs',
+        el('div', { class: 'row' },
+          el('div', { class: 'lbl' },
+            el('span', { text: 'Pair dictionary' }),
+            el('span', { class: 'sub', text: 'the words, images and algs behind your letters' })),
+          el('button', {
+            class: 'ghost-btn', text: 'open',
+            onclick: () => openDrawer('Letter pairs', buildLetterPairs(app), { wide: true }),
+          })),
+      ),
+
+      el('div', { class: 'hint-note', html:
+        '<b>Commutators are yours, not the app’s.</b> An &ldquo;optimal&rdquo; comm for a pair depends on ' +
+        'your buffer, your scheme and your fingers, so nothing here invents one. Save your own against ' +
+        'a pair in the dictionary and it shows up whenever that pair does.' }),
+    );
+  };
+}
+
+/* =========================================================
+   LETTER PAIRS
+   ========================================================= */
+export function buildLetterPairs(app, focus = '') {
+  return (body) => {
+    const list = el('div', { class: 'lp-list' });
+    const editor = el('div', { class: 'lp-editor' });
+    let all = [];
+
+    const openEditor = (rec) => {
+      editor.textContent = '';
+      const r = { pair: '', word: '', imageUrl: null, alg: '', notes: '', ...(rec || {}) };
+      const pairInp = el('input', { class: 'inp', maxlength: 2, value: r.pair, placeholder: 'BK' });
+      const wordInp = el('input', { class: 'inp', value: r.word || '', placeholder: 'Book' });
+      const algInp  = el('input', { class: 'inp', value: r.alg || '', placeholder: "R U' R' ..." });
+      const noteInp = el('input', { class: 'inp', value: r.notes || '', placeholder: 'anything worth remembering' });
+      const preview = el('div', { class: 'lp-img' });
+      const paint = () => {
+        preview.textContent = '';
+        if (r.imageUrl) preview.append(el('img', { src: r.imageUrl, alt: r.word || r.pair }));
+      };
+      paint();
+
+      const file = el('input', { type: 'file', accept: 'image/*', style: { display: 'none' } });
+      file.addEventListener('change', () => {
+        const f = file.files?.[0];
+        if (!f) return;
+        // Kept on the record as a data URI: the dictionary has to survive a
+        // reload and an export, and a blob URL survives neither.
+        if (f.size > 512 * 1024) { toast('Keep memo images under 512 KB'); return; }
+        const fr = new FileReader();
+        fr.onload = () => { r.imageUrl = String(fr.result); paint(); };
+        fr.readAsDataURL(f);
+      });
+
+      const save = async () => {
+        const pair = pairInp.value.trim().toUpperCase();
+        if (pair.length !== 2 || !/^[A-Z]{2}$/.test(pair)) { toast('A pair is exactly two letters'); return; }
+        await LetterPairs.put({
+          pair, word: wordInp.value.trim(), imageUrl: r.imageUrl,
+          alg: algInp.value.trim(), notes: noteInp.value.trim(),
+        });
+        toast('Saved ' + pair, { kind: 'good' });
+        editor.textContent = '';
+        await refresh();
+      };
+
+      editor.append(group(r.pair ? 'Edit ' + r.pair : 'New pair',
+        row('Pair', pairInp),
+        row('Word', wordInp),
+        row('Algorithm', algInp, 'your own commutator for this pair'),
+        row('Notes', noteInp),
+        el('div', { class: 'row' },
+          el('div', { class: 'lbl' }, el('span', { text: 'Image' }), el('span', { class: 'sub', text: 'optional, under 512 KB' })),
+          el('div', { class: 'lp-imgrow' },
+            el('button', { class: 'ghost-btn', text: 'choose', onclick: () => file.click() }),
+            r.imageUrl ? el('button', { class: 'ghost-btn', text: 'remove', onclick: () => { r.imageUrl = null; paint(); } }) : null,
+            file)),
+        preview,
+        el('div', { class: 'row' },
+          el('div', { class: 'lbl' }, el('span', { text: '' })),
+          el('div', { class: 'lp-actions' },
+            el('button', { class: 'ghost-btn', text: 'save', onclick: save }),
+            el('button', { class: 'ghost-btn', text: 'cancel', onclick: () => { editor.textContent = ''; } }),
+            r.pair ? el('button', {
+              class: 'ghost-btn danger', text: 'delete',
+              onclick: async () => {
+                if (!await confirmToast('Delete ' + r.pair + '?', 'delete')) return;
+                await LetterPairs.del(r.pair);
+                editor.textContent = '';
+                await refresh();
+              },
+            }) : null)),
+      ));
+      editor.scrollIntoView?.({ block: 'nearest' });
+    };
+
+    const search = el('input', { class: 'inp', placeholder: 'search a pair, a word, an alg' });
+    const paintList = () => {
+      const q = search.value.trim().toLowerCase();
+      const rows = all.filter(r => !q || r.pair.toLowerCase().includes(q)
+        || (r.word || '').toLowerCase().includes(q) || (r.alg || '').toLowerCase().includes(q));
+      list.textContent = '';
+      if (!rows.length) {
+        list.append(el('div', { class: 'hint-note', text: all.length
+          ? 'Nothing matches that.'
+          : 'No pairs saved yet. Add one here, or click any pair in the breakdown panel.' }));
+        return;
+      }
+      for (const r of rows) {
+        list.append(el('button', { class: 'lp-row', onclick: () => openEditor(r) },
+          el('b', { text: r.pair }),
+          el('span', { class: 'lp-word', text: r.word || '—' }),
+          r.alg ? el('span', { class: 'lp-alg', text: r.alg }) : null,
+          r.imageUrl ? el('span', { class: 'lp-dot', title: 'has an image' }) : null));
+      }
+    };
+
+    const refresh = async () => { all = await LetterPairs.all(); paintList(); };
+    search.addEventListener('input', paintList);
+
+    body.append(
+      group('Your pairs',
+        row('Search', search),
+        el('div', { class: 'row' },
+          el('div', { class: 'lbl' }, el('span', { text: 'Add' }), el('span', { class: 'sub', text: 'two letters and whatever you see' })),
+          el('button', { class: 'ghost-btn', text: 'new pair', onclick: () => openEditor(null) })),
+        list),
+      editor,
+      group('Import / export',
+        el('div', { class: 'row' },
+          el('div', { class: 'lbl' },
+            el('span', { text: 'Export' }),
+            el('span', { class: 'sub', text: 'every pair as JSON' })),
+          el('button', {
+            class: 'ghost-btn', text: 'export',
+            onclick: async () => {
+              download('tagdatimer-letterpairs.json', JSON.stringify(await LetterPairs.all(), null, 2));
+              toast('Pairs downloaded', { kind: 'good' });
+            },
+          })),
+        (() => {
+          const f = el('input', { type: 'file', accept: '.json,application/json', style: { display: 'none' } });
+          f.addEventListener('change', async () => {
+            const file0 = f.files?.[0];
+            if (!file0) return;
+            try {
+              const data = JSON.parse(await file0.text());
+              const rows = (Array.isArray(data) ? data : data.letterPairs || [])
+                .filter(r => r && /^[A-Za-z]{2}$/.test(String(r.pair || '')))
+                .map(r => ({ ...r, pair: String(r.pair).toUpperCase() }));
+              if (!rows.length) throw new Error('no pairs in that file');
+              await LetterPairs.putMany(rows);
+              await refresh();
+              toast('Imported ' + rows.length + ' pairs', { kind: 'good' });
+            } catch (err) {
+              toast('Could not read that file: ' + err.message);
+            } finally { f.value = ''; }
+          });
+          return el('div', { class: 'row' },
+            el('div', { class: 'lbl' },
+              el('span', { text: 'Import' }),
+              el('span', { class: 'sub', text: 'a sheet you already built elsewhere' })),
+            el('div', {}, el('button', { class: 'ghost-btn', text: 'import', onclick: () => f.click() }), f));
+        })(),
+      ),
+    );
+
+    refresh().then(() => {
+      if (focus) openEditor(all.find(r => r.pair === focus) || { pair: focus });
+    });
+  };
+}
+
+/* =========================================================
+   DNF POST-MORTEM
+
+   Click the pieces that were still wrong when the blindfold came off, and
+   the memo that was stored with the solve says which target they were.
+   ========================================================= */
+export function buildPostMortem(app, solve) {
+  return (body) => {
+    const bld = solve.bld;
+    if (!bld?.edges) {
+      body.append(el('div', { class: 'hint-note', text: 'No breakdown was stored with this solve.' }));
+      return;
+    }
+
+    const wrong = (bld.dnfPieces || []).map(p => ({ ...p }));
+    const canvas = el('canvas', { class: 'pm-net' });
+    const out = el('div', { class: 'pm-out' });
+    const summary = el('div', { class: 'pm-picked' });
+
+    const targets = (g, label) => el('div', { class: 'pm-memo' },
+      el('span', { class: 'pm-memo-k', text: label }),
+      el('span', { class: 'pm-memo-v', text: g.letters.length ? g.letters.join(' ') : 'nothing' }));
+
+    let layout = null;
+    let net = null;
+
+    const paint = async () => {
+      const mod = await import('./cubenet.js');
+      const dpr = Math.min(2, devicePixelRatio || 1);
+      const w = canvas.clientWidth || 420;
+      const h = Math.round(w * 3 / 4);
+      canvas.width = w * dpr; canvas.height = h * dpr;
+      canvas.style.height = h + 'px';
+      const ctx = canvas.getContext('2d');
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, w, h);
+      // The solved cube, deliberately: you are pointing at where pieces
+      // ended up, not re-reading the scramble.
+      net = net || mod.faceletsFor('', 3);
+      layout = mod.drawNet(ctx, net, 3, 0, 0, w, h);
+      if (!layout) return;
+
+      // Outline every sticker of a piece that has been marked.
+      ctx.lineWidth = Math.max(2, layout.cell * 0.14);
+      ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--danger').trim() || '#ff4d6d';
+      for (const p of wrong) {
+        for (const [face, r, c] of faceletsOfPiece(p)) {
+          const [cx, cy] = layout.place[face];
+          ctx.strokeRect(layout.ox + (cx + c) * layout.cell + layout.gap / 2,
+                         layout.oy + (cy + r) * layout.cell + layout.gap / 2,
+                         layout.cell - layout.gap, layout.cell - layout.gap);
+        }
+      }
+      summary.textContent = wrong.length
+        ? 'Marked: ' + wrong.map(pieceName).join(', ')
+        : 'Click the pieces that were still wrong.';
+    };
+
+    canvas.addEventListener('click', (e) => {
+      if (!layout) return;
+      const r = canvas.getBoundingClientRect();
+      import('./cubenet.js').then((mod) => {
+        const hit = mod.netHit(layout, 3, e.clientX - r.left, e.clientY - r.top);
+        if (!hit) return;
+        const piece = pieceAtFacelet(hit.face, hit.r, hit.c);
+        if (!piece) return;                       // a centre never moves
+        const at = wrong.findIndex(w => samePiece(w, piece));
+        if (at >= 0) wrong.splice(at, 1);
+        else if (wrong.length >= 6) { toast('Six pieces is already more than a failure shape'); return; }
+        else wrong.push({ type: piece.type, slot: piece.slot });
+        out.textContent = '';
+        paint();
+      });
+    });
+
+    const run = async () => {
+      const lines = diagnose(bld, wrong);
+      out.textContent = '';
+      if (!lines) {
+        out.append(el('div', { class: 'hint-note', text: 'Mark at least one piece first.' }));
+        return;
+      }
+      for (const line of lines) out.append(el('div', { class: 'pm-line', text: line }));
+      solve.bld.dnfPieces = wrong.map(w => ({ ...w }));
+      solve.bld.dnfDiagnosis = lines;
+      await Solves.put(solve);
+    };
+
+    body.append(
+      el('div', { class: 'hint-note', html:
+        'The net below is a <b>solved</b> cube. Click the two or three pieces that were still wrong when ' +
+        'the blindfold came off, then ask for a read on it. This matches the pieces against the memo that ' +
+        'was stored with the solve — it is pattern-matching against known failure shapes, not a guess.' }),
+      group('What was left',
+        canvas,
+        summary,
+        el('div', { class: 'row' },
+          el('div', { class: 'lbl' }, el('span', { text: 'Diagnosis' })),
+          el('div', { class: 'lp-actions' },
+            el('button', { class: 'ghost-btn', text: 'diagnose', onclick: run }),
+            el('button', {
+              class: 'ghost-btn', text: 'clear',
+              onclick: () => { wrong.length = 0; out.textContent = ''; paint(); },
+            }))),
+        out),
+      group('The memo this solve stored',
+        targets(bld.edges, 'edges'),
+        targets(bld.corners, 'corners'),
+        bld.parity ? el('div', { class: 'hint-note', text: 'This scramble had parity.' }) : null,
+        Number.isFinite(bld.memoMs)
+          ? el('div', { class: 'hint-note', text: 'memo ' + fmt(bld.memoMs) + '  ·  exec ' + fmt(bld.execMs) })
+          : null),
+    );
+
+    /* The net is drawn into a bitmap sized from the element, so it has to be
+       redrawn whenever that size changes — a drawer opened before the layout
+       had settled, or a window resized afterwards, would otherwise leave a
+       blank canvas with no way back. */
+    if (typeof ResizeObserver === 'function') {
+      let last = 0;
+      new ResizeObserver(() => {
+        const w = Math.round(canvas.clientWidth);
+        if (w && w !== last) { last = w; paint(); }
+      }).observe(canvas);
+    }
+    requestAnimationFrame(() => { paint(); });
+    if (bld.dnfDiagnosis?.length) for (const line of bld.dnfDiagnosis) out.append(el('div', { class: 'pm-line', text: line }));
   };
 }
 

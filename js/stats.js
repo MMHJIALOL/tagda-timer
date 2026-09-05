@@ -351,6 +351,34 @@ export function dailyCounts(solves, keyOf) {
    indices into `solves`, not into `list`, exactly like trimmedIndices().
    ========================================================= */
 
+/**
+ * Memo and execution across a session's blindfolded solves.
+ *
+ * The comparison is always the solver against themselves: a sub-20 blind
+ * solver and a sub-2-minute one both learn something from their own ratio
+ * drifting, and nothing from being measured against a number off a forum.
+ * The 30/70 figure appears in the UI copy as a reference point and is
+ * deliberately not a threshold anything here branches on.
+ */
+export function bldSummary(solves) {
+  const list = (solves || []).filter(s =>
+    s?.bld && Number.isFinite(s.bld.memoMs) && Number.isFinite(s.bld.execMs) && s.penalty !== 'DNF');
+  if (!list.length) return null;
+
+  const mean = (a) => a.reduce((x, y) => x + y, 0) / a.length;
+  const ratios = list.map(s => s.bld.memoMs / Math.max(1, s.bld.memoMs + s.bld.execMs));
+  const memo = mean(list.map(s => s.bld.memoMs));
+  const exec = mean(list.map(s => s.bld.execMs));
+
+  /* Drift is the recent window against everything before it. Under six solves
+     there is no "before", so it stays null rather than reporting noise. */
+  let drift = null;
+  const w = Math.min(12, Math.floor(list.length / 2));
+  if (w >= 3) drift = mean(ratios.slice(-w)) - mean(ratios.slice(0, -w));
+
+  return { count: list.length, memo, exec, ratio: mean(ratios), ratios, drift, window: w };
+}
+
 export const STAT_LABELS = {
   best: 'Best single', mean: 'Session mean',
   ao5: 'Average of 5', ao12: 'Average of 12',

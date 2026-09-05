@@ -199,15 +199,38 @@ export function cubeSizeFor(eventId = '333') {
  *    L   F   R   B
  *        D
  */
-export function drawNet(ctx, facelets, n, x, y, w, h, { scheme = SCHEME, radius = 0.16 } = {}) {
+export function netLayout(n, x, y, w, h) {
   const cols = 4 * n, rows = 3 * n;
   const cell = Math.floor(Math.min(w / cols, h / rows));
-  if (cell < 2) return;
-  const gap = Math.max(1, Math.round(cell * 0.08));
-  const ox = x + (w - cell * cols) / 2;
-  const oy = y + (h - cell * rows) / 2;
+  if (cell < 2) return null;
+  return {
+    cell,
+    gap: Math.max(1, Math.round(cell * 0.08)),
+    ox: x + (w - cell * cols) / 2,
+    oy: y + (h - cell * rows) / 2,
+    place: { U: [n, 0], L: [0, n], F: [n, n], R: [2 * n, n], B: [3 * n, n], D: [n, 2 * n] },
+  };
+}
 
-  const place = { U: [n, 0], L: [0, n], F: [n, n], R: [2 * n, n], B: [3 * n, n], D: [n, 2 * n] };
+/** Which (face, row, col) a point lands on, or null outside the net. */
+export function netHit(layout, n, px, py) {
+  if (!layout) return null;
+  const { cell, ox, oy, place } = layout;
+  for (const [face, [cx, cy]] of Object.entries(place)) {
+    for (let r = 0; r < n; r++) {
+      for (let c = 0; c < n; c++) {
+        const x0 = ox + (cx + c) * cell, y0 = oy + (cy + r) * cell;
+        if (px >= x0 && px < x0 + cell && py >= y0 && py < y0 + cell) return { face, r, c };
+      }
+    }
+  }
+  return null;
+}
+
+export function drawNet(ctx, facelets, n, x, y, w, h, { scheme = SCHEME, radius = 0.16 } = {}) {
+  const layout = netLayout(n, x, y, w, h);
+  if (!layout) return null;
+  const { cell, gap, ox, oy, place } = layout;
   const rad = Math.max(1, cell * radius);
 
   for (const [face, [cx, cy]] of Object.entries(place)) {
@@ -221,6 +244,9 @@ export function drawNet(ctx, facelets, n, x, y, w, h, { scheme = SCHEME, radius 
       }
     }
   }
+  // Handed back so a caller that also wants to hit-test or outline a sticker
+  // works off the same geometry rather than its own copy of the arithmetic.
+  return layout;
 }
 
 function roundRect(ctx, x, y, w, h, r) {
