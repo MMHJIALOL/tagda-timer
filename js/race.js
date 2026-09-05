@@ -27,8 +27,34 @@ import {
   CLOCK_SLACK_MS, CLOCK_SLACK_RATIO,
 } from './raceapp.js';
 
-/** How long a settled leaderboard stays up before the next scramble. */
-const SETTLE_MS = 6000;
+/**
+ * How long a settled leaderboard stays up before the next scramble.
+ *
+ * It used to be six, and it used to be six on top of up to two seconds of tick
+ * latency and then a scramble that was only generated and published once the
+ * round pointer had already moved — so the real gap between the last person
+ * finishing and the next scramble appearing was closer to ten. The settle is
+ * now the whole of the wait: the next round's scramble is written while this
+ * one is still being read (see _preopenNextRound), and both ends of this timer
+ * fire on the event that caused them rather than on the next tick.
+ */
+const SETTLE_MS = 4000;
+
+/**
+ * How long a round may sit without a scramble before somebody who is not the
+ * host publishes one.
+ *
+ * The host is derived, not elected, so a host whose tab froze rather than
+ * closed is still the host as far as every client is concerned — and a room
+ * whose host has stopped publishing scrambles is a room that has stopped. The
+ * `info` node is write-once, so letting everyone try after a pause costs
+ * nothing: the first write wins and the rest are refused, which is the same
+ * mechanism two clients starting at once already rely on.
+ */
+const ORPHAN_ROUND_MS = 6000;
+
+/** How long to keep retrying a write the room needs before giving up on it. */
+const RETRY_MS = [400, 1200];
 
 /* ---------------------------------------------------------
    Small helpers
@@ -97,8 +123,17 @@ export class Race extends EventTarget {
 
     /** The round we have already written a result for. */
     this.submittedRound = 0;
-    /** The round whose scramble is currently on screen. */
-    this.servedRound = 0;
+    /**
+     * What the scramble area is currently showing, as a short key.
+     *
+     * Not a round number any more. A round has three things it can put on
+     * screen — waiting for its scramble, the scramble itself, and the hold
+     * that replaces it once YOU are done — and keying on the round alone meant
+     * only the first of them was ever drawn. That is the bug where finishing
+     * first left the scramble you had just solved sitting there, inviting you
+     * to scramble it a second time while the room was still racing.
+     */
+    this._servedKey = '';
     /** Rounds we have already celebrated / folded into standings. */
     this.settledRound = 0;
 
@@ -115,6 +150,10 @@ export class Race extends EventTarget {
     this.settleFrom = 0;
     /** Set when everyone still connected but one has finished. */
     this.graceAt = 0;
+    /** roundNo -> when this client first saw that round with no scramble. */
+    this._roundSeenAt = new Map();
+    /** Timer that fires the settle → advance step on time rather than on tick. */
+    this._settleTimer = 0;
 
     /**
      * null until somebody folds or unfolds the panel by hand, and then their
@@ -209,8 +248,10 @@ export class Race extends EventTarget {
      * and left the panel in a state that cannot really exist: results
      * unlocked, but no submitted round to have unlocked them. */
     this.submittedRound = 0;
-    this.servedRound = 0;
+    this._servedKey = '';
     this.settledRound = 0;
+    this._roundSeenAt.clear();
+    this._preopened = 0;
     this._prevRound = undefined;
     this._prevPhase = undefined;
     /* Restored rather than cleared. Wins are the one thing in a room that
@@ -259,12 +300,16 @@ export class Race extends EventTarget {
     if (!this.net) return;
     clearInterval(this._tick);
     this._tick = 0;
+    clearTimeout(this._settleTimer);
+    this._settleTimer = 0;
     await this.net.leave();
     this.snap = null;
     this.settleAt = 0;
     this.graceAt = 0;
     this.submittedRound = 0;
-    this.servedRound = 0;
+    this._servedKey = '';
+    this._roundSeenAt.clear();
+    this._preopened = 0;
     this._prevRound = undefined;
     this._prevPhase = undefined;
     this._syncPanel();
@@ -305,9 +350,16 @@ export class Race extends EventTarget {
       this.graceAt = 0;
       this.settleFrom = 0;
       this.submittedRound = 0;
-      this.servedRound = 0;
+      this._servedKey = '';
       this.settledRound = 0;
       this._lastStatus = null;
+      this._roundSeenAt.clear();
+      /* The pre-opened scramble for the round after this one is still sitting
+         in the database, unread. That is exactly what _end wants: it moves the
+         pointer on by one precisely so a restart does not replay a round
+         everybody has already solved, and the scramble waiting there is the
+         one that round will use. */
+      this._preopened = 0;
       this.app.nextScramble?.();
     }
 
@@ -317,10 +369,21 @@ export class Race extends EventTarget {
       this.settleAt = 0;
       this.graceAt = 0;
       this.settleFrom = 0;
+      clearTimeout(this._settleTimer);
+      /* Forget what the room last heard about us.
+       *
+       * onTimerState only writes a status that differs from the last one it
+       * wrote, and the only thing that used to clear that memory was
+       * submitting a result. So a round you inspected and then abandoned left
+       * `_lastStatus` on 'inspecting', and in the NEXT round your inspection
+       * was suppressed as a repeat — the room saw you sitting at 'waiting'
+       * while you were already on the cube. */
+      this._lastStatus = null;
       this._restoreOwnResult(this.round.no);
     }
 
     this._maybeOpenRound();
+    this._evaluateRound();
     this._serveScramble();
     this._syncPanel();
     this.dispatchEvent(new CustomEvent('change'));
@@ -341,32 +404,121 @@ export class Race extends EventTarget {
     if (this.round?.no !== n) return;      // the round moved on while we asked
     this.submittedRound = n;
     this.net.unlockResults();
+    /* And put the hold up. A reload mid-round comes back through here rather
+       than through onSolveRecorded, so without this the tab that came back
+       showed the scramble it had already raced — the same trap, reached the
+       other way round. */
+    this._serveScramble();
     this._syncPanel();
   }
 
   /** The host publishes the scramble for a round that has none yet. */
   async _maybeOpenRound() {
     const r = this.round;
-    if (!r || r.info || this.phase !== 'racing') return;
-    if (!this.isHost) return;
-    const s = await this.app.makeScramble?.();
-    if (!s?.scramble) return;
-    // Re-check: the await above is long enough for somebody else's round to
-    // have landed, and writing anyway would just lose the race in the rules.
-    if (this.round?.no !== r.no || this.round?.info) return;
-    await this.net.openRound(r.no, {
-      scramble: s.scramble,
-      hash: scrambleHash(s.scramble),
-      event: this.snap.meta?.event || this.app.settings.event,
-    });
+    if (!r || this.phase !== 'racing') return;
+    if (r.info) { this._preopenNextRound(r.no); return; }
+
+    /* Remember when this round first showed up empty, so "the host has stopped
+       answering" is a thing this client can eventually notice on its own. */
+    if (!this._roundSeenAt.has(r.no)) this._roundSeenAt.set(r.no, Date.now());
+    const orphaned = Date.now() - this._roundSeenAt.get(r.no) > ORPHAN_ROUND_MS;
+    if (!this.isHost && !orphaned) return;
+
+    if (this._openingRound === r.no) return;   // one attempt in flight at a time
+    this._openingRound = r.no;
+    try {
+      const s = await this.app.makeScramble?.();
+      if (!s?.scramble) return;
+      // Re-check: the await above is long enough for somebody else's round to
+      // have landed, and writing anyway would just lose the race in the rules.
+      if (this.round?.no !== r.no || this.round?.info) return;
+      await this.net.openRound(r.no, {
+        scramble: s.scramble,
+        hash: scrambleHash(s.scramble),
+        event: this.snap.meta?.event || this.app.settings.event,
+      });
+    } finally {
+      this._openingRound = 0;
+    }
   }
 
-  /** Put the round's scramble on screen exactly once per round. */
-  _serveScramble() {
+  /**
+   * Write the NEXT round's scramble while this one is still being raced.
+   *
+   * This is most of the pause people were complaining about. The old order was
+   * strictly serial and every step was a round trip: the last person finishes,
+   * the leaderboard is read for six seconds, the pointer is advanced, the
+   * advance comes back to the host, the host generates a scramble, writes it,
+   * and only then does it come back to everybody as the thing they are meant
+   * to be solving. Three round trips and a scramble generation, all of it
+   * after the countdown had already reached zero.
+   *
+   * None of it depends on the round having ended, so none of it has to happen
+   * then. `rounds/<n>/info` is write-once and nothing reads a round the
+   * pointer has not reached, so publishing n+1 early is invisible until the
+   * pointer arrives — at which point the scramble is already there and the
+   * only remaining cost is the listener that was going to be attached anyway.
+   */
+  async _preopenNextRound(n) {
+    if (!this.isHost || this.phase !== 'racing') return;
+    if (this._preopened === n + 1 || this._preopening) return;
+    this._preopening = true;
+    try {
+      const s = await this.app.makeScramble?.();
+      if (!s?.scramble) return;
+      if (this.phase !== 'racing' || this.round?.no !== n) return;
+      await this.net.openRound(n + 1, {
+        scramble: s.scramble,
+        hash: scrambleHash(s.scramble),
+        event: this.snap.meta?.event || this.app.settings.event,
+      });
+      this._preopened = n + 1;
+    } catch { /* write-once: somebody got there first, which is fine */ }
+    finally { this._preopening = false; }
+  }
+
+  /**
+   * What the scramble area should be showing, as a key.
+   *
+   * Three states, not one — see the note on `_servedKey`. The hold text is
+   * part of the key so that "waiting on 3 more" becoming "waiting on 1 more"
+   * redraws, and 'run' deliberately is not keyed on the scramble text: the
+   * round's scramble is write-once, so the round number already identifies it.
+   */
+  _scrambleKey() {
     const r = this.round;
-    if (!r?.info?.scramble || this.phase !== 'racing') return;
-    if (this.servedRound === r.no) return;
-    this.servedRound = r.no;
+    if (!this.inRoom || this.phase !== 'racing' || !r) return 'none';
+    if (this.submittedRound === r.no) return `hold:${r.no}:${this.holdText()}`;
+    if (!r.info?.scramble) return `wait:${r.no}:${this.holdText()}`;
+    return `run:${r.no}`;
+  }
+
+  /**
+   * The line that stands in for the scramble when there is nothing to solve.
+   *
+   * Finishing first used to leave the scramble you had just raced on screen
+   * with no explanation, and the natural thing to do while looking at a
+   * scramble is to scramble it — so people did, and were then holding a
+   * scrambled cube when the next round handed them a different one.
+   */
+  holdText() {
+    const r = this.round;
+    if (!r) return 'Getting the room ready…';
+    if (this.submittedRound !== r.no) return 'Waiting for the round’s scramble…';
+
+    const live = this.livePlayers();
+    const left = live.filter(([id]) => r.progress?.[id]?.status !== 'done').length;
+    if (this.settleAt) return 'Next scramble loading…';
+    if (left > 0) return `Still solving: ${left} racer${left === 1 ? '' : 's'} — hold your cube, next scramble loading…`;
+    return 'Next scramble loading…';
+  }
+
+  /** Put the right thing in the scramble area, and only when it changes. */
+  _serveScramble() {
+    const key = this._scrambleKey();
+    if (key === this._servedKey) return;
+    this._servedKey = key;
+    if (key === 'none') return;
     this.app.nextScramble?.();
   }
 
@@ -374,12 +526,22 @@ export class Race extends EventTarget {
 
   /**
    * The scramble the timer should be showing, or null to let the generator
-   * have its usual say. Stays pinned to the round even after you have
-   * finished, because it is still the scramble everyone is racing.
+   * have its usual say. Pinned to the round for as long as the round is
+   * yours to solve, and replaced by a hold the moment it is not.
    */
   takeScramble() {
     const r = this.round;
-    if (!this.inRoom || this.phase !== 'racing' || !r?.info?.scramble) return null;
+    if (!this.inRoom || this.phase !== 'racing' || !r) return null;
+
+    /* Nothing to solve: either the round has not published its scramble yet,
+       or you have already raced this one and the room has not caught up. Both
+       are a message where the scramble goes, never the scramble itself — a
+       scramble on screen is an instruction to scramble, and following it at
+       the wrong moment is exactly the mistake this replaces. */
+    if (!r.info?.scramble || this.submittedRound === r.no) {
+      return { scramble: '', hold: this.holdText(), official: true, race: true, roundNo: r.no };
+    }
+
     return {
       scramble: r.info.scramble,
       official: true,
@@ -424,14 +586,24 @@ export class Race extends EventTarget {
     // Held so the row can open the solve menu on it once the round reveals.
     this.mySolves.set(r.no, solve);
 
-    await this.net.setProgress({ status: 'done' }).catch(() => {});
+    /* Straight away, and before the network is involved at all. Everything
+       below is a round trip or two, and leaving the solved scramble on screen
+       for the length of them is the whole window in which somebody scrambles
+       their cube again by mistake. */
+    this._serveScramble();
+
+    /* Retried, because this one write is what stops the room waiting on you.
+       A dropped 'done' means everybody else sits through the full grace period
+       for somebody who is sitting right there having finished. */
+    await this._retry(() => this.net.setProgress({ status: 'done' }), 'progress');
+
     try {
-      await this.net.submitResult({
+      await this._retry(() => this.net.submitResult({
         timeMs: Math.round(solve.timeMs),
         penalty: solve.penalty || 'none',
         hash: r.info.hash,
         suspect: this._looksSuspect(solve) || null,
-      });
+      }), 'result');
     } catch (err) {
       // The rules refusing a write is information, not a crash: it means the
       // scramble or the server-observed clock gap did not line up.
@@ -440,7 +612,31 @@ export class Race extends EventTarget {
     }
     // Only now does the read of everyone else's times become allowed.
     this.net.unlockResults();
+    this._serveScramble();
     this._syncPanel();
+  }
+
+  /**
+   * Try a write again before deciding it failed.
+   *
+   * The rules refuse a bad write instantly and identically to how a flaky
+   * connection refuses a good one, so this cannot tell them apart — it just
+   * makes the flaky case survive, at the cost of two pointless retries in the
+   * genuinely-refused case, which is a trade worth making for two writes the
+   * rest of the room is waiting on.
+   */
+  async _retry(fn, label) {
+    let last;
+    for (let i = 0; i <= RETRY_MS.length; i++) {
+      try { return await fn(); }
+      catch (err) {
+        last = err;
+        if (i === RETRY_MS.length) break;
+        console.warn(`[race] ${label} write failed, retrying`, err?.code || err);
+        await new Promise(res => setTimeout(res, RETRY_MS[i]));
+      }
+    }
+    throw last;
   }
 
   /**
@@ -463,12 +659,40 @@ export class Race extends EventTarget {
     // One second is plenty: everything on this clock is a countdown people
     // read, not anything the timing of a solve depends on.
     this._tick = setInterval(() => this._onTick(), 1000);
+
+    /* A backgrounded tab's interval is throttled to about once a minute, and
+       a phone with the screen off stops running it at all. Coming back is
+       therefore the one moment where every clock in here is definitely stale,
+       so catch all of them up at once rather than waiting out a tick. */
+    if (!this._onShow) {
+      this._onShow = () => { if (!document.hidden) this._onTick(); };
+      document.addEventListener('visibilitychange', this._onShow);
+    }
   }
 
   _onTick() {
     if (!this.inRoom) return;
+    // A host that stopped answering, or a round whose scramble never landed,
+    // is only ever noticed on a clock — no snapshot arrives to say so.
+    this._maybeOpenRound();
+    this._evaluateRound();
+    this._serveScramble();
+    this._syncPanel();
+  }
+
+  /**
+   * Decide whether the round is over, and move it on when it is.
+   *
+   * Called from the snapshot as well as the tick. It used to be tick-only,
+   * which put up to a second of dead air on each end of the settle: a second
+   * before the leaderboard appeared, and another before the next round was
+   * asked for. Both ends are now driven by the thing that caused them, and
+   * the tick is what covers the cases that no event announces — the grace
+   * period expiring, and a player going silent rather than leaving.
+   */
+  _evaluateRound() {
     const r = this.round;
-    if (!r || this.phase !== 'racing') { this._syncPanel(); return; }
+    if (!this.inRoom || !r || this.phase !== 'racing') return;
 
     const live = this.livePlayers();
     const done = live.filter(([id]) => r.progress?.[id]?.status === 'done');
@@ -487,28 +711,56 @@ export class Race extends EventTarget {
       this.settleAt = Date.now() + SETTLE_MS;
       this.settleFrom = r.no;
       this._settle(r);
+      /* Scheduled, not waited for. The tick below is still a backstop, but on
+         a foreground tab this is what makes the next round arrive when the
+         countdown says it will rather than up to a second afterwards. */
+      clearTimeout(this._settleTimer);
+      this._settleTimer = setTimeout(() => this._advanceIfSettled(), SETTLE_MS + 20);
     }
 
-    if (this.settleAt && Date.now() >= this.settleAt) {
-      const from = this.settleFrom;
-      this.settleAt = 0;
-      this.graceAt = 0;
-      this.settleFrom = 0;
-      /* Advance from the round that actually settled, not from whatever the
-         current round happens to be when this fires.
-         Every client runs this clock, so two of them settle a moment apart.
-         Reading `r.no` here meant the slower client could wake up after the
-         faster one had already moved the room on, compute "current + 1", and
-         advance again — skipping a round outright and handing everybody a
-         scramble nobody raced. Pinning it to the settled round makes the
-         second attempt a no-op instead, which is what the advance-by-exactly-
-         one guard was always meant to catch. */
-      if (from && this.round?.no === from) {
-        this.net.advanceRound(from + 1).catch(() => {});
-      }
-    }
+    if (this.settleAt && Date.now() >= this.settleAt) this._advanceIfSettled();
+  }
 
-    this._syncPanel();
+  /**
+   * Move the room on to the round after the one that settled.
+   *
+   * Advance from the round that actually settled, not from whatever the
+   * current round happens to be when this fires. Every client runs this clock,
+   * so two of them settle a moment apart. Reading the live round here meant
+   * the slower client could wake up after the faster one had already moved the
+   * room on, compute "current + 1", and advance again — skipping a round
+   * outright and handing everybody a scramble nobody raced. Pinning it to the
+   * settled round makes the second attempt a no-op instead, which is what the
+   * advance-by-exactly-one guard was always meant to catch.
+   *
+   * Kept armed until the round number actually changes. Zeroing the settle the
+   * moment the transaction was *sent* meant a single dropped write left the
+   * room parked on a finished round with nothing left to retry it — the state
+   * people described as the race simply stopping.
+   */
+  _advanceIfSettled() {
+    const from = this.settleFrom;
+    if (!from || !this.settleAt || Date.now() < this.settleAt) return;
+    if (this.round?.no !== from) { this._clearSettle(); return; }
+    if (this._advancing) return;
+    this._advancing = true;
+    Promise.resolve(this.net.advanceRound(from + 1))
+      .catch(err => console.warn('[race] advance failed, will retry', err?.code || err))
+      .finally(() => {
+        this._advancing = false;
+        // A transaction that ran and did nothing (somebody else moved us on
+        // first) looks exactly like one that failed. The snapshot is the only
+        // honest answer, and if it says we are still here the tick tries again.
+        if (this.round?.no !== from) this._clearSettle();
+      });
+  }
+
+  _clearSettle() {
+    this.settleAt = 0;
+    this.settleFrom = 0;
+    this.graceAt = 0;
+    clearTimeout(this._settleTimer);
+    this._settleTimer = 0;
   }
 
   /* ---------------- standings, kept across reloads ---------------- */
@@ -1036,7 +1288,8 @@ export class Race extends EventTarget {
     }
 
     if (!this.round?.info?.scramble) {
-      foot.append(el('div', { class: 'race-wait', text: 'Waiting for the round’s scramble…' }));
+      foot.append(el('div', { class: 'race-wait',
+        text: `Round ${this.round?.no ?? 1} scramble loading…` }));
       return;
     }
 
@@ -1050,9 +1303,11 @@ export class Race extends EventTarget {
         el('span', { text: 'Next scramble in ' }), el('b', { text: `${left}s` })));
     } else if (this.graceAt) {
       const left = Math.max(0, Math.ceil((this.graceAt - Date.now()) / 1000));
-      foot.append(el('div', { class: 'race-note', text: `Waiting on ${live - done} more — ${left}s` }));
+      foot.append(el('div', { class: 'race-note',
+        text: `Waiting on ${live - done} more — ${left}s. Keep your cube solved.` }));
     } else {
-      foot.append(el('div', { class: 'race-note', text: 'Waiting for the rest of the room…' }));
+      foot.append(el('div', { class: 'race-note',
+        text: 'Waiting for the rest of the room — keep your cube solved.' }));
     }
 
     if (this.kind === 'local') {

@@ -382,6 +382,11 @@ async function nextScramble({ clear = false } = {}) {
      showed a different one it would not be a race any more. */
   const raced = raceCtl()?.takeScramble();
   if (raced) {
+    /* A hold is a message standing in for a scramble â€” the round has not
+       published one yet, or you have already raced this one. It never joins
+       the history: the arrows must not be able to step back onto a sentence,
+       and there is nothing there to step back to. */
+    if (raced.hold) { showScramble(raced, true); return; }
     app.scrambleHistory.push(raced);
     if (app.scrambleHistory.length > 40) app.scrambleHistory.shift();
     app.historyPos = app.scrambleHistory.length - 1;
@@ -500,6 +505,32 @@ function showScramble(s, silent = false) {
   app.scramble = s;
   const ev = eventOf(app.settings.event);
   const node = $('#scramble-text');
+
+  /* A race hold puts prose where the notation goes, and prose must not be
+     typeset as notation: no monospace line-fitting, no word spacing meant to
+     hold moves apart, and nothing on screen that reads as something to turn. */
+  node.classList.toggle('race-hold', !!s.hold);
+  if (s.hold) {
+    node.textContent = s.hold;
+    node.classList.remove('multiline', 'long', 'oneline', 'wrapped');
+    node.style.fontSize = '';
+    $('#case-label').hidden = true;
+    updateCustomBar();
+    node.title = 'Nothing to solve yet â€” the room is still racing';
+    /* The preview goes with it. A cube still showing the scramble you just
+       solved is the same wrong instruction in a different shape â€” and it is
+       still configured for the event, because a hold can be the first thing a
+       tab ever draws when it joins a room mid-round.
+
+       Orientation is deliberately left as it is rather than re-derived: a
+       solved cube looks the same whichever way up it is held, and the next
+       real scramble sets it anyway. */
+    const holdMode = modeOf(app.settings.mode);
+    const holdView = holdMode.view || app.settings.cubeView;
+    cube.configure(ev.puzzle, holdView === 'LL3' ? '3D' : holdView);
+    cube.set('');
+    return;
+  }
 
   let text = s.scramble;
   if (app.settings.event === 'minx' && !text.includes('\n')) {
@@ -2521,8 +2552,27 @@ function wireInput() {
     timer.down();
   }, true);
 
+  /**
+   * A release is delivered whenever the press was ours, and the input gate is
+   * not consulted again to decide it.
+   *
+   * `timerInputLive()` is not a constant across a single keystroke. Stopping a
+   * race solve records it, and recording it locks the timer for the rest of the
+   * round â€” so the spacebar that ended the solve went DOWN while the timer was
+   * live and came UP while it was not. Asking the gate again here threw that
+   * keyup away, and it took two things with it: the timer only leaves
+   * `cooldown` on a release, so it sat there, and `spaceDown` was left set, so
+   * the next press was swallowed as a repeat. The visible result was the one
+   * people reported â€” the round ends, you press space for the next scramble,
+   * and nothing happens until you press again or click the timer.
+   *
+   * `stopKeys` and `spaceDown` already answer the only question that matters:
+   * did the keydown handler act on this press. Both are set on the far side of
+   * every check the keydown makes, so trusting them is not a relaxation of the
+   * gate â€” it is the same decision, remembered rather than re-taken against
+   * state that has since moved.
+   */
   document.addEventListener('keyup', (e) => {
-    if (!timerInputLive()) return;
     const key = e.code || e.key;
     if (stopKeys.has(key)) {
       stopKeys.delete(key);
@@ -2533,8 +2583,9 @@ function wireInput() {
       return;
     }
     if (e.code !== 'Space') return;
+    const wasOurs = spaceDown;
     spaceDown = false;
-    if (isTyping() || modalOpen()) return;
+    if (!wasOurs) return;
     e.preventDefault();
     timer.up();
   }, true);
@@ -2578,7 +2629,11 @@ function wireInput() {
   const up = (e) => {
     if (!e.isPrimary || !tracking) return;
     tracking = false;
-    if (!pointerOK(e) || modalOpen()) return;
+    /* `tracking` is the whole question â€” see the note on the keyup handler.
+       Re-asking pointerOK here had the identical failure on touch, which is
+       the one input where there is no other way to start the timer: the tap
+       that stopped a race solve locked the timer as it landed, its release was
+       discarded, and the first tap of the next round went nowhere. */
     timer.up();
   };
 
