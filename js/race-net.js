@@ -101,6 +101,27 @@ class FirebaseTransport extends EventTarget {
 
     const app = appMod.initializeApp(FIREBASE_CONFIG, 'tagda-race');
     const auth = authMod.getAuth(app);
+
+    /* One racer per TAB, not one per browser.
+     *
+     * Anonymous sign-in defaults to local persistence, which is scoped to the
+     * origin — so two tabs of this app were handed the SAME uid and the room
+     * saw one player however many tabs had joined. Both tabs were therefore
+     * host, both published a scramble for every round, and because a rejected
+     * write is applied locally before the server refuses it, each tab spent
+     * the round showing the scramble it had generated itself. Two tabs, two
+     * different scrambles, which is exactly what racing against yourself to
+     * test the feature looked like.
+     *
+     * Session persistence is per tab and survives a reload of that tab, which
+     * is the same identity the local transport gives out and the one the rest
+     * of this file already assumes: hasOwnResult can still recognise you after
+     * a refresh mid-round, and closing the tab — which leaves the room anyway
+     * — is the only thing that retires the uid.
+     */
+    await authMod.setPersistence(auth, authMod.browserSessionPersistence)
+      .catch(err => console.warn('[race] session persistence unavailable', err?.code || err));
+
     const cred = await authMod.signInAnonymously(auth);
     const db = dbMod.getDatabase(app);
 
