@@ -37,8 +37,13 @@ import {
  * now the whole of the wait: the next round's scramble is written while this
  * one is still being read (see _preopenNextRound), and both ends of this timer
  * fire on the event that caused them rather than on the next tick.
+ *
+ * Short enough now that it is not a pause you sit through. Nothing about the
+ * finished round vanishes when it expires — the standings board and the row
+ * with your time stay exactly where they are — so this is only how long the
+ * scramble area waits before handing you the next one to pick up.
  */
-const SETTLE_MS = 4000;
+const SETTLE_MS = 700;
 
 /**
  * How long a round may sit without a scramble before somebody who is not the
@@ -482,15 +487,25 @@ export class Race extends EventTarget {
    *
    * Three states, not one — see the note on `_servedKey`. The hold text is
    * part of the key so that "waiting on 3 more" becoming "waiting on 1 more"
-   * redraws, and 'run' deliberately is not keyed on the scramble text: the
-   * round's scramble is write-once, so the round number already identifies it.
+   * redraws.
+   *
+   * The scramble ITSELF is in the key, and keying 'run' on the round number
+   * alone was a real bug. The round's scramble is write-once on the server,
+   * but what a listener hands us is not monotonic: the database client applies
+   * a write locally the instant it is made and only afterwards learns the
+   * server refused it. So a client that loses the race to open a round — two
+   * hosts at once, a host handover, the orphan takeover — renders its OWN
+   * rejected scramble first and is corrected a moment later. With the round
+   * number as the key that correction never reached the screen, and the two
+   * racers spent the rest of the round solving different scrambles with no way
+   * back to each other.
    */
   _scrambleKey() {
     const r = this.round;
     if (!this.inRoom || this.phase !== 'racing' || !r) return 'none';
     if (this.submittedRound === r.no) return `hold:${r.no}:${this.holdText()}`;
     if (!r.info?.scramble) return `wait:${r.no}:${this.holdText()}`;
-    return `run:${r.no}`;
+    return `run:${r.no}:${scrambleHash(r.info.scramble)}`;
   }
 
   /**
