@@ -84,6 +84,10 @@ class FirebaseTransport extends EventTarget {
     this._roundUnsubs = [];
     this._beat = 0;
     this._watchedRound = null;
+    /* What we wrote into players/<uid>, kept so the row can be written again
+       from scratch. A reconnect needs the whole row, not a patch — see
+       _ensureSeat. */
+    this._seat = null;
   }
 
   async init() {
@@ -111,7 +115,21 @@ class FirebaseTransport extends EventTarget {
      * button had already been pressed. `.info/connected` is a synthetic node
      * with no rules to satisfy and nothing to download; subscribing to it
      * exists purely to make the connection happen here instead of there. */
-    this._unsubs.push(dbMod.onValue(dbMod.ref(db, '.info/connected'), () => {}, () => {}));
+    this._unsubs.push(dbMod.onValue(dbMod.ref(db, '.info/connected'), (s) => {
+      const up = s.val() === true;
+      const wasUp = this._online;
+      this._online = up;
+      /* Coming back up is the interesting edge.
+       *
+       * The onDisconnect we registered on join is honoured the moment the
+       * socket drops — including a drop of a few seconds on a phone changing
+       * network — so by the time we are back the room has already forgotten
+       * us. The heartbeat cannot put it right on its own either: it is an
+       * update of `lastSeen` alone, and the rules require a player row to
+       * carry a name, so on a missing row that write is simply refused. The
+       * seat has to be written again whole. */
+      if (up && wasUp === false) this._ensureSeat();
+    }, () => {}));
 
     return { uid: cred.user.uid };
   }
@@ -170,12 +188,14 @@ class FirebaseTransport extends EventTarget {
       }
     }
 
-    const me = this._ref(`${this._base}/players/${uid}`);
-    /* The one thing a client genuinely cannot do for itself: tell the room it
-       has gone when the tab is closed, the laptop lid comes down, or the
-       connection simply stops. Registered with the server up front and fired
-       by the server when the socket drops. */
-    S.onDisconnect(me).remove();
+    /* Kept, so the row can be written again after a reconnect. joinedAt is
+       pinned to the value from THIS join rather than re-stamped: host is
+       whoever joined first, and re-stamping it would hand the room a new host
+       every time somebody's wifi blinked. */
+    this._seat = {
+      name: player.name, color: player.color,
+      joinedAt: cur?.players?.[uid]?.joinedAt || Date.now(),
+    };
 
     /* Both writes at once. Creating the room and taking a seat in it are
        independent nodes with independent rules, and running them one after
@@ -185,13 +205,33 @@ class FirebaseTransport extends EventTarget {
       cur?.meta ? null : S.set(this._ref(`${this._base}/meta`), {
         createdAt: S.serverTimestamp(), event: player.event, mode: player.mode, round: 1,
       }),
-      S.set(me, {
-        name: player.name, color: player.color,
-        joinedAt: S.serverTimestamp(), lastSeen: S.serverTimestamp(),
-      }),
+      this._ensureSeat(),
     ]);
 
     this._startHeartbeat();
+  }
+
+  /**
+   * Write our player row, and arm the server-side removal that goes with it.
+   *
+   * Idempotent, and called on every reconnect as well as on join. The
+   * onDisconnect is re-armed each time because it is consumed when it fires:
+   * once the server has removed the row on our behalf, there is no standing
+   * instruction left for the next drop.
+   */
+  async _ensureSeat() {
+    const S = this._sdk;
+    if (!this.snap.roomId || !this._seat) return;
+    const me = this._ref(`${this._base}/players/${this.snap.uid}`);
+    try {
+      /* The one thing a client genuinely cannot do for itself: tell the room
+         it has gone when the tab is closed, the laptop lid comes down, or the
+         connection simply stops. */
+      await S.onDisconnect(me).remove();
+      await S.set(me, { ...this._seat, lastSeen: S.serverTimestamp() });
+    } catch (err) {
+      console.warn('[race] could not take a seat', err?.code || err);
+    }
   }
 
   _listen() {
@@ -321,6 +361,10 @@ class FirebaseTransport extends EventTarget {
        apart from one that is merely thinking. */
     this._beat = setInterval(() => {
       if (!this.snap.roomId) return;
+      /* A row that is not there any more cannot be patched — the rules want a
+         name on it — so notice that case and write the whole seat instead.
+         This is the backstop for a drop the `.info/connected` edge missed. */
+      if (!this.snap.players?.[this.snap.uid]) { this._ensureSeat(); return; }
       this._sdk.update(this._ref(`${this._base}/players/${this.snap.uid}`),
         { lastSeen: this._sdk.serverTimestamp() }).catch(() => {});
     }, HEARTBEAT_MS);

@@ -264,6 +264,30 @@ body.inspecting #timer-display { opacity: 0; }
 .scramble.multiline { text-wrap: initial; }
 .scramble .m { display: inline-block; transition: color var(--dur-fast); }
 
+/* A race hold: the room is between scrambles, or you have finished one the
+   rest of the room has not. It occupies the scramble's box so the page does
+   not jump, and looks as unlike a scramble as it can â€” proportional type,
+   dimmer, no monospace grid â€” because the whole point of it is that there is
+   nothing here to turn. */
+.scramble.race-hold {
+  font-family: inherit;
+  font-size: clamp(.92rem, 1.5vw, 1.12rem);
+  font-weight: 500; letter-spacing: 0; word-spacing: normal;
+  line-height: 1.5; text-wrap: balance;
+  color: var(--text-dim);
+  cursor: default;
+  background: color-mix(in srgb, var(--text) 3%, transparent);
+  border-style: dashed;
+}
+.scramble.race-hold:hover { background: color-mix(in srgb, var(--text) 3%, transparent); }
+/* Something has to say this is a live wait rather than a stuck screen. A slow
+   breath on the text is enough, and it is the kind of motion that has no
+   business overriding a reduced-motion preference. */
+@media (prefers-reduced-motion: no-preference) {
+  .scramble.race-hold { animation: race-hold-breathe 2.4s ease-in-out infinite; }
+}
+@keyframes race-hold-breathe { 50% { opacity: .62; } }
+
 /* Taken out of the flex flow: in-flow they add their width to the row and shove
    the scramble off-centre relative to the timer below it. */
 #scramble-tools {
