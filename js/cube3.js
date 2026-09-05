@@ -261,7 +261,8 @@ const EC = EDGE_NAMES.map(n => [...n]);
    is the sticker of corner slot i that faces CORNER_NAMES[i][k]. That is what makes
    "are these two pieces showing the same colour on the face they share?" — the
    question that decides whether an F2L pair is already built — a lookup rather than
-   a geometry problem. */
+   a geometry problem. It is also what lets the blindfolded tracer treat "sticker
+   index" and "facelet index" as two names for one thing. */
 export const CORNER_FACELETS = CF;
 export const EDGE_FACELETS = EF;
 

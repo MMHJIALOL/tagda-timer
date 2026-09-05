@@ -4,7 +4,7 @@
 
 import { $, $$, el, uid, fmt, fmtLive, clamp, copy, download, toCSV, debounce,
          parseTimeInput, parseScrambleList } from './util.js';
-import { Solves, Sessions, KV, Assets, importAll } from './db.js';
+import { Solves, Sessions, KV, Assets, LetterPairs, importAll } from './db.js';
 import { EVENTS, EVENT_ORDER, MODES, modesForEvent, eventOf, modeOf } from './events.js';
 import { ScrambleQueue, setFor, cubingAvailable } from './scramble.js';
 import { Timer, INSPECT_MS } from './timer.js';
@@ -19,6 +19,7 @@ import { loadLibraryPrefs } from './alglibrary.js';
 import { initTiles, applyTiles, measureLayout } from './tiles.js';
 import { SPOTIFY_CLIENT_ID, DEV_MODE_LIMIT, OWNER_NEEDS_PREMIUM } from './spotifyapp.js';
 import { popover, closePopover, popoverOpen } from './popover.js';
+import { trace, traceRecord, BLD_EVENTS, TRACEABLE_EVENTS } from './bldtrace.js';
 import { toast, confirmToast } from './toast.js';
 import { openPalette, closePalette, paletteOpen } from './palette.js';
 /* panels.js, sharedlg.js (which drags in sharecard.js and cubenet.js) and
@@ -270,6 +271,8 @@ async function init() {
   wireShortcuts();
   wireManualEntry();
   wireHistoryScroll();
+  wireBld();
+  syncEventConfig();
 
   // A pasted scramble list outlives a reload — losing your competition round
   // to an accidental refresh would be the whole feature failing at its job.
@@ -334,6 +337,7 @@ async function init() {
     // Belt and braces alongside the ResizeObserver below: this covers the
     // common case even where ResizeObserver is missing or throttled.
     fitScrambleToLine($('#scramble-text'));
+    bldFit();
   }, 120));
 
   watchScrambleWidth();
@@ -571,6 +575,10 @@ function showScramble(s, silent = false) {
   if (s.official === false && mode.kind === 'wca' && !cubingAvailable()) {
     node.title = 'Offline fallback scramble — not competition legal';
   } else node.title = 'click to copy';
+
+  // A new scramble is a new breakdown. Still nothing is traced unless the
+  // panel happens to be open — renderBld only reaches the engine when it is.
+  renderBld();
 }
 
 /**
@@ -589,13 +597,15 @@ function watchScrambleWidth() {
   const box = $('#scramble-wrap');
   if (!node || !box) return;
 
-  const refit = debounce(() => fitScrambleToLine(node), 60);
+  // The fit changes how tall the scramble is, which is exactly the number
+  // bldFit measures against — so it re-measures on the same beat.
+  const refit = debounce(() => { fitScrambleToLine(node); bldFit(); }, 60);
   if (typeof ResizeObserver === 'function') {
     // Observing the wrapper, not the text: the text's own width is an output of
     // the fit, so watching it would feed the observer its own result.
     new ResizeObserver(refit).observe(box);
   }
-  document.fonts?.ready?.then(() => fitScrambleToLine(node)).catch(() => {});
+  document.fonts?.ready?.then(() => { fitScrambleToLine(node); bldFit(); }).catch(() => {});
 }
 
 /**
@@ -696,6 +706,7 @@ function wireTimer() {
     updateHoldBar(st);
 
     if (st === 'running') {
+      phaseStart();
       bg.setSlow(0.08);
       ring.classList.remove('on');
       readout.hidden = true;
@@ -791,12 +802,18 @@ function wireTimer() {
   });
 
   timer.addEventListener('cancel', () => {
+    phaseReset();
     main.style.opacity = '';
     main.textContent = app.solves.length ? fmt(eff(app.solves.at(-1))) : '0.00';
     resetBgColors();
   });
 
   timer.addEventListener('start', () => { main.style.opacity = ''; lastDigits = ''; });
+
+  // On a blind event the first press mid-solve ends the memo instead of the
+  // solve. The digits change colour, which is feedback you get without having
+  // to read anything — the point of the split at speed.
+  timer.addEventListener('split', (e) => phaseSplit(e.detail.atMs));
 
   timer.addEventListener('stop', (e) => onSolveFinished(e.detail));
 }
@@ -885,6 +902,278 @@ function startPace(pace, fill) {
 }
 
 /* =========================================================
+   Blindfolded workflow
+
+   Two rules shape all of this (BLIND_WORKFLOW.md 0):
+
+   1. The breakdown is collapsed until asked for, and the trace is not even
+      computed until then. A solver mid-training sees the scramble and
+      nothing else, exactly as they did before this existed.
+   2. Buffers, orientation and letters are settings, never constants.
+      Everything here reads app.settings.bld.
+   ========================================================= */
+const bldEvent = () => BLD_EVENTS.has(app.settings.event);
+const bldTraceable = () => TRACEABLE_EVENTS.has(app.settings.event);
+/** Is the memo/exec split armed for the event we are on? */
+const bldSplitOn = () => bldEvent() && !!app.settings.bld?.memoExecSplit;
+
+/* Expanded or not. Deliberately a module variable and not a setting: rule 1
+   says the panel starts collapsed every time the app opens, and a persisted
+   toggle is exactly the escape hatch that would quietly undo it. The
+   showBreakdownByDefault setting seeds it on an event switch instead. */
+let bldOpen = false;
+/* Bumped whenever a buffer, orientation or letter changes, so a trace cached
+   on a scramble is thrown away rather than shown against the wrong scheme. */
+let bldEpoch = 0;
+
+function wireBld() {
+  $('#btn-bld-toggle')?.addEventListener('click', () => { bldOpen = !bldOpen; renderBld(); });
+  /* Everything bldFit() measures — how tall the panel came out, how tall the
+     window is — can change without a resize event: a webfont arriving, a
+     scramble rewrapping, the app box settling on first paint. Watch the two
+     boxes directly rather than hoping a resize lands at the right moment. */
+  if (typeof ResizeObserver === 'function') {
+    const ro = new ResizeObserver(debounce(() => bldFit(), 60));
+    for (const id of ['app', 'bld-zone']) {
+      const node = document.getElementById(id);
+      if (node) ro.observe(node);
+    }
+  }
+  $('#btn-bld-settings')?.addEventListener('click', () =>
+    openPanel('Blindsolving', 'buildBlindsolving', {}, app));
+}
+
+/** The trace for a scramble, computed on first reveal and then kept on it. */
+function bldOf(sc) {
+  if (!sc || !bldTraceable()) return null;
+  if (sc._bld && sc._bldEpoch === bldEpoch) return sc._bld;
+  sc._bldEpoch = bldEpoch;
+  try { sc._bld = trace(sc.scramble, app.settings.bld); }
+  catch (err) { console.warn('[bld] could not trace this scramble', err); sc._bld = null; }
+  return sc._bld;
+}
+
+/** A buffer or letter changed under us — drop cached traces and redraw. */
+app.bldChanged = () => { bldEpoch++; syncBldTimer(); renderBld(); };
+
+function syncBldTimer() {
+  if (timer) timer.cfg.phaseSplits = bldSplitOn() ? 1 : 0;
+}
+
+function renderBld() { renderBldInner(); bldFit(); }
+
+function renderBldInner() {
+  const zone = $('#bld-zone');
+  if (!zone) return;
+  zone.hidden = !bldEvent();
+  if (zone.hidden) return;
+
+  const btn = $('#btn-bld-toggle');
+  const panel = $('#bld-panel');
+  btn.textContent = bldOpen ? 'Hide breakdown' : 'Show breakdown';
+  btn.setAttribute('aria-expanded', String(bldOpen));
+  panel.hidden = !bldOpen;
+  if (!bldOpen) return;
+
+  const rows = [$('#bld-edges').closest('.bld-row'), $('#bld-corners').closest('.bld-row')];
+  const note = $('#bld-note');
+  const show = (on) => rows.forEach(r => { if (r) r.hidden = !on; });
+
+  if (!bldTraceable()) {
+    show(false);
+    $('#bld-parity').hidden = true;
+    note.hidden = false;
+    // Two different reasons, and saying the wrong one is worse than saying
+    // nothing: multi-blind is 3x3 cubes but several scrambles at once, while
+    // the big blind events have pieces this app does not model at all.
+    note.textContent = app.settings.event === '333mbf'
+      ? 'Multi-blind hands you several scrambles at once, and a breakdown of one of them is not '
+        + 'the memo you are building. Trace an attempt on 3BLD instead.'
+      : eventOf(app.settings.event).name + ' is not traced: only the 3x3 is modelled, and inventing '
+        + 'wing and centre cycles would be worse than saying so.';
+    return;
+  }
+
+  const t = bldOf(app.scramble);
+  show(true);
+  if (!t) {
+    $('#bld-edges').textContent = '';
+    $('#bld-corners').textContent = '';
+    $('#bld-parity').hidden = true;
+    note.hidden = false;
+    note.textContent = 'This scramble could not be read as 3x3 notation.';
+    return;
+  }
+
+  bldChips($('#bld-edges'), t.edges);
+  bldChips($('#bld-corners'), t.corners);
+  $('#bld-parity').hidden = !t.parity;
+  const odd = (t.edges.targets.length % 2) || (t.corners.targets.length % 2);
+  note.hidden = !odd;
+  if (odd) {
+    note.textContent = 'The odd target needs your own parity algorithm. Which one that is depends '
+      + 'on your buffer and scheme, so the timer flags it rather than guessing.';
+  }
+}
+
+/**
+ * Keep the open breakdown off the digits.
+ *
+ * Above the mobile breakpoint the timer is pinned to the middle of the
+ * viewport (base.css), so a breakdown opened under a two-line blind scramble
+ * lands straight on top of it. Move the timer down by exactly the overlap and
+ * not a pixel more — the same "only when it actually collides" rule the cube
+ * preview already follows in tiles.js.
+ *
+ * The nudge is capped at the room actually left below the timer, so a short
+ * window pushes the averages and the hint off the bottom of the screen rather
+ * than moving them there. On the rare viewport with no room at all the two do
+ * overlap, and the panel is stacked above the digits so it stays readable.
+ */
+let bldFitFrame = 0, bldFitTimer = 0;
+function bldFit() {
+  bldFitOnce();
+  // Same settle pass measureLayout() uses: the scramble is still being fitted
+  // and the webfont may still be loading when the first measurement lands.
+  cancelAnimationFrame(bldFitFrame);
+  clearTimeout(bldFitTimer);
+  bldFitFrame = requestAnimationFrame(bldFitOnce);
+  bldFitTimer = setTimeout(bldFitOnce, 360);
+}
+
+function bldFitOnce() {
+  const core = $('#timer-core'), digits = $('#timer-display');
+  if (!core || !digits) return;
+  const set = (px) => document.documentElement.style.setProperty('--bld-shift', px + 'px');
+  const zone = $('#bld-zone'), panel = $('#bld-panel');
+  set(0);
+  if (!zone || zone.hidden || !panel || panel.hidden) return;
+  // Measured after clearing the old value, or each pass would be measuring
+  // the nudge the last one applied and the timer would walk down the screen.
+  const vh = innerHeight || document.documentElement.clientHeight;
+  if (!vh) return;                    // measured before the window has a size
+  const coreBox = core.getBoundingClientRect(), digitsBox = digits.getBoundingClientRect();
+  const over = zone.getBoundingClientRect().bottom + 18 - digitsBox.top;
+
+  /* How far down there is to go. Below the desktop breakpoint the rails stack
+     under the timer rather than sitting beside it — and already overlap it
+     there by design — so pushing the digits down trades one collision for a
+     worse one. A panel is in the way only if it shares the timer's column and
+     starts below the digits: the same "does it actually clash" test
+     placePreview() uses in tiles.js, and the reason a full-height rail
+     alongside the digits does not count. With nothing in the way the window
+     edge is the only limit.
+
+     Where that leaves no room at all the shift comes out 0 and the panel
+     simply sits over the digits, which is why it is stacked above them. */
+  const floor = ['sidebar', 'sidebar-right', 'dock-bottom']
+    .map(id => document.getElementById(id))
+    .filter(n => n && !n.hidden && getComputedStyle(n).display !== 'none')
+    .map(n => n.getBoundingClientRect())
+    .filter(q => q.width > 2 && q.height > 2
+      && q.top >= digitsBox.top                      // below, not merely alongside
+      && q.left < digitsBox.right && q.right > digitsBox.left)   // and in the way
+    .reduce((a, q) => Math.min(a, q.top), vh);
+
+  set(Math.round(Math.max(0, Math.min(over, floor - 12 - coreBox.bottom))));
+}
+
+/**
+ * One chip per memorised pair, one <b> per target.
+ *
+ * Pairs run across the whole list rather than restarting at each cycle,
+ * because that is how the memo is actually said out loud; a break shows as a
+ * divider on the letter that opens the new cycle instead of as a new row.
+ */
+function bldChips(host, group) {
+  host.textContent = '';
+  if (!group.targets.length) {
+    host.append(el('span', { class: 'bld-none', text: 'nothing to shoot' }));
+    return;
+  }
+  const breaks = new Set(group.breaks);
+  for (let i = 0; i < group.targets.length; i += 2) {
+    const pair = group.targets.slice(i, i + 2);
+    const chip = el('button', { class: 'bld-chip' + (pair.length < 2 ? ' odd' : ''), type: 'button' });
+    pair.forEach((t, k) => {
+      const cls = ['bld-l'];
+      if (t.inPlace) cls.push('inplace');
+      if (breaks.has(i + k)) cls.push('brk');
+      chip.append(el('b', {
+        class: cls.join(' '),
+        text: t.letter,
+        title: [
+          'target ' + (i + k + 1),
+          breaks.has(i + k) ? 'starts a new cycle - a break, which costs an extra target' : null,
+          t.inPlace ? 'second shot at the same piece: a flip or twist put right in place' : null,
+        ].filter(Boolean).join('  -  '),
+      }));
+    });
+    const key = pair.map(t => t.letter).join('');
+    chip.addEventListener('click', () => bldPairPopover(chip, key));
+    host.append(chip);
+  }
+}
+
+/** Letter-pair recall, without leaving the timer. */
+async function bldPairPopover(anchor, pair) {
+  const single = pair.length !== 2;
+  let rec = null;
+  if (!single) { try { rec = await LetterPairs.get(pair); } catch { /* not worth failing over */ } }
+
+  const items = [{ title: single ? pair + ' - odd target' : pair }];
+  if (rec?.word) items.push({ label: rec.word });
+  if (rec?.imageUrl) items.push({ node: el('img', { class: 'pop-img', src: rec.imageUrl, alt: rec.word || pair }) });
+  if (rec?.alg) items.push({ label: rec.alg, badge: 'alg' });
+  if (rec?.notes) items.push({ label: rec.notes });
+
+  if (single) {
+    items.push({ label: 'Pairs with the next leftover, or needs parity' });
+  } else if (!rec || (!rec.word && !rec.alg && !rec.notes && !rec.imageUrl)) {
+    items.push({ label: 'No memo saved for this pair yet' });
+  }
+  if (!single) {
+    items.push({ sep: true });
+    items.push({
+      label: rec ? 'Edit this pair' : 'Add a memo',
+      onSelect: () => openPanel('Letter pairs', 'buildLetterPairs', { wide: true }, app, pair),
+    });
+  }
+  popover(anchor, items);
+}
+
+/* ---------------- memo / execution split ---------------- */
+function phaseReset() {
+  $('#timer-display').classList.remove('phase-memo', 'phase-exec');
+  const r = $('#phase-readout');
+  if (r) { r.hidden = true; $('#phase-times').textContent = ''; }
+}
+
+function phaseStart() {
+  if (!bldSplitOn()) return;
+  $('#timer-display').classList.add('phase-memo');
+  const r = $('#phase-readout');
+  r.hidden = false;
+  $('#phase-name').textContent = 'memo';
+  $('#phase-times').textContent = '';
+}
+
+function phaseSplit(atMs) {
+  const d = $('#timer-display');
+  d.classList.remove('phase-memo');
+  d.classList.add('phase-exec');
+  $('#phase-name').textContent = 'exec';
+  $('#phase-times').textContent = 'memo ' + fmt(atMs);
+}
+
+/** memo/exec numbers for a finished solve, from the raw split list. */
+function phasesOf(splits, timeMs) {
+  if (!splits || !splits.length) return null;
+  const memoMs = Math.min(splits[0], timeMs);
+  return { memoMs, execMs: Math.max(0, timeMs - memoMs) };
+}
+
+/* =========================================================
    Recording a solve
    ========================================================= */
 async function onSolveFinished(res) {
@@ -900,7 +1189,10 @@ async function onSolveFinished(res) {
     if (keep) { timer.reset(); nextScramble(); return; }
   }
 
-  await recordSolve({ timeMs: res.timeMs, penalty: res.penalty, inspectionMs: res.inspectionMs });
+  await recordSolve({
+    timeMs: res.timeMs, penalty: res.penalty,
+    inspectionMs: res.inspectionMs, splits: res.splits,
+  });
 }
 
 /**
@@ -911,13 +1203,28 @@ async function onSolveFinished(res) {
  * in the database through exactly the same path as a spacebar one — there is
  * no second version of the PB logic to drift.
  */
-async function recordSolve({ timeMs, penalty = 'none', inspectionMs = 0 }) {
+async function recordSolve({ timeMs, penalty = 'none', inspectionMs = 0, splits = null }) {
   const prevBest = bestSingle(app.solves);
   const prevAo5  = bestAvg(app.solves, 5).value;
   const prevAo12 = bestAvg(app.solves, 12).value;
 
   const race = raceCtl();
   const racing = !!(race?.inRoom && app.scramble?.race);
+
+  /* The breakdown is computed once, here, and stored with the solve rather
+     than recomputed during review: it is what the DNF post-mortem back-traces
+     against, and a buffer changed next week must not silently rewrite the
+     memo you actually used tonight. */
+  let bld = null;
+  if (bldEvent()) {
+    const rec = bldTraceable()
+      ? traceRecord(app.scramble?.scramble || '', app.settings.bld)
+      : null;
+    const ph = phasesOf(splits, timeMs);
+    if (rec || ph) {
+      bld = { ...(rec || {}), ...(ph || {}), dnfPieces: null, dnfDiagnosis: null };
+    }
+  }
 
   const solve = {
     id: uid(),
@@ -935,7 +1242,11 @@ async function recordSolve({ timeMs, penalty = 'none', inspectionMs = 0 }) {
     // Tagged so a race time is always tellable from practice later, whichever
     // session it landed in.
     ...(racing ? { race: true, roomId: race.snap?.roomId || null } : {}),
+    ...(bld ? { bld } : {}),
   };
+  if (bld?.memoMs != null) {
+    $('#phase-times').textContent = `memo ${fmt(bld.memoMs)} · exec ${fmt(bld.execMs)}`;
+  }
   app.solves.push(solve);
   await Solves.put(solve);
   /* Submitted after the local write, never before: the solve is yours whatever
@@ -1366,6 +1677,12 @@ function solveMenu(solve, anchor) {
     { label: solve.comment ? 'Edit comment' : 'Add comment', badge: 'C', onSelect: () => commentOn(solve) },
     { label: 'Repeat this scramble', badge: 'R', onSelect: () => repeatScramble(solve) },
     { label: solve.recon ? 'Open the reconstruction' : 'Reconstruct this solve', badge: 'Y', onSelect: () => reconstructSolve(solve) },
+    // Offered, never automatic: a DNF you already know the cause of does not
+    // need a dialog thrown at it the moment you press D.
+    ...(solve.penalty === 'DNF' && solve.bld?.edges ? [{
+      label: 'Diagnose this DNF',
+      onSelect: () => openPanel('DNF post-mortem', 'buildPostMortem', { wide: true }, app, solve),
+    }] : []),
     { sep: true },
     { label: 'Delete solve', badge: 'Del', onSelect: () => deleteThrottled(solve) },
   ]);
@@ -2247,6 +2564,8 @@ app.persist = persist;
 const RESET_KEEPS = [
   'event', 'mode', 'sessionId', 'allowedCases', 'multiCount',
   'spotifyClientId', 'featuredReel',
+  // A buffer and a letter scheme are years of memorisation, not a look.
+  'bld',
 ];
 
 /** Put every look-and-feel setting back to the value it shipped with. */
@@ -2305,6 +2624,7 @@ function applyAll(changed) {
   }
   if (changed === 'cubeView') { updateLabels(); if (app.scramble) showScramble(app.scramble, true); }
   if (!changed || changed === 'inputMode') applyInputMode();
+  if (!changed || changed === 'bld') { bldEpoch++; syncBldTimer(); renderBld(); }
 }
 app.applyAll = () => applyAll();
 app.refreshBackground = () => applyBackground(bg, app.settings);
@@ -2314,6 +2634,12 @@ function syncEventConfig() {
   if (timer) timer.cfg.useInspection = !ev.noInspection;
   // trainer modes only exist for 3x3 — fall back if the event changed
   if (!modesForEvent(app.settings.event).includes(app.settings.mode)) app.settings.mode = 'wca';
+  // Leaving a blind event puts the panel away; arriving at one opens it only
+  // if the solver asked for that in settings. Never forced open either way.
+  bldOpen = bldEvent() && !!app.settings.bld?.showBreakdownByDefault;
+  syncBldTimer();
+  if (!bldSplitOn()) phaseReset();
+  renderBld();
 }
 
 async function setEvent(id) {

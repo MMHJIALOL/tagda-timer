@@ -28,7 +28,7 @@
 </head>
 <body>
 <h1>Tagda Timer self test</h1>
-<p class="sub">Verifies the statistics maths and every trainer algorithm by simulating the cube.
+<p class="sub">Verifies the statistics maths, every trainer algorithm and every blindfolded trace by simulating the cube.
 Open this page from the same server as the app.</p>
 <div id="out"></div>
 <div id="summary">running…</div>
@@ -610,6 +610,201 @@ await new Promise((resolve) => {
   };
   document.body.append(f);
 });
+
+
+/* ---------------- blindfolded tracing ----------------
+
+   The trace is checked by executing it. Every target is replayed as the
+   swap it stands for — worked out from the piece arrays here, not from
+   the sticker permutation the tracer itself uses — and the cube has to
+   come out solved. A memo that does not solve the cube is not a memo.
+   ---------------------------------------------------- */
+section('blindfolded tracing');
+{
+  const C = await import('./js/cube3.js');
+  const B = await import('./js/bldtrace.js');
+
+  const SIZE = { corner: 3, edge: 2 };
+  const OFF  = { corner: [0, 8], edge: [16, 28] };
+
+  /** One shot: swap the buffer's piece with the target's, lining them up. */
+  function swap(state, kind, buf, tgt) {
+    const n = SIZE[kind];
+    const [po, oo] = OFF[kind];
+    const c1 = state[po + buf.slot], o1 = state[oo + buf.slot];
+    const c2 = state[po + tgt.slot], o2 = state[oo + tgt.slot];
+    // Which sticker of each cubie is currently showing at that slot index.
+    const k1 = (buf.idx - o1 + n * 2) % n;
+    const k2 = (tgt.idx - o2 + n * 2) % n;
+    // Re-seat each piece so that same sticker shows at the other position.
+    state[po + tgt.slot] = c1; state[oo + tgt.slot] = (tgt.idx - k1 + n * 2) % n;
+    state[po + buf.slot] = c2; state[oo + buf.slot] = (buf.idx - k2 + n * 2) % n;
+  }
+
+  const solvedNow = (state) => C.facelets(state).every((c, i) => c === C.FACES[Math.floor(i / 9)]);
+
+  /** Replay a whole trace and say whether the cube ends up solved. */
+  function replay(scramble, bld) {
+    const applied = C.applyAlg(C.SOLVED, scramble);
+    if (!applied) return { ok: false, why: 'unreadable scramble' };
+    const t = B.trace(scramble, bld);
+    if (!t) return { ok: false, why: 'no trace' };
+    const state = C.clone(applied.state);
+
+    for (const [kind, group, bufName] of [
+      ['edge', t.edges, t.buffers.edge],
+      ['corner', t.corners, t.buffers.corner],
+    ]) {
+      const buf = kind === 'edge' ? B.edgeSticker(bufName) : B.cornerSticker(bufName);
+      for (const tgt of group.targets) swap(state, kind, buf, { slot: tgt.slot, idx: tgt.idx });
+    }
+    return {
+      ok: solvedNow(state),
+      edges: t.edges.targets.length,
+      corners: t.corners.targets.length,
+      parity: t.parity,
+      t,
+    };
+  }
+
+  const speffz = { ...B.DEFAULT_BLD };
+
+  /* --- a solved cube has nothing to say --- */
+  const none = B.trace('', speffz);
+  check('a solved cube traces to no targets at all',
+    none.edges.targets.length === 0 && none.corners.targets.length === 0 && !none.parity);
+
+  /* --- a hand-checkable single 3-cycle ---
+     T perm swaps two corners and two edges, so with a UF/UFR buffer it is
+     one short cycle on each half and parity on both. */
+  const tperm = "R U R' U' R' F R2 U' R' U' R U R' F'";
+  const tp = replay(tperm, speffz);
+  check('a T perm traces to a memo that solves the cube', tp.ok,
+    `${tp.edges} edge / ${tp.corners} corner targets`);
+  check('a T perm is flagged as parity', tp.parity === true);
+
+  /* --- a pure edge 3-cycle that leaves the buffer alone. UF is untouched by a
+         U perm, so the memo has to break into the cycle: four targets for three
+         moved pieces, not two, and the extra one is the whole cost of a break. --- */
+  const uperm = "R2 U' R' U' R U R U R U' R";
+  const up = replay(uperm, speffz);
+  check('a U perm breaks into its cycle — four edge targets, no corner targets',
+    up.corners === 0 && up.edges === 4, `${up.edges} edge / ${up.corners} corner`);
+  check('a U perm flags the break that cost it that target',
+    up.t.edges.breaks.length === 1, `breaks at ${up.t.edges.breaks.join()}`);
+  check('a U perm is not parity', up.parity === false);
+  check('a U perm memo solves the cube', up.ok);
+
+  /* --- two flipped edges in place: four targets, and each flipped piece is shot
+         at twice back to back, which is the case a piece-with-a-flag model gets
+         wrong. Conjugated off UF so the buffer itself stays solved — a flipped
+         buffer is its own shape and is covered by the random sweep below. --- */
+  const flips = "U M' U M' U M' U2 M U M U M U2 U'";       // flips UL and UR in place
+  const fl = replay(flips, speffz);
+  check('two flipped edges in place trace to a memo that solves the cube', fl.ok,
+    `${fl.edges} edge targets`);
+  check('two flipped edges in place cost four targets', fl.edges === 4,
+    fl.t.edges.targets.map(x => x.letter).join(' '));
+  check('each flipped edge is marked as a second shot at the same piece',
+    fl.t.edges.targets.filter(x => x.inPlace).length === 2);
+
+  /* --- cycle breaks: a scramble whose edges do not all sit in one cycle --- */
+  let sawBreak = false, sawParity = false, sawInPlace = false;
+  let bad = 0, worst = 0;
+  const RNG = ['R', 'U', 'F', 'L', 'D', 'B'];
+  const SUF = ['', "'", '2'];
+  for (let i = 0; i < 120; i++) {
+    // A plain random-move scramble is enough: what is being tested is the
+    // trace of a state, not how legal the scramble that made it was.
+    const moves = [];
+    let last = -1;
+    while (moves.length < 25) {
+      const a = Math.floor(Math.random() * 6);
+      if (a === last) continue;
+      last = a;
+      moves.push(RNG[a] + SUF[Math.floor(Math.random() * 3)]);
+    }
+    const r = replay(moves.join(' '), speffz);
+    if (!r.ok) bad++;
+    worst = Math.max(worst, r.edges + r.corners);
+    if (r.t.edges.breaks.length || r.t.corners.breaks.length) sawBreak = true;
+    if (r.parity) sawParity = true;
+    if (r.t.edges.targets.some(x => x.inPlace) || r.t.corners.targets.some(x => x.inPlace)) sawInPlace = true;
+  }
+  check('every one of 120 random scrambles traces to a memo that solves the cube',
+    bad === 0, bad ? `${bad} failed` : `longest memo ${worst} targets`);
+  check('cycle breaks turn up and are flagged', sawBreak);
+  check('parity turns up across 120 scrambles', sawParity);
+  check('flips and twists turn up and are flagged', sawInPlace);
+
+  /* --- the buffer is a setting, not a constant --- */
+  const altBuffer = { ...speffz, edgeBuffer: 'DF', cornerBuffer: 'DFL' };
+  let badBuf = 0;
+  for (let i = 0; i < 40; i++) {
+    const moves = [];
+    let last = -1;
+    while (moves.length < 22) {
+      const a = Math.floor(Math.random() * 6);
+      if (a === last) continue;
+      last = a;
+      moves.push(RNG[a] + SUF[Math.floor(Math.random() * 3)]);
+    }
+    if (!replay(moves.join(' '), altBuffer).ok) badBuf++;
+  }
+  check('a different buffer still traces to a memo that solves the cube', badBuf === 0,
+    badBuf ? `${badBuf} failed` : 'DF / DFL buffers');
+
+  /* --- a scramble that ends in a rotation ---
+     WCA 3BLD scrambles do, and the cube you are handed is the rotated one,
+     so the letters must change with it while the memo still works. */
+  const base = "R U R' F' U2 L' B L B2 U' R2 D2 F2 U2 F2";
+  const rotated = base + " x2 y'";
+  const a = B.trace(base, speffz);
+  const b = B.trace(rotated, speffz);
+  check('a trailing rotation still yields a memo that solves the cube', replay(rotated, speffz).ok);
+  check('a trailing rotation changes the letters — the cube is handed to you turned',
+    a.edges.targets.map(x => x.letter).join('') !== b.edges.targets.map(x => x.letter).join(''),
+    `${a.edges.targets.map(x => x.letter).join('')} vs ${b.edges.targets.map(x => x.letter).join('')}`);
+  check('a trailing rotation does not change how many targets there are',
+    a.edges.targets.length === b.edges.targets.length
+    && a.corners.targets.length === b.corners.targets.length);
+
+  /* --- holding the cube the other way up relabels, nothing more --- */
+  const yellowUp = { ...speffz, orientation: { up: 'D', front: 'F' } };
+  const y = B.trace(base, yellowUp);
+  check('a different scheme orientation keeps the same target count',
+    y.edges.targets.length === a.edges.targets.length
+    && y.corners.targets.length === a.corners.targets.length);
+  check('a different scheme orientation still solves the cube', replay(base, yellowUp).ok);
+
+  /* --- Speffz itself --- */
+  const cs = Object.keys(B.DEFAULT_SPEFFZ_MAP).filter(k => k.length === 3);
+  const es = Object.keys(B.DEFAULT_SPEFFZ_MAP).filter(k => k.length === 2);
+  check('Speffz covers all 24 corner stickers exactly once',
+    cs.length === 24 && new Set(cs.map(k => {
+      const st = B.cornerSticker(k); return st.slot * 3 + st.idx;
+    })).size === 24);
+  check('Speffz covers all 24 edge stickers exactly once',
+    es.length === 24 && new Set(es.map(k => {
+      const st = B.edgeSticker(k); return st.slot * 2 + st.idx;
+    })).size === 24);
+  check('Speffz uses A-X once per piece type',
+    new Set(cs.map(k => B.DEFAULT_SPEFFZ_MAP[k])).size === 24
+    && new Set(es.map(k => B.DEFAULT_SPEFFZ_MAP[k])).size === 24);
+
+  /* --- the post-mortem reads the stored memo, and says so when it cannot --- */
+  const rec = B.traceRecord(tperm, speffz);
+  check('a stored record keeps a letter and a slot for every target',
+    rec.edges.letters.length === rec.edges.slots.length
+    && rec.corners.letters.length === rec.corners.slots.length
+    && rec.edges.letters.length > 0);
+  const lines = B.diagnose({ ...rec }, [{ type: 'edge', slot: rec.edges.slots[0] }]);
+  check('the post-mortem finds a piece that is in the memo',
+    !!lines && lines.some(l => /target 1/.test(l)), lines ? lines[0].slice(0, 60) : 'none');
+  const miss = B.diagnose({ ...rec }, [{ type: 'corner', slot: 99 }]);
+  check('the post-mortem says so when a piece was never traced',
+    !!miss && /never appear/.test(miss[0]));
+}
 
 document.getElementById('summary').textContent =
   fail === 0 ? `All ${pass} checks passed.` : `${pass} passed, ${fail} FAILED.`;

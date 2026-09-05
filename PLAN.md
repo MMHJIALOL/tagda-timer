@@ -55,9 +55,38 @@ search that TNoodle (the WCA's official scrambler) uses. Events:
 Event-specific behaviour that must be handled, not glossed over:
 
 - **BLD events (`333bf`, `444bf`, `555bf`)** — no inspection countdown; memo/exec split timing (tap once to mark end of memo).
+  Shipped, plus a 3BLD workflow on top of it — see [BLIND_WORKFLOW.md](BLIND_WORKFLOW.md) for the spec and §3.6 below.
 - **FMC (`333fm`)** — not a speed timer at all: 60-minute countdown, a text area to enter the solution, move counting (HTM), and validation that the solution actually solves the scramble.
 - **MBLD (`333mbf`)** — N scrambles at once, cubes-attempted/solved input, WCA points formula.
 - **Clock / Square-1 / Megaminx** — multi-line scramble formatting so it does not turn into a wall of text.
+
+### 3.6 The blindfolded workflow
+
+Built so a 3BLD solver never has to tab out to a spreadsheet mid-session. All of it is
+opt-in and none of it is in the way of a solve.
+
+- **Target breakdown** — the scramble traced into edge and corner letter pairs for your own
+  buffer and scheme, with cycle breaks marked, flipped and twisted pieces flagged, and a
+  parity badge. Collapsed behind one button by default, and not even computed until asked
+  for; only `333bf` is traced, and the bigger blind events say so rather than guess.
+- **Buffers, orientation and letter scheme are settings**, not constants — Speffz and the
+  WCA orientation are the defaults, and every one of the 48 stickers can be relettered.
+- **Memo/exec split** — the first press mid-solve ends the memo instead of the solve. Built
+  as a general `phaseSplits` primitive in `timer.js`, so the CFOP splits in §3.3 can reuse
+  it rather than growing a second mechanism.
+- **Letter-pair dictionary** — a word, an image, your own commutator and notes per pair,
+  recalled in a popover straight off a chip in the breakdown, importable and exportable
+  as JSON. No curated 3-style alg set ships: an "optimal" comm depends on your buffer and
+  your scheme, so the timer stores yours rather than inventing one.
+- **DNF post-mortem** — click the pieces that were still wrong on a flat net and it
+  back-traces them against the memo stored with that solve, naming the target and the
+  failure shape. Offered on a DNF, never forced.
+- **Memo:exec dashboard** — mean split, a bar per solve, and drift measured against your
+  own rolling average. The 30/70 figure is a reference point in the copy, not a threshold.
+
+**Verified, not assumed:** `test.html` replays every traced memo as the swaps it stands for
+and checks the cube comes out solved — across 120 random scrambles, a second buffer, a
+trailing rotation and a different scheme orientation.
 
 ### 2.2 The scramble pipeline (this is where most timers go wrong)
 

@@ -29,11 +29,11 @@
      perfect in incognito, which is a miserable thing to debug.
      /js/ is `must-revalidate` and does not depend on this, but keep the number
      in step anyway rather than leaving two answers to the same question. -->
-<link rel="modulepreload" href="js/main.js?v=41">
-<link rel="stylesheet" href="css/fonts.css?v=41">
-<link rel="stylesheet" href="css/tokens.css?v=41">
-<link rel="stylesheet" href="css/base.css?v=41">
-<link rel="stylesheet" href="css/components.css?v=41">
+<link rel="modulepreload" href="js/main.js?v=42">
+<link rel="stylesheet" href="css/fonts.css?v=42">
+<link rel="stylesheet" href="css/tokens.css?v=42">
+<link rel="stylesheet" href="css/base.css?v=42">
+<link rel="stylesheet" href="css/components.css?v=42">
 <link rel="icon" href="assets/favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="assets/logo-192.png">
 <link rel="apple-touch-icon" href="assets/logo-180.png">
@@ -226,6 +226,33 @@
       <button class="cb-x" id="btn-custom-exit" title="Back to generated scrambles">&times;</button>
     </div>
     <div id="case-label" hidden></div>
+
+    <!-- The 3BLD target breakdown. Only mounted on a blindfolded event, and
+         collapsed even then: a solver mid-training wants the scramble and
+         nothing else, so the cycles stay behind one button. -->
+    <div id="bld-zone" hidden>
+      <div id="bld-bar">
+        <button class="ghost-btn sm" id="btn-bld-toggle" aria-expanded="false" aria-controls="bld-panel">Show breakdown</button>
+        <span class="bld-split" id="bld-split" hidden></span>
+      </div>
+      <div id="bld-panel" hidden>
+        <div class="bld-row">
+          <span class="bld-lbl">Edges</span>
+          <div class="bld-chips" id="bld-edges"></div>
+        </div>
+        <div class="bld-row">
+          <span class="bld-lbl">Corners</span>
+          <div class="bld-chips" id="bld-corners"></div>
+        </div>
+        <div class="bld-foot">
+          <span class="bld-badge parity" id="bld-parity" hidden>parity</span>
+          <span class="bld-note" id="bld-note"></span>
+          <button class="ghost-btn sm" id="btn-bld-settings" title="Blindsolving settings">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
   </section>
 
   <!-- ---------- MAIN ---------- -->
@@ -322,6 +349,11 @@
                is the one thing the setting exists to prevent. -->
           <span id="solving-label" aria-hidden="true">solving</span>
         </div>
+
+        <!-- Memo/exec phase readout. Lives inside the timer block rather than
+             beside the scramble because focus mode fades the scramble away,
+             and which phase you are in is the one thing worth seeing mid-solve. -->
+        <div id="phase-readout" hidden><span id="phase-name">memo</span><span id="phase-times"></span></div>
 
         <div id="pace-ghost" hidden>
           <div id="pace-fill"></div>
@@ -528,7 +560,7 @@
   </div>
 </div>
 
-<script type="module" src="js/main.js?v=41"></script>
+<script type="module" src="js/main.js?v=42"></script>
 <script>
 (function () {
   var isFile = location.protocol === 'file:';
