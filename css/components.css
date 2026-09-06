@@ -39,6 +39,12 @@
 .icon-btn:active { transform: translateY(0) scale(.94); }
 .icon-btn.on { color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); border-color: color-mix(in srgb, var(--accent) 34%, transparent); }
 
+.account-avatar { width: 20px; height: 20px; border-radius: 50%; object-fit: cover; }
+.account-initial {
+  width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center;
+  font-size: .68rem; font-weight: 650; background: var(--accent); color: var(--on-accent);
+}
+
 .seg { display: flex; }
 /* The centre group is `overflow: hidden`, so a picker that does not fit is not
    truncated — it is cut off mid-button, and the last one disappears entirely.

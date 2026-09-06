@@ -52,6 +52,20 @@ async function ensureSdk() {
   return _initPromise;
 }
 
+/**
+ * Warms the Firebase Auth SDK ahead of an expected click, so signInWithPopup
+ * fires (near-)synchronously with the click that requested it. Browsers
+ * tie a popup's permission to the user gesture that opened it and drop that
+ * attribution across a real async gap — and fetching the SDK from gstatic
+ * the first time is exactly that gap. Without this, the very first sign-in
+ * attempt on a fresh page load reliably hits `auth/popup-blocked`, because
+ * `signIn()` would otherwise be the one to trigger this same fetch, from
+ * inside the click handler, too late to still count as the same gesture.
+ */
+export function preloadAuth() {
+  return ensureSdk().catch(() => {}); // signIn() surfaces the real error if this failed
+}
+
 /** Fires immediately with the current user (or null), then on every change. */
 export async function onAuthChange(fn) {
   const { auth } = await ensureSdk();

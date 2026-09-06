@@ -8,7 +8,8 @@
 
 import { el } from './util.js';
 import { toast } from './toast.js';
-import { onAuthChange, signIn, signOutUser, hasPersistedSession } from './sync-auth.js';
+import { popover } from './popover.js';
+import { onAuthChange, signIn, signOutUser } from './sync-auth.js';
 import { initSync } from './sync.js';
 
 let _initStarted = false;
@@ -115,4 +116,56 @@ export function buildAccountRow() {
   myUnsubPromise.then((unsub) => { _activeUnsub = unsub; });
   autoStart();
   return wrap;
+}
+
+const ACCOUNT_ICON = '<svg viewBox="0 0 24 24"><circle cx="12" cy="8.5" r="3.4"/><path d="M4.8 20a7.2 7.2 0 0114.4 0"/></svg>';
+
+let _topBarUser = null;
+
+function renderAccountButton(btn, user) {
+  _topBarUser = user;
+  btn.innerHTML = '';
+  if (user) {
+    btn.classList.add('on');
+    btn.title = `Signed in as ${user.email}`;
+    btn.append(user.photoURL
+      ? el('img', { class: 'account-avatar', src: user.photoURL, alt: '', referrerpolicy: 'no-referrer' })
+      : el('span', { class: 'account-initial', text: (user.displayName || user.email || '?').trim().charAt(0).toUpperCase() }));
+  } else {
+    btn.classList.remove('on');
+    btn.title = 'Sign in to sync your solves';
+    btn.innerHTML = ACCOUNT_ICON;
+  }
+}
+
+/**
+ * The top-bar account icon (index.html's #btn-account) — the "is my account
+ * connected" answer that's visible from the home screen, not three clicks
+ * into Settings. Same avatar-or-initial-or-plain-icon shape as
+ * renderAccountButton, plus a click: sign in directly while signed out, or
+ * a small popover with "sign out" while signed in.
+ */
+export function wireAccountButton(btn) {
+  if (btn.dataset.wired) { autoStart(); return; }
+  btn.dataset.wired = '1';
+
+  onAuthChange((user) => renderAccountButton(btn, user));
+
+  btn.addEventListener('click', () => {
+    if (_topBarUser) {
+      popover(btn, [
+        { title: _topBarUser.email },
+        { label: 'Sign out', onSelect: async () => {
+          await signOutUser();
+          toast('Signed out — your solves stay on this device', { kind: '' });
+        } },
+      ]);
+    } else {
+      signIn('google').catch((err) => {
+        if (err?.code !== 'auth/popup-closed-by-user') toast('Could not sign in — try again', { kind: 'bad' });
+      });
+    }
+  });
+
+  autoStart();
 }

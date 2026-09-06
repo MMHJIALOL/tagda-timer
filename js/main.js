@@ -346,6 +346,7 @@ async function init() {
   // Cloud sync, if this browser was ever signed in. Same shape as the line
   // above: a visitor who has never signed in never downloads any of it.
   startCloudSync().catch(err => console.warn('[sync] not started', err));
+  wireAccountButtonOnFirstClick();
 
   cube.orbit = app.settings.cubeOrbit;
   cube.init().then(() => {
@@ -2534,15 +2535,50 @@ async function startStackmat() {
 /**
  * Called once at boot. A visitor who has never signed in never pays for the
  * Firebase Auth SDK — see sync-auth.js's hasPersistedSession() for how that
- * is checked without loading it. Opening Settings starts sync regardless
- * (buildAccountRow calls the same autoStart()), this just means someone
- * already signed in resumes syncing without having to open that panel.
+ * is checked without loading it. Opening Settings or clicking the top-bar
+ * account icon (see wireAccountButton below) starts sync regardless, this
+ * just means someone already signed in resumes syncing — and the top-bar
+ * icon shows their avatar — without having to touch either one.
  */
 async function startCloudSync() {
   const { hasPersistedSession } = await import('./sync-auth.js');
   if (!hasPersistedSession()) return;
-  const { autoStart } = await import('./sync-ui.js');
-  autoStart();
+  const { wireAccountButton } = await import('./sync-ui.js');
+  wireAccountButton($('#btn-account'));
+}
+
+/**
+ * The top-bar account icon needs to work on the very first click for a
+ * visitor who has never signed in — hasPersistedSession() above only covers
+ * someone resuming a session, so this is the other half: a plain listener
+ * that costs nothing until actually clicked, then loads sync-ui.js and
+ * replays the click into its real handler (registered by then) so the
+ * click that triggered the import is also the one that opens the Google
+ * popup, rather than needing a second click to "wake up" the button.
+ */
+function wireAccountButtonOnFirstClick() {
+  const btn = $('#btn-account');
+  btn.addEventListener('click', async function boot() {
+    btn.removeEventListener('click', boot);
+    // If startCloudSync() already wired this button (a signed-in user
+    // resuming, which races this listener at boot) don't replay the click —
+    // the real handler it attached already saw this same click.
+    const alreadyWired = !!btn.dataset.wired;
+    const { wireAccountButton } = await import('./sync-ui.js');
+    wireAccountButton(btn);
+    if (!alreadyWired) btn.click(); // now caught by the real handler just attached
+  }, { once: true });
+
+  // Warm the Firebase Auth SDK on hover/focus/touch-down — i.e. on the
+  // signal that arrives just before the click, not on the click itself.
+  // Without this, fetching the SDK for the first time happens inside the
+  // click handler, and Chrome drops popup permission across that fetch —
+  // the very first "sign in" click on a fresh page load would otherwise
+  // reliably fail with auth/popup-blocked instead of opening anything.
+  const preload = async () => (await import('./sync-auth.js')).preloadAuth();
+  btn.addEventListener('mouseenter', preload, { once: true });
+  btn.addEventListener('focus', preload, { once: true });
+  btn.addEventListener('pointerdown', preload, { once: true });
 }
 
 /* =========================================================
