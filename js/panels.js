@@ -246,6 +246,8 @@ export function buildAppearance(app) {
         row('Scramble preview', toggle(S.showCube, v => set('showCube', v))),
         row('Times strip', toggle(S.showHistory, v => set('showHistory', v))),
         row('Hint facelets', toggle(S.hintFacelets, v => set('hintFacelets', v)), 'ghost stickers on hidden faces'),
+        row('Yellow on top', toggle(S.yellowTop, v => set('yellowTop', v)),
+          'trainer cases drawn with the white cross underneath, the way you are holding it — WCA scrambles stay white on top'),
         row('Density', chips([
           { value: 'compact', label: 'Compact' },
           { value: 'comfortable', label: 'Comfortable' },
@@ -639,6 +641,17 @@ export function buildSettings(app) {
         row('Start with the mouse', toggle(S.mouseTimer, v => set('mouseTimer', v)), 'click the screen to start and stop — touch always works'),
         row('Confirm misfires', toggle(S.confirmShortSolves, v => set('confirmShortSolves', v)), 'ask before recording a sub-0.5s solve'),
         row('Sound on PB', toggle(S.soundOnPB, v => set('soundOnPB', v))),
+      ),
+
+      group('Learn mode',
+        el('div', { class: 'hint-note', html:
+            'On top of any trainer mode: a case you have never seen arrives with its ' +
+            'algorithm, after that you are asked to recall it, and how the solve went ' +
+            'decides when it comes back. Turn it on with <b>L</b>, or from the case picker.' }),
+        row('New cases per sitting', slider(S.learnNewPerSession, 1, 15, 1, v => set('learnNewPerSession', v)),
+          'how many cases you have never seen may be introduced before you switch it off and on again'),
+        row('Counts as slow', slider(S.learnSlowFactor, 1.1, 3, .1, v => set('learnSlowFactor', v), v => v.toFixed(1) + '×'),
+          'a solve this much slower than your own average on the case holds it back instead of advancing it'),
       ),
 
       group('Multi-blind',
@@ -1432,6 +1445,13 @@ export function buildCustomScrambles(app) {
 /* =========================================================
    CASE PICKER (trainer modes)
    ========================================================= */
+/** Where learn mode has got to in the current set, in one line. */
+function learnSummary(app) {
+  if (!app.learn?.enabled) return '';
+  const s = app.learn.stats();
+  return `${s.due} due · ${s.new} unseen · ${s.mature} known of ${s.total}`;
+}
+
 export function buildCases(app) {
   return (body) => {
     const modeId = app.settings.mode;
@@ -1439,12 +1459,26 @@ export function buildCases(app) {
     if (!set) { body.append(el('div', { class: 'hint-note', text: 'This mode has no case list.' })); return; }
 
     const allowed = new Set(app.settings.allowedCases[modeId] || set.map(c => c.id));
+    const learnLine = el('span', { class: 'sub', text: learnSummary(app) });
     const stats = new Map(byCase(app.solves).map(r => [r.caseId, r]));
     const grid = el('div', { class: 'case-grid' });
 
+    /* ZBLL is 472 cases and F2L is taught in six groups, so a flat grid is the
+       wrong shape for either. Where the set says what group a case is in, the
+       row of chips narrows the grid down to one of them — and everything below
+       it, the all/none/invert buttons included, then works on just what you can
+       see, which is how you say "only the T set" in two clicks. */
+    const groups = [...new Set(set.map(c => c.group).filter(Boolean))];
+    const grouped = groups.length > 1;
+    let only = '';                                   // '' = every group
+    const shown = () => (only ? set.filter(c => c.group === only) : set);
+    const count = el('span', { class: 'sub' });
+
     const paint = () => {
       grid.innerHTML = '';
-      for (const c of set) {
+      const list = shown();
+      count.textContent = `${list.filter(c => allowed.has(c.id)).length} of ${list.length} on`;
+      for (const c of list) {
         const s = stats.get(c.id);
         const cell = el('div', { class: `case-cell ${allowed.has(c.id) ? 'on' : ''}` },
           el('span', { class: 'cc-name', text: c.name }),
@@ -1455,6 +1489,7 @@ export function buildCases(app) {
           if (allowed.has(c.id)) allowed.delete(c.id); else allowed.add(c.id);
           if (!allowed.size) allowed.add(c.id);
           cell.classList.toggle('on', allowed.has(c.id));
+          count.textContent = `${shown().filter(x => allowed.has(x.id)).length} of ${shown().length} on`;
           commit();
         });
         grid.append(cell);
@@ -1468,27 +1503,62 @@ export function buildCases(app) {
 
     const bulk = (fn) => () => { fn(); paint(); commit(); };
 
+    const groupChips = !grouped ? null : el('div', { class: 'chips' },
+      ...[['', 'all groups'], ...groups.map(g => [g, labelOf(set, g)])].map(([g, text]) =>
+        el('button', {
+          class: `chip ${only === g ? 'on' : ''}`,
+          text: `${text}${g ? ` · ${set.filter(c => c.group === g).length}` : ''}`,
+          onclick: (e) => {
+            only = g;
+            for (const b of e.currentTarget.parentElement.children) b.classList.remove('on');
+            e.currentTarget.classList.add('on');
+            paint();
+          },
+        })),
+    );
+
     body.append(
       el('div', { class: 'hint-note', text:
         `${MODES[modeId].name} — pick which cases you want to drill. Times shown are your session average for that case.` }),
+      /* Learn mode works on exactly the cases switched on below, so the switch
+         for it belongs here rather than three panels away. */
       el('div', { class: 'chips' },
-        el('button', { class: 'chip', text: 'all', onclick: bulk(() => set.forEach(c => allowed.add(c.id))) }),
-        el('button', { class: 'chip', text: 'none', onclick: bulk(() => { set.forEach(c => allowed.delete(c.id)); allowed.add(set[0].id); }) }),
+        el('button', {
+          class: `chip ${app.learn?.enabled ? 'on' : ''}`,
+          text: app.learn?.enabled ? 'learn mode is on' : 'learn these cases',
+          title: 'Show the algorithm for a case you have not seen, and bring back the ones you fumble  (L)',
+          onclick: (e) => {
+            if (!app.learn) return;
+            app.learn.setEnabled(!app.learn.enabled);
+            e.currentTarget.classList.toggle('on', app.learn.enabled);
+            e.currentTarget.textContent = app.learn.enabled ? 'learn mode is on' : 'learn these cases';
+            learnLine.textContent = learnSummary(app);
+          },
+        }),
+        learnLine),
+      groupChips,
+      el('div', { class: 'chips' },
+        el('button', { class: 'chip', text: 'all', onclick: bulk(() => shown().forEach(c => allowed.add(c.id))) }),
+        el('button', { class: 'chip', text: 'none', onclick: bulk(() => { shown().forEach(c => allowed.delete(c.id)); if (!allowed.size) allowed.add(shown()[0].id); }) }),
         el('button', { class: 'chip', text: 'invert', onclick: bulk(() => {
-          const inv = set.filter(c => !allowed.has(c.id)).map(c => c.id);
-          allowed.clear(); (inv.length ? inv : [set[0].id]).forEach(id => allowed.add(id));
+          for (const c of shown()) { if (allowed.has(c.id)) allowed.delete(c.id); else allowed.add(c.id); }
+          if (!allowed.size) allowed.add(shown()[0].id);
         }) }),
         el('button', { class: 'chip', text: 'my worst 8', onclick: bulk(() => {
           const ranked = byCase(app.solves).filter(r => r.avg !== null).sort((a, b) => b.avg - a.avg).slice(0, 8);
           if (!ranked.length) { toast('Do some solves first so I know what your worst cases are'); return; }
           allowed.clear(); ranked.forEach(r => allowed.add(r.caseId));
         }) }),
+        count,
       ),
       grid,
     );
     paint();
   };
 }
+
+/** What a group calls itself, taken from any case that is in it. */
+const labelOf = (set, group) => set.find(c => c.group === group)?.label || group;
 
 /* =========================================================
    SHORTCUTS
@@ -1522,6 +1592,8 @@ export const SHORTCUTS = [
     ['T', 'appearance'],
     [',', 'settings'],
     ['K', 'case picker'],
+    ['L', 'learn mode on / off'],
+    ['G', 'show the alg (counts as not knowing it)'],
     ['Ctrl + K  or  /', 'command palette'],
     ['?', 'this list'],
     ['B', 'about'],

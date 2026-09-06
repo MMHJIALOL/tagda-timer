@@ -77,6 +77,128 @@ check('bestSingle ignores DNFs',
 check('bestSingle counts the +2 penalty',
   St.bestSingle([mk(11000, '+2'), mk(12000)]) === 12000);
 
+/* The times list draws one column per rolling average, and which averages
+   those are is a setting — so the series has to be right for any window, not
+   just the ao5 the list was born with. */
+{
+  const solves = [11, 12, 13, 14, 15, 16].map(t => mk(t * 1000));
+  const s5 = St.rollingSeries(solves, 5);
+  check('a rolling series is empty until it has enough solves',
+    s5.slice(0, 4).every(v => v === null) && s5[4] !== null);
+  check('a rolling ao5 lands on the average of its own window',
+    s5[4] === St.averageOf([11000, 12000, 13000, 14000, 15000]));
+  check('the window moves with the solves', s5[5] === 14000);
+  check('an ao12 column needs twelve solves',
+    St.rollingSeries(solves, 12).every(v => v === null));
+  check('a DNF-heavy window reads as no value rather than as zero',
+    St.rollingSeries([mk(9000, 'DNF'), mk(9000, 'DNF'), mk(10000), mk(11000), mk(12000)], 5)[4] === null);
+}
+
+/* Any average in the list opens the solves behind it — including one that
+   ended in the middle of the session, which is what `aoN@i` addresses. */
+{
+  const solves = [11, 12, 13, 14, 15, 16].map(t => mk(t * 1000));
+  const w = St.statWindow(solves, 'ao5@4');
+  check('aoN@i takes the window ending on that solve',
+    w.list.length === 5 && w.value === 13000 && w.start === 0, 'solves 1-5');
+  check('aoN@i names itself by its own length and solve',
+    w.label === 'Average of 5 · to solve #5');
+  check('aoN@i trims the fastest and slowest of that window',
+    w.trimmed.has(0) && w.trimmed.has(4) && w.trimmed.size === 2);
+  check('an average that reaches past the session has no window',
+    St.statWindow(solves, 'ao5@2').list.length === 0);
+}
+
+/* ---------------- learn mode scheduler ---------------- */
+const L = await import('./js/learn.js');
+const DAY = 86400000;
+const T0 = 1700000000000;
+
+section('learn mode');
+{
+  const fresh = L.freshState();
+  check('a fresh case is new', L.stageOf(fresh) === 'new' && !fresh.seen);
+
+  const pass1 = L.grade(fresh, { timeMs: 2000, caseAvg: 3000, now: T0 });
+  check('a clean solve advances a box', pass1.box === 1 && pass1.lastGrade === 'pass');
+  check('the next review is a day out', pass1.dueAt === T0 + L.INTERVALS[1] * DAY);
+
+  const peeked = L.grade(pass1, { timeMs: 1000, peeked: true, caseAvg: 3000, now: T0 });
+  check('peeking at the alg is a failure however fast the solve',
+    peeked.box === 0 && peeked.lapses === 1 && peeked.lastGrade === 'fail');
+  check('a failed case is due immediately, not tomorrow', peeked.dueAt === T0);
+
+  const dnf = L.grade(pass1, { timeMs: 1000, penalty: 'DNF', caseAvg: 3000, now: T0 });
+  check('a DNF is a failure', dnf.box === 0 && dnf.lastGrade === 'fail');
+
+  const slow = L.grade(pass1, { timeMs: 9000, caseAvg: 3000, now: T0 });
+  check('a solve well over your own average holds the box',
+    slow.box === 1 && slow.lastGrade === 'hold');
+
+  const plus2 = L.grade(pass1, { timeMs: 1000, penalty: '+2', caseAvg: 3000, now: T0 });
+  check('a +2 holds rather than fails', plus2.box === 1 && plus2.lastGrade === 'hold');
+
+  const first = L.grade(fresh, { timeMs: 60000, caseAvg: null, now: T0 });
+  check('with no average yet, a slow first attempt still passes',
+    first.lastGrade === 'pass', 'nothing to call slow against');
+
+  // Four clean solves in a row take a case from new to known.
+  let st = L.freshState();
+  for (let i = 0; i < L.GRADUATED_BOX; i++) st = L.grade(st, { timeMs: 2000, caseAvg: 3000, now: T0 });
+  check('a case graduates after GRADUATED_BOX clean solves', L.stageOf(st) === 'mature');
+  check('boxes stop at the last interval',
+    L.grade({ ...st, box: L.INTERVALS.length - 1 }, { timeMs: 1000, caseAvg: 3000, now: T0 }).box
+      === L.INTERVALS.length - 1);
+
+  check('reps counts every attempt', st.reps === L.GRADUATED_BOX);
+
+  // Three passes in a row prove nothing if nothing was ever fast enough to
+  // fail: without an average to judge against, a case stops short of known.
+  let blind = L.freshState();
+  for (let i = 0; i < 8; i++) blind = L.grade(blind, { timeMs: 30000, caseAvg: null, now: T0 });
+  check('a case cannot be called known with no average to judge it',
+    L.stageOf(blind) === 'learning' && blind.box === L.GRADUATED_BOX - 1,
+    `box ${blind.box}`);
+  check('and it graduates as soon as there is one',
+    L.stageOf(L.grade(blind, { timeMs: 2000, caseAvg: 3000, now: T0 })) === 'mature');
+}
+
+{
+  const ids = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
+  const states = {
+    a: { ...L.freshState(), seen: true, box: 1, dueAt: T0 - 5 * DAY },
+    b: { ...L.freshState(), seen: true, box: 1, dueAt: T0 - 9 * DAY },
+    c: { ...L.freshState(), seen: true, box: 4, dueAt: T0 + 30 * DAY },
+  };
+  const q = L.nextQueue(states, ids, { now: T0, opts: { newPerSession: 2, sessionLength: 20 } });
+  check('a case that is not due yet is not dealt', !q.includes('c'));
+  check('the most overdue review comes first', q[0] === 'b', q.join(' '));
+  check('new cases are capped per sitting',
+    q.filter(id => !states[id]).length === 2, q.join(' '));
+  check('new cases are folded in, not queued behind every review',
+    q.indexOf('d') < 4, q.join(' '));
+
+  const capped = L.nextQueue(states, ids, { now: T0, opts: { newPerSession: 8, sessionLength: 3 } });
+  check('a sitting stops at sessionLength', capped.length === 3);
+
+  const off = L.nextQueue(states, ['a'], { now: T0, opts: {} });
+  check('cases switched off in the picker are never dealt',
+    off.length === 1 && off[0] === 'a');
+
+  const sum = L.summarize(states, ids, T0);
+  check('the progress strip counts new/learning/mature',
+    sum.new === 5 && sum.learning === 2 && sum.mature === 1, JSON.stringify(sum));
+  check('the progress strip counts what is due now', sum.due === 2);
+}
+
+check('the due label reads as words',
+  L.dueLabel({ seen: true, dueAt: T0 + 2 * DAY }, T0) === 'due in 2 days');
+check('a failed case says it is coming back',
+  L.dueLabel({ seen: true, dueAt: T0 }, T0) === 'again this session');
+
+check('learn state is keyed by set as well as case',
+  L.keyOf('PLL', 'T') !== L.keyOf('OLL', 'T'));
+
 section('formatting');
 check('sub-minute format', U.fmt(12345) === '12.34', U.fmt(12345));
 check('truncates, never rounds up', U.fmt(12999) === '12.99', U.fmt(12999));
@@ -217,6 +339,68 @@ const A = await import('./js/algs.js');
         lazy.length === 0, lazy.join(' ') || `${reversals}/${total} are reversals`);
 }
 
+/* ZBLL: the whole of F2L still in, every edge already oriented — that last
+   part is what separates a ZBLL case from any other last layer. */
+{
+  const Z = await import('./js/zbll.js');
+  const broken = [], sigs = new Set();
+  for (const c of Z.ZBLL_SET) {
+    const inv = U.invert(c.alg);
+    const d = pd(inv);
+    const ok = okAt(d, 'EDGES', nonU('EDGES')) && okAt(d, 'CORNERS', nonU('CORNERS'))
+            && okAt(d, 'CENTERS', [0, 1, 2, 3, 4, 5])
+            && oriented(d, 'EDGES')
+            && !(okAt(d, 'CORNERS', UL) && okAt(d, 'EDGES', UL));
+    if (!ok) broken.push(c.id);
+    const keys = AUF.map(a => {
+      const x = pd(`${a} ${inv}`);
+      return JSON.stringify([x.EDGES.pieces, x.CORNERS.pieces, x.CORNERS.orientation]);
+    });
+    sigs.add(keys.sort()[0]);
+  }
+  check('every ZBLL alg leaves F2L solved with the edges already oriented',
+    broken.length === 0, broken.slice(0, 4).join(' ') || `${Z.ZBLL_SET.length} algs`);
+  check('the ZBLL trainer set is 472 distinct cases', sigs.size === 472, `${sigs.size} distinct`);
+}
+
+/* F2L: the cross survives and exactly three pairs are in. The pairing of a
+   D corner to its slot edge is cubing.js's business, not something to guess
+   at, so this counts what is home rather than naming which slot is not. */
+{
+  const P = await import('./js/f2l.js');
+  const broken = [], sigs = new Set();
+  const home = (d, o, idx) => idx.filter(i => d[o].pieces[i] === S[o].pieces[i]
+                                           && d[o].orientation[i] === S[o].orientation[i]).length;
+  for (const c of P.F2L) {
+    const inv = U.invert(c.alg);
+    const d = pd(inv);
+    // Three pairs are in and the fourth is not. Only one of the fourth pair's
+    // two pieces has to be out of place: "corner in slot, edge on top" is a
+    // real F2L case and leaves all four corners home.
+    const corners = home(d, 'CORNERS', [4, 5, 6, 7]);
+    const edges = home(d, 'EDGES', [8, 9, 10, 11]);
+    const ok = okAt(d, 'EDGES', DL) && okAt(d, 'CENTERS', [0, 1, 2, 3, 4, 5])
+            && corners >= 3 && edges >= 3 && !(corners === 4 && edges === 4);
+    if (!ok) broken.push(c.id);
+    sigs.add(JSON.stringify([d.EDGES.pieces, d.EDGES.orientation, d.CORNERS.pieces, d.CORNERS.orientation]));
+  }
+  check('every F2L alg keeps the cross and leaves one pair to go',
+    broken.length === 0, broken.join(' ') || `${P.F2L.length} algs`);
+  check('the F2L set is 41 distinct cases', sigs.size === 41, `${sigs.size} distinct`);
+}
+
+/* A trainer scramble is the alg reversed token by token, and that is only a
+   true inverse while no rotation in it changes what the letters after it
+   mean. Both new sets are stored already rewritten; this is the guard. */
+{
+  const Z = await import('./js/zbll.js');
+  const P = await import('./js/f2l.js');
+  const rotated = [...Z.ZBLL_SET, ...P.F2L].filter(c => /[xyzMESw]/.test(c.alg));
+  check('the F2L and ZBLL algs are plain outer-face turns',
+    rotated.length === 0, rotated.slice(0, 3).map(c => `${c.id}: ${c.alg}`).join(' | ')
+      || `${Z.ZBLL_SET.length + P.F2L.length} algs`);
+}
+
 /* ---------------- generated scrambles ---------------- */
 section('generated scrambles');
 const G = await import('./js/scramble.js');
@@ -249,6 +433,10 @@ const sample = async (mode, n, test) => {
   check('PLL trainer scrambles are genuine PLL cases', p.bad === 0, `median ${p.median} moves`);
   const o = await sample('oll', 60, f2l);
   check('OLL trainer scrambles are genuine OLL cases', o.bad === 0, `median ${o.median} moves`);
+  const z = await sample('zbll', 60, d => f2l(d) && oriented(d, 'EDGES'));
+  check('ZBLL trainer scrambles leave the edges oriented', z.bad === 0, `median ${z.median} moves`);
+  const fp = await sample('f2l', 60, d => okAt(d, 'EDGES', DL));
+  check('F2L trainer scrambles keep the cross solved', fp.bad === 0, `median ${fp.median} moves`);
 }
 {
   // <R,U> must never disturb the three D edges it cannot reach

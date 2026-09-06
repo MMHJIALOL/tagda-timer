@@ -6,7 +6,8 @@ import { $, $$, el, uid, fmt, fmtLive, clamp, copy, download, toCSV, debounce,
          parseTimeInput, parseScrambleList } from './util.js';
 import { Solves, Sessions, KV, Assets, LetterPairs, importAll } from './db.js';
 import { EVENTS, EVENT_ORDER, MODES, modesForEvent, eventOf, modeOf } from './events.js';
-import { ScrambleQueue, setFor, cubingAvailable } from './scramble.js';
+import { ScrambleQueue, setFor, cubingAvailable, generate } from './scramble.js';
+import { createLearn } from './learnmode.js';
 import { Timer, INSPECT_MS } from './timer.js';
 import { Background } from './bg.js';
 import { CubeView } from './cube.js';
@@ -216,7 +217,17 @@ async function openPanel(title, builder, opts, ...args) {
 }
 
 const queue = new ScrambleQueue(3);
+const learn = createLearn(app);
+app.learn = learn;
 const bg = new Background($('#bg-shader'), $('#bg-media'));
+
+/* A celebration is a full-screen canvas of moving flakes, a shockwave scaling
+   across the viewport and a re-rendered times list, all on one frame. The
+   background shader is the most expensive thing on the page and the least
+   important while that is happening, so it drops to 20fps until it is over —
+   which is what was left of the confetti's stutter once the drawing itself had
+   been made cheap. Nothing else needs to know: fx.js announces it. */
+window.addEventListener('tt-celebrate', (e) => bg.throttle(e.detail.on ? 20 : 0));
 const cube = new CubeView($('#cube-holder'), $('#cube-fallback'));
 let timer = null;
 let cubeDrag = null;
@@ -288,6 +299,11 @@ async function init() {
     }
   } catch { /* an unreadable list is not worth failing the boot over */ }
   updateCustomBar();
+
+  // Before the first scramble, not after: learn mode decides which case that
+  // scramble is, and loading its schedule a moment late would deal you a
+  // random case on every reload.
+  await learn.init();
 
   // The scrambler is the only thing anyone actually waits for, so it starts
   // before the decoration does rather than queueing behind it.
@@ -419,7 +435,7 @@ async function nextScramble({ clear = false } = {}) {
      showed a different one it would not be a race any more. */
   const raced = raceCtl()?.takeScramble();
   if (raced) {
-    /* A hold is a message standing in for a scramble â€” the round has not
+    /* A hold is a message standing in for a scramble — the round has not
        published one yet, or you have already raced this one. It never joins
        the history: the arrows must not be able to step back onto a sentence,
        and there is nothing there to step back to. */
@@ -443,6 +459,27 @@ async function nextScramble({ clear = false } = {}) {
   }
 
   const token = ++scrambleToken;
+
+  /* Learn mode picks the case, so the pre-generated queue -- which deals a
+     random one out of the set -- is not what should be on screen. A case
+     scramble is built from an alg table rather than a random-state solver, so
+     making one on demand costs nothing and there is nothing to pre-warm. When
+     the scheduler has nothing due it returns null and we fall straight back to
+     the queue, which is how a finished sitting keeps drilling rather than
+     stopping dead. */
+  const wanted = learn.nextCaseId();
+  if (wanted) {
+    const one = await generate(app.settings.event, app.settings.mode, { allowedCases: [wanted] });
+    // Overtaken: hand the case back rather than letting it fall out of the
+    // sitting, or a due case would go unasked because of a stray keypress.
+    if (token !== scrambleToken) { learn.returnCase(wanted); return; }
+    app.scrambleHistory.push(one);
+    if (app.scrambleHistory.length > 40) app.scrambleHistory.shift();
+    app.historyPos = app.scrambleHistory.length - 1;
+    showScramble(one);
+    return;
+  }
+
   const s = await queue.next();
   if (token !== scrambleToken) return;   // a newer request overtook this one
   app.scrambleHistory.push(s);
@@ -538,6 +575,24 @@ app.restartCustomScrambles = () => {
   toast('Back to the first of your scrambles');
 };
 
+/**
+ * How the preview should be held.
+ *
+ * A trainer case is drawn the way every algorithm site draws it and the way
+ * you are already holding the cube: white cross on the bottom, yellow last
+ * layer on top. `z2` before the scramble is what puts it there — the preview
+ * cannot be recoloured, only turned over (see CubeView.setOrientation).
+ *
+ * An official WCA scramble is left alone. It is defined white-on-top,
+ * green-front, and the preview's job there is to match the cube you just
+ * scrambled so you can check you got it right.
+ */
+function previewOrientation(mode, ev) {
+  if (!app.settings.yellowTop) return '';
+  if (mode.kind === 'wca' || mode.kind === 'wca-goal') return '';
+  return /^([234567])x\1x\1$/.test(ev.puzzle) ? 'z2' : '';
+}
+
 function showScramble(s, silent = false) {
   app.scramble = s;
   const ev = eventOf(app.settings.event);
@@ -553,9 +608,9 @@ function showScramble(s, silent = false) {
     node.style.fontSize = '';
     $('#case-label').hidden = true;
     updateCustomBar();
-    node.title = 'Nothing to solve yet â€” the room is still racing';
+    node.title = 'Nothing to solve yet — the room is still racing';
     /* The preview goes with it. A cube still showing the scramble you just
-       solved is the same wrong instruction in a different shape â€” and it is
+       solved is the same wrong instruction in a different shape — and it is
        still configured for the event, because a hold can be the first thing a
        tab ever draws when it joins a room mid-round.
 
@@ -586,6 +641,10 @@ function showScramble(s, silent = false) {
   if (s.caseName) { caseEl.hidden = false; caseEl.textContent = s.caseName; }
   else caseEl.hidden = true;
 
+  // Whatever is on screen is what learn mode is asking about -- including a
+  // scramble you stepped back to with the arrows.
+  learn.dealt(s.caseId || null);
+
   if (s.custom && s.customIndex) {
     const bar = $('#custom-bar');
     if (bar) {
@@ -606,6 +665,7 @@ function showScramble(s, silent = false) {
   const mode = modeOf(app.settings.mode);
   const view = mode.view || app.settings.cubeView;
   cube.configure(ev.puzzle, view === 'LL3' ? '3D' : view);
+  cube.setOrientation(previewOrientation(mode, ev));
   cube.set(s.scramble);
 
   if (s.official === false && mode.kind === 'wca' && !cubingAvailable()) {
@@ -1290,6 +1350,10 @@ async function recordSolve({ timeMs, penalty = 'none', inspectionMs = 0, splits 
   if (racing) race.onSolveRecorded(solve).catch(err => console.warn('[race] submit failed', err));
   app.sessionCounts.set(app.session.id, app.solves.length);
 
+  /* Graded after the local write, so a case is judged on the solve as it was
+     recorded -- penalties included -- and never on one that failed to save. */
+  await learn.onSolve(solve);
+
   // You have just finished a solve, so you are looking at the timer, not at row
   // four thousand. Folding the times strip back to its top page keeps recording
   // a solve cheap however far back you had scrolled to read old ones.
@@ -1465,13 +1529,74 @@ let histCtx = null;
 let histIds = [];
 let histSigs = [];
 
+/* Which averages the list shows beside each solve, in column order. The ao5
+   used to be the only one and it was written into the markup, the grid and the
+   render; it is a setting now, edited from the column heading, so the column
+   next to your times can be the average you are actually chasing. Capped at
+   three because the fourth has nowhere to go in a sidebar this wide. */
+const AVG_MIN = 3, AVG_MAX = 1000, AVG_COLS_MAX = 3;
+
+function avgCols() {
+  const raw = Array.isArray(app.settings?.histAvgCols) ? app.settings.histAvgCols : [5, 12];
+  const out = [];
+  for (const v of raw) {
+    const n = Math.round(Number(v));
+    if (!Number.isFinite(n) || n < AVG_MIN || n > AVG_MAX) continue;
+    if (!out.includes(n)) out.push(n);                  // two ao5 columns say nothing twice
+    if (out.length === AVG_COLS_MAX) break;
+  }
+  return out;
+}
+
+/* How many of them the panel is wide enough to draw. A phone's times list, and
+   a sidebar dragged down to its narrowest, have room for the times and one
+   average — and a time squeezed to nothing is a worse list than one average
+   fewer. Measured after layout by syncHistFit() rather than guessed from a
+   breakpoint, because the panel's width is a setting as well as a screen size.
+   The columns you chose are untouched: this only decides how many of them fit
+   right now, and the rest come back when there is room. */
+let histFit = AVG_COLS_MAX;
+const HIST_MIN_TIME = 58;                  // px — "1:03.45" at the default scale
+
+/** The average columns actually on screen. */
+function shownCols() { return avgCols().slice(0, Math.max(1, histFit)); }
+
+function syncHistFit() {
+  const chip = $('#hist-list')?.querySelector('.solve-chip');
+  if (!chip) return;
+  const time = chip.querySelector('.t');
+  const avg = chip.querySelector('.avg');
+  if (!time || !avg) return;
+  const shown = chip.querySelectorAll('.avg').length;
+  const w = time.getBoundingClientRect().width;
+  // What one more column would cost: its track, and the gap in front of it.
+  const step = avg.getBoundingClientRect().width + 5;
+  let next;
+  if (w < HIST_MIN_TIME && shown > 1) next = shown - 1;
+  else if (shown < avgCols().length && w - step >= HIST_MIN_TIME) next = shown + 1;
+  else return;
+  histFit = next;
+  renderHistory();
+}
+
 /* How the list is ordered. `null` is solve order, newest first — the ordinary
    list, rendered incrementally. A sort key orders the whole session by that
    column instead, fastest first, exactly like clicking a column heading in
    csTimer: the solve numbers stay with their solves, so #7 is still #7 wherever
-   it lands. Rows with no value for that column (an ao5 before the fifth solve,
-   a DNF single) sort to the bottom rather than pretending to be zero. */
-let histSort = null;                       // null | 'time' | 'ao5'
+   it lands. Rows with no value for that column (an ao12 before the twelfth
+   solve, a DNF single) sort to the bottom rather than pretending to be zero.
+
+   An average column is keyed by its length — 'avg12', not 'the third column' —
+   so editing a *different* column does not silently re-sort the list by
+   something you never clicked. */
+let histSort = null;                       // null | 'time' | `avg${n}`
+
+/** The series behind the current sort, or null if that column is gone. */
+function sortedSeries() {
+  if (!histSort || histSort === 'time') return null;
+  const n = Number(histSort.slice(3));
+  return histCtx?.series.find(s => s.n === n) || null;
+}
 
 /** Indices into app.solves, in display order. */
 function histOrder() {
@@ -1480,9 +1605,11 @@ function histOrder() {
   for (let i = 0; i < n; i++) order[i] = n - 1 - i;      // newest first
   if (!histSort) return order;
 
+  const series = sortedSeries();
+  if (histSort !== 'time' && !series) return order;     // its column was edited away
   const value = histSort === 'time'
     ? (i) => eff(app.solves[i])
-    : (i) => histCtx.ao5s[i];
+    : (i) => series.values[i];
   // A stable sort with the no-value rows parked at the end. Ties keep the
   // newest-first order they came in with, which is what Array#sort guarantees.
   return order.sort((a, b) => {
@@ -1506,9 +1633,8 @@ function resetHistoryWindow() {
 /** Everything one row displays, as one string, so rows can be diffed cheaply. */
 function historyRowData(i) {
   const s = app.solves[i];
-  const { best, trim5, ao5s, bestAo5 } = histCtx;
+  const { best, trim, series } = histCtx;
   const v = eff(s);
-  const ao = ao5s[i];
   return {
     solve: s,
     cls: [
@@ -1516,28 +1642,35 @@ function historyRowData(i) {
       s.penalty === 'DNF' ? 'dnf' : '',
       s.penalty === '+2' ? 'plus2' : '',
       v === best && v !== DNF ? 'pb' : '',
-      trim5.best.has(i) ? 'best-in-avg' : '',
+      trim.best.has(i) ? 'best-in-avg' : '',
     ].filter(Boolean).join(' '),
     idx: String(i + 1),
     time: v === DNF ? 'DNF' : fmt(v) + (s.penalty === '+2' ? '+' : ''),
-    ao: ao === null ? '·' : fmt(ao),
-    hasAo: ao !== null,
-    aoBest: ao !== null && bestAo5 !== null && ao === bestAo5,
-    aoTitle: ao === null ? 'needs five solves'
-      : `ao5 after solve ${i + 1}${ao === bestAo5 ? ' — best of the session' : ''} — click for the five solves`,
+    // One entry per average column, in column order.
+    avgs: series.map(({ n, values, best: bestAvgN }) => {
+      const a = values[i];
+      const isBest = a !== null && bestAvgN !== null && a === bestAvgN;
+      return {
+        n,
+        text: a === null ? '·' : fmt(a),
+        has: a !== null,
+        best: isBest,
+        title: a === null ? `needs ${n} solves`
+          : `ao${n} after solve ${i + 1}${isBest ? ' — best of the session' : ''} — click for the ${n} solves`,
+      };
+    }),
   };
 }
 
-const rowSig = (d) => `${d.cls}|${d.idx}|${d.time}|${d.ao}|${d.aoBest ? 1 : 0}`;
+const rowSig = (d) =>
+  `${d.cls}|${d.idx}|${d.time}|` + d.avgs.map(a => `${a.n}:${a.text}:${a.best ? 1 : 0}`).join(',');
 
 /** One row. `i` is the index into app.solves, so #1 is always #1. */
 function historyChip(i, data) {
   const d = data || historyRowData(i);
-  /* One click from the times list into the reconstruction. It sits over the
-     ao5 on hover rather than taking a column of its own, because the ao5 is
-     what you read while you are solving and this is what you reach for when
-     you have stopped. The solve menu still carries the same entry, which is
-     the only way in on a touch screen. */
+  /* One click from the times list into the reconstruction. The solve menu
+     still carries the same entry, which is the only way in on a touch screen,
+     where this column is dropped entirely. */
   const recon = el('button', {
     class: 'chip-recon', title: 'Reconstruct this solve  (Y)',
     html: '<svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 108-8"/><path d="M12 4L9 7l3 3"/></svg>'
@@ -1545,31 +1678,33 @@ function historyChip(i, data) {
   });
   recon.addEventListener('click', (e) => { e.stopPropagation(); reconstructSolve(d.solve); });
 
-  /* The ao5 opens the five solves behind it. Until now only two averages in a
+  /* Each average opens the solves behind it. Until now only two averages in a
      session had a door — the current one and the session best — so an average
      you set an hour ago could be read in this column and then not looked at.
      Any of them can be opened and shared now; the cell stops the click so the
      solve menu does not open underneath the drawer. */
-  const ao = el('span', {
-    class: `ao5 ${d.aoBest ? 'best' : ''} ${d.hasAo ? 'open' : ''}`,
-    title: d.aoTitle, text: d.ao,
-  });
-  if (d.hasAo) {
-    ao.tabIndex = 0;
-    ao.setAttribute('role', 'button');
+  const cells = d.avgs.map((a) => {
+    const cell = el('span', {
+      class: `avg ${a.best ? 'best' : ''} ${a.has ? 'open' : ''}`,
+      title: a.title, text: a.text,
+    });
+    if (!a.has) return cell;
+    cell.tabIndex = 0;
+    cell.setAttribute('role', 'button');
     const open = (e) => {
       e.stopPropagation();
-      const kind = `ao5@${i}`;
-      openPanel(`Average of 5 · to solve #${i + 1}`, 'buildStatDetail', { wide: true }, app, kind);
+      openPanel(`Average of ${a.n} · to solve #${i + 1}`, 'buildStatDetail', { wide: true },
+        app, `ao${a.n}@${i}`);
     };
-    ao.addEventListener('click', open);
-    ao.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(e); } });
-  }
+    cell.addEventListener('click', open);
+    cell.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(e); } });
+    return cell;
+  });
 
   const chip = el('div', { class: d.cls, role: 'listitem' },
     el('span', { class: 'idx', text: d.idx }),
     el('span', { class: 't', text: d.time }),
-    ao,
+    ...cells,
     recon,
   );
   chip.addEventListener('click', (e) => solveMenu(d.solve, e.currentTarget));
@@ -1607,7 +1742,7 @@ function appendSortedRows(list, from, to) {
   list.querySelector('.hist-end')?.remove();
   list.append(frag);
   if (to >= histOrdered.length) {
-    list.append(el('div', { class: 'hist-end', text: `all ${histOrdered.length} solves, by ${histSort === 'ao5' ? 'ao5' : 'time'}` }));
+    list.append(el('div', { class: 'hist-end', text: `all ${histOrdered.length} solves, by ${histSort === 'time' ? 'time' : 'ao' + histSort.slice(3)}` }));
   }
 }
 
@@ -1619,6 +1754,8 @@ function appendSortedRows(list, from, to) {
  * "ao5" label a scrollbar to the right of the numbers it names as soon as a
  * session was long enough to scroll. Measured rather than guessed: the width
  * differs between platforms, and on an overlay scrollbar it is zero.
+ *
+ * Measured on the last column of each, whichever that now is.
  */
 function syncScrollbarGutter() {
   const list = $('#hist-list'), panel = $('#panel-times');
@@ -1628,8 +1765,16 @@ function syncScrollbarGutter() {
   // padding, and a measurement cannot be. Runs after layout, so it reads the
   // list that was just built and never forces a reflow inside the render.
   requestAnimationFrame(() => {
-    const cell = panel.querySelector('.hist-cols [data-sort="ao5"]');
-    const row = list.querySelector('.solve-chip .ao5');
+    // Same frame, same measurement: how many columns fit is read off the list
+    // that was just laid out, and a change re-renders before the gutter is
+    // measured against a row that is about to be replaced.
+    const before = histFit;
+    syncHistFit();
+    if (histFit !== before) return;
+    const heads = panel.querySelectorAll('.hist-cols .col-avg');
+    const cell = heads[heads.length - 1];
+    const cells = list.querySelector('.solve-chip')?.querySelectorAll('.avg');
+    const row = cells && cells[cells.length - 1];
     if (!cell || !row) return;
     const prev = parseFloat(panel.style.getPropertyValue('--hist-sbw')) || 0;
     const delta = cell.getBoundingClientRect().right - row.getBoundingClientRect().right;
@@ -1641,7 +1786,7 @@ function syncScrollbarGutter() {
 function renderHistory() {
   const list = $('#hist-list');
   const n = app.solves.length;
-  syncSortHeaders();
+  syncHistCols();
   syncScrollbarGutter();
   if (!n) {
     histShown = HIST_PAGE;
@@ -1656,13 +1801,20 @@ function renderHistory() {
   // solve must not silently drop the oldest row you had scrolled to.
   histShown = Math.min(Math.max(histShown, HIST_PAGE), n);
 
-  const ao5s = rollingSeries(app.solves, 5);
-  const valid = ao5s.filter(v => v !== null);
+  /* One rolling series per average column. rollingSeries is O(n x len) and this
+     runs on every solve, so the columns are capped at three and nothing is
+     computed for a column that is not on screen. */
+  const cols = shownCols();
   histCtx = {
     best: bestSingle(app.solves),
-    trim5: trimmedIndices(app.solves, 5),
-    ao5s,
-    bestAo5: valid.length ? Math.min(...valid) : null,
+    // The green edge marks the counting solves of the first average column —
+    // the one nearest your times, and the one people read as "the" average.
+    trim: trimmedIndices(app.solves, cols[0] || 5),
+    series: cols.map((len) => {
+      const values = rollingSeries(app.solves, len);
+      const valid = values.filter(v => v !== null);
+      return { n: len, values, best: valid.length ? Math.min(...valid) : null };
+    }),
   };
 
   /* A sorted list is rebuilt rather than diffed. The incremental path exists
@@ -1751,6 +1903,12 @@ function renderHistory() {
   else if (lo !== 0 && end) end.remove();
 }
 
+/* The panel gets narrower when the window does, or when the sidebar slider is
+   dragged — so how many columns fit is re-measured then too, not only when a
+   solve lands. */
+const remeasureHistory = debounce(() => requestAnimationFrame(syncHistFit), 150);
+window.addEventListener('resize', remeasureHistory, { passive: true });
+
 /** Grow the window when the scroll reaches the oldest row on screen. */
 function wireHistoryScroll() {
   const list = $('#hist-list');
@@ -1781,10 +1939,129 @@ function syncSortHeaders() {
   });
 }
 
+/* The grid is shared by the heading row and every solve chip, and the number of
+   average columns is now a setting — so the template lives in a custom property
+   rather than being written out twice in the stylesheet. The touch variant
+   drops the reconstruct column, which has no hover to reveal it. */
+function applyHistGrid(count) {
+  const panel = $('#panel-times');
+  if (!panel) return;
+  const avg = ' var(--ao-col)'.repeat(count);
+  panel.style.setProperty('--hist-grid', `24px minmax(0, 1fr)${avg} 20px`);
+  panel.style.setProperty('--hist-grid-touch', `24px minmax(0, 1fr)${avg}`);
+}
+
+/** One average column heading: a sort button, and a pencil that changes it. */
+function avgHeading(n) {
+  const sort = el('button', {
+    type: 'button', class: 'col-sort', 'data-sort': `avg${n}`,
+    title: `Sort by ao${n} — click again for solve order`, text: `ao${n}`,
+  });
+  const edit = el('button', {
+    type: 'button', class: 'col-edit', 'data-edit': String(n),
+    title: `Show a different average here — anything from ao${AVG_MIN} up`,
+    'aria-label': `Change the ao${n} column`, text: '✎',
+  });
+  return el('span', { class: 'col-avg' }, sort, edit);
+}
+
+/**
+ * Swap a heading for a number box, so the column can be any average you like.
+ *
+ * The list was born with one hard-coded ao5 beside the times; an ao12 next to
+ * it covers most people and nobody else, so which averages are shown is asked
+ * rather than assumed. Enter commits, Escape and clicking away put the heading
+ * back, and a number that is not an average at all is refused rather than
+ * quietly rounded into one.
+ */
+function editAvgColumn(cell, n) {
+  if (cell.querySelector('input')) return;
+  const input = el('input', {
+    type: 'number', class: 'col-num', min: String(AVG_MIN), max: String(AVG_MAX),
+    step: '1', value: String(n), 'aria-label': 'Average of how many solves',
+    title: `Any average from ${AVG_MIN} to ${AVG_MAX}`,
+  });
+  const prev = [...cell.childNodes];
+  cell.replaceChildren(input);
+  input.focus();
+  input.select();
+
+  let done = false;
+  const cancel = () => { if (!done) { done = true; cell.replaceChildren(...prev); } };
+  const commit = () => {
+    if (done) return;
+    const v = Math.round(Number(input.value));
+    if (!Number.isFinite(v) || v < AVG_MIN || v > AVG_MAX) {
+      toast(`An average is between ${AVG_MIN} and ${AVG_MAX} solves.`, { kind: 'warn' });
+      cancel();
+      return;
+    }
+    const cols = avgCols();
+    if (v !== n && cols.includes(v)) {
+      toast(`ao${v} is already one of the columns.`, { kind: 'warn' });
+      cancel();
+      return;
+    }
+    done = true;
+    if (v === n) { cell.replaceChildren(...prev); return; }
+    app.settings.histAvgCols = cols.map(c => (c === n ? v : c));
+    persist();
+    // Sorting by a column that no longer exists would leave the list in an
+    // order nothing on screen explains.
+    if (histSort === `avg${n}`) histSort = `avg${v}`;
+    resetHistoryWindow();
+    renderHistory();
+  };
+
+  input.addEventListener('keydown', (e) => {
+    e.stopPropagation();                                 // not a timer shortcut
+    if (e.key === 'Enter') { e.preventDefault(); commit(); }
+    else if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+  });
+  input.addEventListener('click', e => e.stopPropagation());
+  input.addEventListener('blur', commit);
+}
+
+/* Which columns the heading row is currently showing, so a render only rebuilds
+   it when the answer has changed — restoring settings or importing a backup can
+   change it without going through the editor. */
+let histColsSig = null;
+
+function syncHistCols() {
+  if (shownCols().join(',') === histColsSig) { syncSortHeaders(); return; }
+  renderHistCols();
+}
+
+/** Build the heading row from the columns the settings ask for. */
+function renderHistCols() {
+  const host = document.querySelector('.hist-cols');
+  if (!host) return;
+  const cols = shownCols();
+  histColsSig = cols.join(',');
+  applyHistGrid(cols.length);
+  // Sorting by a column someone has edited away falls back to solve order.
+  if (histSort && histSort !== 'time' && !cols.includes(Number(histSort.slice(3)))) histSort = null;
+  host.replaceChildren(
+    el('span'),
+    el('button', {
+      type: 'button', 'data-sort': 'time',
+      title: 'Sort by time — click again for solve order', text: 'time',
+    }),
+    ...cols.map(avgHeading),
+    el('span'),
+  );
+  syncSortHeaders();
+}
+
 function wireHistorySort() {
   const cols = document.querySelector('.hist-cols');
   if (!cols) return;
   cols.addEventListener('click', (e) => {
+    const pencil = e.target.closest('[data-edit]');
+    if (pencil) {
+      editAvgColumn(pencil.parentElement, Number(pencil.dataset.edit));
+      return;
+    }
     const btn = e.target.closest('[data-sort]');
     if (!btn) return;
     // Pressing the column the list is already sorted by puts it back in solve
@@ -1793,6 +2070,7 @@ function wireHistorySort() {
     resetHistoryWindow();
     renderHistory();
   });
+  renderHistCols();
 }
 
 /* Plugging a keyboard into a tablet, or the browser's own device emulation,
@@ -2746,6 +3024,10 @@ const RESET_KEEPS = [
   'spotifyClientId', 'featuredReel',
   // A buffer and a letter scheme are years of memorisation, not a look.
   'bld',
+  // Learn mode is where you are in a set, not how the app looks. Its schedule
+  // lives outside settings entirely, so resetting these would only desync the
+  // switch from the progress the strip is still showing.
+  'learn', 'learnNewPerSession', 'learnSlowFactor',
 ];
 
 /** Put every look-and-feel setting back to the value it shipped with. */
@@ -2796,11 +3078,18 @@ function applyAll(changed) {
     timer.cfg.useInspection = !eventOf(app.settings.event).noInspection;
   }
   if (changed === 'hintFacelets') cube.setHints(app.settings.hintFacelets);
+  // Turning the cube over is a re-render of the same scramble, not a new one.
+  if (changed === 'yellowTop' && app.scramble) showScramble(app.scramble, true);
   // A bigger preview can push a dragged widget off screen, so re-clamp it —
   // and it also takes more room away from the rail beside it.
   if (changed === 'cubeSize') { cubeDrag?.apply(); measureLayout(); }
   if (!changed || ['scrambleSize', 'density', 'sidebarWidth', 'panelStyle'].includes(changed)) {
     fitScrambleToLine($('#scramble-text'));
+  }
+  // Anything that changes how wide the times list is, or how big its type is,
+  // changes how many average columns fit beside the times.
+  if (!changed || ['sidebarWidth', 'timesSize', 'density', 'panelStyle'].includes(changed)) {
+    remeasureHistory();
   }
   if (changed === 'cubeView') { updateLabels(); if (app.scramble) showScramble(app.scramble, true); }
   if (!changed || changed === 'inputMode') applyInputMode();
@@ -3061,18 +3350,18 @@ function wireInput() {
    *
    * `timerInputLive()` is not a constant across a single keystroke. Stopping a
    * race solve records it, and recording it locks the timer for the rest of the
-   * round â€” so the spacebar that ended the solve went DOWN while the timer was
+   * round — so the spacebar that ended the solve went DOWN while the timer was
    * live and came UP while it was not. Asking the gate again here threw that
    * keyup away, and it took two things with it: the timer only leaves
    * `cooldown` on a release, so it sat there, and `spaceDown` was left set, so
    * the next press was swallowed as a repeat. The visible result was the one
-   * people reported â€” the round ends, you press space for the next scramble,
+   * people reported — the round ends, you press space for the next scramble,
    * and nothing happens until you press again or click the timer.
    *
    * `stopKeys` and `spaceDown` already answer the only question that matters:
    * did the keydown handler act on this press. Both are set on the far side of
    * every check the keydown makes, so trusting them is not a relaxation of the
-   * gate â€” it is the same decision, remembered rather than re-taken against
+   * gate — it is the same decision, remembered rather than re-taken against
    * state that has since moved.
    */
   document.addEventListener('keyup', (e) => {
@@ -3132,7 +3421,7 @@ function wireInput() {
   const up = (e) => {
     if (!e.isPrimary || !tracking) return;
     tracking = false;
-    /* `tracking` is the whole question â€” see the note on the keyup handler.
+    /* `tracking` is the whole question — see the note on the keyup handler.
        Re-asking pointerOK here had the identical failure on touch, which is
        the one input where there is no other way to start the timer: the tap
        that stopped a race solve locked the timer as it landed, its release was
@@ -3506,6 +3795,14 @@ function wireShortcuts() {
       case 'y': case 'Y': e.preventDefault(); $('#btn-recon').click(); break;
       case 'l': case 'L': e.preventDefault(); $('#btn-xp1').click(); break;
       case 'p': case 'P': e.preventDefault(); $('#btn-spotify').click(); break;
+      case 'l': case 'L':
+        e.preventDefault();
+        learn.setEnabled(!learn.enabled);
+        break;
+      case 'g': case 'G':
+        e.preventDefault();
+        if (learn.enabled) learn.peek();
+        break;
       case 'k': case 'K':
         e.preventDefault();
         if (setFor(app.settings.mode)) openPanel('Cases', 'buildCases', undefined, app);
@@ -3561,6 +3858,9 @@ function openPaletteWithCommands() {
       { kind: 'go', label: 'Race', keywords: 'room multiplayer versus head to head', run: () => $('#btn-race').click() },
       { kind: 'do', label: 'Reconstruct the last solve', run: () => app.solves.at(-1) ? reconstructSolve(app.solves.at(-1)) : toast('No solves yet') },
       { kind: 'go', label: 'Pick trainer cases', key: 'K', run: () => setFor(app.settings.mode) ? openPanel('Cases', 'buildCases', undefined, app) : toast('Current mode has no case list') },
+      { kind: 'do', key: 'L', keywords: 'learn spaced repetition algorithm memorise drill teach',
+        label: learn.enabled ? 'Turn off learn mode' : 'Learn mode — teach me these cases',
+        run: () => learn.setEnabled(!learn.enabled) },
       { kind: 'do', label: 'New session', run: () => app.newSession() },
       { kind: 'do', label: 'New scramble', key: 'N', run: forwardScramble },
       { kind: 'do', label: 'Copy scramble', run: () => copyToast(app.scramble?.scramble || '', 'Scramble') },

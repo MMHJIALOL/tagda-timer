@@ -27,34 +27,68 @@ export function shockwave(color) {
    and a globalAlpha write, every frame — six context state changes per flake,
    a thousand of them a frame, on top of a full-resolution canvas. The physics
    is identical; only the drawing has been rewritten.
+
+   What was left after that was not the confetti's own cost at all. It runs on
+   the one frame where the page is at its busiest: the times list has just been
+   re-rendered, a shockwave is scaling across the whole viewport, and the
+   background shader is still painting every pixel behind it. So the loop now
+   also (a) throttles that shader while it runs, (b) clears only the rectangle
+   it drew into rather than the whole canvas, (c) keeps the backing store inside
+   a pixel budget instead of trusting devicePixelRatio on a 4K screen, and
+   (d) moves the flakes by elapsed time rather than by frame — a dropped frame
+   used to slow the confetti down, which is exactly what "it lags" looks like.
    --------------------------------------------------------- */
 let confettiRunning = false;
+
+/* Told about the celebration so the things underneath it can get out of the
+   way — main.js turns the background shader down while this is true. */
+function celebrating(on) {
+  document.body.classList.toggle('celebrating', on);
+  window.dispatchEvent(new CustomEvent('tt-celebrate', { detail: { on } }));
+}
 
 export function confetti(colors, { count = 130, power = 1 } = {}) {
   const cv = $('#confetti');
   if (!cv || confettiRunning) return;
-  const ctx = cv.getContext('2d');
+  /* A hidden tab does not run requestAnimationFrame, so a celebration started
+     there would never draw a frame and never finish — leaving the page in its
+     celebrating state, with the background shader turned down, for as long as
+     the tab stayed open. There is also nobody looking at it. */
+  if (document.hidden) return;
+  // `desynchronized` lets the compositor skip a round trip on canvases nothing
+  // reads back — which this never does.
+  const ctx = cv.getContext('2d', { alpha: true, desynchronized: true });
   if (!ctx) return;
 
-  // Flakes are 5px and moving fast. Rendering them at two device pixels each
-  // doubles the fill cost for detail nobody can see mid-flight.
-  const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+  /* Flakes are 5px and moving fast. Rendering them at two device pixels each
+     doubles the fill cost for detail nobody can see mid-flight — and on a 4K
+     screen even 1.5x is an eight-megapixel surface to clear and fill every
+     frame, which is where the stutter came from. Capped by total pixels, so a
+     laptop keeps its crisp flakes and a big display stops paying for them. */
   const w = innerWidth, h = innerHeight;
-  cv.width = Math.round(w * dpr);
-  cv.height = Math.round(h * dpr);
+  const PIXEL_BUDGET = 2.6e6;
+  const dpr = Math.min(window.devicePixelRatio || 1, 1.5,
+                       Math.sqrt(PIXEL_BUDGET / Math.max(1, w * h)));
+  const bw = Math.round(w * dpr), bh = Math.round(h * dpr);
+  // Resizing a canvas reallocates its backing store; same size, same buffer.
+  if (cv.width !== bw || cv.height !== bh) { cv.width = bw; cv.height = bh; }
   cv.classList.add('on');
   cv.style.opacity = '1';
-  // Toasts sit above this canvas and blur what is behind them, so while the
-  // confetti is moving their backdrop has to be re-blurred every single frame.
-  document.body.classList.add('celebrating');
+  celebrating(true);
   confettiRunning = true;
+
+  // Fewer flakes where there are fewer cores to draw them with. The celebration
+  // reads the same; a phone just stops dropping frames during it.
+  if ((navigator.hardwareConcurrency || 8) <= 4) count = Math.round(count * 0.6);
 
   // Grouped by colour up front, so the loop sets fillStyle once per colour per
   // frame rather than once per flake.
   const groups = colors.map(c => ({ c, parts: [] }));
+  let maxR = 0;
   for (let i = 0; i < count; i++) {
     const pw = 5 + Math.random() * 7;
     const ph = 3 + Math.random() * 6;
+    maxR = Math.max(maxR, Math.hypot(pw, ph) / 2);
     groups[i % groups.length].parts.push({
       x: w / 2 + (Math.random() - 0.5) * 220,
       y: h / 2 + (Math.random() - 0.5) * 90,
@@ -66,33 +100,57 @@ export function confetti(colors, { count = 130, power = 1 } = {}) {
     });
   }
 
+  let over = false;
   const finish = () => {
+    if (over) return;
+    over = true;
+    clearTimeout(watchdog);
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, cv.width, cv.height);
     cv.classList.remove('on');
     cv.style.opacity = '';
-    document.body.classList.remove('celebrating');
+    celebrating(false);
     confettiRunning = false;
   };
 
-  let frames = 0;
+  /* The rectangle the last frame painted into, in CSS pixels. Clearing that
+     instead of the whole viewport is most of a full-screen clear saved on every
+     frame — the flakes only ever occupy a band of it. */
+  let dirty = null;
+
+  let elapsed = 0;
   let life = 1;
-  const step = () => {
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.clearRect(0, 0, cv.width, cv.height);
+  let last = performance.now();
+  const step = (now) => {
+    /* Time, not frames. Everything below is in 60ths of a second so the
+       constants are the ones that were tuned, and a long frame is clamped
+       rather than teleporting every flake off screen. */
+    const dt = Math.min(2.5, (now - last) / 16.667);
+    last = now;
+    elapsed += dt;
+
+    // Work in CSS pixels; the transform carries the device scale.
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    if (dirty) ctx.clearRect(dirty[0], dirty[1], dirty[2] - dirty[0], dirty[3] - dirty[1]);
+    else ctx.clearRect(0, 0, w, h);
 
     let alive = 0;
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
     for (const g of groups) {
       if (!g.parts.length) continue;
       ctx.fillStyle = g.c;
       let keep = 0;
       for (let i = 0; i < g.parts.length; i++) {
         const p = g.parts[i];
-        p.vy += 0.42;
-        p.vx *= 0.992;
-        p.x += p.vx; p.y += p.vy; p.rot += p.vr;
+        p.vy += 0.42 * dt;
+        p.vx *= Math.pow(0.992, dt);
+        p.x += p.vx * dt; p.y += p.vy * dt; p.rot += p.vr * dt;
         if (p.y > h + 60) continue;               // gone; drop it from the array
         g.parts[keep++] = p;
+        if (p.x < x0) x0 = p.x;
+        if (p.y < y0) y0 = p.y;
+        if (p.x > x1) x1 = p.x;
+        if (p.y > y1) y1 = p.y;
         // One transform call replaces save + translate + rotate + restore.
         const cos = Math.cos(p.rot), sin = Math.sin(p.rot);
         ctx.setTransform(cos * dpr, sin * dpr, -sin * dpr, cos * dpr, p.x * dpr, p.y * dpr);
@@ -103,18 +161,29 @@ export function confetti(colors, { count = 130, power = 1 } = {}) {
       alive += keep;
     }
 
-    frames++;
+    /* Padded by the widest a flake can reach from its centre, and by one frame
+       of the fastest fall, so nothing is ever left painted outside the box the
+       next frame clears. */
+    dirty = alive
+      ? [Math.max(0, x0 - maxR - 4), Math.max(0, y0 - maxR - 4),
+         Math.min(w, x1 + maxR + 4), Math.min(h, y1 + maxR + 40)]
+      : null;
+
     // Every flake used to fade on its own clock, but they all started fading on
     // the same frame — so it is the same picture for one composited opacity on
     // the canvas instead of a globalAlpha write per flake.
-    if (frames > 55) {
-      life -= 0.016;
+    if (elapsed > 55) {
+      life -= 0.016 * dt;
       cv.style.opacity = String(Math.max(0, life));
     }
 
-    if (alive > 0 && life > 0 && frames < 260) requestAnimationFrame(step);
+    if (over) return;
+    if (alive > 0 && life > 0 && elapsed < 260) requestAnimationFrame(step);
     else finish();
   };
+  /* Switching tabs mid-flight stops the frames from coming, and the celebration
+     has to end anyway — a second past the longest it can run. */
+  const watchdog = setTimeout(finish, 5500);
   requestAnimationFrame(step);
 }
 

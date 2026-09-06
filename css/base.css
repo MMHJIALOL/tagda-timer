@@ -266,8 +266,8 @@ body.inspecting #timer-display { opacity: 0; }
 
 /* A race hold: the room is between scrambles, or you have finished one the
    rest of the room has not. It occupies the scramble's box so the page does
-   not jump, and looks as unlike a scramble as it can â€” proportional type,
-   dimmer, no monospace grid â€” because the whole point of it is that there is
+   not jump, and looks as unlike a scramble as it can — proportional type,
+   dimmer, no monospace grid — because the whole point of it is that there is
    nothing here to turn. */
 .scramble.race-hold {
   font-family: inherit;
@@ -319,6 +319,54 @@ body.inspecting #timer-display { opacity: 0; }
   background: color-mix(in srgb, var(--accent-2) 12%, transparent);
   border: 1px solid color-mix(in srgb, var(--accent-2) 26%, transparent);
 }
+
+/* =================== LEARN MODE =================== */
+/* Sits under the case label, and is the only thing on the timer screen that is
+   allowed to say more than a word or two -- the algorithm has to be readable at
+   a glance from arm's length, so it is set in the mono face at scramble size
+   rather than as UI text. */
+#learn-bar {
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  margin-top: 10px;
+}
+
+#learn-progress {
+  display: flex; align-items: center; gap: 14px;
+  font-size: .72rem; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--text-faint);
+}
+#learn-progress b { font-weight: 700; margin-right: 4px; }
+.lp-seg.new b      { color: var(--text-dim); }
+.lp-seg.learning b { color: var(--warn); }
+.lp-seg.mature b   { color: var(--ok); }
+.lp-seg.due b      { color: var(--accent); }
+#btn-learn-exit { font-size: 1rem; line-height: 1; padding: 2px 7px; }
+
+#learn-alg {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  justify-content: center;
+  padding: 9px 16px; border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
+}
+.la-tag {
+  font-size: .68rem; font-weight: 700; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--accent);
+}
+.la-alg {
+  font-family: var(--font-mono); font-size: 1.05rem; letter-spacing: .02em;
+  color: var(--text);
+}
+
+#learn-actions { display: flex; align-items: center; gap: 12px; min-height: 22px; }
+#learn-verdict { font-size: .78rem; color: var(--text-dim); }
+#learn-verdict.lv-pass { color: var(--ok); }
+#learn-verdict.lv-hold { color: var(--warn); }
+#learn-verdict.lv-fail { color: var(--danger); }
+#learn-verdict.lv-done { color: var(--text-faint); }
+
+/* Zen mode hides the furniture; the algorithm is furniture. */
+body.zen #learn-bar { display: none; }
 
 /* =================== STAGE =================== */
 /* Third track is an intentionally empty spacer that mirrors the sidebar, so the
