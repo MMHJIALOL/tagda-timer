@@ -2544,7 +2544,7 @@ async function startCloudSync() {
   const { hasPersistedSession } = await import('./sync-auth.js');
   if (!hasPersistedSession()) return;
   const { wireAccountButton } = await import('./sync-ui.js');
-  wireAccountButton($('#btn-account'));
+  wireAccountButton($('#btn-account'), { setSetting: app.setSetting });
 }
 
 /**
@@ -2565,7 +2565,7 @@ function wireAccountButtonOnFirstClick() {
     // the real handler it attached already saw this same click.
     const alreadyWired = !!btn.dataset.wired;
     const { wireAccountButton } = await import('./sync-ui.js');
-    wireAccountButton(btn);
+    wireAccountButton(btn, { setSetting: app.setSetting });
     if (!alreadyWired) btn.click(); // now caught by the real handler just attached
   }, { once: true });
 

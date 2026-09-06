@@ -1830,7 +1830,8 @@ export function buildRace(app) {
       });
       nameInput.addEventListener('change', () => set('raceName', nameInput.value.trim().slice(0, 18)));
       body.append(group('You',
-        row('Display name', nameInput, 'what the room calls you — no account, nothing stored anywhere else'),
+        row('Display name', nameInput, 'what the room calls you, on the leaderboard and everywhere else — ' +
+          'editable here or from the account icon in the top bar, and synced along with everything else once signed in'),
       ));
 
       /* ---- joining ---- */

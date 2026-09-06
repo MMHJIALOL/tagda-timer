@@ -11,8 +11,31 @@ import { toast } from './toast.js';
 import { popover } from './popover.js';
 import { onAuthChange, signIn, signOutUser } from './sync-auth.js';
 import { initSync } from './sync.js';
+import { KV, onWrite } from './db.js';
 
 let _initStarted = false;
+
+/**
+ * The one username, shared everywhere: it's `settings.raceName` — the same
+ * field Race mode has always used for the room's player list and its
+ * post-round leaderboard (js/race.js's nickname(), edited today from the
+ * Race panel in js/panels.js). Reusing it rather than adding a second name
+ * means there's one identity, not two that can drift apart, and it already
+ * rides the existing settings sync path — no new plumbing needed for it to
+ * follow you across devices once signed in.
+ */
+let _username = '';
+async function refreshUsername() {
+  const s = await KV.get('settings', {});
+  _username = (s?.raceName || '').trim();
+  return _username;
+}
+onWrite('kv', ({ key, value }) => { if (key === 'settings') _username = (value?.raceName || '').trim(); });
+refreshUsername();
+
+function displayNameOf(user) {
+  return _username || user?.displayName || user?.email || 'Signed in';
+}
 
 /**
  * The one dialog in this feature, and it only has one button. There is
@@ -82,7 +105,7 @@ export function buildAccountRow() {
     if (user) {
       wrap.append(
         el('div', { class: 'lbl' },
-          el('span', { text: user.displayName || user.email || 'Signed in' }),
+          el('span', { text: displayNameOf(user) }),
           el('span', { class: 'sub', text: `syncing as ${user.email}` })),
         el('button', {
           class: 'ghost-btn', text: 'sign out',
@@ -127,10 +150,10 @@ function renderAccountButton(btn, user) {
   btn.innerHTML = '';
   if (user) {
     btn.classList.add('on');
-    btn.title = `Signed in as ${user.email}`;
+    btn.title = `Signed in as ${displayNameOf(user)}`;
     btn.append(user.photoURL
       ? el('img', { class: 'account-avatar', src: user.photoURL, alt: '', referrerpolicy: 'no-referrer' })
-      : el('span', { class: 'account-initial', text: (user.displayName || user.email || '?').trim().charAt(0).toUpperCase() }));
+      : el('span', { class: 'account-initial', text: displayNameOf(user).charAt(0).toUpperCase() }));
   } else {
     btn.classList.remove('on');
     btn.title = 'Sign in to sync your solves';
@@ -139,22 +162,45 @@ function renderAccountButton(btn, user) {
 }
 
 /**
+ * Prompts for a new username and saves it to `settings.raceName` — through
+ * `setSetting` when the caller has one (keeps main.js's in-memory
+ * app.settings and the Race panel's already-open form in step with the
+ * edit), falling back to writing the KV store directly when it doesn't
+ * (nothing else in this session has app.settings loaded to go stale).
+ */
+function editUsername(btn, setSetting) {
+  const next = prompt('Username — used in Race mode and shown on your account', _username);
+  if (next === null) return;
+  const trimmed = next.trim().slice(0, 18);
+  _username = trimmed;
+  if (setSetting) {
+    setSetting('raceName', trimmed);
+  } else {
+    KV.get('settings', {}).then(s => KV.set('settings', { ...s, raceName: trimmed }));
+  }
+  renderAccountButton(btn, _topBarUser);
+}
+
+/**
  * The top-bar account icon (index.html's #btn-account) — the "is my account
  * connected" answer that's visible from the home screen, not three clicks
  * into Settings. Same avatar-or-initial-or-plain-icon shape as
  * renderAccountButton, plus a click: sign in directly while signed out, or
- * a small popover with "sign out" while signed in.
+ * a small popover — your username, an edit option, and sign out — while
+ * signed in.
  */
-export function wireAccountButton(btn) {
+export function wireAccountButton(btn, { setSetting } = {}) {
   if (btn.dataset.wired) { autoStart(); return; }
   btn.dataset.wired = '1';
 
-  onAuthChange((user) => renderAccountButton(btn, user));
+  onAuthChange(async (user) => { await refreshUsername(); renderAccountButton(btn, user); });
+  onWrite('kv', ({ key }) => { if (key === 'settings' && _topBarUser) renderAccountButton(btn, _topBarUser); });
 
   btn.addEventListener('click', () => {
     if (_topBarUser) {
       popover(btn, [
-        { title: _topBarUser.email },
+        { title: displayNameOf(_topBarUser) },
+        { label: 'Edit username', onSelect: () => editUsername(btn, setSetting) },
         { label: 'Sign out', onSelect: async () => {
           await signOutUser();
           toast('Signed out — your solves stay on this device', { kind: '' });
