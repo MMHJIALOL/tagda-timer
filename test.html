@@ -543,6 +543,97 @@ section('reconstruction');
     `${cross.list.length} cross solutions checked`);
   check('the shortest suggestion is genuinely the shortest',
     cross.list.every(x => moveCount(x.alg) >= cross.best), `best ${cross.best}`);
+
+  /* ---------------- solutions written from a rotated grip ----------------
+     The same eight quarter turns are the same eight quarter turns however the
+     cube is held — but `B' U2 B U' B' U B` and `y R' U2 R U' R' U R` are not
+     the same thing to reconstruct with, and only one of them is what anybody
+     actually did. So a line that reads better after a rotation is offered as
+     well, and a rotation costs nothing: it is not a move. */
+  const atF2L = (() => {
+    let p = C.applyAlg(C.SOLVED, scr);
+    for (let i = 0; i < 4; i++) {
+      const a = C.analyse(p.state, 'D');
+      if (a.phase === 'f2l') return { pos: p, a };
+      const r = SV.suggest(p.state, p.frame, a, { limit: 1 });
+      if (!r.list.length) return null;
+      p = C.applyAlg(p.state, r.list[0].alg, p.frame);
+    }
+    return null;
+  })();
+  check('a position with the cross done was reached to ask about pairs', !!atF2L);
+
+  const f2l = atF2L ? SV.suggest(atF2L.pos.state, atF2L.pos.frame, atF2L.a, { limit: 30 })
+                    : { list: [], best: -1 };
+  const rotated = f2l.list.filter(x => /^[xyz]/.test(x.alg));
+  check('pairs are offered from a rotated grip too', rotated.length > 0,
+    `${rotated.length} rotated of ${f2l.list.length}`);
+  check('a rotation is free — a rotated line is no longer than the shortest',
+    f2l.list.every(x => moveCount(x.alg) >= f2l.best), `best ${f2l.best}`);
+
+  /* A rotated line finishes a differently-named slot: an FR pair is the BR pair
+     once you have turned the cube. Naming it the old way is worse than not
+     naming it at all, so every row is checked against the pair it really puts
+     in — from the orientation its own rotation leaves you in. */
+  const mislabelled = [];
+  if (atF2L) {
+    const wasDone = atF2L.a.slots.filter(s => s.done).map(s => s.label);
+    for (const x of f2l.list) {
+      const rot = x.alg.split(/\s+/).filter(t => /^[xyz]/.test(t)).join(' ');
+      const rf = rot ? C.applyAlg(atF2L.pos.state, rot, atF2L.pos.frame).frame : atF2L.pos.frame;
+      const after = C.applyAlg(atF2L.pos.state, x.alg, atF2L.pos.frame);
+      if (!after) { mislabelled.push(`${x.alg}: unreadable`); continue; }
+      const gained = C.analyse(after.state, 'D').slots
+        .filter(s => s.done && !wasDone.includes(s.label));
+      if (gained.length < 1) { mislabelled.push(`${x.alg}: puts no pair in`); continue; }
+      const names = gained.map(g => [...g.label].map(fc => C.toUserFace(rf, fc)).join(''));
+      if (!names.some(n => x.label.startsWith(`${n} `))) {
+        mislabelled.push(`${x.alg}: called "${x.label}", inserts ${names.join('/')}`);
+      }
+    }
+  }
+  check('every pair suggestion inserts, and names, the pair it claims',
+    !mislabelled.length, mislabelled.slice(0, 3).join(' | ') || `${f2l.list.length} checked`);
+}
+
+/* ---------------- how moves group into steps ----------------
+   A reconstruction is read one line per idea: the cross, then a line for each
+   pair. What decides where a line breaks is whether anything actually went in
+   — not whether the move was typed or picked off the list. Clicking the alg
+   the panel just suggested for the pair you are already working on has to land
+   on that pair's line. */
+section('reconstruction steps');
+{
+  const R = await import('./js/recon.js');
+  // rank is how far through the solve the line *started*: 0 before the cross,
+  // 1-4 as the pairs go in. Equal rank means nothing has gone in since.
+  check('a suggestion you clicked continues the line it belongs to',
+    R.joinsLast({ alg: "U'", rank: 1, typed: true }, 1) === true &&
+    R.joinsLast({ alg: "R U R'", rank: 1, typed: false }, 1) === true);
+  check('a pair going in starts the next line',
+    R.joinsLast({ alg: "R U R'", rank: 1, typed: false }, 2) === false &&
+    R.joinsLast({ alg: 'F R U R2', rank: 0, typed: true }, 1) === false);
+  check('a rotation is never a step of its own',
+    R.joinsLast({ alg: 'y', rank: 1, typed: true }, 2) === true &&
+    R.joinsLast({ alg: "x2 y'", rank: 0, typed: false }, 1) === true);
+  check('the first move starts the first line', R.joinsLast(null, 0) === false);
+
+  /* ---------------- which face am I looking at? ----------------
+     Drag the cube round to find a piece and R, U and F are wherever they ended
+     up. The letters follow the camera, so they are worked out from where it is
+     rather than from anything the cube was asked to do. */
+  const spots = (lat, lon) => Object.fromEntries(R.faceSpots(lat, lon).map(s => [s.face, s]));
+  const home = spots(35, 30);
+  check('at the default view U is up, D is down and R is to the right',
+    home.U.y < -0.5 && home.D.y > 0.5 && home.R.x > 0.4 && home.L.x < -0.4,
+    `U(${home.U.x.toFixed(2)}, ${home.U.y.toFixed(2)}) R(${home.R.x.toFixed(2)}, ${home.R.y.toFixed(2)})`);
+  check('and U, F and R are the three faces you can see',
+    home.U.front && home.F.front && home.R.front &&
+    !home.D.front && !home.B.front && !home.L.front);
+  check('turn all the way round and it is B you are looking at',
+    spots(35, 210).B.front && !spots(35, 210).F.front);
+  check('look from underneath and D is the face towards you',
+    spots(-80, 30).D.front && !spots(-80, 30).U.front);
 }
 
 /* ---------------- the last-layer libraries ----------------
@@ -763,10 +854,11 @@ await new Promise((resolve) => {
     // by patching getContext rather than queried; and the player defers all
     // rendering behind an IntersectionObserver, which never fires in a headless
     // or non-compositing context, so the callback is invoked directly.
+    const timerCanvases = [];
     const canvasOk = await (async () => {
       const tp = d.querySelector('#cube-holder twisty-player');
       if (!tp) return { ok: true, how: 'no player — fallback path, already covered' };
-      const seen = [];
+      const seen = timerCanvases;
       const w = f.contentWindow;
       const orig = w.HTMLCanvasElement.prototype.getContext;
       w.HTMLCanvasElement.prototype.getContext = function (t, ...a) {
@@ -792,6 +884,143 @@ await new Promise((resolve) => {
       };
     })();
     check('the cube preview’s canvas has real width AND height', canvasOk.ok, canvasOk.how);
+
+    /* ---------------- the reconstruction workbench, as it renders ----------------
+       Everything here is measured off the laid-out page rather than read out of
+       the DOM, because every one of these was a thing that was *there* and still
+       could not be seen: a share button reduced to an unlabelled icon in a bar
+       nobody looks at, a scramble set in a size you have to lean in for, and a
+       list squeezed to a sliver on a narrow screen. */
+    /* Watch for the canvas the workbench's cube paints into, from before it is
+       asked for.
+
+       A twisty-player can be laid out at exactly the right size and still paint
+       nothing — a black square where the cube should be, with nothing in the DOM
+       to say so. Inserting the player as the first child of its stage is enough
+       to do it, and when it happens the player never gets as far as asking for a
+       drawing context at all. So that is what is checked: opening the workbench
+       has to bring a new canvas into existence, and the timer's own — which goes
+       on redrawing throughout — does not count. */
+    const reconCanvases = [];
+    const origGetContext = w.HTMLCanvasElement.prototype.getContext;
+    w.HTMLCanvasElement.prototype.getContext = function (t, ...a) {
+      if (!reconCanvases.includes(this)) reconCanvases.push(this);
+      return origGetContext.call(this, t, ...a);
+    };
+
+    d.querySelector('#btn-recon').click();
+    const rcHost = await new Promise((res) => {
+      const t0 = Date.now();
+      const poll = () => {
+        const h = d.querySelector('#recon');
+        // The player is mounted before the first paint of the panel, so waiting
+        // on the step list alone hands back a workbench with no cube in it yet.
+        if (h && !h.hidden && h.querySelector('.rc-steps')
+            && h.querySelector('twisty-player, .rc-nocube')) return res(h);
+        if (Date.now() - t0 > 15000) return res(null);
+        setTimeout(poll, 200);
+      };
+      poll();
+    });
+    check('the reconstruction workbench opens', !!rcHost);
+
+    if (rcHost) {
+      const rbox = (sel) => rcHost.querySelector(sel)?.getBoundingClientRect() || null;
+      const onScreen = (b) => !!b && b.width > 0 && b.height > 0
+        && b.right > 0 && b.bottom > 0 && b.left < w.innerWidth && b.top < w.innerHeight;
+
+      const rcPlayer = rcHost.querySelector('twisty-player');
+      const rcCanvas = await (async () => {
+        if (!rcPlayer) return { ok: false, how: 'no player in the workbench at all' };
+        /* The same intersectedCallback poke as the check above, and for the
+           same reason: this iframe is parked off-screen, so the player's own
+           IntersectionObserver never fires here and it would otherwise never
+           draw anything at all. That is also the limit of this check — a
+           player that never gets told it is on screen is one it cannot see,
+           because it does the telling. What it does catch is the workbench
+           losing its player entirely, never getting a drawing context, and the
+           zero-height canvas that a stray `display` rule on the host once
+           caused on the timer's own preview. */
+        let sym = null, o = rcPlayer;
+        while (o && !sym) {
+          for (const x of Object.getOwnPropertySymbols(o)) {
+            if (String(x).includes('intersectedCallback')) sym = x;
+          }
+          o = Object.getPrototypeOf(o);
+        }
+        if (sym) rcPlayer[sym]();
+        await new Promise(r => setTimeout(r, 4000));
+        const mine = reconCanvases.filter(c => !timerCanvases.includes(c));
+        if (!mine.length) return { ok: false, how: 'the workbench cube never asked for a canvas' };
+        const main = mine.map(c => c.getBoundingClientRect())
+          .sort((a, b) => b.width * b.height - a.width * a.height)[0];
+        return { ok: main.width > 1 && main.height > 1, how: `canvas ${Math.round(main.width)}x${Math.round(main.height)}` };
+      })();
+      w.HTMLCanvasElement.prototype.getContext = origGetContext;
+      check('the workbench cube actually paints, not just lays out', rcCanvas.ok, rcCanvas.how);
+
+      check('the reconstruction screen carries the Tagda Timer logo',
+        onScreen(rbox('.brand-mark')), JSON.stringify(rbox('.brand-mark')));
+
+      const share = rcHost.querySelector('.rc-share');
+      check('the share button is on screen and says what it is',
+        onScreen(share?.getBoundingClientRect()) && /share/i.test(share?.textContent || ''),
+        share ? `"${share.textContent.trim()}"` : 'no .rc-share');
+
+      const echo = rcHost.querySelector('.rc-cube-scramble');
+      const echoSize = parseFloat(w.getComputedStyle(echo).fontSize);
+      check('the scramble above the cube is big enough to read',
+        echoSize >= 15 && onScreen(echo.getBoundingClientRect()), `${echoSize}px`);
+
+      /* A whole solve in, so the list has something to be squeezed. The move
+         box commits on a trailing space, which is the path a person's typing
+         takes. */
+      const scrBox = rcHost.querySelector('#rc-scramble');
+      scrBox.value = "U2 F' U2 R L U F R B' R2 L2 F D2 F U2 R2 B' U2 B L2 R'";
+      scrBox.dispatchEvent(new w.Event('change', { bubbles: true }));
+      await new Promise(r => setTimeout(r, 900));
+      const inp = rcHost.querySelector('.rc-entry .rc-inp');
+      for (const mv of "z2 B L F' U F2 R' R L' U2 L R' y R' U2 R U' R' U R U2 D R U' R' D' U' R U' R'".split(' ')) {
+        inp.value = `${mv} `;
+        inp.dispatchEvent(new w.Event('input', { bubbles: true }));
+      }
+      await new Promise(r => setTimeout(r, 700));
+
+      /* One line per pair, set-up turns included. `U' R U' R'` is one idea —
+         the U' puts the pair where the alg can take it — and it used to come
+         out as two lines, because the alg had been clicked rather than typed. */
+      const lines = [...rcHost.querySelectorAll('.rc-step:not(.current) .mv')].map(e => e.textContent);
+      check('each pair is one line, the turns that set it up included',
+        lines.join(' | ') === "z2 B L F' U F2 R' | R L' U2 L R' | y R' U2 R U' R' U R | U2 D R U' R' D' | U' R U' R'",
+        lines.join(' | ') || 'no steps');
+
+      /* Five lines of reconstruction and a panel with room for three, so the
+         line you are on sits below the fold. Measured on the desktop layout,
+         because that is where it happens: the right-hand column is a fixed
+         height there, and the list is the thing that gets squeezed. */
+      const steps = rcHost.querySelector('.rc-steps');
+      const sb = steps.getBoundingClientRect();
+      const cur = rcHost.querySelector('.rc-step.current')?.getBoundingClientRect();
+      check('the whole reconstruction fits the room it is given',
+        steps.scrollHeight <= steps.clientHeight + 1,
+        `${steps.scrollHeight}px of list through a ${steps.clientHeight}px window`);
+      check('“you are here” is on screen, not cut off below the list',
+        !!cur && cur.bottom <= sb.bottom + 1 && cur.top >= sb.top - 1,
+        cur ? `row ${Math.round(cur.top)}-${Math.round(cur.bottom)} in ${Math.round(sb.top)}-${Math.round(sb.bottom)}`
+            : 'no current row');
+
+      // And on a phone, where the panels are as tall as what is in them.
+      f.style.width = '420px';
+      f.style.height = '860px';
+      await new Promise(r => setTimeout(r, 700));
+      const nb = steps.getBoundingClientRect();
+      const ncur = rcHost.querySelector('.rc-step.current')?.getBoundingClientRect();
+      check('and the same holds on a narrow screen',
+        steps.scrollHeight <= steps.clientHeight + 1 && !!ncur && ncur.bottom <= nb.bottom + 1,
+        `${steps.scrollHeight}px of list through a ${steps.clientHeight}px window`);
+      f.style.width = '1200px';
+      f.style.height = '800px';
+    }
 
     f.remove();
     resolve();
