@@ -343,6 +343,10 @@ async function init() {
   syncSpotifyPanel();
   startAlbumTheming().catch(err => console.warn('[spotify] not started', err));
 
+  // Cloud sync, if this browser was ever signed in. Same shape as the line
+  // above: a visitor who has never signed in never downloads any of it.
+  startCloudSync().catch(err => console.warn('[sync] not started', err));
+
   cube.orbit = app.settings.cubeOrbit;
   cube.init().then(() => {
     cube.setHints(app.settings.hintFacelets);
@@ -2521,6 +2525,24 @@ async function startStackmat() {
     persist();
     applyInputMode();
   }
+}
+
+/* =========================================================
+   Cloud sync
+   ========================================================= */
+
+/**
+ * Called once at boot. A visitor who has never signed in never pays for the
+ * Firebase Auth SDK — see sync-auth.js's hasPersistedSession() for how that
+ * is checked without loading it. Opening Settings starts sync regardless
+ * (buildAccountRow calls the same autoStart()), this just means someone
+ * already signed in resumes syncing without having to open that panel.
+ */
+async function startCloudSync() {
+  const { hasPersistedSession } = await import('./sync-auth.js');
+  if (!hasPersistedSession()) return;
+  const { autoStart } = await import('./sync-ui.js');
+  autoStart();
 }
 
 /* =========================================================

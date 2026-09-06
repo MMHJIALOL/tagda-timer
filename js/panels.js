@@ -13,6 +13,7 @@ import { MODES, EVENTS } from './events.js';
 import { setFor } from './scramble.js';
 import { toast, confirmToast } from './toast.js';
 import { exportAll, Assets, Solves, LetterPairs } from './db.js';
+import { buildAccountRow } from './sync-ui.js';
 import { DEFAULT_SPEFFZ_MAP, DEFAULT_BLD, CORNER_STICKER_KEYS, EDGE_STICKER_KEYS,
          frontsFor, cornerStickerName, edgeStickerName, pieceAtFacelet, faceletsOfPiece,
          pieceName, samePiece, diagnose } from './bldtrace.js';
@@ -740,6 +741,14 @@ export function buildSettings(app) {
             class: 'ghost-btn', text: 'export',
             onclick: () => app.exportSessionCSV(),
           })),
+      ),
+
+      group('Account', buildAccountRow(),
+        el('div', { class: 'hint-note', html:
+            'Signing in follows your solves, sessions, settings and learn-mode progress to ' +
+            'any other device you sign into. Nothing about this is required — everything ' +
+            'above works the same with no account at all, and signing out never touches ' +
+            'what is already on this device.' }),
       ),
 
       group('Start over',
