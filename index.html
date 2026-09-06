@@ -29,11 +29,11 @@
      perfect in incognito, which is a miserable thing to debug.
      /js/ is `must-revalidate` and does not depend on this, but keep the number
      in step anyway rather than leaving two answers to the same question. -->
-<link rel="modulepreload" href="js/main.js?v=41">
-<link rel="stylesheet" href="css/fonts.css?v=41">
-<link rel="stylesheet" href="css/tokens.css?v=41">
-<link rel="stylesheet" href="css/base.css?v=41">
-<link rel="stylesheet" href="css/components.css?v=41">
+<link rel="modulepreload" href="js/main.js?v=43">
+<link rel="stylesheet" href="css/fonts.css?v=43">
+<link rel="stylesheet" href="css/tokens.css?v=43">
+<link rel="stylesheet" href="css/base.css?v=43">
+<link rel="stylesheet" href="css/components.css?v=43">
 <link rel="icon" href="assets/favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="assets/logo-192.png">
 <link rel="apple-touch-icon" href="assets/logo-180.png">
@@ -125,14 +125,39 @@
           <svg class="chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
         </button>
       </div>
+      <!-- The one picker that is a link rather than a dropdown: it opens a whole
+           page, so it ends in an arrow where the others carry a chevron. It sits
+           with the pickers because it is a place you go, not a switch you flip —
+           and this row already scrolls sideways on a phone, so a fourth one
+           costs the small screens nothing. -->
+      <div class="seg" id="algs-seg">
+        <a class="seg-btn" id="btn-algs" href="algs.html" title="Algorithm library — every PLL and OLL case">
+          <svg class="ico" viewBox="0 0 24 24"><path d="M5 4.6A1.6 1.6 0 016.6 3H19v14.4H6.6A1.6 1.6 0 005 19z"/><path d="M5 19a1.6 1.6 0 001.6 1.6H19v-3.2"/><path d="M8.6 7.4h6.8M8.6 10.8h4.6"/></svg>
+          <span>Alg library</span>
+          <svg class="chev" viewBox="0 0 24 24"><path d="M5 12h13M13 7l5 5-5 5"/></svg>
+        </a>
+      </div>
     </div>
 
-    <div class="topbar-right">
+    <!-- Below 860px the eight icons to the right stop fitting, so they fold into
+         this one button and drop down as a labelled list. Tablet and laptop keep
+         every icon inline exactly as before — this is a phone-crowding fix, not
+         a redesign, and it is why the button lives outside .topbar-right: that
+         row is what becomes the dropdown. -->
+    <button class="icon-btn" id="btn-menu" title="Menu" aria-expanded="false" aria-controls="topbar-right">
+      <svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+    </button>
+
+    <div class="topbar-right" id="topbar-right">
       <button class="icon-btn" id="btn-stats" title="Statistics  (A)">
         <svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>
       </button>
       <button class="icon-btn" id="btn-recon" title="Reconstruct a solve  (Y)">
         <svg viewBox="0 0 24 24"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M4 7.5l8 4.5 8-4.5M12 12v9"/></svg>
+      </button>
+      <!-- A cross with one pair hanging off it: four arms, and a corner block. -->
+      <button class="icon-btn" id="btn-xp1" title="Cross + 1 trainer  (L)">
+        <svg viewBox="0 0 24 24"><path d="M9.5 3.5h5v5h5v5h-5v5h-5v-5h-5v-5h5z"/><rect x="15.5" y="15.5" width="5.5" height="5.5" rx="1.2"/></svg>
       </button>
       <button class="icon-btn" id="btn-theme" title="Appearance  (T)">
         <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.2v2.6M12 19.2v2.6M2.2 12h2.6M19.2 12h2.6M5.05 5.05l1.85 1.85M17.1 17.1l1.85 1.85M18.95 5.05L17.1 6.9M6.9 17.1l-1.85 1.85"/></svg>
@@ -201,6 +226,33 @@
       <button class="cb-x" id="btn-custom-exit" title="Back to generated scrambles">&times;</button>
     </div>
     <div id="case-label" hidden></div>
+
+    <!-- The 3BLD target breakdown. Only mounted on a blindfolded event, and
+         collapsed even then: a solver mid-training wants the scramble and
+         nothing else, so the cycles stay behind one button. -->
+    <div id="bld-zone" hidden>
+      <div id="bld-bar">
+        <button class="ghost-btn sm" id="btn-bld-toggle" aria-expanded="false" aria-controls="bld-panel">Show breakdown</button>
+        <span class="bld-split" id="bld-split" hidden></span>
+      </div>
+      <div id="bld-panel" hidden>
+        <div class="bld-row">
+          <span class="bld-lbl">Edges</span>
+          <div class="bld-chips" id="bld-edges"></div>
+        </div>
+        <div class="bld-row">
+          <span class="bld-lbl">Corners</span>
+          <div class="bld-chips" id="bld-corners"></div>
+        </div>
+        <div class="bld-foot">
+          <span class="bld-badge parity" id="bld-parity" hidden>parity</span>
+          <span class="bld-note" id="bld-note"></span>
+          <button class="ghost-btn sm" id="btn-bld-settings" title="Blindsolving settings">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
   </section>
 
   <!-- ---------- MAIN ---------- -->
@@ -303,6 +355,11 @@
                is the one thing the setting exists to prevent. -->
           <span id="solving-label" aria-hidden="true">solving</span>
         </div>
+
+        <!-- Memo/exec phase readout. Lives inside the timer block rather than
+             beside the scramble because focus mode fades the scramble away,
+             and which phase you are in is the one thing worth seeing mid-solve. -->
+        <div id="phase-readout" hidden><span id="phase-name">memo</span><span id="phase-times"></span></div>
 
         <div id="pace-ghost" hidden>
           <div id="pace-fill"></div>
@@ -509,7 +566,7 @@
   </div>
 </div>
 
-<script type="module" src="js/main.js?v=41"></script>
+<script type="module" src="js/main.js?v=43"></script>
 <script>
 (function () {
   var isFile = location.protocol === 'file:';

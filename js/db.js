@@ -1,10 +1,11 @@
 /* ===========================================================
    Tagda Timer — IndexedDB layer (no dependencies)
-   Stores: solves, sessions, kv (settings), assets (bg blobs)
+   Stores: solves, sessions, kv (settings), assets (bg blobs),
+           letterPairs (the blindfolded pair dictionary)
    =========================================================== */
 
 const DB_NAME = 'tagdatimer';
-const DB_VER  = 1;
+const DB_VER  = 2;
 let _db = null;
 
 function openDB() {
@@ -27,6 +28,11 @@ function openDB() {
       }
       if (!db.objectStoreNames.contains('assets')) {
         db.createObjectStore('assets');
+      }
+      // v2 — the 3BLD letter-pair dictionary. Keyed by the pair itself
+      // ("BK"), so writing a memo twice updates it instead of duplicating.
+      if (!db.objectStoreNames.contains('letterPairs')) {
+        db.createObjectStore('letterPairs', { keyPath: 'pair' });
       }
       void e;
     };
@@ -93,6 +99,22 @@ export const KV = {
   },
   async set(key, value) { return wrap((await tx('kv', 'readwrite')).put(value, key)); },
   async del(key)        { return wrap((await tx('kv', 'readwrite')).delete(key)); },
+  /**
+   * Every entry whose key starts with `prefix`, as a Map, in one transaction.
+   *
+   * For a namespace stored one key per item — the alg library keeps a row per
+   * case — asking for them individually is a transaction each, on the boot
+   * path, for data that is a few hundred bytes in total.
+   */
+  async prefixed(prefix) {
+    const store = await tx('kv');
+    const range = IDBKeyRange.bound(prefix, prefix + '￿');
+    const [keys, values] = await Promise.all([
+      wrap(store.getAllKeys(range)),
+      wrap(store.getAll(range)),
+    ]);
+    return new Map(keys.map((k, i) => [k, values[i]]));
+  },
 };
 
 /* ---------------- assets (background image/video blobs) ---------------- */
@@ -100,6 +122,22 @@ export const Assets = {
   async put(key, blob) { return wrap((await tx('assets', 'readwrite')).put(blob, key)); },
   async get(key)       { return wrap((await tx('assets')).get(key)); },
   async del(key)       { return wrap((await tx('assets', 'readwrite')).delete(key)); },
+};
+
+/* ---------------- letter pairs (3BLD) ---------------- */
+export const LetterPairs = {
+  async put(rec)  { return wrap((await tx('letterPairs', 'readwrite')).put({ ...rec, updatedAt: Date.now() })); },
+  async get(pair) { return wrap((await tx('letterPairs')).get(pair)); },
+  async del(pair) { return wrap((await tx('letterPairs', 'readwrite')).delete(pair)); },
+  async all()     {
+    const list = await wrap((await tx('letterPairs')).getAll());
+    return list.sort((a, b) => a.pair.localeCompare(b.pair));
+  },
+  async putMany(list) {
+    const store = await tx('letterPairs', 'readwrite');
+    await Promise.all(list.map(r => wrap(store.put({ ...r, updatedAt: r.updatedAt || Date.now() }))));
+  },
+  async clear()   { return wrap((await tx('letterPairs', 'readwrite')).clear()); },
 };
 
 /* ---------------- backup ---------------- */
@@ -111,6 +149,7 @@ export async function exportAll() {
     sessions: await Sessions.all(),
     solves: await Solves.all(),
     settings: await KV.get('settings', {}),
+    letterPairs: await LetterPairs.all(),
   };
 }
 
@@ -123,5 +162,9 @@ export async function importAll(data, { merge = true } = {}) {
   }
   for (const s of (data.sessions || [])) await Sessions.put(s);
   await Solves.putMany(data.solves);
+  // Backups written before the dictionary existed simply have no key here.
+  if (Array.isArray(data.letterPairs) && data.letterPairs.length) {
+    await LetterPairs.putMany(data.letterPairs);
+  }
   return data.solves.length;
 }

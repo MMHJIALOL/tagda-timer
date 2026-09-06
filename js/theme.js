@@ -6,6 +6,7 @@
    =========================================================== */
 
 import { KV, Assets } from './db.js';
+import { DEFAULT_BLD } from './bldtrace.js';
 import { applyContrast, hexLuma } from './contrast.js';
 
 export const PRESETS = {
@@ -35,7 +36,7 @@ export const FEATURED_REEL = 'https://www.instagram.com/reel/DZzyIGcBQjD/';
  * existing profile carries the OLD default forever and simply editing
  * DEFAULTS would never reach anyone who has used the app before.
  */
-const SETTINGS_VERSION = 7;
+const SETTINGS_VERSION = 8;
 
 const MIGRATIONS = {
   // v2 — the pace ghost is now opt-in rather than on by default.
@@ -73,6 +74,9 @@ const MIGRATIONS = {
     s.raceLastRoom ??= '';
     s.raceOwnSession ??= true;
   },
+  // v8 — the blindfolded workflow. Everything about it is off or
+  // collapsed to begin with, so a 3x3 solver never sees a thing.
+  8: (s) => { s.bld = { ...structuredClone(DEFAULT_BLD), ...(s.bld || {}) }; },
 };
 
 export const DEFAULTS = {
@@ -147,6 +151,10 @@ export const DEFAULTS = {
   raceOwnSession: true,         // race solves land in a session of the room's own
   raceReturnSession: null,      // the session to put you back in when the race ends
 
+  // blindfolded (see BLIND_WORKFLOW.md). Nested rather than flattened:
+  // it is one coherent profile a solver would export and share whole.
+  bld: structuredClone(DEFAULT_BLD),
+
   // session
   event: '333',
   mode: 'wca',
@@ -159,6 +167,12 @@ export const DEFAULTS = {
 export async function loadSettings() {
   const saved = await KV.get('settings', {});
   const s = { ...DEFAULTS, ...saved };
+  // The spread above is shallow, so a profile saved with an older `bld`
+  // block would be missing any key added since. Fill the gaps rather than
+  // letting the tracer read undefined off a half-built settings object.
+  s.bld = { ...structuredClone(DEFAULT_BLD), ...(saved.bld || {}) };
+  s.bld.orientation = { ...DEFAULT_BLD.orientation, ...(saved.bld?.orientation || {}) };
+  s.bld.letters = { ...DEFAULT_BLD.letters, ...(saved.bld?.letters || {}) };
   const from = Number(saved.settingsVersion) || 0;
   if (from < SETTINGS_VERSION) {
     for (let v = from + 1; v <= SETTINGS_VERSION; v++) MIGRATIONS[v]?.(s);

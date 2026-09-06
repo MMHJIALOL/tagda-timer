@@ -1,0 +1,401 @@
+{
+    "OLL 1": [
+        "F R' F' R U2' F R' F' R2' U2' R'",
+        "(R U2 R') (R' F R F') U2 (R' F R F')",
+        "R U2 R2 F R F' U2 R' F R F'",
+        "y R U' R2 D' r U' r' D R2 U R'",
+        "f R U R' U' R f' U' r' U' R U M'"
+    ],
+    "OLL 2": [
+        "f U R U' R' f' F U R U' R' F'",
+        "F (R U R' U') F' f (R U R' U') f'",
+        "y' R U' R2 D' r U r' D R2 U R'",
+        "F R U R' U' S R U R' U' f'",
+        "F R U R' U' F' f R U R' U' f'"
+    ],
+    "OLL 3": [
+        "F U R U' R' F' U f U R U' R' f' y",
+        "y' f (R U R' U') f' (U') F (R U R' U') F'",
+        "y' f R U R' U' f' U' F R U R' U' F'",
+        "y R' F2 R2 U2 R' F R U2 R2 F2 R",
+        "r' R2 U R' U r U2 r' U M'"
+    ],
+    "OLL 4": [
+        "F U R U' R' F' U' f U R U' R' f' y",
+        "y' f (R U R' U') f' (U) F (R U R' U') F'",
+        "y' R' F2 R2 U2 R' F' R U2 R2 F2 R",
+        "y' f R U R' U' f' U F R U R' U' F'",
+        "R' F R F' U' S R' U' R U R S'"
+    ],
+    "OLL 5": [
+        "r' U' R U' R' U2' r",
+        "r' U2 (R U R' U) r",
+        "r' U2 R U R' U r",
+        "y2 l' U2 L U L' U l",
+        "y2 R' F2 r U r' F R"
+    ],
+    "OLL 6": [
+        "r U R' U R U2' r'",
+        "r U2 (R' U' R U') r'",
+        "r U2 R' U' R U' r'",
+        "F U' R2 D R' U' R D' R2 U F'",
+        "y2 l U2 L' U' L U' l'"
+    ],
+    "OLL 7": [
+        "r U2' R' U' R U' r'",
+        "r (U R' U R) U2 r'",
+        "r U R' U R U2 r'",
+        "S' R U R' U R U2 R' U S",
+        "L' U2 L U2 L F' L' F"
+    ],
+    "OLL 8": [
+        "r' U2' R U R' U r y2'",
+        "y2 r' (U' R U' R') U2 r",
+        "y2 r' U' R U' R' U2 r",
+        "l' U' L U' L' U2 l",
+        "R U2 R' U2 R' F R F'"
+    ],
+    "OLL 9": [
+        "F U R U' R2' F' R U R U' R' y'",
+        "y (R U R' U') (R' F R) (R U R' U') F'",
+        "y R U R' U' R' F R2 U R' U' F'",
+        "R U2 R' U' S' R U' R' S",
+        "y2 F' U' F r U' r' U r U r'"
+    ],
+    "OLL 10": [
+        "R U2' R' F R' F' R U' R U' R'",
+        "(R U R' U) (R' F R F') (R U2 R')",
+        "R U R' U R' F R F' R U2 R'",
+        "y F U F' R' F R U' R' F' R",
+        "y M' R' U2 R U R' U R U M"
+    ],
+    "OLL 11": [
+        "M U' R U2' R' U' R U' R2' r",
+        "M (R U R' U R U2 R') U M'",
+        "r' R2 U R' U R U2 R' U M'",
+        "y2 r U R' U R' F R F' R U2 r'",
+        "S R U R' U R U2 R' U2 S'"
+    ],
+    "OLL 12": [
+        "F U R U' R' F' U' F U R U' R' F'",
+        "y' M' (R' U' R U' R' U2 R) U' M",
+        "y' M' R' U' R U' R' U2 R U' M",
+        "F R U R' U' F' U F R U R' U' F'",
+        "y' S R' U' R U' R' U2 R U2 S'"
+    ],
+    "OLL 13": [
+        "F' U' F r U' r' U r U r'",
+        "(r U' r') U' (r U r') (F' U F)",
+        "F U R U2 R' U' R U R' F'",
+        "F U R U' R2 F' R U R U' R'",
+        "r U' r' U' r U r' F' U F"
+    ],
+    "OLL 14": [
+        "F U F' R' F R U' R' F' R",
+        "R' F (R U R') F' R (F U' F')",
+        "R' F R U R' F' R F U' F'",
+        "r U R' U' r' F R2 U R' U' F'",
+        "l' U l U l' U' l F U' F'"
+    ],
+    "OLL 15": [
+        "r' U' r U' R' U R r' U r",
+        "(r' U' r) (R' U' R U) (r' U r)",
+        "r' U' r R' U' R U r' U r",
+        "y2 l' U' l L' U' L U l' U l",
+        "r' U' M' U' R U r' U r"
+    ],
+    "OLL 16": [
+        "r U r' U R U' R' r U' r'",
+        "(r U r') (R U R' U') (r U' r')",
+        "r U r' R U R' U' r U' r'",
+        "r U M U R' U' r U' r'",
+        "y2 R' F R U R' U' F' R U' R' U2 R"
+    ],
+    "OLL 17": [
+        "F R' F' R U2' F R' F' R U' R U' R'",
+        "(R U R' U) (R' F R F') U2 (R' F R F')",
+        "R U R' U R' F R F' U2 R' F R F'",
+        "y2 F R' F' R U S' R U' R' S",
+        "y2 F R' F' R2 r' U R U' R' U' M'"
+    ],
+    "OLL 18": [
+        "r' U2' R U R' U r2' U2' R' U' R U' r'",
+        "y (R U2 R') (R' F R F') U2 M' (U R U' r')",
+        "y R U2 R2 F R F' U2 M' U R U' r'",
+        "r U R' U R U2 r2 U' R U' R' U2 r",
+        "y F S' R U' R' S R U2 R' U' F'"
+    ],
+    "OLL 19": [
+        "F R' F' R M U R U' R' U' M'",
+        "M U (R U R' U') M' (R' F R F')",
+        "y S' R U R' S U' R' F R F'",
+        "M U R U R' U' M' R' F R F'",
+        "R' U2 F R U R' U' F2 U2 F R"
+    ],
+    "OLL 20": [
+        "r U R' U' M2' U R U' R' U' M'",
+        "(r U R' U') M2 (U R U' R') U' M'",
+        "r U R' U' M2 U R U' R' U' M'",
+        "M' U2 M U2 M' U M U2 M' U2 M",
+        "S' R U R' S U' M' U R U' r'"
+    ],
+    "OLL 21": [
+        "R U R' U R U' R' U R U2' R' y'",
+        "(R U R' U) (R U' R' U) (R U2 R')",
+        "R U R' U R U' R' U R U2 R'",
+        "y R U2 R' U' R U R' U' R U' R'",
+        "y F R U R' U' R U R' U' R U R' U' F'"
+    ],
+    "OLL 22": [
+        "R' U2' R2' U R2' U R2' U2' R'",
+        "R U2 (R2' U') (R2 U') (R2' U') U' R",
+        "R U2 R2 U' R2 U' R2 U2 R",
+        "R' U2 R2 U R2 U R2 U2 R'",
+        "f R U R' U' S' R U R' U' F'"
+    ],
+    "OLL 23": [
+        "R U2' R D R' U2' R D' R2'",
+        "R2 D (R' U2 R) D' (R' U2 R')",
+        "R2 D R' U2 R D' R' U2 R'",
+        "y2 R2 D' R U2 R' D R U2 R",
+        "R U R' U R U2 R2 U' R U' R' U2 R"
+    ],
+    "OLL 24": [
+        "F R' F' r U R U' r'",
+        "(r U R' U') (r' F R F')",
+        "r U R' U' r' F R F'",
+        "y2 R' F' r U R U' r' F",
+        "y' x' R U R' D R U' R' D' x"
+    ],
+    "OLL 25": [
+        "R' F' r U R U' r' F y'",
+        "y (F' r U R') (U' r' F R)",
+        "R U2 R D R' U2 R D' R2",
+        "y F' r U R' U' r' F R",
+        "F R' F' r U R U' r'"
+    ],
+    "OLL 26": [
+        "R U R' U R U2' R' y'",
+        "y R U2 (R' U' R U') R'",
+        "y R U2 R' U' R U' R'",
+        "R' U' R U' R' U2 R",
+        "y2 L' U' L U' L' U2 L"
+    ],
+    "OLL 27": [
+        "R U2' R' U' R U' R'",
+        "(R U R' U) (R U2 R')",
+        "R U R' U R U2 R'",
+        "y' R' U2 R U R' U R",
+        "y L' U2 L U L' U L"
+    ],
+    "OLL 28": [
+        "R U R' U' M' U R U' r'",
+        "(r U R' U') M (U R U' R')",
+        "r U R' U' M U R U' R'",
+        "r U R' U' r' R U R U' R'",
+        "R' F R S R' F' R S'"
+    ],
+    "OLL 29": [
+        "M F R' F' R U R U' R' U' M'",
+        "y (R U R') U' (R U' R') (F' U' F) (R U R')",
+        "r2 D' r U r' D r2 U' r' U' r",
+        "y R U R' U' R U' R' F' U' F R U R'",
+        "y S' R U R' U' R' F R F' U S"
+    ],
+    "OLL 30": [
+        "F U R U2' R' U R U2' R' U' F' y2'",
+        "y2 F U (R U2 R') U' (R U2 R') U' F'",
+        "y' r' D' r U' r' D r2 U' r' U r U r'",
+        "y2 F U R U2 R' U' R U2 R' U' F'",
+        "y2 F R' F R2 U' R' U' R U R' F2"
+    ],
+    "OLL 31": [
+        "R' F R U R' U' F' U R",
+        "(R' U' F) (U R U' R') F' R",
+        "R' U' F U R U' R' F' R",
+        "y2 S' L' U' L U L F' L' f",
+        "y S R U R' U' f' U' F"
+    ],
+    "OLL 32": [
+        "f R' F' R U R U' R' S'",
+        "S (R U R' U') (R' F R f')",
+        "S R U R' U' R' F R f'",
+        "y2 L U F' U' L' U L F L'",
+        "R U B' U' R' U R B R'"
+    ],
+    "OLL 33": [
+        "F R' F' R U R U' R'",
+        "(R U R' U') (R' F R F')",
+        "R U R' U' R' F R F'",
+        "y2 L' U' L U L F' L' F",
+        "y2 r' F' r U r U' r' F"
+    ],
+    "OLL 34": [
+        "F U R' U' R' F' R U R2' U' R' y2'",
+        "y2 R U R2 U' R' F (R U R U') F'",
+        "y f R f' U' r' U' R U M'",
+        "y2 R U R2 U' R' F R U R U' F'",
+        "F R U R' U' R' F' r U R U' r'"
+    ],
+    "OLL 35": [
+        "R U2' R' F R' F' R2' U2' R'",
+        "(R U2 R') (R' F R F') (R U2 R')",
+        "R U2 R2 F R F' R U2 R'",
+        "f R U R' U' f' R U R' U R U2 R'",
+        "R U2 R' d' R' F R U' R' F' R"
+    ],
+    "OLL 36": [
+        "F' L F L' U' L' U' L U L' U L y2'",
+        "y2 (L' U' L U') (L' U L U) (L F' L' F)",
+        "y R U R2 F' U' F U R2 U2 R'",
+        "y2 L' U' L U' L' U L U L F' L' F",
+        "y2 R U R' F' R U R' U' R' F R U' R' F R F'"
+    ],
+    "OLL 37": [
+        "F R U' R' U R U R' F'",
+        "F R (U' R' U') (R U R') F'",
+        "F R' F' R U R U' R'",
+        "F R U' R' U' R U R' F'",
+        "y F' r U r' U' r' F r"
+    ],
+    "OLL 38": [
+        "F R' F' R U R U R' U' R U' R'",
+        "(R U R' U) (R U' R' U') (R' F R F')",
+        "R U R' U R U' R' U' R' F R F'",
+        "y F R U' R' S U' R U R' f'",
+        "r U R' U' r' F R U R U' R' F'"
+    ],
+    "OLL 39": [
+        "L U F' U' L' U L F L' y'",
+        "y L F' (L' U' L U) F U' L'",
+        "y' f' r U r' U' r' F r S",
+        "y' R U R' F' U' F U R U2 R'",
+        "y L F' L' U' L U F U' L'"
+    ],
+    "OLL 40": [
+        "R' U' F U R U' R' F' R y'",
+        "y R' F (R U R' U') F' U R",
+        "y R' F R U R' U' F' U R",
+        "y' f R' F' R U R U' R' S'",
+        "R r D r' U r D' r' U' R'"
+    ],
+    "OLL 41": [
+        "F U R U' R' F' R U2' R' U' R U' R' y2'",
+        "y2 (R U R' U) (R U2 R') F (R U R' U') F'",
+        "y2 R U R' U R U2 R' F R U R' U' F'",
+        "y2 F U R2 D R' U' R D' R2 F'",
+        "y' S U' R' F' U' F U R S'"
+    ],
+    "OLL 42": [
+        "F U R U' R' F' R' U2' R U R' U R",
+        "(R' U' R U') (R' U2 R) F (R U R' U') F'",
+        "R' U' R U' R' U2 R F R U R' U' F'",
+        "y F S' R U R' U' F' U S",
+        "y R' F R F' R' F R F' R U R' U' R U R'"
+    ],
+    "OLL 43": [
+        "f' U' L' U L f",
+        "y R' U' (F' U F) R",
+        "y R' U' F' U F R",
+        "y2 F' U' L' U L F",
+        "f' L' U' L U f"
+    ],
+    "OLL 44": [
+        "f U R U' R' f'",
+        "f (R U R' U') f'",
+        "f R U R' U' f'",
+        "y2 F U R U' R' F'",
+        "y R U B U' B' R'"
+    ],
+    "OLL 45": [
+        "F U R U' R' F'",
+        "F (R U R' U') F'",
+        "F R U R' U' F'",
+        "y R' F' U' F U R",
+        "y2 f U R U' R' f'"
+    ],
+    "OLL 46": [
+        "R' U' F R' F' R U R",
+        "R' U' (R' F R F') U R",
+        "R' U' R' F R F' U R",
+        "R' F' U' F R U' R' U2 R",
+        "y F R U R' U' F' U' R U R' U R U2 R'"
+    ],
+    "OLL 47": [
+        "F' U' L' U L U' L' U L F",
+        "F' (L' U' L U) (L' U' L U) F",
+        "y' F R' F' R U2 R U' R' U R U2 R'",
+        "F' L' U' L U L' U' L U F",
+        "R' U' R' F R F' R' F R F' U R"
+    ],
+    "OLL 48": [
+        "F U R U' R' U R U' R' F'",
+        "F (R U R' U') (R U R' U') F'",
+        "F R U R' U' R U R' U' F'",
+        "y2 f U R U' R' U R U' R' f'",
+        "R U2 R' U' R U R' U2 R' F R F'"
+    ],
+    "OLL 49": [
+        "r' U r2' U' r2' U' r2' U r' y2'",
+        "y2 r U' (r2 U) (r2 U) (r2) U' r",
+        "y2 r U' r2 U r2 U r2 U' r",
+        "l U' l2 U l2 U l2 U' l",
+        "R B' R2 F R2 B R2 F' R"
+    ],
+    "OLL 50": [
+        "r U' r2' U r2' U r2' U' r",
+        "r' U (r2 U') (r2 U') (r2) U r'",
+        "r' U r2 U' r2 U' r2 U r'",
+        "y2 R' F R2 B' R2 F' R2 B R'",
+        "y' R U2 R' U' R U' R' F R U R' U' F'"
+    ],
+    "OLL 51": [
+        "f U R U' R' U R U' R' f'",
+        "f (R U R' U') (R U R' U') f'",
+        "y2 F U R U' R' U R U' R' F'",
+        "f R U R' U' R U R' U' f'",
+        "y' R' U' R' F R F' R U' R' U2 R"
+    ],
+    "OLL 52": [
+        "F R U R' d R' U' R U' R'",
+        "y2 R' (F' U' F U') (R U R' U) R",
+        "y2 R' F' U' F U' R U R' U R",
+        "R U R' U R U' B U' B' R'",
+        "R U R' U R d' R U' R' F'"
+    ],
+    "OLL 53": [
+        "r' U2' R U R' U' R U R' U r",
+        "(r' U' R U') (R' U R U') (R' U2 r)",
+        "r' U' R U' R' U R U' R' U2 r",
+        "y2 l' U' L U' L' U L U' L' U2 l",
+        "y r' U2 R U R' U' R U R' U r"
+    ],
+    "OLL 54": [
+        "r U2' R' U' R U R' U' R U' r'",
+        "(r U R' U) (R U' R' U) (R U2 r')",
+        "r U R' U R U' R' U R U2 r'",
+        "y' r U2 R' U' R U R' U' R U' r'",
+        "y' r U r' R U R' U' R U R' U' r U' r'"
+    ],
+    "OLL 55": [
+        "F R' F' U2' R U R' U R2' U2' R'",
+        "R U2 R2 (U' R U' R') U2 (F R F')",
+        "y R' F U R U' R2 F' R2 U R' U' R",
+        "y R' F R U R U' R2 F' R2 U' R' U R U R'",
+        "R U2 R2 U' R U' R' U2 F R F'"
+    ],
+    "OLL 56": [
+        "r U r' R U R' U' R U R' U' r U' r'",
+        "(r U r') (U R U' R') (U R U' R') (r U' r')",
+        "r U r' U R U' R' U R U' R' r U' r'",
+        "r U r' U R U' R' M' U R U2 r'",
+        "F R U R' U' R F' r U R' U' r'"
+    ],
+    "OLL 57": [
+        "r U R' U' M U R U' R'",
+        "(R U R' U') M' (U R U' r')",
+        "R U R' U' M' U R U' r'",
+        "y R U' R' S' R U R' S",
+        "y R U R' S' R U' R' S"
+    ]
+}

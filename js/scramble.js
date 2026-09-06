@@ -10,6 +10,7 @@
 import { EVENTS, MODES } from './events.js';
 import { PLL, OLL, OLL_EO, OCLL, PLL_CP, PLL_EP, CROSS_SAFE_TRIGGERS, U_MOVES, POOLS, faceOf } from './algs.js';
 import { invert, tidy, pick } from './util.js';
+import { preferredAlg } from './alglibrary.js';
 
 // Local copy first (works offline — see tools/mirror_cubing.py), CDN as backup.
 const SOURCES = [
@@ -99,12 +100,22 @@ export function setFor(modeId) {
 
 const auf = () => pick(U_MOVES);
 
-/** Case-based scramble: AUF + inverse(solution) + AUF. */
+/**
+ * Case-based scramble: AUF + inverse(solution) + AUF.
+ *
+ * The solution inverted is whichever alg you put first in the algorithm
+ * library for that case, and the one in algs.js when you never touched it.
+ * That is the whole point of being able to drag the list: the case you are
+ * handed is built from the alg you actually drill, so the scramble undoes
+ * your execution rather than someone else's. Verified equivalent before it
+ * could ever be stored, so the case is unchanged either way.
+ */
 function caseScramble(setName, allowed) {
   const set = SETS[setName] || PLL;
   const pool = (allowed && allowed.length) ? set.filter(c => allowed.includes(c.id)) : set;
   const c = pick(pool.length ? pool : set);
-  const seq = tidy([auf(), invert(c.alg), auf()].filter(Boolean).join(' '));
+  const alg = preferredAlg(c.id) || c.alg;
+  const seq = tidy([auf(), invert(alg), auf()].filter(Boolean).join(' '));
   return { scramble: seq, caseId: c.id, caseName: c.label ? `${c.name} · ${c.label}` : c.name };
 }
 

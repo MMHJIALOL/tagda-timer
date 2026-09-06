@@ -84,6 +84,25 @@ neutral to amber to red, and the digits breathe faster as time runs out.
 
 Inspection is turned off automatically for the blindfolded events and FMC.
 
+### Blindfolded
+
+On 3BLD a **Show breakdown** button appears under the scramble. It stays collapsed until
+you ask for it, and then reads the scramble out as your memo: edge and corner letter pairs
+for your own buffer and letter scheme, cycle breaks marked, flipped and twisted pieces
+flagged, and a parity badge when there is one. Buffers, the orientation the letters were
+assigned in, and all 48 letters are editable in Settings → Blindsolving — Speffz and white
+top / green front are only the defaults.
+
+Click any pair to see the word, image, commutator and notes you saved for it, without
+leaving the timer. On a blind event the first press mid-solve ends the memo instead of the
+solve, so every solve records a memo and an execution time, and the statistics drawer
+tracks how that split is drifting against your own average. After a DNF you can click the
+pieces that were still wrong on a flat net and have them matched back against the memo
+that solve actually stored.
+
+The bigger blind events are timed and split like 3BLD but not traced — only the 3x3 is
+modelled, and guessing at wing and centre cycles would be worse than saying so.
+
 ### Timing input
 Three sources, one at a time, chosen in Settings:
 

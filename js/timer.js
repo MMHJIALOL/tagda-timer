@@ -6,6 +6,12 @@
    recorded time.
 
    States: idle -> [inspecting] -> holding -> ready -> running -> idle
+
+   A running solve can be cut into phases. `cfg.phaseSplits` is how many
+   presses land as a split before the next one stops the timer: 1 gives
+   3BLD its memo/exec split, and the same primitive is what the CFOP
+   cross/F2L/OLL/PLL splits in PLAN.md will use — there is deliberately
+   no BLD-specific code in here.
    =========================================================== */
 
 export const INSPECT_MS   = 15000;
@@ -24,6 +30,7 @@ export class Timer extends EventTarget {
       minSolveMs: 500,        // below this, ask instead of recording
       precision: 2,           // decimal places shown while running
       hideWhileRunning: false,
+      phaseSplits: 0,         // presses that split the solve instead of ending it
       ...cfg,
     };
     this.state = 'idle';
@@ -35,6 +42,8 @@ export class Timer extends EventTarget {
     this.solveStart = 0;
     this.elapsed = 0;
     this.inspectElapsed = 0;
+    /** Milliseconds into the solve at each split press. */
+    this.splits = [];
   }
 
   /* ---------------- helpers ---------------- */
@@ -56,7 +65,10 @@ export class Timer extends EventTarget {
   down() {
     switch (this.state) {
       case 'running':
-        this._stop();
+        // A press part-way through a solve is a phase boundary until the
+        // configured number of them have been taken; after that it stops.
+        if (this.splits.length < Math.max(0, this.cfg.phaseSplits)) this._split();
+        else this._stop();
         break;
 
       case 'idle':
@@ -109,6 +121,7 @@ export class Timer extends EventTarget {
     this.inspectStart = 0;
     this.inspectElapsed = 0;
     this._warned = { w1: false, w2: false };
+    this.splits = [];
     this._setState('idle');
     this.emit('cancel');
     return true;
@@ -161,9 +174,26 @@ export class Timer extends EventTarget {
     this.inspectStart = 0;
     this.solveStart = performance.now();
     this.elapsed = 0;
+    this.splits = [];
     this._setState('running');
     this.emit('start', { penalty: this.pendingPenalty });
     this._loop();
+  }
+
+  /**
+   * Mark a phase boundary. Read off the clock for the same reason the
+   * stop is: a split taken from the last animation frame would be up to
+   * a frame early, and the phases have to add up to the total exactly.
+   */
+  _split() {
+    const at = performance.now() - this.solveStart;
+    this.splits.push(at);
+    const prev = this.splits.length > 1 ? this.splits[this.splits.length - 2] : 0;
+    this.emit('split', {
+      index: this.splits.length - 1,
+      atMs: Math.round(at),
+      phaseMs: Math.round(at - prev),
+    });
   }
 
   _stop() {
@@ -177,6 +207,7 @@ export class Timer extends EventTarget {
       penalty: this.pendingPenalty || 'none',
       inspectionMs: Math.round(this.inspectElapsed),
       suspicious: this.elapsed < this.cfg.minSolveMs,
+      splits: this.splits.map(v => Math.round(v)),
     };
     this.inspectElapsed = 0;
     this.emit('stop', result);
@@ -222,6 +253,7 @@ export class Timer extends EventTarget {
     this.inspectStart = 0;
     this.inspectElapsed = 0;
     this.elapsed = 0;
+    this.splits = [];
     this._setState('idle');
   }
 }

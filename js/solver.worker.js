@@ -10,14 +10,20 @@
 
    The protocol is one message each way, keyed by a ticket the panel
    throws away when a newer request has already outrun it.
+
+   Two kinds of question come through here, told apart by `type`. It
+   defaults to the reconstruction panel's, so every caller that was
+   written before there was a second kind still asks the same way.
    =========================================================== */
 
-import { suggest } from './solver.js';
+import { suggest, suggestCrossPlusOne } from './solver.js';
 
 self.onmessage = (e) => {
-  const { id, state, frame, analysis, opts } = e.data || {};
+  const { id, type = 'suggest', state, frame, analysis, opts } = e.data || {};
   try {
-    const result = suggest(new Uint8Array(state), frame, analysis, opts || {});
+    const result = type === 'xp1'
+      ? suggestCrossPlusOne(new Uint8Array(state), frame, opts || {})
+      : suggest(new Uint8Array(state), frame, analysis, opts || {});
     self.postMessage({ id, result });
   } catch (err) {
     self.postMessage({ id, error: String(err && err.message || err) });

@@ -29,6 +29,12 @@ const GEOM = {
   L: { n: [-1, 0, 0], right: [0, 0, 1],  down: [0, -1, 0] },
 };
 
+/* Faces, and the directions their rows and columns run in, are the one piece of
+   geometry every drawing in the app has to agree on. Exported so a renderer can
+   place a sticker in 3D without writing its own copy of this table and getting
+   a winding backwards. */
+export { GEOM };
+
 /** Which axis, and which way along it, a face turn spins about. */
 const AXIS = {
   U: ['y', +1], D: ['y', -1],
@@ -88,6 +94,22 @@ const ROT   = { x: 'R', y: 'U', z: 'F' };
 
 const TOKEN = /^(\d*)([URFDLBurfdlbMESxyz])(w?)([2']*)$/;
 
+/**
+ * Tokenise a move sequence, or return `null` if anything in it is not a move
+ * this simulator understands.
+ *
+ * The simulator itself ignores junk tokens on purpose — a scramble preview
+ * should never blow up over one stray character. Anywhere the user is *typing*
+ * an algorithm, silence is the wrong answer, so this is the same grammar
+ * exposed as a yes/no rather than a shrug.
+ */
+export function parseAlg(text) {
+  const toks = String(text || '').trim().split(/\s+/).filter(Boolean);
+  if (!toks.length) return null;
+  for (const t of toks) if (!TOKEN.test(t)) return null;
+  return toks;
+}
+
 /** Apply one WCA/SiGN move token. Unknown tokens are ignored, never thrown. */
 function applyMove(stickers, n, tok) {
   const m = TOKEN.exec(tok);
@@ -143,6 +165,27 @@ export function faceletsFor(scramble, n = 3) {
   return out;
 }
 
+/**
+ * Where a facelet sits in space, and which cubie it belongs to.
+ *
+ * `pos` is the sticker's own 3D position — what a renderer needs to project it.
+ * `cubie` is that position pulled back onto the piece it is stuck to, so the
+ * three stickers of a corner all report the same key. That is the only way to
+ * ask a question like "which piece is the white-green-red corner, and where has
+ * it ended up": a facelet on its own carries a colour, not an identity.
+ */
+export function stickerAt(face, r, c, n = 3) {
+  const pos = stickerPos(face, r, c, n);
+  const out = (n - 1) / 2 + 0.5;
+  return {
+    pos,
+    right: GEOM[face].right,
+    down: GEOM[face].down,
+    // Only the coordinate poking out of the cube is off-lattice; pull it in.
+    cubie: pos.map(v => (Math.abs(v) === out ? Math.sign(v) * ((n - 1) / 2) : v)).join(','),
+  };
+}
+
 /** Cube size for an event id, or 0 when the event has no net to draw. */
 export function cubeSizeFor(eventId = '333') {
   const m = /^([234567])\1\1/.exec(String(eventId));
@@ -156,15 +199,38 @@ export function cubeSizeFor(eventId = '333') {
  *    L   F   R   B
  *        D
  */
-export function drawNet(ctx, facelets, n, x, y, w, h, { scheme = SCHEME, radius = 0.16 } = {}) {
+export function netLayout(n, x, y, w, h) {
   const cols = 4 * n, rows = 3 * n;
   const cell = Math.floor(Math.min(w / cols, h / rows));
-  if (cell < 2) return;
-  const gap = Math.max(1, Math.round(cell * 0.08));
-  const ox = x + (w - cell * cols) / 2;
-  const oy = y + (h - cell * rows) / 2;
+  if (cell < 2) return null;
+  return {
+    cell,
+    gap: Math.max(1, Math.round(cell * 0.08)),
+    ox: x + (w - cell * cols) / 2,
+    oy: y + (h - cell * rows) / 2,
+    place: { U: [n, 0], L: [0, n], F: [n, n], R: [2 * n, n], B: [3 * n, n], D: [n, 2 * n] },
+  };
+}
 
-  const place = { U: [n, 0], L: [0, n], F: [n, n], R: [2 * n, n], B: [3 * n, n], D: [n, 2 * n] };
+/** Which (face, row, col) a point lands on, or null outside the net. */
+export function netHit(layout, n, px, py) {
+  if (!layout) return null;
+  const { cell, ox, oy, place } = layout;
+  for (const [face, [cx, cy]] of Object.entries(place)) {
+    for (let r = 0; r < n; r++) {
+      for (let c = 0; c < n; c++) {
+        const x0 = ox + (cx + c) * cell, y0 = oy + (cy + r) * cell;
+        if (px >= x0 && px < x0 + cell && py >= y0 && py < y0 + cell) return { face, r, c };
+      }
+    }
+  }
+  return null;
+}
+
+export function drawNet(ctx, facelets, n, x, y, w, h, { scheme = SCHEME, radius = 0.16 } = {}) {
+  const layout = netLayout(n, x, y, w, h);
+  if (!layout) return null;
+  const { cell, gap, ox, oy, place } = layout;
   const rad = Math.max(1, cell * radius);
 
   for (const [face, [cx, cy]] of Object.entries(place)) {
@@ -178,6 +244,9 @@ export function drawNet(ctx, facelets, n, x, y, w, h, { scheme = SCHEME, radius 
       }
     }
   }
+  // Handed back so a caller that also wants to hit-test or outline a sticker
+  // works off the same geometry rather than its own copy of the arithmetic.
+  return layout;
 }
 
 function roundRect(ctx, x, y, w, h, r) {

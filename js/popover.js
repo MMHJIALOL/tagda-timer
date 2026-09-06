@@ -15,6 +15,8 @@ export const popoverOpen = () => !!openCleanup;
 /**
  * items: array of
  *   { label, badge, on, icon, onSelect }  |  { sep: true }  |  { title: 'text' }
+ *   | { node }   — anything the caller has already built, appended as-is.
+ *                 The letter-pair recall uses it to show a memo image.
  */
 export function popover(anchor, items, { columns = 1, minWidth } = {}) {
   closePopover();
@@ -28,6 +30,7 @@ export function popover(anchor, items, { columns = 1, minWidth } = {}) {
   for (const it of items) {
     if (it.sep)   { pop.append(el('div', { class: 'pop-sep' })); continue; }
     if (it.title) { pop.append(el('div', { class: 'pop-title', text: it.title })); continue; }
+    if (it.node)  { pop.append(it.node); continue; }
     const btn = el('button', { class: `pop-item ${it.on ? 'on' : ''}` });
     if (it.on) btn.append(el('span', { class: 'pi-dot' }));
     btn.append(el('span', { text: it.label }));
