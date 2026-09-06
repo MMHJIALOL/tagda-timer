@@ -219,6 +219,15 @@ connect and records the answer, and the UI says which mode it ended up in:
 
 Either way the feature does something. Neither path errors out at the user.
 
+There is a third case that is neither of those: a cover with **no hue in it at
+all** — a black-and-white sleeve, a near-white one, a monochrome photograph.
+The pixels read fine; there is simply no colour to borrow. That used to return
+nothing, and returning nothing left the *previous* track's colours on screen,
+so a monochrome cover looked like it had not been noticed. It now comes back as
+a grey pair keyed to how light or dark the sleeve is (`mono: true` on the
+palette), and the Spotify panel says so in one line rather than leaving the
+user to wonder why the timer went grey.
+
 ### 4.2 Why not just use the dominant colour
 
 Because album art hands you near-black and near-white constantly, and a

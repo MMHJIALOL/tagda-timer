@@ -29,11 +29,11 @@
      perfect in incognito, which is a miserable thing to debug.
      /js/ is `must-revalidate` and does not depend on this, but keep the number
      in step anyway rather than leaving two answers to the same question. -->
-<link rel="modulepreload" href="js/main.js?v=42">
-<link rel="stylesheet" href="css/fonts.css?v=42">
-<link rel="stylesheet" href="css/tokens.css?v=42">
-<link rel="stylesheet" href="css/base.css?v=42">
-<link rel="stylesheet" href="css/components.css?v=42">
+<link rel="modulepreload" href="js/main.js?v=43">
+<link rel="stylesheet" href="css/fonts.css?v=43">
+<link rel="stylesheet" href="css/tokens.css?v=43">
+<link rel="stylesheet" href="css/base.css?v=43">
+<link rel="stylesheet" href="css/components.css?v=43">
 <link rel="icon" href="assets/favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="assets/logo-192.png">
 <link rel="apple-touch-icon" href="assets/logo-180.png">
@@ -267,10 +267,16 @@
           <span id="hist-title">Times</span>
           <span class="panel-sub" id="stat-count">0 solves</span>
         </div>
-        <!-- Says what the right-hand column is. It shares the solve chip's grid
-             exactly, so each label sits over the column it names. -->
-        <div class="hist-cols" aria-hidden="true">
-          <span></span><span>time</span><span>ao5</span>
+        <!-- Says what each column is, and sorts by it. Same grid as the solve
+             chip below, so every label sits over the column it names — and the
+             two that hold numbers are buttons: click to order the session by
+             that column, click the active one again to go back to solve order.
+             The last cell is the reconstruct button's reserved column. -->
+        <div class="hist-cols">
+          <span></span>
+          <button type="button" data-sort="time" title="Sort by time — click again for solve order">time</button>
+          <button type="button" data-sort="ao5" title="Sort by ao5 — click again for solve order">ao5</button>
+          <span></span>
         </div>
         <div id="hist-list" role="list"></div>
         <div class="times-foot">
@@ -560,7 +566,7 @@
   </div>
 </div>
 
-<script type="module" src="js/main.js?v=42"></script>
+<script type="module" src="js/main.js?v=43"></script>
 <script>
 (function () {
   var isFile = location.protocol === 'file:';
