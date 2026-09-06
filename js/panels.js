@@ -420,7 +420,9 @@ export function buildSpotify(app) {
                 : el('div', { class: 'spot-hero-sub', text: connected
                     ? (st.artworkReadable === false
                         ? 'Artwork colours are blocked by Spotify’s CDN, so the cover is used as a background instead.'
-                        : 'The timer takes its colours from whatever you are playing.')
+                        : st.artworkMono
+                          ? 'This cover is black and white, so the timer is too — there is no hue in it to borrow.'
+                          : 'The timer takes its colours from whatever you are playing.')
                     : 'Link an account and the timer takes its colours from the album art of whatever you are playing.' }),
               !connected
                 ? el('div', { class: 'spot-hero-sub', text:

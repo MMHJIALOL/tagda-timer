@@ -288,7 +288,15 @@
 .view-toggle button.on { background: color-mix(in srgb, var(--text) 13%, transparent); color: var(--text); }
 
 /* ---------------- times list (left column) ---------------- */
-#panel-times { gap: 8px; }
+#panel-times {
+  gap: 8px;
+  /* One width for the ao5 column, shared by the heading and every row, so the
+     label sits over its numbers rather than near them. Content-sized `auto`
+     could not do that: the heading's three letters and a row's "13.66" are
+     different widths, and on a narrow sidebar they drifted a good 20px apart.
+     Wide enough for a minutes-long average at any times-list scale. */
+  --ao5-col: calc(3.4rem * var(--times-scale));
+}
 #panel-times .panel-head { flex: none; }
 
 /* Column labels for the solve list. Same grid, same gap and same horizontal
@@ -296,18 +304,33 @@
    near it. */
 .hist-cols {
   flex: none;
-  display: grid; grid-template-columns: 24px minmax(0, 1fr) auto;
+  display: grid; grid-template-columns: 24px minmax(0, 1fr) var(--ao5-col) 20px;
   align-items: center; gap: 7px;
   /* #hist-list below bleeds out by half the pad and pads back in so its chips
      can have a hover background that reaches the panel edge. Matching that here
      is what makes the labels line up with the columns rather than sit 9px off. */
   margin: 0 calc(var(--pad) * -0.5);
-  padding: 4px calc(var(--pad) * 0.5 + 8px) 3px;
+  /* The extra right pad is the list's scrollbar, measured at render time —
+     without it every heading sits a scrollbar-width right of its column. */
+  padding: 4px calc(var(--pad) * 0.5 + 8px + var(--hist-sbw, 0px)) 3px calc(var(--pad) * 0.5 + 8px);
   font-size: .58rem; font-weight: 700; letter-spacing: .14em; text-transform: uppercase;
   color: var(--text-faint);
   border-bottom: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
 }
-.hist-cols span:last-child { text-align: right; }
+.hist-cols span:nth-child(3) { text-align: right; }
+/* The two sortable columns. csTimer sorts its time list by clicking the column
+   heading, and this is the same gesture: click to order the session by that
+   column, click the active one again to put it back in solve order. */
+.hist-cols [data-sort] {
+  cursor: pointer; user-select: none;
+  font: inherit; color: inherit; letter-spacing: inherit; text-transform: inherit;
+  background: none; border: 0; padding: 0;
+  transition: color var(--dur-fast) var(--ease);
+}
+.hist-cols [data-sort]:hover { color: var(--text); }
+.hist-cols [data-sort].sorted { color: var(--accent); }
+.hist-cols [data-sort].sorted::after { content: ' ▲'; font-size: .8em; }
+.hist-cols [data-sort="ao5"] { text-align: right; }
 
 #hist-list {
   flex: 1; min-height: 0; overflow-y: auto;
@@ -319,7 +342,7 @@
 }
 
 .solve-chip {
-  display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; align-items: center; gap: 7px;
+  display: grid; grid-template-columns: 24px minmax(0, 1fr) var(--ao5-col) 20px; align-items: center; gap: 7px;
   padding: 5px 8px; border-radius: 7px;
   font-family: var(--font-mono); font-size: calc(.9rem * var(--times-scale)); font-weight: 550;
   font-variant-numeric: tabular-nums;
@@ -339,10 +362,27 @@
   font-size: calc(.72rem * var(--times-scale));
   color: var(--text-faint); font-variant-numeric: tabular-nums;
   text-align: right; white-space: nowrap;
+  /* Padded even when it is not highlighted, so the hover and best states can
+     paint a background without nudging the column sideways. */
+  padding: 1px 5px; border-radius: 5px;
+}
+/* The ao5 is a way in, not just a readout: pressing one opens the five solves
+   behind that particular average — the ones in the middle of a session that
+   were previously unreachable, since only "current" and "best" had a door. */
+.solve-chip .ao5.open { cursor: pointer; }
+.solve-chip .ao5.open:hover,
+.solve-chip .ao5.open:focus-visible {
+  color: var(--text);
+  background: color-mix(in srgb, var(--text) 14%, transparent);
+  outline: none;
+}
+.solve-chip .ao5.best.open:hover,
+.solve-chip .ao5.best.open:focus-visible {
+  color: var(--gold);
+  background: color-mix(in srgb, var(--gold) 28%, transparent);
 }
 .solve-chip .ao5.best {
   color: var(--gold); font-weight: 700;
-  padding: 1px 5px; border-radius: 5px;
   background: color-mix(in srgb, var(--gold) 16%, transparent);
 }
 
@@ -1465,25 +1505,30 @@ body.celebrating .toast {
 }
 
 /* ---- reconstruct, one click from the times list ----
-   Rides over the ao5 on hover: the ao5 is the number you read mid-session,
-   this is the one you reach for once you have stopped. */
+   It used to ride *over* the ao5 on hover, hiding it — which quietly made the
+   ao5 unclickable with a mouse, since the pointer that reveals the button is
+   the same pointer that would have pressed the number underneath it. It has a
+   column of its own now: 20px, always reserved so nothing shifts, with the
+   button itself only painted on hover. */
 .solve-chip { position: relative; }
 .chip-recon {
-  position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
-  display: none; align-items: center; gap: 5px;
-  height: 22px; padding: 0 9px; border-radius: 7px;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 20px; height: 20px; padding: 0; border-radius: 6px;
   background: var(--accent); color: var(--on-accent);
-  font-family: var(--font-ui); font-size: .66rem; font-weight: 600; letter-spacing: .01em;
-  box-shadow: 0 4px 14px -6px color-mix(in srgb, var(--accent) 90%, transparent);
+  opacity: 0; pointer-events: none;
+  transition: opacity var(--dur-fast) var(--ease);
 }
 .chip-recon svg { width: 12px; height: 12px; }
+.chip-recon i { display: none; }
 .solve-chip:hover .chip-recon,
-.chip-recon:focus-visible { display: inline-flex; }
-.solve-chip:hover .ao5 { visibility: hidden; }
+.chip-recon:focus-visible { opacity: 1; pointer-events: auto; }
 .chip-recon:hover { filter: brightness(1.12); }
 /* No hover on a touch screen, and a permanent button would crowd every row —
-   the solve menu carries the same entry there. */
-@media (hover: none) { .chip-recon { display: none !important; } .solve-chip:hover .ao5 { visibility: visible; } }
+   the solve menu carries the same entry there, so the column goes too. */
+@media (hover: none) {
+  .chip-recon { display: none; }
+  .solve-chip, .hist-cols { grid-template-columns: 24px minmax(0, 1fr) var(--ao5-col); }
+}
 
 /* ---- the two topbar buttons that are about something, not everything ----
    Spotify green is Spotify's, and their guidelines ask for it. The

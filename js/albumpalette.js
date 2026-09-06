@@ -113,12 +113,13 @@ export function paletteFrom(img, { dark = true } = {}) {
   const satSum = new Float64Array(BUCKETS);
   const lightSum = new Float64Array(BUCKETS);
   const count = new Float64Array(BUCKETS);
-  let coloured = 0, total = 0;
+  let coloured = 0, total = 0, greySum = 0;
 
   for (let i = 0; i < data.length; i += 4) {
     if (data[i + 3] < 8) continue;
     total++;
     const [h, sat, l] = rgbToHsl(data[i], data[i + 1], data[i + 2]);
+    greySum += l;
     if (sat < MIN_SAT || l < MIN_LIGHT || l > MAX_LIGHT) continue;
     coloured++;
 
@@ -136,10 +137,14 @@ export function paletteFrom(img, { dark = true } = {}) {
     count[b] += w;
   }
 
-  // Almost nothing in this image has a hue at all: a black-and-white sleeve, or
-  // a near-white one. Inventing a colour for it would be worse than leaving the
-  // user's own theme alone.
-  if (!total || coloured / total < 0.04) return null;
+  /* Almost nothing in this image has a hue at all: a black-and-white sleeve, a
+     near-white one, a grainy monochrome photograph. Returning null here used to
+     mean the caller kept the *previous* track's colours — so a monochrome cover
+     looked like it had not been noticed at all. It has been noticed; it simply
+     has no hue to lend, and the honest answer is the greys it is actually made
+     of, keyed to how light or dark the sleeve is. */
+  if (!total) return null;
+  if (coloured / total < 0.04) return monoPalette(greySum / total, dark);
 
   /* Blur the histogram before looking for peaks. A real-world colour is never
      one bucket wide — skin runs roughly 20-40 degrees — so a broad, shallow
@@ -185,6 +190,31 @@ export function paletteFrom(img, { dark = true } = {}) {
     accent:  clampToBand(primary.h, primary.s, primary.l, dark),
     accent2: clampToBand(secondary.h, secondary.s, secondary.l, dark),
     bg2:     hslToHex(primary.h, Math.min(0.4, primary.s), dark ? 0.12 : 0.91),
+  };
+}
+
+/**
+ * The palette of a sleeve that has no hue.
+ *
+ * `meanLight` is the average lightness of the whole cover, so a black sleeve
+ * and a white one do not come back identical: the pair keeps the sleeve's own
+ * sense of light or dark while staying legible against whichever page it is
+ * being painted on. Saturation is left at zero on purpose — inventing a tint
+ * for a monochrome cover is exactly the guess this module refuses to make.
+ */
+function monoPalette(meanLight, dark) {
+  const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+  // Push away from the page rather than towards the sleeve's own lightness:
+  // a black cover on a black page still needs an accent you can see.
+  const l1 = dark ? clamp(0.62 + meanLight * 0.22, 0.62, 0.86)
+                  : clamp(0.34 - meanLight * 0.16, 0.16, 0.34);
+  const l2 = dark ? l1 - 0.2 : l1 + 0.2;
+  return {
+    accent:  hslToHex(0, 0, l1),
+    accent2: hslToHex(0, 0, l2),
+    bg2:     hslToHex(0, 0, dark ? clamp(0.08 + meanLight * 0.08, 0.08, 0.16)
+                                 : clamp(0.94 - meanLight * 0.06, 0.88, 0.94)),
+    mono: true,
   };
 }
 

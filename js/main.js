@@ -128,6 +128,10 @@ let spotify = null;
 let pendingTint = null;
 /** Whether this origin may read pixels off i.scdn.co — probed, never assumed. */
 let artworkReadable = null;
+/* Whether the cover now playing has any hue at all. A monochrome sleeve gives
+   a grey pair, which is correct and looks exactly like a failure, so the panel
+   says which one it is. */
+let artworkMono = false;
 /** Set when Spotify answers a valid token with 403: linked, but not allowed. */
 let accessDenied = false;
 
@@ -242,6 +246,7 @@ async function init() {
   wireShortcuts();
   wireManualEntry();
   wireHistoryScroll();
+  wireHistorySort();
 
   // A pasted scramble list outlives a reload — losing your competition round
   // to an accidental refresh would be the whole feature failing at its job.
@@ -1121,6 +1126,35 @@ let histCtx = null;
 let histIds = [];
 let histSigs = [];
 
+/* How the list is ordered. `null` is solve order, newest first — the ordinary
+   list, rendered incrementally. A sort key orders the whole session by that
+   column instead, fastest first, exactly like clicking a column heading in
+   csTimer: the solve numbers stay with their solves, so #7 is still #7 wherever
+   it lands. Rows with no value for that column (an ao5 before the fifth solve,
+   a DNF single) sort to the bottom rather than pretending to be zero. */
+let histSort = null;                       // null | 'time' | 'ao5'
+
+/** Indices into app.solves, in display order. */
+function histOrder() {
+  const n = app.solves.length;
+  const order = new Array(n);
+  for (let i = 0; i < n; i++) order[i] = n - 1 - i;      // newest first
+  if (!histSort) return order;
+
+  const value = histSort === 'time'
+    ? (i) => eff(app.solves[i])
+    : (i) => histCtx.ao5s[i];
+  // A stable sort with the no-value rows parked at the end. Ties keep the
+  // newest-first order they came in with, which is what Array#sort guarantees.
+  return order.sort((a, b) => {
+    const va = value(a), vb = value(b);
+    const na = va === null || va === undefined || va === DNF;
+    const nb = vb === null || vb === undefined || vb === DNF;
+    if (na || nb) return na && nb ? 0 : na ? 1 : -1;
+    return va - vb;
+  });
+}
+
 /** Back to the top window — a different session is a different list. */
 function resetHistoryWindow() {
   histShown = HIST_PAGE;
@@ -1148,9 +1182,10 @@ function historyRowData(i) {
     idx: String(i + 1),
     time: v === DNF ? 'DNF' : fmt(v) + (s.penalty === '+2' ? '+' : ''),
     ao: ao === null ? '·' : fmt(ao),
+    hasAo: ao !== null,
     aoBest: ao !== null && bestAo5 !== null && ao === bestAo5,
     aoTitle: ao === null ? 'needs five solves'
-      : `ao5 after solve ${i + 1}${ao === bestAo5 ? ' — best of the session' : ''}`,
+      : `ao5 after solve ${i + 1}${ao === bestAo5 ? ' — best of the session' : ''} — click for the five solves`,
   };
 }
 
@@ -1171,10 +1206,31 @@ function historyChip(i, data) {
   });
   recon.addEventListener('click', (e) => { e.stopPropagation(); reconstructSolve(d.solve); });
 
+  /* The ao5 opens the five solves behind it. Until now only two averages in a
+     session had a door — the current one and the session best — so an average
+     you set an hour ago could be read in this column and then not looked at.
+     Any of them can be opened and shared now; the cell stops the click so the
+     solve menu does not open underneath the drawer. */
+  const ao = el('span', {
+    class: `ao5 ${d.aoBest ? 'best' : ''} ${d.hasAo ? 'open' : ''}`,
+    title: d.aoTitle, text: d.ao,
+  });
+  if (d.hasAo) {
+    ao.tabIndex = 0;
+    ao.setAttribute('role', 'button');
+    const open = (e) => {
+      e.stopPropagation();
+      const kind = `ao5@${i}`;
+      openPanel(`Average of 5 · to solve #${i + 1}`, 'buildStatDetail', { wide: true }, app, kind);
+    };
+    ao.addEventListener('click', open);
+    ao.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(e); } });
+  }
+
   const chip = el('div', { class: d.cls, role: 'listitem' },
     el('span', { class: 'idx', text: d.idx }),
     el('span', { class: 't', text: d.time }),
-    el('span', { class: `ao5 ${d.aoBest ? 'best' : ''}`, title: d.aoTitle, text: d.ao }),
+    ao,
     recon,
   );
   chip.addEventListener('click', (e) => solveMenu(d.solve, e.currentTarget));
@@ -1201,9 +1257,53 @@ function appendHistoryRows(list, from, to, sigs = null, sigAt = 0) {
   }
 }
 
+/* The order the sorted list is currently showing, so scrolling can append the
+   next page of it without sorting the session again. */
+let histOrdered = null;
+
+/** Rows `from` .. `to` of the sorted order. */
+function appendSortedRows(list, from, to) {
+  const frag = document.createDocumentFragment();
+  for (let k = from; k < to; k++) frag.append(historyChip(histOrdered[k]));
+  list.querySelector('.hist-end')?.remove();
+  list.append(frag);
+  if (to >= histOrdered.length) {
+    list.append(el('div', { class: 'hist-end', text: `all ${histOrdered.length} solves, by ${histSort === 'ao5' ? 'ao5' : 'time'}` }));
+  }
+}
+
+/**
+ * Keep the heading row's right edge over the rows' right edge.
+ *
+ * The rows live inside the scroller and the headings sit above it, so the
+ * scrollbar takes its width out of the rows and nothing else — which put the
+ * "ao5" label a scrollbar to the right of the numbers it names as soon as a
+ * session was long enough to scroll. Measured rather than guessed: the width
+ * differs between platforms, and on an overlay scrollbar it is zero.
+ */
+function syncScrollbarGutter() {
+  const list = $('#hist-list'), panel = $('#panel-times');
+  if (!list || !panel) return;
+  // Measured against the rows themselves rather than computed from a model of
+  // where the scrollbar goes — the model was wrong by exactly the list's own
+  // padding, and a measurement cannot be. Runs after layout, so it reads the
+  // list that was just built and never forces a reflow inside the render.
+  requestAnimationFrame(() => {
+    const cell = panel.querySelector('.hist-cols [data-sort="ao5"]');
+    const row = list.querySelector('.solve-chip .ao5');
+    if (!cell || !row) return;
+    const prev = parseFloat(panel.style.getPropertyValue('--hist-sbw')) || 0;
+    const delta = cell.getBoundingClientRect().right - row.getBoundingClientRect().right;
+    if (Math.abs(delta) < 0.5) return;
+    panel.style.setProperty('--hist-sbw', `${Math.max(0, Math.round(prev + delta))}px`);
+  });
+}
+
 function renderHistory() {
   const list = $('#hist-list');
   const n = app.solves.length;
+  syncSortHeaders();
+  syncScrollbarGutter();
   if (!n) {
     histShown = HIST_PAGE;
     histIds = [];
@@ -1225,6 +1325,20 @@ function renderHistory() {
     ao5s,
     bestAo5: valid.length ? Math.min(...valid) : null,
   };
+
+  /* A sorted list is rebuilt rather than diffed. The incremental path exists
+     because solve order only ever changes at one end — which is exactly what
+     sorting breaks — and the bookkeeping is cleared with it so the next
+     unsorted render does not try to diff against a shuffled list. */
+  if (histSort) {
+    histIds = [];
+    histSigs = [];
+    histOrdered = histOrder();
+    list.innerHTML = '';
+    appendSortedRows(list, 0, Math.min(histShown, n));
+    return;
+  }
+  histOrdered = null;
 
   const lo = n - histShown;
   const target = [];
@@ -1306,12 +1420,40 @@ function wireHistoryScroll() {
     const n = app.solves.length;
     if (histShown >= n) return;
     if (list.scrollHeight - list.scrollTop - list.clientHeight > 300) return;
+    if (histSort) {
+      const from = histShown;
+      histShown = Math.min(histShown + HIST_PAGE, n);
+      appendSortedRows(list, from, histShown);
+      return;
+    }
     const from = n - histShown - 1;
     histShown = Math.min(histShown + HIST_PAGE, n);
     const to = n - histShown;
     appendHistoryRows(list, from, to, histSigs, histIds.length);
     for (let i = from; i >= to; i--) histIds.push(app.solves[i].id);
   }, { passive: true });
+}
+
+/** Mark which column the list is ordered by. */
+function syncSortHeaders() {
+  document.querySelectorAll('.hist-cols [data-sort]').forEach((b) => {
+    b.classList.toggle('sorted', b.dataset.sort === histSort);
+    b.setAttribute('aria-pressed', String(b.dataset.sort === histSort));
+  });
+}
+
+function wireHistorySort() {
+  const cols = document.querySelector('.hist-cols');
+  if (!cols) return;
+  cols.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-sort]');
+    if (!btn) return;
+    // Pressing the column the list is already sorted by puts it back in solve
+    // order, which is the way out and the same gesture that got you here.
+    histSort = btn.dataset.sort === histSort ? null : btn.dataset.sort;
+    resetHistoryWindow();
+    renderHistory();
+  });
 }
 
 /* Plugging a keyboard into a tablet, or the browser's own device emulation,
@@ -1815,6 +1957,7 @@ function wireSpotify() {
     const { palette, blocked } = await pal.paletteForUrl(artUrl, { dark });
     if (blocked) artworkReadable = false;
     else if (palette) artworkReadable = true;
+    artworkMono = !!palette?.mono;
 
     if (app.settings.spotifyTint !== 'accent' || blocked) {
       // What CORS cannot block: the artwork itself, behind the blur and dim
@@ -1854,6 +1997,7 @@ function wireSpotify() {
   });
 
   spotify.addEventListener('idle', () => {
+    artworkMono = false;
     showNowPlaying(null);
     paintNowPlaying(null);
     queueTint(null);
@@ -2137,6 +2281,7 @@ function showNowPlaying(title, artist) {
 app.disconnectSpotify = async () => {
   await spotify?.disconnect();
   artworkReadable = null;
+  artworkMono = false;
   accessDenied = false;
   pendingTint = null;
   paintBarTint(null);
@@ -2184,6 +2329,7 @@ app.spotifyState = () => {
     denied: accessDenied,
     ownerNeedsPremium: OWNER_NEEDS_PREMIUM,
     artworkReadable,
+    artworkMono,
     redirectUri: base,
     problem,
   };
@@ -2213,7 +2359,7 @@ app.shareAverageCard = async (kind) => {
 
   const w = statWindow(app.solves, kind);
   if (!w.list.length || w.value === null || w.value === undefined) {
-    const n = Number(kind.replace(/^best-/, '').slice(2));
+    const n = parseInt(kind.replace(/^best-/, '').slice(2), 10);
     toast(n ? `Needs ${n} solves` : 'No solves yet');
     return;
   }
@@ -2230,8 +2376,11 @@ app.shareAverageCard = async (kind) => {
   const base = kind === 'mean' ? app.solves.length - list.length : w.start;
   const trimmed = new Set([...w.trimmed].map(i => i - base).filter(i => i >= 0 && i < list.length));
 
+  /* `aoN@i` has no entry in STAT_LABELS — it is a window, not a named stat —
+     so fall back to the one the window itself carries rather than printing the
+     key on the card. */
   return m.shareAverage(list, {
-    label: (STAT_LABELS[kind] || kind).toLowerCase(),
+    label: (STAT_LABELS[kind] || w.label || kind).toLowerCase(),
     value: w.value === DNF ? 'DNF' : fmt(w.value),
     trimmed: trimmed.size ? trimmed : null,
   });

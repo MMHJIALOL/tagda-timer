@@ -374,10 +374,29 @@ function trimSetAt(solves, start, n) {
  *
  * `kind` is a stat key — best | mean | aoN — or its `best-` prefixed form,
  * which asks for the fastest such average anywhere in the session rather than
- * the one ending on the last solve.
+ * the one ending on the last solve. `aoN@i` asks for the one ending on solve
+ * `i` (0-based), which is how any average in the times list — not just the
+ * current one and the session best — can be opened and shared.
  */
 export function statWindow(solves, kind) {
   const base = { kind, label: STAT_LABELS[kind] || kind, value: null, list: [], trimmed: new Set(), start: 0 };
+
+  // aoN@i — an average that ended somewhere in the middle of the session.
+  const at = /^ao(\d+)@(\d+)$/.exec(kind);
+  if (at) {
+    const n = Number(at[1]), end = Number(at[2]);
+    const label = `Average of ${n} · to solve #${end + 1}`;
+    const start = end - n + 1;
+    if (start < 0 || end >= solves.length) return { ...base, label };
+    return {
+      ...base,
+      label,
+      value: averageOfRange(solves.map(eff), start, end + 1),
+      list: solves.slice(start, end + 1),
+      trimmed: trimSetAt(solves, start, n),
+      start,
+    };
+  }
 
   if (kind === 'best' || kind === 'best-single') {
     const v = bestSingle(solves);
