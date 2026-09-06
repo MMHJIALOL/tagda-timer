@@ -962,10 +962,19 @@ await new Promise((resolve) => {
       check('the reconstruction screen carries the Tagda Timer logo',
         onScreen(rbox('.brand-mark')), JSON.stringify(rbox('.brand-mark')));
 
+      /* Two of them, and both have to be there. The word next to the
+         reconstruction is the one you can find without knowing the icon; the
+         icon in the top bar is the one hands already go to, and moving it there
+         from here is how it went missing in the first place. */
       const share = rcHost.querySelector('.rc-share');
       check('the share button is on screen and says what it is',
         onScreen(share?.getBoundingClientRect()) && /share/i.test(share?.textContent || ''),
         share ? `"${share.textContent.trim()}"` : 'no .rc-share');
+      const shareIcon = rcHost.querySelector('.rc-share-icon');
+      check('and share is still up in the top bar, where it always was',
+        onScreen(shareIcon?.getBoundingClientRect())
+        && /share/i.test(shareIcon?.getAttribute('aria-label') || ''),
+        shareIcon ? `"${shareIcon.getAttribute('aria-label')}"` : 'no .rc-share-icon');
 
       const echo = rcHost.querySelector('.rc-cube-scramble');
       const echoSize = parseFloat(w.getComputedStyle(echo).fontSize);

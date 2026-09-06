@@ -743,6 +743,15 @@ function build() {
         onclick: () => copy(S.scramble).then(() => toast('Scramble copied')),
         html: '<svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/></svg>',
       }),
+      /* Share lives in two places on purpose. It reads better as a word next to
+         the reconstruction it is going to make a card of, but this is where it
+         has always been and where hands already go for it, and a button that
+         moves is a button that has gone missing. */
+      el('button', {
+        class: 'ghost-btn sm rc-share-icon', title: 'Make a share card of this reconstruction',
+        'aria-label': 'Share this reconstruction', onclick: shareCard,
+        html: '<svg viewBox="0 0 24 24"><path d="M4 12v7a2 2 0 002 2h12a2 2 0 002-2v-7M12 3v13M8 7l4-4 4 4"/></svg>',
+      }),
     ),
     ui.pick = el('div', { class: 'rc-pick' },
       ui.pickBtn = el('button', {

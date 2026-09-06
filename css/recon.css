@@ -45,6 +45,10 @@ body.recon-open #bg-root { opacity: 0; }
   text-transform: uppercase; color: var(--text-faint);
 }
 .rc-title { flex: none; font-size: .9rem; font-weight: 600; color: var(--text); }
+/* Tinted, because a row of identical grey glyphs is where this one went to
+   hide in the first place. */
+.rc-share-icon { color: var(--accent-2); }
+.rc-share-icon:hover { background: color-mix(in srgb, var(--accent-2) 16%, transparent); }
 
 .rc-inp {
   flex: 1; min-width: 0; height: 34px; padding: 0 2px;
