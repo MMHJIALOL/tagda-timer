@@ -136,6 +136,8 @@ export class Background {
     this.slow = 1;
     this._t = 0;
     this._last = 0;
+    this._drawn = 0;
+    this._minStep = 0;
     this._raf = null;
     this.mode = 'shader';
 
@@ -243,6 +245,17 @@ export class Background {
 
   /* ---------------- loop ---------------- */
 
+  /**
+   * Draw at most `fps` frames a second; 0 puts it back to every frame.
+   *
+   * A full-screen fragment shader is the most expensive thing on the page, and
+   * during a celebration it is also the least important — the confetti is what
+   * you are looking at. Throttled rather than stopped, so the canvas is still
+   * being drawn into and the shader keeps its own clock: nothing jumps when it
+   * comes back up to speed.
+   */
+  throttle(fps) { this._minStep = fps ? 1000 / fps : 0; }
+
   start() {
     if (this._raf || this.mode !== 'shader') return;
     if (!this.init()) return;
@@ -251,7 +264,10 @@ export class Background {
       const dt = Math.min(0.05, (now - this._last) / 1000);
       this._last = now;
       if (!this.paused) this._t += dt * this.slow;
-      this.draw();
+      if (!this._minStep || now - this._drawn >= this._minStep) {
+        this._drawn = now;
+        this.draw();
+      }
       this._raf = requestAnimationFrame(step);
     };
     this._raf = requestAnimationFrame(step);

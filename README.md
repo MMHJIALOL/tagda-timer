@@ -30,7 +30,7 @@ There is **no build step** — no Node, no npm, no bundler. It is plain ES modul
 so any static file server works, and deploying later means uploading the folder as-is.
 
 To check everything still works after a change, open <http://localhost:5173/test.html>.
-It runs 55 checks: the statistics maths, every trainer algorithm verified by simulating a
+It runs the statistics maths, the learn-mode scheduler, every trainer algorithm verified by simulating a
 real cube, the reconstruction model and solver (superflip, the wide-turn identities, and
 whole CFOP solves driven only by the suggestions it hands back), and the rendered page
 itself (that no overlay is stuck on screen).
@@ -61,8 +61,10 @@ possible — the app can tell you your G-perm is 1.4 s slower than everything el
 
 | Mode | What you get |
 |---|---|
+| F2L | all 41 first-two-layers cases, grouped the way they are taught |
 | PLL | all 21 permutation cases |
 | OLL | all 57 orientation cases |
+| ZBLL | all 472 one-look last layers, by family (T, U, L, H, Pi, Sune, Antisune) |
 | 2-look OLL / 2-look PLL / OCLL | the beginner subsets |
 | Last layer | a random OLL and PLL stacked together |
 | Cross solved | cross already done — drill F2L + LL |
@@ -70,11 +72,47 @@ possible — the app can tell you your G-perm is 1.4 s slower than everything el
 | 2-gen (R,U) · Roux LSE (M,U) · Roux L10P | restricted move sets |
 | Cross practice | full WCA scramble, time your cross only |
 
-Press **K** to pick exactly which cases you want, including a "my worst 8" button that
-selects the cases you are slowest at.
+#### Learn mode
+The trainers deal a case and time it. **Learn mode** (`L`) is the part that teaches
+one, and it works on top of whichever trainer you are already in — PLL is still PLL,
+learn only changes *which* PLL you are handed next.
 
-Every algorithm in the tables is verified by cube simulation in `test.html` — all 21 PLLs
-and all 57 OLLs produce the correct, distinct case.
+- **A case you have never seen arrives with its algorithm on screen.** There is
+  nothing to recall yet, so nothing is hidden.
+- **After that it is recall.** The alg is gone; `G` brings it back, and asking for it
+  counts as not knowing it — that is the whole signal, so it is never taken quietly.
+- **It grades the solve you actually did.** Clean and at or under your own average on
+  that case moves it forward. Slow, or a +2, holds it where it is. A DNF or a peek
+  sends it back to the start and puts it in front of you again within a few solves,
+  not tomorrow. "Slow" is a multiple of *your* average on *that* case, because 1.5x is
+  a different number for a sub-10 solver and someone learning their first PLL.
+- **Nothing is called known on evidence that does not exist.** Until there are enough
+  solves of a case to have an average, everything passes — so a case stops one step
+  short of *known* and waits for one rather than graduating on three lucky attempts.
+- **New cases arrive a few at a time** (five per sitting by default), so switching learn
+  on in ZBLL teaches you five cases rather than dumping 472 unknowns on you.
+- It works on exactly the cases switched on in the case picker, so *my worst 8* plus
+  learn mode is a session about the eight cases you are worst at.
+- The strip under the scramble is the state of the set: how many are new, being
+  learned, known, and due right now. When nothing is due it says so and goes back to
+  dealing the set at random.
+- Schedules live in your browser with everything else, and ride along in the JSON
+  backup — restoring an old one merges rather than resetting what you have learned since.
+
+Press **K** to pick exactly which cases you want, including a "my worst 8" button that
+selects the cases you are slowest at. Where a set has groups — F2L's six pair states,
+ZBLL's seven families, OLL's shapes — a row of chips narrows the grid to one of them, and
+`all` / `none` / `invert` then work on just what is showing. Picking only the Sune set out
+of ZBLL's 472 is two clicks.
+
+Trainer cases are previewed **yellow on top, white cross underneath** — the way the
+algorithm sites draw them and the way you are already holding the cube. Official WCA
+scrambles keep the white-on-top, green-front orientation they are defined in, because
+there the preview's job is to match the cube you just scrambled. Turn it off under
+Appearance → *Yellow on top*.
+
+Every algorithm in the tables is verified by cube simulation in `test.html` — all 21 PLLs,
+57 OLLs, 41 F2L cases and 472 ZBLLs produce the correct, distinct case.
 
 ### Inspection
 Exactly as in competition: 15 seconds, spoken or tonal callouts at 8 and 12, automatic
@@ -136,15 +174,25 @@ every row expanded costs about 30, against two full seconds for a naive rebuild.
 Recording a solve folds the strip back to its top page, because that is where
 you are looking.
 
+Beside every time are two rolling averages — ao5 and ao12 out of the box, and
+whichever two you actually chase after that: the pencil on a column heading
+turns it into a number box, so the column can be an ao3, an ao25 or an ao100.
+Clicking a heading orders the whole session by that column, fastest first, and
+clicking it again puts the list back in solve order; solve numbers stay with
+their solves, and a row with no value for that column (an ao12 before the
+twelfth solve) sorts to the bottom rather than pretending to be zero. Any
+average in the list opens the solves behind it, not just the current one and
+the session best.
+
 ### Reconstruction
 A workbench for working out what you actually did, and what you could have done
 instead. It is off the timer entirely — it opens from a solve's menu
 (*Reconstruct this solve*), from the topbar cube button, or with `Y`, and the timer
 screen is untouched until you ask for it.
 
-- **One click from the times list.** Hover a solve and the ao5 gives way to a
-  **reconstruct** button; the solve's menu carries the same entry, which is how
-  you get there on a touch screen.
+- **One click from the times list.** Hover a solve and a **reconstruct** button
+  appears in the column kept for it; the solve's menu carries the same entry,
+  which is how you get there on a touch screen.
 - **It suggests the moves.** From wherever the cube currently stands it works out
   every shortest way on, ranked by move count and then by how comfortably they turn.
   The search runs in a worker, so a hard last-slot position thinks for a second
@@ -264,6 +312,8 @@ Everything lives in your browser's IndexedDB. No account, no server, nothing upl
 | **A** / **H** | statistics · all solves |
 | **T** / **,** | appearance · settings |
 | **K** | pick trainer cases |
+| **L** | learn mode on / off |
+| **G** | show the alg (counts as not knowing it) |
 | **Y** | reconstruct (topbar button, or a solve's menu) |
 | **Ctrl + K** or **/** | command palette |
 | **?** | shortcut list |
@@ -286,6 +336,8 @@ css/recon.css         the reconstruction workbench (fetched on first open)
 js/main.js            wiring — the entry point
 js/timer.js           timer state machine + WCA inspection
 js/scramble.js        cubing.js integration, trainers, pre-generation queue
+js/learn.js           the learn-mode scheduler — pure, and tested
+js/learnmode.js       learn mode around it: which case next, the alg, the verdict
 js/algs.js            trainer PLL / OLL / trigger tables (verified in test.html)
 js/algsets.js         every OLL, PLL and ZBLL alg, all checked in test.html
 js/stats.js           WCA-correct averages
@@ -304,7 +356,7 @@ vendor/cubing/        mirrored cubing.js (works offline)
 tools/mirror_cubing.py  re-download that mirror
 serve.py              no-cache dev server
 start.bat             double-click launcher
-test.html             71-check self test
+test.html             self test — open it in a browser to run it
 ```
 
 ---
@@ -335,9 +387,8 @@ modules over `file://`, and the page says so if you try.
 
 ## Not in this version
 
-Accounts and cloud sync, multiplayer racing, Bluetooth smart cubes, and Bluetooth
-smart timers. FMC currently records a time rather than running the full 60-minute
-solution editor.
+Accounts and cloud sync, Bluetooth smart cubes, and Bluetooth smart timers. FMC
+currently records a time rather than running the full 60-minute solution editor.
 
 The reconstructor suggests and animates, but it cannot know what you actually turned —
 without a smart cube it removes the typing, not the recall. It reads CFOP; Roux, ZZ and

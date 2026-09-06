@@ -45,6 +45,11 @@ export const MODES = {
   'oll2look': { name: '2-look OLL',     kind: 'case',  set: 'OLL2',   events: ['333','333oh'], view: 'LL', desc: 'Edge orientation + OCLL' },
   'pll2look': { name: '2-look PLL',     kind: 'case',  set: 'PLL2',   events: ['333','333oh'], view: 'LL', desc: 'Corner swap + edge cycle' },
   'ocll':     { name: 'OCLL',           kind: 'case',  set: 'OCLL',   events: ['333','333oh'], view: 'LL', desc: 'The 7 corner-orientation cases' },
+  'zbll':     { name: 'ZBLL',           kind: 'case',  set: 'ZBLL',   events: ['333','333oh'], view: 'LL', desc: 'All 472 one-look last layers' },
+  // No `view` for F2L: the pair lives in the bottom two layers, so a
+  // last-layer picture would show nothing. Whichever preview you have
+  // chosen is the right one here.
+  'f2l':      { name: 'F2L',            kind: 'case',  set: 'F2L',    events: ['333','333oh'], desc: 'All 41 first-two-layers cases' },
 
   'll':       { name: 'Last layer',     kind: 'compose', events: ['333','333oh'], view: 'LL', desc: 'Random OLL + PLL together' },
   'cross':    { name: 'Cross solved',   kind: 'trigger', depth: [5, 7], events: ['333','333oh'], desc: 'Cross is done — practise F2L + LL' },
@@ -57,7 +62,7 @@ export const MODES = {
 };
 
 export const MODE_ORDER = [
-  'wca', 'pll', 'oll', 'oll2look', 'pll2look', 'ocll',
+  'wca', 'f2l', 'pll', 'oll', 'zbll', 'oll2look', 'pll2look', 'ocll',
   'll', 'cross', 'lastslot', '2gen', 'lse', 'roux', 'crossgoal',
 ];
 

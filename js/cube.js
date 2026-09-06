@@ -45,6 +45,7 @@ export class CubeView {
     this.pending = null;
     this.ready = false;
     this.orbit = null;          // set before init() to restore a saved angle
+    this.orientation = '';      // rotation applied before the scramble — see setOrientation
   }
 
   async init() {
@@ -128,6 +129,26 @@ export class CubeView {
     this.player.setAttribute('back-view', use === '3D' ? 'top-right' : 'none');
   }
 
+  /**
+   * Which way up the cube is held before the scramble goes on.
+   *
+   * twisty-player has no way to recolour its stickers — there is no attribute
+   * for it and the shadow root is closed — so "yellow on top" cannot be a
+   * colour swap. It has to be a rotation, and it has to come *before* the
+   * scramble: `z2` first turns the solved cube over, and the case then lands
+   * on the yellow face that is now up, with the white cross underneath. Put
+   * the `z2` after the scramble instead and you get the opposite — a solved
+   * yellow face staring back at you.
+   *
+   * Only the preview is rotated. The scramble text is untouched, so it still
+   * reads in the orientation you are already holding.
+   */
+  setOrientation(alg = '') {
+    if (alg === this.orientation) return;
+    this.orientation = alg;
+    this.applied = null;          // force the next set() through
+  }
+
   /** Show the state produced by `scramble`. Instant — no animation. */
   set(scramble, opts = {}) {
     if (!this.ready) { this.pending = { scramble, opts }; return; }
@@ -135,7 +156,8 @@ export class CubeView {
     if (opts.view) this.setView(opts.view);
 
     // Multi-blind hands over several numbered scrambles; preview the first.
-    const clean = (scramble || '').replace(/^\s*\d+\)\s*/gm, '').split('\n')[0].trim();
+    const only = (scramble || '').replace(/^\s*\d+\)\s*/gm, '').split('\n')[0].trim();
+    const clean = this.orientation ? `${this.orientation} ${only}`.trim() : only;
     if (clean === this.applied) return;
 
     const apply = () => {

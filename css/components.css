@@ -297,22 +297,32 @@
 /* ---------------- times list (left column) ---------------- */
 #panel-times {
   gap: 8px;
-  /* One width for the ao5 column, shared by the heading and every row, so the
-     label sits over its numbers rather than near them. Content-sized `auto`
-     could not do that: the heading's three letters and a row's "13.66" are
+  /* One width for every average column, shared by the heading and every row, so
+     each label sits over its numbers rather than near them. Content-sized
+     `auto` could not do that: the heading's letters and a row's "13.66" are
      different widths, and on a narrow sidebar they drifted a good 20px apart.
-     Wide enough for a minutes-long average at any times-list scale. */
-  --ao5-col: calc(3.4rem * var(--times-scale));
+     Wide enough for a minutes-long average at any times-list scale — and a
+     touch narrower than when it was the only one, because two of them have to
+     fit beside the times in a sidebar nobody widened. */
+  --ao-col: calc(2.9rem * var(--times-scale));
+  /* Set by applyHistGrid(): one track per average column, so the heading row
+     and the chips cannot disagree about how many there are. */
+  /* Tighter than it was with one average column: the columns have to share a
+     sidebar nobody widened, and 5px between them is what buys the time column
+     enough room for a solve that ran past a minute. */
+  --hist-gap: 5px;
+  --hist-grid: 24px minmax(0, 1fr) var(--ao-col) var(--ao-col) 20px;
+  --hist-grid-touch: 24px minmax(0, 1fr) var(--ao-col) var(--ao-col);
 }
 #panel-times .panel-head { flex: none; }
 
 /* Column labels for the solve list. Same grid, same gap and same horizontal
-   padding as .solve-chip below, so "ao5" lands over the ao5 column instead of
+   padding as .solve-chip below, so "ao12" lands over the ao12 column instead of
    near it. */
 .hist-cols {
   flex: none;
-  display: grid; grid-template-columns: 24px minmax(0, 1fr) var(--ao5-col) 20px;
-  align-items: center; gap: 7px;
+  display: grid; grid-template-columns: var(--hist-grid);
+  align-items: center; gap: var(--hist-gap);
   /* #hist-list below bleeds out by half the pad and pads back in so its chips
      can have a hover background that reaches the panel edge. Matching that here
      is what makes the labels line up with the columns rather than sit 9px off. */
@@ -324,8 +334,7 @@
   color: var(--text-faint);
   border-bottom: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
 }
-.hist-cols span:nth-child(3) { text-align: right; }
-/* The two sortable columns. csTimer sorts its time list by clicking the column
+/* Every sortable column. csTimer sorts its time list by clicking the column
    heading, and this is the same gesture: click to order the session by that
    column, click the active one again to put it back in solve order. */
 .hist-cols [data-sort] {
@@ -337,7 +346,42 @@
 .hist-cols [data-sort]:hover { color: var(--text); }
 .hist-cols [data-sort].sorted { color: var(--accent); }
 .hist-cols [data-sort].sorted::after { content: ' ▲'; font-size: .8em; }
-.hist-cols [data-sort="ao5"] { text-align: right; }
+
+/* An average column heading: which average, and a pencil to change it. Right
+   aligned as one unit so "ao12" still ends over its numbers with the pencil
+   hanging off the end of the label rather than off the column. */
+.col-avg {
+  display: flex; align-items: baseline; justify-content: flex-end; gap: 2px;
+  min-width: 0;
+}
+.col-avg .col-sort { white-space: nowrap; }
+/* The pencil holds its space whether or not it is painted, so revealing it
+   cannot nudge the label out from over its column. */
+.col-edit {
+  flex: none; width: 9px; font-size: .62rem; line-height: 1;
+  background: none; border: 0; padding: 0; color: var(--text-faint);
+  cursor: pointer; opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+.hist-cols:hover .col-edit, .col-edit:focus-visible { opacity: .75; }
+.col-edit:hover { color: var(--accent); opacity: 1; }
+/* No hover to reveal it on a touch screen, so it is simply always there. */
+@media (hover: none) { .col-edit { opacity: .75; } }
+
+/* The heading, mid-edit. Sized to the column it replaces so nothing shifts
+   while you type. */
+.col-num {
+  width: 100%; min-width: 0;
+  font: inherit; font-size: .62rem; letter-spacing: .06em;
+  text-align: right; color: var(--text);
+  background: color-mix(in srgb, var(--text) 12%, transparent);
+  border: 1px solid var(--accent); border-radius: 5px;
+  padding: 1px 3px; outline: none;
+  -moz-appearance: textfield;
+}
+.col-num::-webkit-outer-spin-button, .col-num::-webkit-inner-spin-button {
+  -webkit-appearance: none; margin: 0;
+}
 
 #hist-list {
   flex: 1; min-height: 0; overflow-y: auto;
@@ -349,7 +393,7 @@
 }
 
 .solve-chip {
-  display: grid; grid-template-columns: 24px minmax(0, 1fr) var(--ao5-col) 20px; align-items: center; gap: 7px;
+  display: grid; grid-template-columns: var(--hist-grid); align-items: center; gap: var(--hist-gap);
   padding: 5px 8px; border-radius: 7px;
   font-family: var(--font-mono); font-size: calc(.9rem * var(--times-scale)); font-weight: 550;
   font-variant-numeric: tabular-nums;
@@ -361,11 +405,14 @@
 @keyframes chipIn { from { opacity: 0; transform: translateX(-10px); } to { opacity: 1; transform: none; } }
 .solve-chip:hover { background: color-mix(in srgb, var(--text) 9%, transparent); border-color: var(--border); }
 .solve-chip .idx { font-size: .68rem; color: var(--text-faint); font-weight: 600; text-align: right; }
-.solve-chip .t   { text-align: left; }
+/* Clipped rather than allowed to run under the averages: on the narrowest
+   sidebar a minutes-long time is wider than its column, and two numbers printed
+   over each other are worse than one that ends early. */
+.solve-chip .t   { text-align: left; min-width: 0; overflow: hidden; }
 .solve-chip .tag { font-size: .6rem; color: var(--text-faint); letter-spacing: .06em; }
-/* Running ao5 after this solve. Quieter than the time itself — it is context,
-   not the number you just set. */
-.solve-chip .ao5 {
+/* A running average up to this solve. Quieter than the time itself — it is
+   context, not the number you just set. */
+.solve-chip .avg {
   font-size: calc(.72rem * var(--times-scale));
   color: var(--text-faint); font-variant-numeric: tabular-nums;
   text-align: right; white-space: nowrap;
@@ -373,22 +420,22 @@
      paint a background without nudging the column sideways. */
   padding: 1px 5px; border-radius: 5px;
 }
-/* The ao5 is a way in, not just a readout: pressing one opens the five solves
+/* An average is a way in, not just a readout: pressing one opens the solves
    behind that particular average — the ones in the middle of a session that
    were previously unreachable, since only "current" and "best" had a door. */
-.solve-chip .ao5.open { cursor: pointer; }
-.solve-chip .ao5.open:hover,
-.solve-chip .ao5.open:focus-visible {
+.solve-chip .avg.open { cursor: pointer; }
+.solve-chip .avg.open:hover,
+.solve-chip .avg.open:focus-visible {
   color: var(--text);
   background: color-mix(in srgb, var(--text) 14%, transparent);
   outline: none;
 }
-.solve-chip .ao5.best.open:hover,
-.solve-chip .ao5.best.open:focus-visible {
+.solve-chip .avg.best.open:hover,
+.solve-chip .avg.best.open:focus-visible {
   color: var(--gold);
   background: color-mix(in srgb, var(--gold) 28%, transparent);
 }
-.solve-chip .ao5.best {
+.solve-chip .avg.best {
   color: var(--gold); font-weight: 700;
   background: color-mix(in srgb, var(--gold) 16%, transparent);
 }
@@ -1578,7 +1625,7 @@ body.celebrating .toast {
    the solve menu carries the same entry there, so the column goes too. */
 @media (hover: none) {
   .chip-recon { display: none; }
-  .solve-chip, .hist-cols { grid-template-columns: 24px minmax(0, 1fr) var(--ao5-col); }
+  .solve-chip, .hist-cols { grid-template-columns: var(--hist-grid-touch); }
 }
 
 /* ---- the two topbar buttons that are about something, not everything ----

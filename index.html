@@ -253,6 +253,28 @@
         </div>
       </div>
     </div>
+
+    <!-- Learn mode. Sits under the case label because it is about the case you
+         were just dealt: what stage it is at, the algorithm itself (shown for a
+         case you have never seen, and on demand for one you have), and what the
+         last solve did to its schedule. Hidden entirely unless learn is on. -->
+    <div id="learn-bar" hidden>
+      <div id="learn-progress">
+        <span class="lp-seg new"><b id="lp-new">0</b> new</span>
+        <span class="lp-seg learning"><b id="lp-learning">0</b> learning</span>
+        <span class="lp-seg mature"><b id="lp-mature">0</b> known</span>
+        <span class="lp-seg due"><b id="lp-due">0</b> due</span>
+        <button class="ghost-btn" id="btn-learn-exit" title="Leave learn mode">&times;</button>
+      </div>
+      <div id="learn-alg" hidden>
+        <span class="la-tag" id="learn-tag">new case</span>
+        <span class="la-alg" id="learn-alg-text"></span>
+      </div>
+      <div id="learn-actions">
+        <button class="chip" id="btn-learn-peek" title="Show the algorithm  (G) — counts as not knowing it">show me the alg</button>
+        <span id="learn-verdict"></span>
+      </div>
+    </div>
   </section>
 
   <!-- ---------- MAIN ---------- -->
@@ -269,15 +291,12 @@
         </div>
         <!-- Says what each column is, and sorts by it. Same grid as the solve
              chip below, so every label sits over the column it names — and the
-             two that hold numbers are buttons: click to order the session by
+             ones that hold numbers are buttons: click to order the session by
              that column, click the active one again to go back to solve order.
-             The last cell is the reconstruct button's reserved column. -->
-        <div class="hist-cols">
-          <span></span>
-          <button type="button" data-sort="time" title="Sort by time — click again for solve order">time</button>
-          <button type="button" data-sort="ao5" title="Sort by ao5 — click again for solve order">ao5</button>
-          <span></span>
-        </div>
+             Filled in by renderHistCols(), because which averages are shown is
+             yours to choose: each has a pencil that swaps the column for any
+             other average. The last cell is the reconstruct button's column. -->
+        <div class="hist-cols"></div>
         <div id="hist-list" role="list"></div>
         <div class="times-foot">
           <button class="ghost-btn sm" id="btn-open-history" title="All solves  (H)">

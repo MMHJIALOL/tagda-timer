@@ -150,6 +150,9 @@ export async function exportAll() {
     solves: await Solves.all(),
     settings: await KV.get('settings', {}),
     letterPairs: await LetterPairs.all(),
+    // What you have learned is not a setting and not a solve, and losing it to
+    // a restore would quietly reset every case you had worked up to known.
+    learn: await KV.get('learn', {}),
   };
 }
 
@@ -165,6 +168,17 @@ export async function importAll(data, { merge = true } = {}) {
   // Backups written before the dictionary existed simply have no key here.
   if (Array.isArray(data.letterPairs) && data.letterPairs.length) {
     await LetterPairs.putMany(data.letterPairs);
+  }
+  /* Merged rather than replaced: restoring an old backup onto a machine you
+     have been learning on should not throw away the newer schedule. Where both
+     sides know a case, the one further along wins. */
+  if (data.learn && typeof data.learn === 'object') {
+    const mine = (await KV.get('learn', {})) || {};
+    for (const [k, v] of Object.entries(data.learn)) {
+      const cur = mine[k];
+      if (!cur || (v && (v.box ?? 0) > (cur.box ?? 0))) mine[k] = v;
+    }
+    await KV.set('learn', mine);
   }
   return data.solves.length;
 }

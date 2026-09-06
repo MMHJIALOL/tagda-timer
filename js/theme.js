@@ -36,7 +36,7 @@ export const FEATURED_REEL = 'https://www.instagram.com/reel/DZzyIGcBQjD/';
  * existing profile carries the OLD default forever and simply editing
  * DEFAULTS would never reach anyone who has used the app before.
  */
-const SETTINGS_VERSION = 8;
+const SETTINGS_VERSION = 9;
 
 const MIGRATIONS = {
   // v2 — the pace ghost is now opt-in rather than on by default.
@@ -77,6 +77,18 @@ const MIGRATIONS = {
   // v8 — the blindfolded workflow. Everything about it is off or
   // collapsed to begin with, so a 3x3 solver never sees a thing.
   8: (s) => { s.bld = { ...structuredClone(DEFAULT_BLD), ...(s.bld || {}) }; },
+  // v9 — the times list can show any averages you like, not just the ao5 it
+  // was born with. Everyone lands on ao5 + ao12, which is what the list showed
+  // plus the one column people asked for.
+  //
+  // A second average column needs about 50px that the sidebar did not have, so
+  // a sidebar still sitting on the old default is widened to fit it. A width
+  // someone chose themselves is theirs and is left exactly where it is — they
+  // can narrow the columns back down by editing them.
+  9: (s) => {
+    s.histAvgCols ??= [5, 12];
+    if (s.sidebarWidth === 236 || s.sidebarWidth === undefined) s.sidebarWidth = 290;
+  },
 };
 
 export const DEFAULTS = {
@@ -120,9 +132,13 @@ export const DEFAULTS = {
   panelStyle: 'widget',         // widget = frosted card | flat = no card at all
   scrambleSize: 100,            // % of the responsive default
   cubeSize: 120,
-  sidebarWidth: 236,            // px
+  sidebarWidth: 290,            // px — wide enough for times + two averages
   sidebarText: 100,             // % — stats + panel labels
   timesSize: 100,               // % — the solve list
+  /* Which rolling averages the times list shows beside each solve, in column
+     order. Any window from 3 upwards, edited from the column heading itself;
+     an empty list is a plain list of times. */
+  histAvgCols: [5, 12],
   tiles: null,                  // { [tileId]: {dock, pos, w} } once anything has been dragged
   cubePos: null,                // {x,y} once the preview has been dragged
   cubeOrbit: null,              // {latitude,longitude,distance} once it has been spun
@@ -135,6 +151,7 @@ export const DEFAULTS = {
   showHistory: true,
   cubeView: '3D',
   hintFacelets: true,
+  yellowTop: true,              // trainer cases previewed with the cross on the bottom
   autoContrast: true,           // flip to dark text when the background is bright
 
   // album theming (see SPOTIFY.md)
@@ -161,6 +178,13 @@ export const DEFAULTS = {
   sessionId: null,
   multiCount: 3,
   allowedCases: {},             // { modeId: [caseId, ...] }
+
+  // Learn mode. Off by default: the trainers still deal a random case until
+  // you ask to be taught one. The two knobs are the ones worth arguing about
+  // -- how fast new cases arrive, and how slow counts as "did not know it".
+  learn: false,
+  learnNewPerSession: 5,
+  learnSlowFactor: 1.5,
   settingsVersion: SETTINGS_VERSION,
 };
 

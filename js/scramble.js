@@ -9,6 +9,8 @@
 
 import { EVENTS, MODES } from './events.js';
 import { PLL, OLL, OLL_EO, OCLL, PLL_CP, PLL_EP, CROSS_SAFE_TRIGGERS, U_MOVES, POOLS, faceOf } from './algs.js';
+import { F2L } from './f2l.js';
+import { ZBLL_SET } from './zbll.js';
 import { invert, tidy, pick } from './util.js';
 import { preferredAlg } from './alglibrary.js';
 
@@ -91,6 +93,8 @@ const SETS = {
   OLL2: [...OLL_EO, ...OCLL],
   PLL2: [...PLL_CP, ...PLL_EP],
   OCLL,
+  ZBLL: ZBLL_SET,
+  F2L,
 };
 
 export function setFor(modeId) {
