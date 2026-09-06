@@ -146,7 +146,7 @@ function explode(scramble, moves) {
   const list = String(moves || '').trim().split(/\s+/).filter(Boolean);
   if (!list.length) return [];
   const start = applyAlg(SOLVED, scramble, IDENTITY_FRAME);
-  if (!start) return [{ alg: list.join(' '), phase: 'cross', typed: true }];
+  if (!start) return [{ alg: list.join(' '), phase: 'cross', rank: 0 }];
   let state = start.state, frame = start.frame;
   const steps = [];
   for (const raw of list) {
@@ -155,8 +155,8 @@ function explode(scramble, moves) {
     const a = analyse(state);
     const rank = rankOf(a);
     const last = steps.at(-1);
-    if (last && rank <= last.rank) last.alg += ` ${tok}`;
-    else steps.push({ alg: tok, phase: a.phase, rank, typed: true });
+    if (joinsLast(last, rank)) last.alg += ` ${tok}`;
+    else steps.push({ alg: tok, phase: a.phase, rank });
     const next = applyAlg(state, tok, frame);
     if (!next) break;
     state = next.state; frame = next.frame;
@@ -290,6 +290,10 @@ function renderSteps(a) {
     el('span', { class: 'ph', text: PHASE_LABEL[a.phase] }),
     el('span', { class: 'mv', text: a.phase === 'done' ? 'solved' : 'you are here' }),
     el('span', { class: 'n', text: '·' })));
+  /* The line you are on is the one you are looking for, and a reconstruction
+     eventually outgrows any panel it is given — so the list is always left
+     scrolled to the bottom rather than at whatever the last redraw left. */
+  ui.steps.scrollTop = ui.steps.scrollHeight;
 }
 
 function renderStrip(a) {
@@ -334,6 +338,88 @@ function showCube({ setup = '', alg = '', controls = 'none' } = {}) {
     player.jumpToStart?.();
     requestAnimationFrame(() => { if (token === cubeToken) { try { player.play?.(); } catch { /* ignore */ } } });
   } catch (err) { console.warn('[recon] player', err); }
+}
+
+/* ---------------- which way round am I holding it? ----------------
+   You drag the cube round to find a piece, and now R is not where R was. The
+   letters follow the camera so you never have to work that out: turn it, and
+   the six faces are labelled where they have ended up.
+
+   They come from the camera and nothing else. Rotations you *type* already
+   turn the cube itself — after a y the face on the right really is the one you
+   would call R — so the only thing that can put the letters out of step is
+   dragging, and the only thing they have to track is the drag. */
+const FACE_NORMALS = {
+  U: [0, 1, 0], D: [0, -1, 0], R: [1, 0, 0],
+  L: [-1, 0, 0], F: [0, 0, 1], B: [0, 0, -1],
+};
+/* Where cubing.js parks the camera before anybody touches it. */
+const HOME_VIEW = { latitude: 35, longitude: 30 };
+
+const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const cross3 = (a, b) => [
+  a[1] * b[2] - a[2] * b[1],
+  a[2] * b[0] - a[0] * b[2],
+  a[0] * b[1] - a[1] * b[0],
+];
+
+/**
+ * Where each face has ended up on screen, for a camera at `latitude` /
+ * `longitude` degrees — the two numbers twisty-player hands out.
+ *
+ * `x` is across the picture and `y` down it, both from the middle and both in
+ * units of "half a cube", so a caller multiplies by whatever radius it wants.
+ * `front` is the three faces actually pointing at you.
+ *
+ * Exported because this is the part that can be wrong, and it can be checked
+ * without a cube on the screen.
+ */
+export function faceSpots(latitude, longitude) {
+  const la = latitude * Math.PI / 180, lo = longitude * Math.PI / 180;
+  // The camera sits on a sphere around the cube; `right` and `up` are the two
+  // axes of the picture it takes from there.
+  const dir = [Math.sin(lo) * Math.cos(la), Math.sin(la), Math.cos(lo) * Math.cos(la)];
+  const right = [Math.cos(lo), 0, -Math.sin(lo)];
+  const up = cross3(dir, right);
+  return Object.entries(FACE_NORMALS).map(([face, n]) => {
+    const depth = dot(n, dir);
+    return { face, x: dot(n, right), y: -dot(n, up), depth, front: depth > 0.05 };
+  });
+}
+
+/** Degrees between two angles, the short way round. */
+const apart = (a, b) => Math.abs(((a - b) % 360 + 540) % 360 - 180);
+
+/**
+ * Put the letters where the faces are.
+ * Hidden while the cube is sitting the way it started, because then the
+ * letters are only telling you what you already know.
+ */
+function paintFaces({ latitude, longitude }) {
+  if (!ui.faces || !player) return;
+  const moved = Math.abs(latitude - HOME_VIEW.latitude) > 4
+    || apart(longitude, HOME_VIEW.longitude) > 4;
+  ui.faces.hidden = !moved;
+  if (!moved) return;
+  const pb = player.getBoundingClientRect(), sb = ui.stage.getBoundingClientRect();
+  if (!pb.width || !sb.width) return;
+  const cx = pb.x - sb.x + pb.width / 2;
+  const cy = pb.y - sb.y + pb.height / 2;
+  // Clear of the cube, which fills roughly half of the shorter side.
+  const r = Math.min(pb.width, pb.height) * 0.52;
+  for (const spot of faceSpots(latitude, longitude)) {
+    const tag = ui.faceTags[spot.face];
+    tag.style.left = `${cx + spot.x * r}px`;
+    tag.style.top = `${cy + spot.y * r}px`;
+    tag.classList.toggle('back', !spot.front);
+  }
+}
+
+/** Follow the camera, if this build of cubing.js will say where it is. */
+function watchCamera() {
+  const orbit = player?.experimentalModel?.twistySceneModel?.orbitCoordinates;
+  if (typeof orbit?.addFreshListener !== 'function') return;
+  orbit.addFreshListener((c) => { try { paintFaces(c); } catch { /* not laid out yet */ } });
 }
 
 function renderCube(alg = '') {
@@ -500,10 +586,36 @@ function paintSuggestions(res, a) {
    ========================================================= */
 
 /**
+ * Does this move belong on the line already open, or start the next one?
+ *
+ * One rule, and it is about the cube rather than about you: a line breaks when
+ * something actually went in. `rank` is how far through the solve the position
+ * is now; `last.rank` is how far through it was when that line started. Equal
+ * means nothing has gone in since, so this is still the same pair.
+ *
+ * It used to also insist the line was typed, and that a clicked suggestion
+ * always start its own — which put the alg the panel had just suggested for
+ * the pair you were setting up on a line of its own, as though it were a
+ * second pair. It is not; the U' before it was part of the same idea. It is
+ * also the rule `explode` has always used to read a saved reconstruction back,
+ * so editing one and reopening one now group it the same way.
+ *
+ * Exported for the self test, which is where the rule is written down.
+ */
+export function joinsLast(last, rank) {
+  if (!last) return false;
+  /* A line of nothing but rotations is not a step yet — you turned the cube to
+     set something up. Whatever comes next joins it, which is how a y' in the
+     middle of F2L ends up on the line with the pair it was for. */
+  if (allRotations(last.alg)) return true;
+  return rank <= last.rank;
+}
+
+/**
  * Add moves to the reconstruction.
- * Moves you type run together into one line for as long as you stay in the
- * same phase - typing R U2 F' should read as a step, not as three. A clicked
- * suggestion always starts its own line, because that is how you thought of it.
+ * Moves run together into one line for as long as they are still the same
+ * piece of work — typing R U2 F', or typing U' and then clicking the alg the
+ * panel suggests for that pair, is one step, not two.
  */
 function addStep(alg, { typed = false } = {}) {
   /* Stored the way the cube draws it rather than the way it was typed, so a
@@ -515,12 +627,8 @@ function addStep(alg, { typed = false } = {}) {
   const last = S.steps.at(-1);
   const a = look();
   const rank = rankOf(a);
-  /* A step made only of rotations is not a step yet — you turned the cube to
-     set something up. Whatever comes next joins it, which is how a y' in the
-     middle of F2L ends up on the line with the pair it was for. */
-  const openRotation = last && allRotations(last.alg);
-  if (openRotation || (typed && last?.typed && rank <= last.rank)) last.alg = `${last.alg} ${clean}`;
-  else S.steps.push({ alg: clean, phase: a.phase, rank, typed });
+  if (joinsLast(last, rank)) last.alg = `${last.alg} ${clean}`;
+  else S.steps.push({ alg: clean, phase: a.phase, rank });
   // Watch it happen. Snapping to the answer told you nothing about the moves,
   // which is the whole reason the cube is on screen — and the redraw is told
   // to leave the cube alone so the move is the only thing it is asked to do.
@@ -615,6 +723,14 @@ function build() {
   ui.scrambleBox.addEventListener('change', () => setScramble(ui.scrambleBox.value));
 
   const top = el('div', { class: 'rc-top' },
+    /* The same mark the timer wears. A full-screen surface with no badge on it
+       reads as somewhere else's page, which is exactly what this is not. */
+    el('span', { class: 'rc-brand' },
+      el('img', {
+        class: 'brand-mark', src: 'assets/logo-96.png', alt: '',
+        width: '96', height: '96', decoding: 'async',
+      }),
+      el('span', { class: 'brand-text', html: 'Tagda <b>Timer</b>' })),
     el('button', {
       class: 'ghost-btn sm', onclick: () => close(),
       html: '<svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg> back to timer',
@@ -627,17 +743,13 @@ function build() {
         onclick: () => copy(S.scramble).then(() => toast('Scramble copied')),
         html: '<svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/></svg>',
       }),
+      /* Share lives in two places on purpose. It reads better as a word next to
+         the reconstruction it is going to make a card of, but this is where it
+         has always been and where hands already go for it, and a button that
+         moves is a button that has gone missing. */
       el('button', {
-        class: 'ghost-btn sm', title: 'Copy the reconstruction as text',
-        onclick: () => {
-          if (!S.steps.length) return toast('Nothing to copy yet');
-          copy(reconText()).then(() => toast('Reconstruction copied', { kind: 'good' }));
-        },
-        html: '<svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg>',
-      }),
-      el('button', {
-        class: 'ghost-btn sm', title: 'Make a share card of this reconstruction',
-        onclick: shareCard,
+        class: 'ghost-btn sm rc-share-icon', title: 'Make a share card of this reconstruction',
+        'aria-label': 'Share this reconstruction', onclick: shareCard,
         html: '<svg viewBox="0 0 24 24"><path d="M4 12v7a2 2 0 002 2h12a2 2 0 002-2v-7M12 3v13M8 7l4-4 4 4"/></svg>',
       }),
     ),
@@ -656,6 +768,11 @@ function build() {
      the thing it produced, which is where you are actually looking. */
   ui.scrambleEcho = el('div', { class: 'rc-cube-scramble mono', title: 'The scramble this position came from' });
   ui.stage = el('div', { class: 'rc-cube' });
+  ui.faceTags = {};
+  ui.faces = el('div', { class: 'rc-faces', hidden: true, 'aria-hidden': 'true' },
+    ...Object.keys(FACE_NORMALS).map(f =>
+      (ui.faceTags[f] = el('span', { class: 'rc-face', text: f }))));
+  ui.stage.append(ui.faces);
   ui.strip = el('div', { class: 'rc-strip' });
 
   ui.replayBtn = el('button', {
@@ -719,7 +836,22 @@ function build() {
     el('section', { class: 'panel' },
       el('div', { class: 'panel-head' },
         el('span', { text: 'Reconstruction' }),
+        /* Copying it out and making a card of it are the two things you do
+           with a finished reconstruction, and they used to be unlabelled icons
+           in the scramble bar at the top — next to the reconstruction is where
+           you look for them, and a word is what you look for. */
         el('span', { class: 'rc-head-tools' },
+          el('button', {
+            class: 'ghost-btn sm', text: 'copy', title: 'Copy the reconstruction as text',
+            onclick: () => {
+              if (!S.steps.length) return toast('Nothing to copy yet');
+              copy(reconText()).then(() => toast('Reconstruction copied', { kind: 'good' }));
+            },
+          }),
+          el('button', {
+            class: 'ghost-btn sm rc-share', text: 'share',
+            title: 'Make a share card of this reconstruction', onclick: shareCard,
+          }),
           el('button', { class: 'ghost-btn sm', text: 'undo', onclick: undo }),
           el('button', { class: 'ghost-btn sm danger', text: 'clear', onclick: () => { S.steps = []; commit(); } }))),
       ui.steps),
@@ -841,7 +973,10 @@ async function mountPlayer() {
   player.setAttribute('back-view', 'top-right');
   player.setAttribute('visualization', '3D');
   player.setAttribute('tempo-scale', '2.2');
+  /* After the letters, which are already in the stage and sit on top of the
+     cube by z-index rather than by being later in the document. */
   ui.stage.append(player);
+  watchCamera();
 }
 
 function setScramble(text) {

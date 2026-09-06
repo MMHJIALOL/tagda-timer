@@ -218,6 +218,53 @@ function render(path, frame) {
 
 const byNiceness = (a, b) => a.moves - b.moves || a.awkward - b.awkward || a.alg.localeCompare(b.alg);
 
+/* ---------------- the same solution, from a different grip ----------------
+   `B' U2 B U' B' U B` and `y R' U2 R U' R' U R` are the same eight turns of
+   the same cube. They are not the same thing to do: one of them is a pile of
+   B moves and the other is the F2L case everybody's hands already know. The
+   search cannot choose between them, because the difference is not in the
+   solution at all — it is in which way round you are holding it when you
+   write it down.
+
+   So each answer is offered twice: as it reads from where you are, and from
+   the one rotated grip that reads better. A rotation is not a move, so this
+   costs nothing on the counter, and `byNiceness` will float the comfortable
+   spelling above the awkward one all by itself.
+
+   Only y rotations, because they are the ones that leave the cross where it
+   is. x and z would move the face the whole search was built around. */
+const GRIPS = ['y', "y'", 'y2'];
+
+/* Rotations move no pieces, only the meaning of the letters after them, so
+   the position handed in here is irrelevant — only the frame comes back. */
+const FRAME_PROBE = new Uint8Array(40);
+const rotatedFrame = (frame, rot) => applyAlg(FRAME_PROBE, rot, frame)?.frame || frame;
+
+/**
+ * One solution, written every way worth reading: as it stands, and — when a
+ * rotation genuinely makes it easier on the hands — from that grip too.
+ *
+ * At most one rotated spelling, and only a strictly more comfortable one. Four
+ * spellings of the same eight turns is not four suggestions, it is one
+ * suggestion crowding three real alternatives off the list.
+ */
+function variants(path, frame) {
+  const base = { ...render(path, frame), frame, rot: '' };
+  let best = null;
+  for (const rot of GRIPS) {
+    const rf = rotatedFrame(frame, rot);
+    const r = render(path, rf);
+    if (r.awkward >= base.awkward) continue;
+    if (best && r.awkward >= best.awkward) continue;
+    // The rotation itself costs a point, so a tie is settled by not rotating.
+    best = { alg: `${rot} ${r.alg}`, moves: r.moves, awkward: r.awkward + 1, frame: rf, rot };
+  }
+  return best ? [base, best] : [base];
+}
+
+/** How a row explains itself, once a grip is part of the answer. */
+const gripNote = (note, rot) => (rot ? `${note} · from a ${rot} grip` : note);
+
 /* =========================================================
    Goal builders
    ========================================================= */
@@ -438,8 +485,10 @@ export function suggest(state, frame, analysis, { limit = 20, timeMs = 1500, cro
     const { best, solutions } = solveGoal(state, crossGoal(homes), h, { want: 120, slack: 2, maxDepth: 9, budget });
     out.best = best;
     const crossLabel = crossName || `${analysis.face} cross`;
-    out.list = dedupe(solutions.map(p => ({ ...render(p, frame), label: crossLabel, note: 'cross' })))
-      .sort(byNiceness).slice(0, limit);
+    out.list = dedupe(solutions.flatMap(p => variants(p, frame).map(v => ({
+      alg: v.alg, moves: v.moves, awkward: v.awkward,
+      label: crossLabel, note: gripNote('cross', v.rot),
+    })))).sort(byNiceness).slice(0, limit);
     out.partial = budget.left <= 0;
     return out;
   }
@@ -497,8 +546,16 @@ export function suggest(state, frame, analysis, { limit = 20, timeMs = 1500, cro
     );
     if (b >= 0 && (best < 0 || b < best)) best = b;
     for (const p of solutions) {
-      const where = [...slot.label].map(f => toUserFace(frame, f)).join('');
-      all.push({ ...render(p, frame), label: `${where} pair`, note: 'f2l' });
+      /* The slot is named from the grip the line is written in. Turn the cube
+         and the FR pair is the BR pair — calling it the old name is worse than
+         not naming it at all. */
+      for (const v of variants(p, frame)) {
+        const where = [...slot.label].map(f => toUserFace(v.frame, f)).join('');
+        all.push({
+          alg: v.alg, moves: v.moves, awkward: v.awkward,
+          label: `${where} pair`, note: gripNote('f2l', v.rot),
+        });
+      }
     }
   }
   /* If nothing keeps everything intact inside the depth limit, look again
@@ -527,8 +584,13 @@ export function suggest(state, frame, analysis, { limit = 20, timeMs = 1500, cro
       );
       if (b >= 0 && (best < 0 || b < best)) best = b;
       for (const p of solutions) {
-        const where = [...slot.label].map(f => toUserFace(frame, f)).join('');
-        all.push({ ...render(p, frame), label: `${where} pair`, note: 'disturbs a finished pair' });
+        for (const v of variants(p, frame)) {
+          const where = [...slot.label].map(f => toUserFace(v.frame, f)).join('');
+          all.push({
+            alg: v.alg, moves: v.moves, awkward: v.awkward,
+            label: `${where} pair`, note: gripNote('disturbs a finished pair', v.rot),
+          });
+        }
       }
     }
   }
