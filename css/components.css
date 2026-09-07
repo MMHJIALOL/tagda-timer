@@ -39,10 +39,30 @@
 .icon-btn:active { transform: translateY(0) scale(.94); }
 .icon-btn.on { color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); border-color: color-mix(in srgb, var(--accent) 34%, transparent); }
 
-.account-avatar { width: 20px; height: 20px; border-radius: 50%; object-fit: cover; }
+/* The box never changes shape between "square icon" and "pill with a name"
+   at the CSS level — .account-box just adds the extra room and lets
+   .account-username decide whether there's anything to show; sync-ui.js
+   toggles that content, not this rule. Modeled on .seg-btn (same height,
+   same border/background treatment) rather than the plain icon squares
+   either side of it, on purpose — a box reads as "this is your thing", a
+   bare icon among a row of bare icons doesn't. */
+.account-box {
+  width: auto; display: flex; align-items: center; padding: 0 10px 0 8px; gap: 7px;
+  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+  background: color-mix(in srgb, var(--surface) 45%, transparent);
+}
+.account-box.on { border-color: color-mix(in srgb, var(--border) 80%, transparent); background: color-mix(in srgb, var(--surface) 45%, transparent); }
+.account-glyph { display: grid; place-items: center; width: 17px; height: 17px; flex: none; }
+.account-username {
+  font-size: .78rem; font-weight: 550; color: var(--text-dim);
+  max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.account-box:hover .account-username { color: var(--text); }
+
+.account-avatar { width: 20px; height: 20px; border-radius: 50%; object-fit: cover; flex: none; }
 .account-initial {
   width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center;
-  font-size: .68rem; font-weight: 650; background: var(--accent); color: var(--on-accent);
+  font-size: .68rem; font-weight: 650; background: var(--accent); color: var(--on-accent); flex: none;
 }
 
 .seg { display: flex; }

@@ -114,3 +114,26 @@ export async function getDatabaseHandle() {
   const app = appMod.getApp(APP_NAME);
   return { ...dbMod, db: dbMod.getDatabase(app), auth };
 }
+
+/** Lazily loads Storage — only reached from "Change avatar", never at boot. */
+export async function getStorageHandle() {
+  const { appMod, auth } = await ensureSdk();
+  const base = `https://www.gstatic.com/firebasejs/${FIREBASE_VERSION}`;
+  const storageMod = await import(/* @vite-ignore */ `${base}/firebase-storage.js`);
+  const app = appMod.getApp(APP_NAME);
+  return { ...storageMod, storage: storageMod.getStorage(app), auth };
+}
+
+/**
+ * `signInWithPopup`'s returned user and the live `auth.currentUser` are
+ * snapshots — updating one's `photoURL` doesn't retroactively change an
+ * object already handed to a caller. `updateProfile` writes it to the
+ * account itself (so it comes back correctly on the next sign-in on any
+ * device too); the caller still needs to re-render off the fresh
+ * `auth.currentUser` afterward, which this returns for convenience.
+ */
+export async function updateUserProfile(patch) {
+  const { authMod, auth } = await ensureSdk();
+  await authMod.updateProfile(auth.currentUser, patch);
+  return auth.currentUser;
+}

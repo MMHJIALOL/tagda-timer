@@ -9,7 +9,7 @@
 import { el } from './util.js';
 import { toast } from './toast.js';
 import { popover } from './popover.js';
-import { onAuthChange, signIn, signOutUser } from './sync-auth.js';
+import { onAuthChange, signIn, signOutUser, getStorageHandle, updateUserProfile } from './sync-auth.js';
 import { initSync } from './sync.js';
 import { KV, onWrite } from './db.js';
 
@@ -145,19 +145,29 @@ const ACCOUNT_ICON = '<svg viewBox="0 0 24 24"><circle cx="12" cy="8.5" r="3.4"/
 
 let _topBarUser = null;
 
+/**
+ * Builds the box's contents fresh each time rather than patching pieces —
+ * it's cheap (a handful of nodes) and there's no state (scroll position,
+ * focus) worth preserving across a sign-in/sign-out/rename, unlike the
+ * settings drawer this deliberately doesn't rebuild wholesale each time.
+ */
 function renderAccountButton(btn, user) {
   _topBarUser = user;
   btn.innerHTML = '';
   if (user) {
     btn.classList.add('on');
-    btn.title = `Signed in as ${displayNameOf(user)}`;
-    btn.append(user.photoURL
-      ? el('img', { class: 'account-avatar', src: user.photoURL, alt: '', referrerpolicy: 'no-referrer' })
-      : el('span', { class: 'account-initial', text: displayNameOf(user).charAt(0).toUpperCase() }));
+    const name = displayNameOf(user);
+    btn.title = `Signed in as ${name}`;
+    btn.append(
+      user.photoURL
+        ? el('img', { class: 'account-avatar', src: user.photoURL, alt: '', referrerpolicy: 'no-referrer' })
+        : el('span', { class: 'account-initial', text: name.charAt(0).toUpperCase() }),
+      el('span', { class: 'account-username', text: name }),
+    );
   } else {
     btn.classList.remove('on');
     btn.title = 'Sign in to sync your solves';
-    btn.innerHTML = ACCOUNT_ICON;
+    btn.append(el('span', { class: 'account-glyph', html: ACCOUNT_ICON }));
   }
 }
 
@@ -181,6 +191,63 @@ function editUsername(btn, setSetting) {
   renderAccountButton(btn, _topBarUser);
 }
 
+const MAX_AVATAR_UPLOAD_BYTES = 8 * 1024 * 1024;
+
+/**
+ * Downscales and center-crops an arbitrary uploaded photo to a small square
+ * JPEG before it ever reaches the network — an avatar shown at ~20px has no
+ * use for whatever multi-megapixel photo a phone camera actually produced,
+ * and uploading it as-is would be a real, ongoing storage/bandwidth cost for
+ * zero visible benefit. Exported for the pure-logic test in sync-test.html
+ * (which drives it with a synthetic canvas image, no real photo needed).
+ */
+export async function resizeImageToSquare(file, size = 256) {
+  const bitmap = await createImageBitmap(file);
+  const side = Math.min(bitmap.width, bitmap.height);
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  canvas.getContext('2d').drawImage(
+    bitmap, (bitmap.width - side) / 2, (bitmap.height - side) / 2, side, side, 0, 0, size, size);
+  bitmap.close?.();
+  return new Promise((resolve, reject) => {
+    canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('could not encode image')), 'image/jpeg', 0.85);
+  });
+}
+
+/**
+ * One file, one path per user (`avatars/<uid>`) — a new upload overwrites
+ * the last one rather than accumulating, so there's never an orphaned photo
+ * left in Storage costing money after someone changes it twice. Firebase
+ * Auth's `photoURL` itself is what makes the new photo show up on other
+ * devices too — nothing here needs to touch the Realtime Database.
+ */
+function changeAvatar(btn) {
+  const input = el('input', { type: 'file', accept: 'image/*', style: { display: 'none' } });
+  document.body.append(input);
+  input.addEventListener('change', async () => {
+    const file = input.files?.[0];
+    input.remove();
+    if (!file) return;
+    if (!file.type.startsWith('image/')) { toast('That file is not an image', { kind: 'bad' }); return; }
+    if (file.size > MAX_AVATAR_UPLOAD_BYTES) { toast('That image is too large (max 8MB)', { kind: 'bad' }); return; }
+    try {
+      const blob = await resizeImageToSquare(file);
+      const { storage, ref, uploadBytes, getDownloadURL, auth } = await getStorageHandle();
+      const sref = ref(storage, `avatars/${auth.currentUser.uid}`);
+      await uploadBytes(sref, blob, { contentType: 'image/jpeg' });
+      const url = await getDownloadURL(sref);
+      const user = await updateUserProfile({ photoURL: url });
+      renderAccountButton(btn, user);
+      toast('Avatar updated', { kind: 'good' });
+    } catch (err) {
+      console.warn('[sync] avatar upload failed', err?.code || err);
+      toast('Could not update avatar — try again', { kind: 'bad' });
+    }
+  }, { once: true });
+  input.click();
+}
+
 /**
  * The top-bar account icon (index.html's #btn-account) — the "is my account
  * connected" answer that's visible from the home screen, not three clicks
@@ -201,6 +268,7 @@ export function wireAccountButton(btn, { setSetting } = {}) {
       popover(btn, [
         { title: displayNameOf(_topBarUser) },
         { label: 'Edit username', onSelect: () => editUsername(btn, setSetting) },
+        { label: 'Change avatar', onSelect: () => changeAvatar(btn) },
         { label: 'Sign out', onSelect: async () => {
           await signOutUser();
           toast('Signed out — your solves stay on this device', { kind: '' });
