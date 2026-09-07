@@ -65,11 +65,18 @@ export function mergeLearn(localMap, remoteMap) {
 
 /**
  * What to do with the account's existing cloud data on sign-in.
- *   'upload' — cloud has nothing yet (or nothing local to lose either way);
+ *   'upload' — cloud has nothing yet (or nothing local to lose either way),
+ *              or this device has already merged with this account once;
  *              no ambiguity, no dialog.
- *   'merge'  — both sides have solves; show the merge dialog, then union.
+ *   'merge'  — two histories that have never met; show the merge dialog,
+ *              then union.
+ *
+ * `mergedBefore` is what keeps the dialog to once per account per device.
+ * The counts alone can never say "already done": the merge writes the union
+ * to both sides, so both stay above zero forever and every reload asks again.
  */
-export function decideMergeAction({ localCount, cloudCount }) {
+export function decideMergeAction({ localCount, cloudCount, mergedBefore }) {
+  if (mergedBefore) return 'upload';
   if (cloudCount > 0 && localCount > 0) return 'merge';
   return 'upload';
 }
@@ -98,6 +105,25 @@ const _kvTimers = new Map();      // key -> setTimeout id
 const _lastRemoteJSON = new Map();
 
 function userPath(...parts) { return ['users', _uid, ...parts].join('/'); }
+
+const DEVICE_KEY = 'sync:deviceId';
+
+/**
+ * A stable id for this browser, so an account can remember which devices it
+ * has already merged with and never ask twice. localStorage rather than the
+ * KV store because this is read on the sign-in path, synchronously, before
+ * anything else touches IndexedDB — and losing it costs at most one extra
+ * dialog, never any data.
+ */
+function deviceId() {
+  let id = null;
+  try { id = localStorage.getItem(DEVICE_KEY); } catch {}
+  if (!id) {
+    id = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
+    try { localStorage.setItem(DEVICE_KEY, id); } catch {}
+  }
+  return id;
+}
 
 async function queueWrite(entry) {
   return withQueueLock(async () => {
@@ -267,14 +293,19 @@ function detachListeners() {
 export async function mergeOnSignIn(user) {
   const [localSolves, localSessions] = await Promise.all([Solves.all(), Sessions.all()]);
   const { db, ref, get } = _sdk;
-  const [cloudSolvesSnap, cloudSessionsSnap] = await Promise.all([
+  const [cloudSolvesSnap, cloudSessionsSnap, mergedSnap] = await Promise.all([
     get(ref(db, userPath('solves'))),
     get(ref(db, userPath('sessions'))),
+    get(ref(db, userPath('mergedDevices', deviceId()))),
   ]);
   const cloudSolves = cloudSolvesSnap.exists() ? Object.values(cloudSolvesSnap.val()) : [];
   const cloudSessions = cloudSessionsSnap.exists() ? Object.values(cloudSessionsSnap.val()) : [];
 
-  const action = decideMergeAction({ localCount: localSolves.length, cloudCount: cloudSolves.length });
+  const action = decideMergeAction({
+    localCount: localSolves.length,
+    cloudCount: cloudSolves.length,
+    mergedBefore: mergedSnap.exists(),
+  });
   if (action === 'upload') {
     await performMerge({ localSolves, localSessions, cloudSolves, cloudSessions });
     return null;
@@ -310,6 +341,11 @@ async function performMerge({ localSolves, localSessions, cloudSolves, cloudSess
   if (Object.keys(mergedLearn).length) updates[userPath('learn')] = mergedLearn;
   const settings = await KV.get('settings', null);
   if (settings) updates[userPath('settings')] = settings;
+  // Stamped here rather than by the dialog, so the silent path counts too:
+  // once this device and this account have been reconciled, every later
+  // sign-in — including the one a page reload performs for you — goes
+  // straight to live sync with nothing to confirm.
+  updates[userPath('mergedDevices', deviceId())] = Date.now();
   await pushUpdateOrQueue(updates);
 }
 
