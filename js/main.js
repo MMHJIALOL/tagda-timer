@@ -2569,13 +2569,23 @@ function wireAccountButtonOnFirstClick() {
     if (!alreadyWired) btn.click(); // now caught by the real handler just attached
   }, { once: true });
 
-  // Warm the Firebase Auth SDK on hover/focus/touch-down — i.e. on the
-  // signal that arrives just before the click, not on the click itself.
-  // Without this, fetching the SDK for the first time happens inside the
-  // click handler, and Chrome drops popup permission across that fetch —
-  // the very first "sign in" click on a fresh page load would otherwise
-  // reliably fail with auth/popup-blocked instead of opening anything.
-  const preload = async () => (await import('./sync-auth.js')).preloadAuth();
+  // Warm the Firebase Auth SDK *and* sync-ui.js itself on hover/focus/
+  // touch-down — i.e. on the signal that arrives just before the click, not
+  // on the click itself. The click handler above awaits `import('./sync-ui.js')`
+  // before replaying the click, and on a fresh, uncached page load (a real
+  // deploy, not a warm dev-server cache) that fetch is slow enough that
+  // Chrome drops popup permission across the gap — the very first "sign in"
+  // click reliably fails with auth/popup-blocked instead of opening
+  // anything. Preloading both modules here means the click handler's
+  // `import()` calls resolve from cache, so nothing async stands between
+  // the click and signInWithPopup.
+  const preload = async () => {
+    const [{ preloadAuth }] = await Promise.all([
+      import('./sync-auth.js'),
+      import('./sync-ui.js'),
+    ]);
+    preloadAuth();
+  };
   btn.addEventListener('mouseenter', preload, { once: true });
   btn.addEventListener('focus', preload, { once: true });
   btn.addEventListener('pointerdown', preload, { once: true });
