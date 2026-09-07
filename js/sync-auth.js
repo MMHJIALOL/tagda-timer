@@ -46,6 +46,12 @@ async function ensureSdk() {
     authMod.onAuthStateChanged(auth, (user) => {
       for (const fn of _listeners) fn(user);
     });
+    // Picks up a signInWithRedirect() from the signIn() fallback below —
+    // a no-op (resolves null) on every visit that isn't the page load right
+    // after that redirect. Not awaited: the SDK handle is usable immediately,
+    // and onAuthStateChanged above will fire again once this resolves a user.
+    authMod.getRedirectResult(auth)
+      .catch(err => console.warn('[sync] redirect sign-in failed', err?.code || err));
     _sdk = { appMod, authMod, auth };
     return _sdk;
   })();
@@ -78,10 +84,28 @@ export function currentUser() {
   return _sdk?.auth.currentUser ?? null;
 }
 
+/**
+ * signInWithPopup needs a cross-origin iframe on authDomain to relay the
+ * result back to the opener, over storage shared between the two — exactly
+ * what browsers that partition third-party storage by default (Firefox's
+ * strict tracking protection, Safari ITP) block. There the popup opens but
+ * can never report back, so any failure that isn't the user closing it
+ * falls back to signInWithRedirect, a plain same-origin navigation there
+ * and back that needs none of that. The fallback resolves this call with
+ * `null` — the page is navigating away, and the real result arrives from
+ * getRedirectResult() in ensureSdk() on the page load after the redirect.
+ */
 export async function signIn(provider = 'google') {
   const { authMod, auth } = await ensureSdk();
-  const cred = await authMod.signInWithPopup(auth, providerFor(authMod, provider));
-  return cred.user;
+  const p = providerFor(authMod, provider);
+  try {
+    const cred = await authMod.signInWithPopup(auth, p);
+    return cred.user;
+  } catch (err) {
+    if (err?.code === 'auth/popup-closed-by-user' || err?.code === 'auth/cancelled-popup-request') throw err;
+    await authMod.signInWithRedirect(auth, p);
+    return null;
+  }
 }
 
 /** Local IndexedDB is never touched here — signing out only ends the cloud session. */
