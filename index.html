@@ -149,6 +149,17 @@
     </button>
 
     <div class="topbar-right" id="topbar-right">
+      <!-- First in the row, deliberately: "is my account connected" should be
+           answerable at a glance from the home screen, not three clicks into
+           Settings. Signed out this is just the icon; js/sync-ui.js swaps in
+           an avatar (or initial) plus the account's username once signed in,
+           inside the same pill so the box never changes shape between
+           states — only its contents do. -->
+      <button class="icon-btn account-box" id="btn-account" title="Sign in to sync your solves">
+        <span class="account-glyph">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="8.5" r="3.4"/><path d="M4.8 20a7.2 7.2 0 0114.4 0"/></svg>
+        </span>
+      </button>
       <button class="icon-btn" id="btn-stats" title="Statistics  (A)">
         <svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>
       </button>

@@ -50,12 +50,34 @@ const wrap = (req) => new Promise((res, rej) => {
   req.onerror = () => rej(req.error);
 });
 
+/* ---------------- write hooks ----------------
+   Nothing in this file knows about the network — sync.js is the only
+   subscriber, and it reaches in through this tiny pub-sub instead of db.js
+   importing Firebase. Fired after the local write has already succeeded, so
+   a hook throwing or a slow cloud push can never affect what IndexedDB has. */
+const hooks = { solves: [], solvesBatch: [], sessions: [], kv: [] };
+
+export function onWrite(store, fn) {
+  hooks[store].push(fn);
+  return () => { hooks[store] = hooks[store].filter(f => f !== fn); };
+}
+
+function emit(store, record) {
+  for (const fn of hooks[store]) {
+    try { fn(record); } catch (err) { console.warn('[db] write hook failed', err); }
+  }
+}
+
 /* ---------------- solves ---------------- */
 export const Solves = {
-  async put(solve)      { return wrap((await tx('solves', 'readwrite')).put(solve)); },
+  async put(solve)      { const r = await wrap((await tx('solves', 'readwrite')).put(solve)); emit('solves', solve); return r; },
   async putMany(list)   {
     const store = await tx('solves', 'readwrite');
     await Promise.all(list.map(s => wrap(store.put(s))));
+    // One batch event, not one per solve — a 1000-solve csTimer import
+    // firing 1000 individual cloud writes would be needless amplification
+    // (and, offline, 1000 concurrent queue appends racing each other).
+    emit('solvesBatch', list);
   },
   async get(id)         { return wrap((await tx('solves')).get(id)); },
   async del(id)         { return wrap((await tx('solves', 'readwrite')).delete(id)); },
@@ -82,7 +104,7 @@ export const Solves = {
 
 /* ---------------- sessions ---------------- */
 export const Sessions = {
-  async put(s)  { return wrap((await tx('sessions', 'readwrite')).put(s)); },
+  async put(s)  { const r = await wrap((await tx('sessions', 'readwrite')).put(s)); emit('sessions', s); return r; },
   async get(id) { return wrap((await tx('sessions')).get(id)); },
   async del(id) { return wrap((await tx('sessions', 'readwrite')).delete(id)); },
   async all()   {
@@ -97,7 +119,7 @@ export const KV = {
     const v = await wrap((await tx('kv')).get(key));
     return v === undefined ? fallback : v;
   },
-  async set(key, value) { return wrap((await tx('kv', 'readwrite')).put(value, key)); },
+  async set(key, value) { const r = await wrap((await tx('kv', 'readwrite')).put(value, key)); emit('kv', { key, value }); return r; },
   async del(key)        { return wrap((await tx('kv', 'readwrite')).delete(key)); },
   /**
    * Every entry whose key starts with `prefix`, as a Map, in one transaction.

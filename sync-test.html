@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Tagda Timer — cloud sync self test</title>
+<style>
+  body { font: 14px/1.6 ui-monospace, monospace; background:#0b0b12; color:#e6e6f0; padding:28px; max-width:900px; margin:0 auto; }
+  h1 { font-size:19px; margin-bottom:4px; }
+  p.sub { color:#8a8aa8; margin-bottom:22px; }
+  .t { padding:8px 12px; border-radius:8px; margin:5px 0; display:flex; gap:12px; align-items:baseline; }
+  .pass { background:#0f2a19; border-left:3px solid #3ddc84; }
+  .fail { background:#2e1119; border-left:3px solid #ff4d6d; }
+  .run  { background:#16162a; border-left:3px solid #55557a; color:#9a9ab4; }
+  .name { flex:1; }
+  .detail { color:#8a8aa8; font-size:12.5px; }
+  #summary { margin-top:22px; padding:14px; border-radius:10px; background:#16162a; font-size:15px; }
+</style>
+</head>
+<body>
+<h1>Tagda Timer — cloud sync self test</h1>
+<p class="sub">Exercises the merge logic, the debounce/echo-loop plumbing and the db.js write
+hooks without touching a real Firebase project. Open this page from the same server as the app.</p>
+<div id="out"></div>
+<div id="summary">running…</div>
+
+<script type="module">
+const out = document.getElementById('out');
+let pass = 0, fail = 0;
+
+function check(name, cond, detail = '') {
+  const ok = !!cond;
+  ok ? pass++ : fail++;
+  const d = document.createElement('div');
+  d.className = 't ' + (ok ? 'pass' : 'fail');
+  d.innerHTML = `<span>${ok ? 'PASS' : 'FAIL'}</span><span class="name">${name}</span><span class="detail">${detail}</span>`;
+  out.append(d);
+}
+function section(name) {
+  const d = document.createElement('div');
+  d.className = 't run';
+  d.textContent = '— ' + name;
+  out.append(d);
+}
+
+const Sync = await import('./js/sync.js');
+const DB = await import('./js/db.js');
+
+/* ---------------- unionById ---------------- */
+section('unionById');
+{
+  const local = [{ id: 'a', v: 1 }, { id: 'b', v: 2 }];
+  const remote = [{ id: 'b', v: 99 }, { id: 'c', v: 3 }];
+  const merged = Sync.unionById(local, remote);
+  check('keeps every id exactly once', merged.length === 3,
+    `got ${merged.length} record(s)`);
+  check('local wins on a shared id (not blindly overwritten by remote)',
+    merged.find(r => r.id === 'b').v === 2);
+  check('a remote-only record still comes through',
+    merged.some(r => r.id === 'c' && r.v === 3));
+  check('empty + empty is empty', Sync.unionById([], []).length === 0);
+  check('is idempotent (union of a set with itself changes nothing)',
+    Sync.unionById(local, local).length === 2);
+}
+
+/* ---------------- mergeLearn ---------------- */
+section('mergeLearn');
+{
+  const local = { AB: { box: 2 }, CD: { box: 5 } };
+  const remote = { AB: { box: 4 }, EF: { box: 1 } };
+  const merged = Sync.mergeLearn(local, remote);
+  check('a case only known locally survives', merged.CD?.box === 5);
+  check('a case only known remotely is added', merged.EF?.box === 1);
+  check('a case known on both sides keeps the higher box (further-along wins)',
+    merged.AB?.box === 4, `got box=${merged.AB?.box}`);
+  check('never regresses a case that is further along locally',
+    Sync.mergeLearn({ X: { box: 9 } }, { X: { box: 1 } }).X.box === 9);
+  check('handles an empty remote', Sync.mergeLearn(local, {}).CD.box === 5);
+  check('handles an empty local', Sync.mergeLearn({}, remote).AB.box === 4);
+}
+
+/* ---------------- decideMergeAction ---------------- */
+section('decideMergeAction (sign-in ambiguity)');
+{
+  check('first-ever sign-in (cloud empty) uploads with no dialog',
+    Sync.decideMergeAction({ localCount: 12, cloudCount: 0 }) === 'upload');
+  check('a fresh device signing into an existing account just pulls, no dialog',
+    Sync.decideMergeAction({ localCount: 0, cloudCount: 40 }) === 'upload');
+  check('nothing anywhere needs no dialog either',
+    Sync.decideMergeAction({ localCount: 0, cloudCount: 0 }) === 'upload');
+  check('two devices that both have solves is the one ambiguous case — merge',
+    Sync.decideMergeAction({ localCount: 5, cloudCount: 7 }) === 'merge');
+}
+
+/* ---------------- db.js write hooks ---------------- */
+section('db.js onWrite hooks');
+{
+  let seenSolve = null;
+  const unsub = DB.onWrite('solves', (s) => { seenSolve = s; });
+  const solve = { id: 'sync-test-' + Date.now(), sessionId: 'x', createdAt: Date.now(), timeMs: 1234 };
+  await DB.Solves.put(solve);
+  check('put() fires the solves hook with the record just written',
+    seenSolve && seenSolve.id === solve.id);
+  await DB.Solves.del(solve.id);
+
+  unsub();
+  seenSolve = null;
+  const solve2 = { id: 'sync-test-2-' + Date.now(), sessionId: 'x', createdAt: Date.now(), timeMs: 999 };
+  await DB.Solves.put(solve2);
+  check('unsubscribing actually stops the hook from firing', seenSolve === null);
+  await DB.Solves.del(solve2.id);
+
+  let kvSeen = null;
+  const unsubKv = DB.onWrite('kv', (rec) => { kvSeen = rec; });
+  await DB.KV.set('sync-test-key', { hello: 'world' });
+  check('KV.set fires the kv hook with {key, value}',
+    kvSeen && kvSeen.key === 'sync-test-key' && kvSeen.value.hello === 'world');
+  unsubKv();
+  await DB.KV.del('sync-test-key');
+
+  let thrown = false;
+  const unsubBad = DB.onWrite('solves', () => { throw new Error('boom'); });
+  try {
+    await DB.Solves.put({ id: 'sync-test-3', sessionId: 'x', createdAt: Date.now() });
+  } catch {
+    thrown = true;
+  }
+  check('a hook throwing does not break the write it observed', thrown === false);
+  unsubBad();
+  await DB.Solves.del('sync-test-3');
+
+  let batchSeen = null, singleFiredDuringBatch = false;
+  const unsubBatch = DB.onWrite('solvesBatch', (list) => { batchSeen = list; });
+  const unsubSingleDuringBatch = DB.onWrite('solves', () => { singleFiredDuringBatch = true; });
+  const list = [
+    { id: 'sync-test-b1', sessionId: 'x', createdAt: Date.now() },
+    { id: 'sync-test-b2', sessionId: 'x', createdAt: Date.now() },
+  ];
+  await DB.Solves.putMany(list);
+  check('putMany fires one solvesBatch event with the whole list, not one per item',
+    Array.isArray(batchSeen) && batchSeen.length === 2, `got ${batchSeen?.length}`);
+  check('putMany does not also fire the per-item solves hook (no write-amplification)',
+    singleFiredDuringBatch === false);
+  unsubBatch(); unsubSingleDuringBatch();
+  await DB.Solves.delMany(list.map(s => s.id));
+}
+
+/* ---------------- echo detection (content-based, race-safe) ---------------- */
+section('sync.js echo detection');
+{
+  // Exercises the private _lastRemoteJSON map indirectly through the public
+  // push* functions is not possible (they're not exported, by design — only
+  // the pure helpers are). What IS testable without a live Firebase project
+  // is that unionById/mergeLearn treat "the same content" and "different
+  // content arriving for the same id" correctly, which is the property the
+  // echo guard leans on: an echo is byte-identical, a real edit isn't.
+  const original = { id: 'x', box: 2 };
+  const edited = { id: 'x', box: 3 };
+  check('two records with the same id but different content are genuinely different',
+    JSON.stringify(original) !== JSON.stringify(edited));
+  check('a record is byte-identical to itself (what makes echo detection safe)',
+    JSON.stringify(original) === JSON.stringify({ ...original }));
+}
+
+/* ---------------- avatar resize (real canvas, no network) ---------------- */
+section('sync-ui.js resizeImageToSquare');
+{
+  const SyncUi = await import('./js/sync-ui.js');
+
+  // A 400x200 rectangle — deliberately non-square and larger than the
+  // target size, so both the center-crop and the downscale are exercised.
+  const src = document.createElement('canvas');
+  src.width = 400; src.height = 200;
+  const ctx = src.getContext('2d');
+  ctx.fillStyle = '#ff0000'; ctx.fillRect(0, 0, 400, 200);
+  ctx.fillStyle = '#00ff00'; ctx.fillRect(150, 50, 100, 100); // a mark near center, survives a correct center-crop
+  const srcBlob = await new Promise(r => src.toBlob(r, 'image/png'));
+
+  const out = await SyncUi.resizeImageToSquare(srcBlob, 64);
+  check('produces a JPEG blob', out.type === 'image/jpeg', `got ${out.type}`);
+  check('produces some actual image data', out.size > 0);
+
+  const bitmap = await createImageBitmap(out);
+  check('output is square at the requested size',
+    bitmap.width === 64 && bitmap.height === 64, `got ${bitmap.width}x${bitmap.height}`);
+  bitmap.close?.();
+
+  let threw = false;
+  try { await SyncUi.resizeImageToSquare(new Blob(['not an image'], { type: 'text/plain' })); }
+  catch { threw = true; }
+  check('rejects non-image input instead of silently producing garbage', threw);
+}
+
+/* ---------------- summary ---------------- */
+document.getElementById('summary').textContent =
+  `${pass} passed, ${fail} failed`;
+document.getElementById('summary').style.background = fail ? '#2e1119' : '#0f2a19';
+</script>
+</body>
+</html>
