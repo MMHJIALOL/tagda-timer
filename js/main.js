@@ -4,7 +4,7 @@
 
 import { $, $$, el, uid, fmt, fmtLive, clamp, copy, download, toCSV, debounce,
          parseTimeInput, parseScrambleList } from './util.js';
-import { Solves, Sessions, KV, Assets, LetterPairs, importAll } from './db.js';
+import { Solves, Sessions, KV, Assets, LetterPairs, importAll, onWrite } from './db.js';
 import { EVENTS, EVENT_ORDER, MODES, modesForEvent, eventOf, modeOf } from './events.js';
 import { ScrambleQueue, setFor, cubingAvailable, generate } from './scramble.js';
 import { createLearn } from './learnmode.js';
@@ -2541,10 +2541,33 @@ async function startStackmat() {
  * icon shows their avatar — without having to touch either one.
  */
 async function startCloudSync() {
-  const { hasPersistedSession } = await import('./sync-auth.js');
-  if (!hasPersistedSession()) return;
+  const { hasPersistedSession, hasPendingRedirect, takeRedirectError } = await import('./sync-auth.js');
+  // hasPendingRedirect() is the other half, and without it the redirect
+  // sign-in path was dead on arrival: signInWithRedirect() sends the whole
+  // page to Google and back, and on the way back nothing is in localStorage
+  // yet — the account only exists once getRedirectResult() has run, and
+  // that only runs if this module gets loaded. Checking persistence alone
+  // meant we returned here, never loaded it, and the user landed back on a
+  // timer that looked exactly as signed-out as when they left.
+  if (!hasPersistedSession() && !hasPendingRedirect()) return;
   const { wireAccountButton } = await import('./sync-ui.js');
   wireAccountButton($('#btn-account'), { setSetting: app.setSetting });
+  const err = takeRedirectError();
+  if (err) toast('Could not finish signing in — try again', { kind: 'bad' });
+
+  // sync.js applies the account's settings straight into IndexedDB, which
+  // this module's in-memory `app.settings` knows nothing about — and
+  // persist() writes that copy back over the whole 'settings' key. Without
+  // this, a username (or theme, or any other setting) arriving from another
+  // device would live in the database for as long as it took anything at
+  // all to trigger a save, and then be overwritten by the stale copy from
+  // this page's boot. Adopting the keys as they land keeps the two in step;
+  // it's a no-op for the writes this page made itself, which are already
+  // the same values.
+  onWrite('kv', ({ key, value }) => {
+    if (key !== 'settings' || !value || value === app.settings) return;
+    Object.assign(app.settings, value);
+  });
 }
 
 /**
@@ -2589,6 +2612,25 @@ function wireAccountButtonOnFirstClick() {
   btn.addEventListener('mouseenter', preload, { once: true });
   btn.addEventListener('focus', preload, { once: true });
   btn.addEventListener('pointerdown', preload, { once: true });
+
+  // …and on the first interaction anywhere on the page, because the three
+  // signals above are not reliably early enough. `pointerdown` in
+  // particular fires about a frame before the `click` it precedes, nowhere
+  // near long enough to fetch two modules plus the Firebase Auth SDK off
+  // gstatic — so the click handler above still had to await an unresolved
+  // import(), the replayed btn.click() landed outside the user gesture, and
+  // the popup was blocked. Blocked is exactly what sends sign-in down the
+  // full-page redirect path, so warming this early is also what keeps the
+  // redirect the exception rather than the normal case.
+  //
+  // Not requestIdleCallback: that would download the Auth SDK for every
+  // visitor, including the one who reads the page and leaves, which is the
+  // cost startCloudSync() goes out of its way to avoid. Anyone who has
+  // touched the timer at all — pressed space once — is a plausible
+  // sign-in, and has minutes of head start rather than one frame.
+  const warm = () => preload().catch(() => {});
+  addEventListener('pointerdown', warm, { once: true, passive: true });
+  addEventListener('keydown', warm, { once: true });
 }
 
 /* =========================================================

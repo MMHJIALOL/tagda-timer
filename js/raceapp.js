@@ -27,9 +27,42 @@
  *
  * @type {null | {apiKey:string, authDomain:string, databaseURL:string, projectId:string, appId:string}}
  */
+/**
+ * Hosts that serve Firebase's sign-in helper from their OWN origin.
+ *
+ * `signInWithPopup` relays its result back to the opener through a hidden
+ * iframe on `authDomain`. Pointed at tagda-timer.firebaseapp.com while the
+ * app is served from somewhere else, that iframe is third-party — exactly
+ * what Firefox's strict tracking protection (so: Zen) and Safari's ITP
+ * partition storage for. The popup opens, Google signs you in, and the
+ * answer can never make it home; the only way through is a full-page
+ * redirect, which is a worse experience and loses the page's state.
+ *
+ * Firebase's own fix is to stop being third-party: proxy `/__/auth/*` to
+ * the firebaseapp.com handler from your own domain (see vercel.json) and
+ * name your own domain here, so the iframe and the popup are same-origin
+ * and there is no partitioned storage left to block.
+ *
+ * Listed host by host rather than just using `location.hostname`, because
+ * getting this wrong breaks sign-in outright rather than degrading it:
+ * on localhost, a Vercel preview URL, or a fork hosted anywhere without
+ * that rewrite, `/__/auth/*` is a 404 and there is nothing to relay
+ * through at all. Those keep the firebaseapp.com default.
+ *
+ * A host added here must ALSO be added to the Google Cloud OAuth client's
+ * "Authorized redirect URIs" as https://<host>/__/auth/handler — Google
+ * refuses the sign-in with redirect_uri_mismatch otherwise. See README.md's
+ * "Sign-in and the /__/auth/* proxy".
+ */
+const SAME_ORIGIN_AUTH_HOSTS = new Set(['tagdatimer.vercel.app']);
+
+const AUTH_DOMAIN = SAME_ORIGIN_AUTH_HOSTS.has(location.hostname)
+  ? location.hostname
+  : 'tagda-timer.firebaseapp.com';
+
 export const FIREBASE_CONFIG = {
   apiKey: 'AIzaSyD2PUpGwlnvC244V7L11Z5yDrsMS0Xl8dU',
-  authDomain: 'tagda-timer.firebaseapp.com',
+  authDomain: AUTH_DOMAIN,
   databaseURL: 'https://tagda-timer-default-rtdb.firebaseio.com',
   projectId: 'tagda-timer',
   appId: '1:1069147327222:web:f6e149b2b67cd82fa77ad7',

@@ -213,10 +213,28 @@ async function applyRemoteLearn(remote) {
   await KV.set('learn', merged);
 }
 
+/**
+ * Merged over the local settings, never used to replace them.
+ *
+ * Replacing was how an edited username could disappear: `settings` is one
+ * KV blob, so the first onValue after signing in overwrote every local key
+ * with whatever the account last uploaded. A device that had just been
+ * renamed, but whose debounced push hadn't landed yet, lost the new name to
+ * the old one on the way back down — and on the next sign-in it lost
+ * anything the account had never heard of at all.
+ *
+ * Remote wins key by key (it is the newer of the two by the time it
+ * arrives), local keys the cloud copy doesn't mention survive. `bld` is
+ * spread a level deeper for the same reason loadSettings() does it: a
+ * cloud copy written before a `bld` field existed would otherwise blank it.
+ */
 async function applyRemoteSettings(remote) {
   if (!remote || typeof remote !== 'object') return;
-  _lastRemoteJSON.set('kv:settings', JSON.stringify(remote));
-  await KV.set('settings', remote);
+  const local = (await KV.get('settings', {})) || {};
+  const merged = { ...local, ...remote };
+  if (local.bld || remote.bld) merged.bld = { ...(local.bld || {}), ...(remote.bld || {}) };
+  _lastRemoteJSON.set('kv:settings', JSON.stringify(merged));
+  await KV.set('settings', merged);
 }
 
 async function attachListeners() {
