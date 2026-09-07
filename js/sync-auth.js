@@ -16,7 +16,36 @@ import { FIREBASE_CONFIG, FIREBASE_VERSION } from './raceapp.js';
 
 const APP_NAME = 'tagda-sync';
 
+/**
+ * Set immediately before signInWithRedirect() and cleared once the result
+ * has been read back. It is the only thing that tells the page load AFTER
+ * that redirect apart from any other page load: the account has not been
+ * written to localStorage yet at that point, so hasPersistedSession() below
+ * is still false and boot would otherwise skip loading this module
+ * entirely — the sign-in would complete at Google and then be silently
+ * dropped on the way home, which is exactly the bug this exists to stop.
+ *
+ * sessionStorage, not localStorage: it is scoped to the tab that started
+ * the redirect and cannot outlive it, so an abandoned sign-in can't leave a
+ * marker behind that makes every future load wait on getRedirectResult().
+ */
+const PENDING_REDIRECT_KEY = 'tagda:auth:pendingRedirect';
+
+function markRedirectPending() {
+  try { sessionStorage.setItem(PENDING_REDIRECT_KEY, '1'); } catch { /* private mode — worst case is the fallback below */ }
+}
+
+/** True on the one page load that comes back from signInWithRedirect(). */
+export function hasPendingRedirect() {
+  try { return sessionStorage.getItem(PENDING_REDIRECT_KEY) === '1'; } catch { return false; }
+}
+
+function clearRedirectPending() {
+  try { sessionStorage.removeItem(PENDING_REDIRECT_KEY); } catch { /* nothing to clear */ }
+}
+
 let _sdk = null;       // { appMod, authMod, auth }
+let _redirectError = null;  // a failed getRedirectResult(), for the UI to report
 let _initPromise = null;
 const _listeners = new Set();
 
@@ -46,12 +75,22 @@ async function ensureSdk() {
     authMod.onAuthStateChanged(auth, (user) => {
       for (const fn of _listeners) fn(user);
     });
-    // Picks up a signInWithRedirect() from the signIn() fallback below —
-    // a no-op (resolves null) on every visit that isn't the page load right
-    // after that redirect. Not awaited: the SDK handle is usable immediately,
-    // and onAuthStateChanged above will fire again once this resolves a user.
-    authMod.getRedirectResult(auth)
-      .catch(err => console.warn('[sync] redirect sign-in failed', err?.code || err));
+    // Picks up a signInWithRedirect() from the signIn() fallback below. This
+    // is what actually completes that sign-in — until it runs, the account
+    // exists at Google and nowhere else. Awaited (only when a redirect is
+    // actually outstanding, so it costs an ordinary load nothing) so that
+    // callers which read auth.currentUser straight after ensureSdk() see the
+    // user rather than null, instead of racing onAuthStateChanged.
+    if (hasPendingRedirect()) {
+      try {
+        await authMod.getRedirectResult(auth);
+      } catch (err) {
+        console.warn('[sync] redirect sign-in failed', err?.code || err);
+        _redirectError = err;
+      } finally {
+        clearRedirectPending();
+      }
+    }
     _sdk = { appMod, authMod, auth };
     return _sdk;
   })();
@@ -85,15 +124,33 @@ export function currentUser() {
 }
 
 /**
- * signInWithPopup needs a cross-origin iframe on authDomain to relay the
- * result back to the opener, over storage shared between the two — exactly
- * what browsers that partition third-party storage by default (Firefox's
- * strict tracking protection, Safari ITP) block. There the popup opens but
- * can never report back, so any failure that isn't the user closing it
- * falls back to signInWithRedirect, a plain same-origin navigation there
- * and back that needs none of that. The fallback resolves this call with
+ * The only failures worth leaving the page for. Each one means the popup
+ * genuinely cannot complete in this browser — it was blocked, the relay
+ * iframe's storage is partitioned away (Firefox strict / Zen, Safari ITP,
+ * whenever authDomain is still third-party; see raceapp.js), or popups
+ * aren't a thing in this environment at all.
+ *
+ * Deliberately a list and not "anything that isn't the user cancelling":
+ * falling back on every error meant a wrong password, a network blip or a
+ * misconfigured project all silently threw the whole page at Google and
+ * came back with no explanation. A full-page redirect is a real cost —
+ * it tears down the running timer — so it is reserved for the cases that
+ * actually need it, and everything else surfaces as an error the UI can
+ * report.
+ */
+const REDIRECT_FALLBACK_CODES = new Set([
+  'auth/popup-blocked',
+  'auth/web-storage-unsupported',
+  'auth/operation-not-supported-in-this-environment',
+  'auth/internal-error',              // what the partitioned-storage relay times out as
+]);
+
+/**
+ * Tries the popup, and only leaves the page when the popup cannot possibly
+ * work (see REDIRECT_FALLBACK_CODES). The fallback resolves this call with
  * `null` — the page is navigating away, and the real result arrives from
- * getRedirectResult() in ensureSdk() on the page load after the redirect.
+ * getRedirectResult() in ensureSdk() on the page load after the redirect,
+ * which is why markRedirectPending() has to be set before we go.
  */
 export async function signIn(provider = 'google') {
   const { authMod, auth } = await ensureSdk();
@@ -102,10 +159,19 @@ export async function signIn(provider = 'google') {
     const cred = await authMod.signInWithPopup(auth, p);
     return cred.user;
   } catch (err) {
-    if (err?.code === 'auth/popup-closed-by-user' || err?.code === 'auth/cancelled-popup-request') throw err;
+    if (!REDIRECT_FALLBACK_CODES.has(err?.code)) throw err;
+    console.warn('[sync] popup sign-in unavailable, falling back to redirect', err?.code || err);
+    markRedirectPending();
     await authMod.signInWithRedirect(auth, p);
     return null;
   }
+}
+
+/** The last getRedirectResult() failure, if there was one. Read once, then forgotten. */
+export function takeRedirectError() {
+  const err = _redirectError;
+  _redirectError = null;
+  return err;
 }
 
 /** Local IndexedDB is never touched here — signing out only ends the cloud session. */

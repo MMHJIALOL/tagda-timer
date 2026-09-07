@@ -378,6 +378,38 @@ half the old app and half the new one.
 For GitHub Pages, push the folder to a `gh-pages` branch and enable Pages on it —
 the `.nojekyll` file stops Jekyll from touching anything.
 
+### Sign-in and the `/__/auth/*` proxy
+
+Google sign-in normally opens a popup, and that popup reports its result back to
+the page through a hidden iframe on Firebase's `authDomain`
+(`tagda-timer.firebaseapp.com`). Served from anywhere else, that iframe is
+third-party — so every browser that partitions third-party storage by default
+(Firefox strict mode, and therefore Zen; Safari's ITP) blocks the relay. The
+popup opens, Google signs you in, and the answer never makes it home. The only
+way through is a full-page redirect out to Google and back, which tears down the
+running timer.
+
+The fix is to stop being third-party. `vercel.json` rewrites `/__/auth/*` to the
+firebaseapp.com handler, so the iframe and the popup are served from the app's
+own origin and there is no partitioned storage left to block. Two things have to
+line up for that, and sign-in breaks outright if only one of them does:
+
+1. `SAME_ORIGIN_AUTH_HOSTS` in `js/raceapp.js` lists the hosts that actually
+   carry the rewrite. Anywhere else — localhost, a Vercel preview URL, a fork on
+   another host — `/__/auth/*` is a 404, so those keep the firebaseapp.com
+   default and fall back to the redirect flow.
+2. Each host in that list needs `https://<host>/__/auth/handler` added to the
+   **Authorized redirect URIs** of the project's OAuth client (Google Cloud
+   Console → APIs & Services → Credentials → "Web client (auto created by Google
+   Service)"), *and* the host itself in Firebase Console → Authentication →
+   Settings → Authorized domains. Without the first, Google refuses the sign-in
+   with `redirect_uri_mismatch`.
+
+Deploying to a new domain therefore means editing `SAME_ORIGIN_AUTH_HOSTS`, both
+console lists, and — on a host that is not Vercel — porting the rewrite to that
+host's own config (`netlify.toml` has no equivalent yet, because nothing is
+deployed there).
+
 Whatever the host, it must serve the whole folder (`vendor/` included) with
 JavaScript files as `text/javascript`. Every host above does that by default.
 Opening `index.html` straight off disk will not work: browsers refuse to load ES

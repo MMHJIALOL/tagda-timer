@@ -126,9 +126,7 @@ export function buildAccountRow() {
             try {
               await signIn('google');
             } catch (err) {
-              if (err?.code !== 'auth/popup-closed-by-user') {
-                toast('Could not sign in — try again', { kind: 'bad' });
-              }
+              reportSignInFailure(err);
             }
           },
         }),
@@ -139,6 +137,20 @@ export function buildAccountRow() {
   myUnsubPromise.then((unsub) => { _activeUnsub = unsub; });
   autoStart();
   return wrap;
+}
+
+/**
+ * Closing the popup yourself is a decision, not a failure, so it says
+ * nothing. Everything else gets the same short toast — but the code goes to
+ * the console, because these are the errors that are otherwise invisible:
+ * signIn() only leaves the page for the handful of codes a popup genuinely
+ * cannot survive, and anything else now lands here instead of silently
+ * redirecting, which is only an improvement if the code is findable.
+ */
+function reportSignInFailure(err) {
+  if (err?.code === 'auth/popup-closed-by-user' || err?.code === 'auth/cancelled-popup-request') return;
+  console.warn('[sync] sign-in failed', err?.code || err);
+  toast('Could not sign in — try again', { kind: 'bad' });
 }
 
 const ACCOUNT_ICON = '<svg viewBox="0 0 24 24"><circle cx="12" cy="8.5" r="3.4"/><path d="M4.8 20a7.2 7.2 0 0114.4 0"/></svg>';
@@ -275,9 +287,7 @@ export function wireAccountButton(btn, { setSetting } = {}) {
         } },
       ]);
     } else {
-      signIn('google').catch((err) => {
-        if (err?.code !== 'auth/popup-closed-by-user') toast('Could not sign in — try again', { kind: 'bad' });
-      });
+      signIn('google').catch(reportSignInFailure);
     }
   });
 
