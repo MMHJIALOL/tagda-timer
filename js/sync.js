@@ -65,11 +65,18 @@ export function mergeLearn(localMap, remoteMap) {
 
 /**
  * What to do with the account's existing cloud data on sign-in.
- *   'upload' — cloud has nothing yet (or nothing local to lose either way);
+ *   'upload' — cloud has nothing yet (or nothing local to lose either way),
+ *              or this device has already merged with this account once;
  *              no ambiguity, no dialog.
- *   'merge'  — both sides have solves; show the merge dialog, then union.
+ *   'merge'  — two histories that have never met; show the merge dialog,
+ *              then union.
+ *
+ * `mergedBefore` is what keeps the dialog to once per account per device.
+ * The counts alone can never say "already done": the merge writes the union
+ * to both sides, so both stay above zero forever and every reload asks again.
  */
-export function decideMergeAction({ localCount, cloudCount }) {
+export function decideMergeAction({ localCount, cloudCount, mergedBefore }) {
+  if (mergedBefore) return 'upload';
   if (cloudCount > 0 && localCount > 0) return 'merge';
   return 'upload';
 }
@@ -98,6 +105,29 @@ const _kvTimers = new Map();      // key -> setTimeout id
 const _lastRemoteJSON = new Map();
 
 function userPath(...parts) { return ['users', _uid, ...parts].join('/'); }
+
+/**
+ * Remembers that this browser has already reconciled with this account, so
+ * the merge dialog is asked once and never again.
+ *
+ * Deliberately local, not a flag in the database. A cloud flag would need a
+ * new node under users/<uid>, and the rules that permit it are published by
+ * hand into the Firebase console (RACE.md §4) — until someone does that, the
+ * write is rejected and the flag silently never sticks. localStorage needs
+ * no deployment step and is read synchronously on the sign-in path.
+ *
+ * Losing it (cleared site data, a private window) costs at most one extra
+ * dialog and never any data: the merge is a union either way.
+ */
+const mergedKey = (uid) => `sync:merged:${uid}`;
+
+function hasMergedBefore(uid) {
+  try { return !!localStorage.getItem(mergedKey(uid)); } catch { return false; }
+}
+
+function rememberMerged(uid) {
+  try { localStorage.setItem(mergedKey(uid), String(Date.now())); } catch {}
+}
 
 async function queueWrite(entry) {
   return withQueueLock(async () => {
@@ -274,7 +304,11 @@ export async function mergeOnSignIn(user) {
   const cloudSolves = cloudSolvesSnap.exists() ? Object.values(cloudSolvesSnap.val()) : [];
   const cloudSessions = cloudSessionsSnap.exists() ? Object.values(cloudSessionsSnap.val()) : [];
 
-  const action = decideMergeAction({ localCount: localSolves.length, cloudCount: cloudSolves.length });
+  const action = decideMergeAction({
+    localCount: localSolves.length,
+    cloudCount: cloudSolves.length,
+    mergedBefore: hasMergedBefore(_uid),
+  });
   if (action === 'upload') {
     await performMerge({ localSolves, localSessions, cloudSolves, cloudSessions });
     return null;
@@ -311,6 +345,11 @@ async function performMerge({ localSolves, localSessions, cloudSolves, cloudSess
   const settings = await KV.get('settings', null);
   if (settings) updates[userPath('settings')] = settings;
   await pushUpdateOrQueue(updates);
+  // Stamped here rather than by the dialog, so the silent path counts too:
+  // once this browser and this account have been reconciled, every later
+  // sign-in — including the one a page reload performs for you — goes
+  // straight to live sync with nothing to confirm.
+  rememberMerged(_uid);
 }
 
 let _writeUnsubs = [];
