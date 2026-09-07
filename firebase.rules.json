@@ -44,10 +44,6 @@
           }
         },
 
-        "mergedDevices": {
-          "$deviceId": { ".validate": "newData.isNumber()" }
-        },
-
         "settings": { ".validate": "newData.hasChildren() || !newData.exists()" },
         "learn": { ".validate": "newData.hasChildren() || !newData.exists()" },
 
