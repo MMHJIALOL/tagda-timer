@@ -9,6 +9,7 @@
      leave()           exit, and reap the room if you were the last out
      setProgress(p)    your status for the live round — never a time
      submitResult(r)   your time for the live round — write-once
+     sendChat(text)    say something to the room — refused while a round runs
      openRound(n, i)   publish a round's scramble (write-once, first wins)
      advanceRound(n)   move the room's pointer forward by exactly one
      unlockResults()   start reading other people's times
@@ -34,11 +35,31 @@
    Firebase read rules cascade downwards and cannot be revoked deeper in the
    tree, so `results` can never sit under a node that is broadly readable —
    which is exactly why there is no ".read" anywhere above it.
+
+   ---------------------------------------------------------
+   Why chat is frozen while a round is live
+   ---------------------------------------------------------
+
+   `chat` sits beside them and is readable by the whole room, always. That is
+   only safe because of the other half of its rule: a message cannot be
+   WRITTEN while `meta/phase` is 'racing'.
+
+   Gating the write on the sender having finished would not have worked, and
+   the reason is worth writing down. The leak is not about who is talking, it
+   is about who is reading: a player who has finished typing "7.2, finally"
+   hands their time to everybody still mid-solve, and no rule that looks at
+   the author can see that coming. The only gate that holds is one where
+   nobody can post at all until the round is over — at which point the times
+   are unlocked anyway and there is nothing left to leak.
+
+   So chat is a lobby thing. During a round the panel goes read-only and the
+   backlog stays on screen, which is also just correct: you are solving.
    =========================================================== */
 
 import {
   FIREBASE_CONFIG, FIREBASE_VERSION, ROOM_MAX,
   HEARTBEAT_MS, STALE_ROOM_MS, HARD_TIMEOUT_MS,
+  CHAT_MAX_LEN, CHAT_HISTORY,
 } from './raceapp.js';
 
 /* ---------------------------------------------------------
@@ -69,7 +90,24 @@ export function scrambleHash(str) {
 const emptySnapshot = () => ({
   roomId: null, uid: null, meta: null,
   players: {}, round: null, resultsUnlocked: false,
+  /* Oldest first, already trimmed to CHAT_HISTORY. An array rather than the
+     raw object because the only order a room's messages have is the one the
+     push ids give them, and every reader wants that order. */
+  chat: [],
 });
+
+/**
+ * Everything a message has to survive before the room will carry it.
+ *
+ * Trimmed, collapsed and capped here rather than only in the rules, so the
+ * two transports agree on what a message is — the local one has no rules
+ * behind it to fall back on.
+ *
+ * @returns {string} the text to send, or '' if there is nothing to send.
+ */
+export function cleanChat(text) {
+  return String(text || '').replace(/\s+/g, ' ').trim().slice(0, CHAT_MAX_LEN);
+}
 
 /* =========================================================
    Firebase transport
@@ -267,6 +305,44 @@ class FirebaseTransport extends EventTarget {
     };
     on(`${this._base}/meta`, 'meta');
     on(`${this._base}/players`, 'players');
+
+    /* Chat comes back as a query, not a plain node.
+     *
+     * A room that has been going for an hour has a chat log nobody is going
+     * to scroll, and onValue on the bare node would re-download all of it on
+     * every single message. limitToLast asks the server for the tail and then
+     * only ships what changed inside it. */
+    const chatQ = S.query(this._ref(`${this._base}/chat`), S.limitToLast(CHAT_HISTORY));
+    this._unsubs.push(S.onValue(chatQ, (snap) => {
+      const out = [];
+      // forEach on a query snapshot walks in the query's order; Object.entries
+      // on .val() would not, and push ids are only sortable because they were
+      // generated in order.
+      snap.forEach((child) => { out.push({ id: child.key, ...child.val() }); });
+      this.snap.chat = out;
+      this._emit();
+    }, () => {}));
+  }
+
+  /**
+   * Say something to the room.
+   *
+   * The 'racing' check the rule enforces is not repeated here on purpose: the
+   * UI already refuses to send during a round, and duplicating the condition
+   * in a third place is how the three of them drift apart. What this does do
+   * is let the rejection surface, so a caller can tell the difference between
+   * "sent" and "the room would not take it".
+   */
+  async sendChat(text) {
+    const body = cleanChat(text);
+    if (!body || !this.snap.roomId) return;
+    const S = this._sdk;
+    await S.push(this._ref(`${this._base}/chat`), {
+      uid: this.snap.uid,
+      name: this._seat?.name || 'Cuber',
+      text: body,
+      at: S.serverTimestamp(),
+    });
   }
 
   /** Point the round listeners at whatever meta.round now says. */
@@ -484,6 +560,7 @@ class LocalTransport extends EventTarget {
     if (!room) return;
     this.snap.meta = room.meta || null;
     this.snap.players = room.players || {};
+    this.snap.chat = room.chat || [];
     const n = room.meta?.round;
     if (n) {
       const r = room.rounds?.[n] || {};
@@ -579,6 +656,30 @@ class LocalTransport extends EventTarget {
       room.rounds ||= {}; room.rounds[n] ||= {}; room.rounds[n].results ||= {};
       if (room.rounds[n].results[this.snap.uid]) return false;   // write-once
       room.rounds[n].results[this.snap.uid] = { ...result, submittedAt: Date.now() };
+    });
+  }
+
+  /**
+   * The local room's chat, with the freeze kept by hand.
+   *
+   * There are no rules here to lean on — every tab is the same trusted
+   * origin — so the phase check that the Firebase side gets for free has to
+   * be written out. It is politeness rather than a guarantee, which is what
+   * everything else in this transport is too.
+   */
+  async sendChat(text) {
+    const body = cleanChat(text);
+    if (!body || !this.snap.roomId) return;
+    const uid = this.snap.uid;
+    this._mutate((room) => {
+      if (room.meta?.phase === 'racing') return false;
+      room.chat ||= [];
+      room.chat.push({
+        id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+        uid, name: room.players?.[uid]?.name || 'Cuber', text: body, at: Date.now(),
+      });
+      // Trimmed on write because there is no query to do it on read.
+      if (room.chat.length > CHAT_HISTORY) room.chat.splice(0, room.chat.length - CHAT_HISTORY);
     });
   }
 
