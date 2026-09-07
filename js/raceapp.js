@@ -131,3 +131,23 @@ export const CLOCK_SLACK_RATIO = 0.25;
  * priorities backwards.
  */
 export const SUSPECT_RATIO = 0.45;
+
+/* ---------------------------------------------------------
+   Room chat
+   --------------------------------------------------------- */
+
+/**
+ * Longest message the room will accept, matched by the database rule.
+ *
+ * Short on purpose. This is a sidebar tile a few hundred pixels wide sitting
+ * next to a running timer, not a messaging app — a cap that forces a sentence
+ * rather than a paragraph is the difference between chat you can read at a
+ * glance mid-round and chat that buries the room under it.
+ */
+export const CHAT_MAX_LEN = 200;
+
+/** How many messages the panel keeps on screen and asks the server for. */
+export const CHAT_HISTORY = 60;
+
+/** Minimum gap between two messages from the same client. */
+export const CHAT_COOLDOWN_MS = 700;

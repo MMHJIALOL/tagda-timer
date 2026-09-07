@@ -23,6 +23,7 @@ places:
 ```
 rounds/<n>/progress/<uid>   who is ready / inspecting / solving / finished   ← anyone
 rounds/<n>/results/<uid>    how fast they actually were                     ← gated
+chat/<msgId>                what people are saying to each other            ← anyone
 ```
 
 That split is the entire trick. It lets the panel show "3 of 5 finished" and a filling
@@ -43,6 +44,23 @@ You may read the results collection only once *your own* result is in it.
 submit a throwaway time to unlock the reveal, read everyone else's real times, then
 rewrite your own to just beat the best one. `!data.exists()` closes it.
 
+**Chat is frozen while a round is live.** The room has a chat box, and it is readable by
+everybody in the room, always. That is only safe because of the other half of its rule:
+
+```
+".write": "... && root.child('rooms/' + $roomId + '/meta/phase').val() != 'racing'"
+```
+
+Gating on the *sender* would not have worked, and the reason is the whole point. The leak
+is not about who is talking, it is about who is reading — a player who has finished typing
+"7.2, finally" hands their time to everybody still mid‑solve, and no rule that inspects the
+author can see that coming. The only gate that holds is one where nobody can post until the
+round is over, at which point the times are unlocked anyway and there is nothing left to
+leak.
+
+So chat is a lobby thing: talk before the round, talk after it, and during it the panel goes
+read‑only with the backlog still on screen. Which is also just correct — you are solving.
+
 ---
 
 ## 2. Anti‑cheat, honestly
@@ -57,6 +75,7 @@ No camera. No microphone. No screen recording. Ever. What there is:
 | `results/<uid>` write‑once | Submitting a decoy, peeking, then editing your time down |
 | `hash` must equal the round's `info/hash` | Claiming a time against a different, easier scramble |
 | `timeMs` checked against the server‑stamped solve window | Pausing the app and typing in a fabricated number afterwards |
+| `chat` writable only while `meta/phase` is not `'racing'` | Announcing your time to people who are still solving |
 
 The timing check compares your submitted time against the gap between the `startedAt` and
 `finishedAt` stamps written with `ServerValue.TIMESTAMP` — a clock the client cannot move.
@@ -71,6 +90,12 @@ real solve. The job is to make fabricating a time inconvenient, not to referee a
   solve of the year to protect a stranger has its priorities backwards.
 - Joining a room forces the input source back to the real spacebar timer, so times cannot be
   typed in during a race.
+- `meta` is writable by anybody in the room, so a modified client could set `phase` back to
+  `'lobby'` mid‑round purely to unfreeze the chat and post a time into it. It cannot do that
+  quietly: the phase is what every panel in the room is drawn from, so the round visibly ends
+  for everyone at the same moment. Locking `phase` down properly means deciding in a rule who
+  the host is, and host is derived rather than stored precisely so that nobody has to hold an
+  election — see §5.
 - The 24‑player room cap is checked by the client on join, not by the rules. Realtime Database
   rules cannot count children — `numChildren()` is a JS SDK method, not a rules one — so a
   genuinely enforced cap needs fixed seat slots or a Cloud Function. Neither is built.

@@ -20,11 +20,12 @@ import { eventOf } from './events.js';
 import { bestAvg } from './stats.js';
 import { shockwave, confetti, flash, chime } from './fx.js';
 import { themeColors } from './theme.js';
-import { createTransport, cloudAvailable, scrambleHash, isStale } from './race-net.js';
+import { createTransport, cloudAvailable, scrambleHash, isStale, cleanChat } from './race-net.js';
 import {
   ROOM_MAX, ROWS_BEFORE_FOLD, CODE_ALPHABET, CODE_LENGTH,
   GRACE_MS, SOFT_TIMEOUT_MS, SUSPECT_RATIO,
   CLOCK_SLACK_MS, CLOCK_SLACK_RATIO,
+  CHAT_MAX_LEN, CHAT_COOLDOWN_MS,
 } from './raceapp.js';
 
 /**
@@ -57,6 +58,19 @@ const SETTLE_MS = 700;
  * mechanism two clients starting at once already rely on.
  */
 const ORPHAN_ROUND_MS = 6000;
+
+/**
+ * The tray, in the order it is drawn.
+ *
+ * Twenty, deliberately — enough that the thing you want is usually there,
+ * few enough that it is two rows of ten in a 240px rail rather than a
+ * scrolling grid nobody reads to the bottom of. Weighted towards what a race
+ * room actually says: well played, unlucky, that was a lockup, go again.
+ */
+const RACE_EMOJI = [
+  '🔥', '😭', '💀', '😂', '🎉', '👏', '🧊', '⚡', '😤', '🙃',
+  '👀', '🤝', '💪', '🐢', '🎯', '😅', '🫠', '🥶', '🤯', '🏆',
+];
 
 /** How long to keep retrying a write the room needs before giving up on it. */
 const RETRY_MS = [400, 1200];
@@ -173,6 +187,15 @@ export class Race extends EventTarget {
     this.collapsedByUser = null;
     this._tick = 0;
     this._node = null;
+
+    /* ---- chat ----
+       Always open. It briefly had a fold and an unread badge, which was a
+       worse version of the same thing: the log is capped at a few lines and
+       collapses to one when the room is quiet, so folding it saved almost no
+       height and cost you every message you were not looking at. A chat you
+       have to open is a chat nobody uses. */
+    /** Last send, for the client-side cooldown. */
+    this._chatSentAt = 0;
   }
 
   /** Folded by default below the tile breakpoint; the user's choice wins. */
@@ -267,6 +290,7 @@ export class Race extends EventTarget {
     this.standings = this._loadStandings(roomId);
     this.prevRanks.clear();
     this.mySolves.clear();
+    this._resetChat();
 
     await this.net.join(roomId, {
       name: nick,
@@ -317,6 +341,7 @@ export class Race extends EventTarget {
     this._preopened = 0;
     this._prevRound = undefined;
     this._prevPhase = undefined;
+    this._resetChat();
     this._syncPanel();
     // Back to the session you were in, and to the app's own scrambles. The
     // session switch already pulls a fresh one, so only ask when it did not.
@@ -924,6 +949,21 @@ export class Race extends EventTarget {
         <button class="race-more" type="button" hidden></button>
         <div class="race-board" hidden></div>
         <div class="race-foot"></div>
+        <div class="race-chat">
+          <div class="race-chat-head"><span class="race-chat-label">Chat</span></div>
+          <div class="race-chat-log" role="log" aria-live="polite" aria-label="Room chat"></div>
+          <div class="race-emoji" hidden role="group" aria-label="Emoji"></div>
+          <form class="race-chat-form">
+            <button class="race-chat-emoji" type="button" title="Emoji" aria-label="Emoji" aria-expanded="false">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9 10h.01M15 10h.01M8.5 14.5a4.5 4.5 0 0 0 7 0"/></svg>
+            </button>
+            <input class="race-chat-input" type="text" autocomplete="off"
+                   maxlength="${CHAT_MAX_LEN}" placeholder="Say something…" aria-label="Message the room">
+            <button class="race-chat-send" type="submit" title="Send" aria-label="Send">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h13M12 5l7 7-7 7"/></svg>
+            </button>
+          </form>
+        </div>
         <div class="race-actions"></div>
       </div>`;
     host.append(node);
@@ -935,6 +975,40 @@ export class Race extends EventTarget {
       this.collapsedByUser = !this.collapsed;
       this._syncPanel();
     });
+
+    /* The chat is wired ONCE, here, and never rebuilt.
+     *
+     * Everything else in this panel is thrown away and redrawn from the
+     * snapshot, which is fine for rows and fatal for a text field: a rebuild
+     * between two keystrokes eats what you had typed and the caret with it.
+     * Only the log's contents and the input's disabled state are touched by
+     * the render — see _chat. */
+    const chat = node.querySelector('.race-chat');
+    chat.querySelector('.race-chat-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      this._sendChat();
+    });
+
+    /* Enter sends, said explicitly rather than left to the form's implicit
+       submission.
+     *
+     * A <form> with a submit button gives that for free, and it would very
+     * probably have worked — but "probably" is doing real work in a document
+     * that installs capture-phase keydown handlers on itself and swallows
+     * whole keystrokes to protect the timer. One handler growing a new early
+     * branch is all it would take, and the failure is silent: the box just
+     * stops sending and nobody can say when it started.
+     *
+     * stopPropagation goes with it so a message ending in a shortcut letter
+     * cannot also fire that shortcut. */
+    chat.querySelector('.race-chat-input').addEventListener('keydown', (e) => {
+      e.stopPropagation();
+      if (e.key !== 'Enter' || e.shiftKey) return;
+      e.preventDefault();
+      this._sendChat();
+    });
+
+    this._wireEmoji(chat);
 
     // Crossing the breakpoint changes which layout this panel is in, and with
     // it what "folded" should default to.
@@ -970,6 +1044,13 @@ export class Race extends EventTarget {
 
     if (!on) { this.app.refreshLayout?.(); return; }
     this._render(node);
+    /* Outside _render, and outside its signature guard.
+     *
+     * _render is throttled on a signature built from the rows, so a message
+     * arriving while nothing else changed would not have redrawn anything —
+     * and a message is exactly the kind of thing that arrives while nothing
+     * else is changing. */
+    this._syncChat();
     this.app.refreshLayout?.();
   }
 
@@ -1085,6 +1166,212 @@ export class Race extends EventTarget {
         toast('Left the room');
       },
     }));
+  }
+
+  /* ---------------- chat ---------------- */
+
+  /**
+   * Chat is a lobby thing.
+   *
+   * Not a UI preference — the database refuses the write too, and the reason
+   * is written out at the top of race-net.js. The short version: the leak
+   * this mode exists to prevent is about who is READING, so the only gate
+   * that holds is one where nobody can post while anybody is still solving.
+   */
+  get chatFrozen() { return this.phase === 'racing'; }
+
+  /** Everything currently on the wire, oldest first. */
+  get chatLog() { return this.snap?.chat || []; }
+
+  /**
+   * Build the emoji tray once, and open it under the composer on demand.
+   *
+   * A fixed grid rather than the platform picker, because there is no
+   * platform picker to reach: `emojipicker` is Chrome-on-ChromeOS only, and
+   * every cross-browser answer is a dependency measured in hundreds of
+   * kilobytes to put twenty characters into a text field. These are the ones
+   * a cubing room actually sends.
+   */
+  _wireEmoji(chat) {
+    const tray = chat.querySelector('.race-emoji');
+    const btn = chat.querySelector('.race-chat-emoji');
+    const input = chat.querySelector('.race-chat-input');
+
+    for (const ch of RACE_EMOJI) {
+      tray.append(el('button', {
+        class: 'race-emoji-btn', type: 'button', text: ch, title: ch,
+        onclick: () => {
+          /* Inserted at the caret, not appended. Appending is only ever right
+             when the caret happens to be at the end, and it is not right when
+             somebody goes back to drop a 🔥 into the middle of a sentence. */
+          const at = input.selectionStart ?? input.value.length;
+          const to = input.selectionEnd ?? at;
+          input.value = input.value.slice(0, at) + ch + input.value.slice(to);
+          const caret = at + ch.length;
+          input.setSelectionRange(caret, caret);
+          /* Focus goes back to the field, so the tray is a detour rather than
+             a destination — pick one, keep typing. */
+          input.focus();
+        },
+      }));
+    }
+
+    btn.addEventListener('click', () => {
+      if (tray.hidden) this._openEmoji(); else this._closeEmoji();
+    });
+
+    /* Click-away and Escape, because a tray that only closes via the button
+       that opened it is a tray people leave open by accident. Bound on the
+       document once, and harmless while hidden. */
+    document.addEventListener('click', (e) => {
+      if (tray.hidden) return;
+      if (e.target.closest('.race-emoji') || e.target.closest('.race-chat-emoji')) return;
+      this._closeEmoji();
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !tray.hidden) this._closeEmoji();
+    });
+  }
+
+  _openEmoji() {
+    const chat = this._node?.querySelector('.race-chat');
+    if (!chat || this.chatFrozen) return;
+    chat.querySelector('.race-emoji').hidden = false;
+    chat.querySelector('.race-chat-emoji').setAttribute('aria-expanded', 'true');
+  }
+
+  _closeEmoji() {
+    const chat = this._node?.querySelector('.race-chat');
+    if (!chat) return;
+    const tray = chat.querySelector('.race-emoji');
+    if (tray.hidden) return;
+    tray.hidden = true;
+    chat.querySelector('.race-chat-emoji').setAttribute('aria-expanded', 'false');
+  }
+
+  /**
+   * Forget the last room's log.
+   *
+   * `_chatSig` is the one that has to be cleared rather than merely being
+   * tidy: it is a cache key over the message ids, and two rooms whose logs
+   * are both empty produce the same key — so without this, walking out of one
+   * room and into another left the previous room's messages painted on the
+   * panel until somebody said something new.
+   */
+  _resetChat() {
+    this._chatSig = null;
+    this._chatSentAt = 0;
+    const input = this._node?.querySelector('.race-chat-input');
+    if (input) input.value = '';
+    this._closeEmoji();
+  }
+
+  async _sendChat() {
+    const node = this._node;
+    const input = node?.querySelector('.race-chat-input');
+    if (!input) return;
+    const body = cleanChat(input.value);
+    if (!body) { input.value = ''; return; }
+
+    if (this.chatFrozen) { toast('Chat opens again when the round ends'); return; }
+    /* A cooldown rather than a queue. Holding Enter down is the only way
+       anybody hits this, and the honest answer to that is to drop the extra
+       presses on the floor, not to send them a moment later. */
+    if (Date.now() - this._chatSentAt < CHAT_COOLDOWN_MS) return;
+    this._chatSentAt = Date.now();
+
+    /* Cleared before the write, not after.
+     *
+     * The round trip is a few hundred milliseconds and people type into the
+     * next message during it; clearing on the way back would wipe whatever
+     * they had started. If the send fails the text goes back, which is the
+     * only case where anybody wants it back. */
+    input.value = '';
+    this._closeEmoji();
+    try {
+      await this.net.sendChat(body);
+    } catch (err) {
+      input.value = body;
+      const code = err?.code || String(err || '');
+      console.warn('[race] chat refused', code);
+      /* PERMISSION_DENIED here means one specific thing almost every time:
+         the database is running rules that predate chat, so the write falls
+         through to the root's ".write": false. Saying so is the difference
+         between a five-minute fix and an afternoon spent reading this file —
+         "Could not send that" sent exactly one person hunting for a bug in
+         code that was working. */
+      toast(String(code).includes('PERMISSION_DENIED')
+        ? 'The room refused that — this database is running rules from before chat existed. Publish firebase.rules.json.'
+        : 'Could not send that', { long: true });
+    }
+  }
+
+  /**
+   * Draw the log, and nothing else.
+   *
+   * Deliberately never touches the input or the form: those are built once in
+   * _ensurePanel and live for as long as the panel does, because a text field
+   * replaced between two keystrokes loses what you typed and the caret with
+   * it. The only thing the render does to the composer is enable or disable
+   * it.
+   */
+  _syncChat() {
+    const node = this._node;
+    const wrap = node?.querySelector('.race-chat');
+    if (!wrap) return;
+
+    const log = this.chatLog;
+    const frozen = this.chatFrozen;
+
+    wrap.dataset.frozen = String(frozen);
+
+    const input = wrap.querySelector('.race-chat-input');
+    input.disabled = frozen;
+    input.placeholder = frozen ? 'Chat opens when the round ends' : 'Say something…';
+    /* A disabled field keeps focus in some browsers and loses it in others,
+       and a chat box that swallows the spacebar the instant a round starts
+       would be the worst bug this feature could ship. Give the keyboard back
+       to the timer explicitly. */
+    if (frozen && document.activeElement === input) input.blur();
+    // Nothing to pick an emoji into while the round is running.
+    if (frozen) this._closeEmoji();
+    wrap.querySelector('.race-chat-emoji').disabled = frozen;
+
+    const host = wrap.querySelector('.race-chat-log');
+    const sig = log.map(m => m.id).join(',');
+    if (sig === this._chatSig) return;
+    this._chatSig = sig;
+
+    /* Pinned to the bottom unless the reader has scrolled up to look at
+       something, in which case yanking them back down is rude. */
+    const pinned = host.scrollTop + host.clientHeight >= host.scrollHeight - 24;
+
+    host.innerHTML = '';
+    if (!log.length) {
+      host.append(el('div', { class: 'race-chat-empty', text: 'Nothing said yet.' }));
+    } else {
+      let lastUid = null;
+      for (const m of log) {
+        /* Consecutive messages from one person drop the name. In a rail this
+           narrow the name is most of the line, and repeating it four times
+           for four short messages leaves no room for the messages. */
+        const runOn = m.uid === lastUid;
+        lastUid = m.uid;
+        const row = el('div', {
+          class: `race-chat-msg${runOn ? ' run-on' : ''}`,
+          dataset: { me: String(m.uid === this.uid) },
+          title: m.at ? new Date(m.at).toLocaleTimeString() : '',
+        },
+          runOn ? null : el('b', { class: 'race-chat-who', text: m.name || 'Cuber' }),
+          el('span', { class: 'race-chat-text', text: m.text || '' }),
+        );
+        // setProperty, not the style object: Object.assign skips custom
+        // properties, which is why every name would have come out the same hue.
+        row.style.setProperty('--av-h', String(hueOf(m.name || '')));
+        host.append(row);
+      }
+    }
+    if (pinned) host.scrollTop = host.scrollHeight;
   }
 
   /**

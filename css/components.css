@@ -2066,7 +2066,39 @@ body.focus #dock-bottom, body.focus #tile-float-layer { opacity: 0; pointer-even
   font-family: ui-monospace, monospace;
   letter-spacing: .14em; color: var(--accent);
 }
-#panel-race .race-body { display: flex; flex-direction: column; gap: 7px; }
+/* The rail is a fixed-height flex column, so when it runs out of room it
+   COMPRESSES this panel rather than scrolling — and a compressed flex column
+   pushes whatever sits at its end straight out of the box. That end is the
+   room controls, so a long enough chat log walked "Leave room" off the bottom
+   of the screen.
+
+   The rule that prevents it: everything in the body holds its natural height
+   except the chat, which is the one part that can afford to give. min-height:0
+   is what actually permits the shrink — flex items refuse to go below their
+   content without it, which is why the overflow had to go somewhere. */
+/* NOT a scroll container, deliberately, and this is the subtle one.
+   `overflow-y: auto` here looks like a safe backstop and is the opposite: an
+   overflow container is free to be as tall as its content, so flex stops
+   compressing what is inside it — the chat log below never shrank again, the
+   panel simply grew past its rail, and the controls got clipped instead of
+   pushed. Leaving overflow alone is what keeps the shrink working. */
+#panel-race { min-height: 0; }
+#panel-race .race-body {
+  display: flex; flex-direction: column; gap: 7px;
+  min-height: 0;
+}
+#panel-race .race-body > * { flex: none; }
+/* An explicit floor, not `0` and not `auto` — both were tried and both were
+   wrong in opposite directions.
+   `0` let this box shrink below its own contents: the log and composer spilled
+   out while the controls were placed against the collapsed box, so the buttons
+   painted on top of the messages.
+   `auto` is meant to resolve to the content-based minimum, but through a
+   scrolling child it resolved to the box's FULL height — so it refused to
+   shrink at all and the panel overflowed its rail instead.
+   96px is the composer, the log's own 44px floor and the header, added up: low
+   enough to give the panel room, high enough that nothing folds through. */
+#panel-race .race-chat { flex: 1 1 auto; min-height: 96px; position: relative; }
 #panel-race[data-collapsed="true"] .race-body { display: none; }
 #panel-race[data-collapsed="true"] .race-head .chev { transform: rotate(-90deg); }
 
@@ -2182,6 +2214,132 @@ body.focus #dock-bottom, body.focus #tile-float-layer { opacity: 0; pointer-even
 
 .race-row.editable { cursor: pointer; }
 .race-row.editable:hover { border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+
+/* ---- room chat ----
+   A lobby thing, and it looks like one: the whole block goes quiet and
+   read-only the moment a round starts, because that is exactly when the
+   database stops accepting messages. See the note at the top of race-net.js
+   for why the freeze is the gate rather than something cleverer. */
+.race-chat {
+  display: flex; flex-direction: column; gap: 5px;
+  margin-top: 8px; padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+/* A label, not a control. The chat does not fold — see the note in the
+   constructor in race.js for why the fold was removed rather than fixed. */
+.race-chat-head {
+  display: flex; align-items: center; gap: 6px;
+  font-size: .62rem; letter-spacing: .09em; text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.race-chat-log {
+  display: flex; flex-direction: column; gap: 2px;
+  /* Capped when there is room, and the first thing to give when there is not.
+     `flex: 1 1 auto` with `min-height: 0` is the half that matters: it makes
+     this the shrinkable part of the panel, so a rail running short takes the
+     height out of the log instead of out of the buttons underneath it. The
+     floor stops it collapsing to a sliver on the way. */
+  flex: 1 1 auto;
+  min-height: 44px; max-height: 152px;
+  overflow-y: auto; overscroll-behavior: contain;
+  font-size: .74rem;
+}
+.race-chat-empty { color: var(--text-faint); font-size: .7rem; padding: 2px 0; }
+
+.race-chat-msg {
+  display: flex; flex-direction: column; gap: 0;
+  padding: 2px 7px; border-radius: var(--radius-sm);
+  min-width: 0;
+}
+.race-chat-msg.run-on { padding-top: 0; }
+.race-chat-msg[data-me="true"] {
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+}
+.race-chat-who {
+  font-size: .62rem; font-weight: 700; letter-spacing: .02em;
+  color: hsl(var(--av-h, 260) 52% 52%);
+}
+.race-chat-text {
+  color: var(--text); line-height: 1.35;
+  /* The one rule that matters here: a 200-character run of one word must
+     wrap inside the rail rather than widen it. */
+  overflow-wrap: anywhere; white-space: pre-wrap;
+}
+
+/* ---- the emoji tray ----
+   Opens between the log and the composer rather than floating over either.
+   A popover would have to be positioned against a panel the user can dock to
+   four different edges, and an inline row costs one line of height in the one
+   place there is room for it. */
+.race-emoji {
+  /* Floated over the log rather than wedged into the column.
+     Inline, it was ~50px of layout the panel had to find from somewhere, and
+     what it took it from was the room controls — opening the tray pushed the
+     buttons into the composer. A transient popup should not reflow the panel
+     it opens in, so it costs no height at all now and the layout underneath
+     does not move when it appears. */
+  position: absolute; left: 0; right: 0; bottom: 33px; z-index: 6;
+  display: grid; grid-template-columns: repeat(10, 1fr); gap: 2px;
+  padding: 4px; border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  box-shadow: 0 8px 22px -10px rgba(0,0,0,.7);
+}
+.race-emoji-btn {
+  border: 0; background: none; cursor: pointer;
+  padding: 2px 0; border-radius: 5px;
+  font-size: .92rem; line-height: 1.25;
+  /* The emoji font, explicitly. Inheriting the panel's stack meant a couple
+     of these rendered as the monochrome text glyph on Windows. */
+  font-family: 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif;
+}
+.race-emoji-btn:hover { background: color-mix(in srgb, var(--accent) 20%, transparent); }
+
+.race-chat-form { display: flex; gap: 5px; align-items: center; }
+.race-chat-emoji {
+  flex: none; display: grid; place-items: center;
+  width: 28px; height: 28px; padding: 0;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: none; color: var(--text-dim); cursor: pointer;
+}
+.race-chat-emoji svg {
+  width: 15px; height: 15px; fill: none;
+  stroke: currentColor; stroke-width: 1.8;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+.race-chat-emoji:hover:not(:disabled),
+.race-chat-emoji[aria-expanded="true"] {
+  color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+}
+.race-chat-emoji:disabled { opacity: .4; cursor: not-allowed; }
+.race-chat-input {
+  flex: 1; min-width: 0;
+  padding: 5px 8px; font-size: .76rem;
+  color: var(--text); background: var(--surface-2);
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+}
+.race-chat-input:focus {
+  outline: none;
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+}
+.race-chat-input:disabled { opacity: .55; cursor: not-allowed; }
+.race-chat-send {
+  flex: none; display: grid; place-items: center;
+  width: 28px; height: 28px; padding: 0;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: none; color: var(--text-dim); cursor: pointer;
+}
+.race-chat-send svg {
+  width: 14px; height: 14px; fill: none;
+  stroke: currentColor; stroke-width: 2;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+.race-chat-send:hover { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+.race-chat[data-frozen="true"] .race-chat-send { opacity: .4; pointer-events: none; }
+/* Dimmed, never hidden. The backlog is still worth reading mid-round; it is
+   only saying anything new that has to wait. */
+.race-chat[data-frozen="true"] .race-chat-log { opacity: .62; }
 
 /* ---- standings ---- */
 .race-board {
@@ -2370,6 +2528,7 @@ body.focus #dock-bottom, body.focus #tile-float-layer { opacity: 0; pointer-even
   #panel-race[data-collapsed="true"] .race-rows,
   #panel-race[data-collapsed="true"] .race-more,
   #panel-race[data-collapsed="true"] .race-foot,
+  #panel-race[data-collapsed="true"] .race-chat,
   #panel-race[data-collapsed="true"] .race-actions { display: none; }
 }
 

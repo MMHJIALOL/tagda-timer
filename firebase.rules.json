@@ -65,6 +65,20 @@
           "$other": { ".validate": true }
         },
 
+        "chat": {
+          ".read": "auth != null",
+
+          "$msgId": {
+            ".write": "auth != null && !data.exists() && newData.child('uid').val() === auth.uid && root.child('rooms/' + $roomId + '/meta/phase').val() != 'racing'",
+            ".validate": "newData.hasChildren(['uid', 'name', 'text', 'at'])",
+            "uid":  { ".validate": "newData.isString() && newData.val().length <= 64" },
+            "name": { ".validate": "newData.isString() && newData.val().length <= 24" },
+            "text": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 200" },
+            "at":   { ".validate": "newData.isNumber()" },
+            "$other": { ".validate": false }
+          }
+        },
+
         "players": {
           ".read": "auth != null",
           "$uid": {
