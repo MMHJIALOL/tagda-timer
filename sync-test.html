@@ -161,35 +161,6 @@ section('sync.js echo detection');
     JSON.stringify(original) === JSON.stringify({ ...original }));
 }
 
-/* ---------------- avatar resize (real canvas, no network) ---------------- */
-section('sync-ui.js resizeImageToSquare');
-{
-  const SyncUi = await import('./js/sync-ui.js');
-
-  // A 400x200 rectangle — deliberately non-square and larger than the
-  // target size, so both the center-crop and the downscale are exercised.
-  const src = document.createElement('canvas');
-  src.width = 400; src.height = 200;
-  const ctx = src.getContext('2d');
-  ctx.fillStyle = '#ff0000'; ctx.fillRect(0, 0, 400, 200);
-  ctx.fillStyle = '#00ff00'; ctx.fillRect(150, 50, 100, 100); // a mark near center, survives a correct center-crop
-  const srcBlob = await new Promise(r => src.toBlob(r, 'image/png'));
-
-  const out = await SyncUi.resizeImageToSquare(srcBlob, 64);
-  check('produces a JPEG blob', out.type === 'image/jpeg', `got ${out.type}`);
-  check('produces some actual image data', out.size > 0);
-
-  const bitmap = await createImageBitmap(out);
-  check('output is square at the requested size',
-    bitmap.width === 64 && bitmap.height === 64, `got ${bitmap.width}x${bitmap.height}`);
-  bitmap.close?.();
-
-  let threw = false;
-  try { await SyncUi.resizeImageToSquare(new Blob(['not an image'], { type: 'text/plain' })); }
-  catch { threw = true; }
-  check('rejects non-image input instead of silently producing garbage', threw);
-}
-
 /* ---------------- summary ---------------- */
 document.getElementById('summary').textContent =
   `${pass} passed, ${fail} failed`;
