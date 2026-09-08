@@ -812,6 +812,157 @@ await new Promise((resolve) => {
       (d.querySelector('#scramble-text').textContent || '').trim().split(/\s+/).length > 5,
       d.querySelector('#scramble-text').textContent.slice(0, 30));
 
+    /* ---------------- the SOTD chip in the top bar ----------------
+       An invitation that is still sitting there after you have accepted it is
+       clutter, so the chip goes once today's attempt is in — and comes back
+       when the day rolls over, which is the half that is easy to get wrong by
+       storing a boolean instead of a date. */
+    {
+      const chip = d.querySelector('#btn-daily');
+      const shownChip = () => {
+        const cs = w.getComputedStyle(chip), r = chip.getBoundingClientRect();
+        return cs.display !== 'none' && r.width > 0 && r.height > 0;
+      };
+      const note = (v) => {
+        v === null ? w.localStorage.removeItem('tdt.sotd.doneDay')
+                   : w.localStorage.setItem('tdt.sotd.doneDay', v);
+        w.dispatchEvent(new w.CustomEvent('sotd-done'));
+      };
+      const today = (await import('./js/dayid.js')).dayIdFromServerMs(Date.now());
+
+      const shining = () => w.getComputedStyle(chip, '::after').content !== 'none';
+      const labelled = () => {
+        const l = chip.querySelector('.sotd-label');
+        return !!l && w.getComputedStyle(l).display !== 'none';
+      };
+
+      note(null);
+      check('before you have played, the chip advertises itself: labelled and shining',
+        shownChip() && labelled() && shining() && /SOTD/.test(chip.textContent),
+        chip.textContent.trim());
+
+      note(today);
+      /* The bug this exists for: the chip used to be hidden outright once you
+         had submitted, which removed the ONLY way back into the window — so
+         the board you had just earned a place on could not be looked at again
+         until midnight. Stopping the advertisement and taking away the door
+         are different things, and only the first was ever wanted. */
+      check('once today’s attempt is in, the way back into the window is still there',
+        shownChip(), 'the chip is the only route to the board');
+      check('…but it has stopped advertising itself — no label, no shine',
+        !labelled() && !shining(),
+        `label ${labelled()}, shine ${shining()}`);
+
+      /* The one a boolean would fail: yesterday's note must not still be
+         suppressing today's invitation. */
+      note('1999-01-01');
+      check('yesterday’s attempt does not retire today’s chip',
+        shownChip() && labelled() && shining());
+
+      note(null);
+      check('no note at all leaves the chip inviting', shownChip() && labelled() && shining());
+    }
+
+    /* ---------------- the Scramble of the Day window, as it renders ----------------
+
+       The point of this window is subtraction: it is worth having only if the
+       rest of the app genuinely goes away and the two things you need are
+       genuinely still there. Both halves are measured off the laid-out page,
+       because "the class is on <body>" says nothing about what a viewer can
+       actually see -- a rule that lost a specificity fight leaves the sidebar
+       sitting there with the class applied and the DOM looking correct. */
+    {
+      const chrome = ['#topbar', '#sidebar', '#sidebar-right', '#dock-bottom', '#tile-float-layer'];
+      const box = sel => d.querySelector(sel)?.getBoundingClientRect() || { width: 0, height: 0 };
+      const visible = sel => {
+        const e = d.querySelector(sel);
+        if (!e) return false;
+        const cs = w.getComputedStyle(e), r = e.getBoundingClientRect();
+        return cs.display !== 'none' && cs.visibility !== 'hidden'
+               && parseFloat(cs.opacity) > 0.05 && r.width > 0 && r.height > 0;
+      };
+
+      const typeSize = () => parseFloat(w.getComputedStyle(d.querySelector('#scramble-text')).fontSize);
+      const beforeType = typeSize();
+      const beforeChrome = chrome.filter(visible).join(' ');
+      d.body.classList.add('sotd');
+      /* The app re-measures the scramble on resize (main.js's debounced
+         refit), which is the same path entering the window really takes —
+         the type is sized to the room available, so the room changing has
+         to be what re-sizes it. */
+      w.dispatchEvent(new Event('resize'));
+      await new Promise(r => setTimeout(r, 600));
+
+      const stillThere = chrome.filter(visible);
+      check('the Scramble of the Day window hides the rest of the app',
+        stillThere.length === 0, stillThere.join(' ') || `${chrome.length} checked`);
+
+      check('the scramble and the timer survive into the window',
+        visible('#scramble-text') && visible('#timer-display'),
+        `scramble ${visible('#scramble-text')}, timer ${visible('#timer-display')}`);
+
+      /* The window exists to make the scramble the thing you look at, so the
+         type has to get BIGGER, not merely survive. Measured as font size
+         rather than as the text's own box: bigger type wraps sooner, so the
+         box can narrow at the exact moment the letters grow. */
+      const inWindow = typeSize();
+      check('the scramble is set larger inside the window than outside it',
+        inWindow > beforeType && box('#scramble-text').height > 0,
+        `${beforeType.toFixed(1)}px -> ${inWindow.toFixed(1)}px`);
+
+      /* And still fits: a boost that runs a 5x5 scramble off the side of the
+         screen would be a worse window than no window. */
+      const st = d.querySelector('#scramble-text');
+      check('the enlarged scramble still fits the width it is given',
+        st.scrollWidth <= st.clientWidth + 2,
+        `${st.scrollWidth}px of text through ${st.clientWidth}px`);
+
+      // Its own header -- the day, the countdown and the way out -- is the only
+      // chrome the window keeps, and a window with no way out is a trap.
+      check('the window keeps its own header, with a way back out',
+        visible('#sotd-bar') && visible('#sotd-exit'));
+
+      /* The board shares the screen with the two things the window exists to
+         show, and "shares" has to mean beside, not on top of. Both of these
+         were real: the board covered the timer badly enough that the time you
+         had just done had to be dimmed to 12% to let the list through, and a
+         later fix moved the scramble instead and made it smaller than it is
+         outside the window. Geometry, because that is what went wrong. */
+      const overlaps = (a, b2) => !(a.right <= b2.left || a.left >= b2.right
+                                 || a.bottom <= b2.top || a.top >= b2.bottom);
+      const rect = sel => d.querySelector(sel).getBoundingClientRect();
+      check('the board does not cover the scramble',
+        !overlaps(rect('#sotd-board'), rect('#scramble-text')),
+        `board top ${Math.round(rect('#sotd-board').top)}, scramble bottom ${Math.round(rect('#scramble-text').bottom)}`);
+      check('the board does not cover the timer',
+        !overlaps(rect('#sotd-board'), rect('#timer-display')),
+        `board right ${Math.round(rect('#sotd-board').right)}, timer left ${Math.round(rect('#timer-display').left)}`);
+
+      /* And the timer stays where it has always been. It was briefly nudged
+         sideways to centre it in the space left over, which reads as a timer
+         that has drifted rather than as a layout with a column in it. */
+      const tb = rect('#timer-display');
+      check('the timer is still centred on screen inside the window',
+        Math.abs((tb.x + tb.width / 2) - w.innerWidth / 2) <= 2,
+        `centre ${Math.round(tb.x + tb.width / 2)}, want ${Math.round(w.innerWidth / 2)}`);
+
+      check('the window does not make the page scroll sideways',
+        d.documentElement.scrollWidth <= w.innerWidth + 1,
+        `${d.documentElement.scrollWidth - w.innerWidth}px over`);
+
+      /* Leaving has to put the app back exactly as it was. A window that leaks
+         one fixed-position layer over the idle timer is worse than no window:
+         the check at the top of this section would start failing for reasons
+         nobody could trace back to here. */
+      d.body.classList.remove('sotd');
+      await new Promise(r => setTimeout(r, 500));
+      const left = ['#sotd-bar', '#sotd-board'].filter(visible);
+      check('leaving the window puts the app back and leaves nothing on top',
+        chrome.filter(visible).join(' ') === beforeChrome && left.length === 0,
+        left.length ? 'still on top: ' + left.join(' ') : `chrome was "${beforeChrome}"`);
+    }
+
+
     // Regression guard: the preview must end up as either a live player or a
     // visible "unavailable" message — never an empty gap.
     //
@@ -1230,6 +1381,243 @@ section('blindfolded tracing');
   const miss = B.diagnose({ ...rec }, [{ type: 'corner', slot: 99 }]);
   check('the post-mortem says so when a piece was never traced',
     !!miss && /never appear/.test(miss[0]));
+}
+
+/* ---------------- daily leaderboard: server-time day math ---------------- */
+const D = await import('./js/daily-net.js');
+
+section('daily leaderboard — day id and reset math');
+{
+  // 2026-09-07T18:29:59.999Z is one millisecond before 00:00 IST on the 8th.
+  const justBefore = Date.parse('2026-09-07T18:29:59.999Z');
+  const justAfter  = Date.parse('2026-09-07T18:30:00.000Z');
+  check('the IST day rolls over at 18:30 UTC, not at UTC midnight',
+    D.dayIdFromServerMs(justBefore) === '2026-09-07'
+    && D.dayIdFromServerMs(justAfter) === '2026-09-08');
+
+  check('a day id is stable across the day and does not depend on the machine timezone',
+    D.dayIdFromServerMs(Date.parse('2026-09-08T00:00:00.000Z')) === '2026-09-08'
+    && D.dayIdFromServerMs(Date.parse('2026-09-08T18:29:59.999Z')) === '2026-09-08');
+
+  check('the next reset from just after a boundary is a full day away',
+    D.nextResetMs(justAfter) - justAfter === 86400000);
+  check('the next reset from just before a boundary is one millisecond away',
+    D.nextResetMs(justBefore) - justBefore === 1);
+
+  // A leap-day check: IST has no DST, so the offset is always exactly +5:30
+  // and this arithmetic never needs a special case for it.
+  check('the boundary math is exact across a leap day',
+    D.dayIdFromServerMs(Date.parse('2028-02-28T18:30:00.000Z')) === '2028-02-29'
+    && D.dayIdFromServerMs(Date.parse('2028-02-29T18:30:00.000Z')) === '2028-03-01');
+
+  check('the countdown formats hours and minutes, floored to the minute',
+    D.formatCountdown(4 * 3600000 + 12 * 60000 + 59000) === '4h 12m');
+  check('the countdown reads as "less than a minute" rather than "0h 0m"',
+    D.formatCountdown(45000) === 'under a minute');
+  check('a negative or zero countdown never prints a negative time',
+    D.formatCountdown(0) === 'under a minute' && D.formatCountdown(-5000) === 'under a minute');
+
+  /* The database is keyed by this value, not by the "YYYY-MM-DD" label —
+     see the comment on dayKeyFromServerMs for why: a security rule can
+     compare a NUMBER against `now` to refuse a write to a day that hasn't
+     started, and has no way to parse a date back out of a string. */
+  check('the day key is the boundary\'s own epoch ms, a plain numeric string',
+    D.dayKeyFromServerMs(justAfter) === String(D.dayStartMs('2026-09-08'))
+    && /^-?\d+$/.test(D.dayKeyFromServerMs(justAfter)));
+  check('the day key never reaches into the future: it is always <= the instant it was read at',
+    Number(D.dayKeyFromServerMs(justAfter)) <= justAfter
+    && Number(D.dayKeyFromServerMs(justBefore)) <= justBefore);
+}
+
+/* ---------------- scramble of the day: the solve-count board ----------------
+
+   The "most solves today" board is not incremented per solve. Each client
+   counts its OWN solve list against the day window and writes the total, and
+   the rule only lets that number go up (see DAILY.md §5). That makes the
+   count a pure function of the solve list, which is what these check --
+   the transport around it has nothing to decide.
+   ------------------------------------------------------------------- */
+
+section('scramble of the day — the solve-count board');
+{
+  const dayStart = D.dayStartMs('2026-09-08');          // 2026-09-07T18:30:00Z
+  const DAY = 86400000;
+  const at = (ms, extra = {}) => ({ timeMs: 10000, penalty: 'none', createdAt: ms, ...extra });
+
+  check('a solve inside the day window counts',
+    D.countSolvesForDay([at(dayStart + 5000), at(dayStart + DAY - 1)], dayStart) === 2);
+
+  /* The boundary is half-open: the instant the day starts belongs to the new
+     day, the instant it ends belongs to the next one. Getting this wrong the
+     other way would let one solve count on two consecutive boards. */
+  check('the day window is half-open, so a boundary solve lands in exactly one day',
+    D.countSolvesForDay([at(dayStart)], dayStart) === 1
+    && D.countSolvesForDay([at(dayStart + DAY)], dayStart) === 0
+    && D.countSolvesForDay([at(dayStart - 1)], dayStart) === 0);
+
+  check('yesterday’s and tomorrow’s solves are not in today’s count',
+    D.countSolvesForDay(
+      [at(dayStart - DAY), at(dayStart + 1000), at(dayStart + DAY + 1000)], dayStart) === 1);
+
+  /* This board is about volume, not speed: a DNF is still a solve you sat
+     down and did, and dropping it would quietly punish blindfolded practice,
+     where DNFs are most of the session. */
+  check('a DNF or a +2 still counts as a solve done',
+    D.countSolvesForDay(
+      [at(dayStart + 1, { penalty: 'DNF' }), at(dayStart + 2, { penalty: '+2' })], dayStart) === 2);
+
+  check('an empty or malformed solve list counts as zero rather than throwing',
+    D.countSolvesForDay([], dayStart) === 0
+    && D.countSolvesForDay(null, dayStart) === 0
+    && D.countSolvesForDay([{}, { createdAt: null }], dayStart) === 0);
+}
+
+/* ---------------- the window's hold on the timer ----------------
+
+   The bug these exist for: `locked()` returned `attempting`, the exact
+   inverse of what it means in race.js. So the timer was held shut during the
+   one solve it was supposed to be timing, and left wide open the rest of the
+   time — which is what turned the whole window into an ordinary timer. Today's
+   scramble could be "attempted" over and over, none of the attempts counting,
+   nothing ever reaching the board, and the board therefore never unlocking.
+   ------------------------------------------------------------------- */
+
+section('scramble of the day — when the timer is held shut');
+{
+  const Daily = (await import('./js/daily.js')).Daily;
+  const stub = () => new Daily({ settings: { event: '333' }, solves: [] });
+  const at = (d, snap, extra = {}) => { d.snap = snap; Object.assign(d, extra); return d; };
+  const live = { signedIn: true, scramble: "R U R' U'", dayId: '2026-09-08', uid: 'u1' };
+
+  /* The most important one. Practising has nothing to do with the daily
+     challenge, and a feature that can silently kill the timer of somebody who
+     is not using it is worse than a feature that does not work. */
+  check('outside the window the timer is never held shut, whatever the state',
+    at(stub(), null).locked() === false
+    && at(stub(), { signedIn: false }).locked() === false
+    && at(stub(), live, { attempting: true }).locked() === false);
+
+  check('inside the window an armed attempt leaves the timer OPEN — it is the solve being timed',
+    at(Object.assign(stub(), { engaged: true }), live, { attempting: true }).locked() === false);
+
+  check('inside the window the timer is shut until today’s scramble exists',
+    at(Object.assign(stub(), { engaged: true }), { signedIn: true, scramble: null }).locked() === true);
+
+  check('inside the window a signed-out visitor can watch but never time',
+    at(Object.assign(stub(), { engaged: true }), { signedIn: false, scramble: "R U" }).locked() === true);
+
+  /* One attempt per day is the whole premise, so this is the check that stops
+     the same scramble being solved until a good time comes up. */
+  check('once today’s attempt is submitted the timer shuts again',
+    at(Object.assign(stub(), { engaged: true }), live, { submittedToday: true }).locked() === true);
+
+  /* And what stands in for the scramble in each shut state, because the
+     version that let the generator fill that gap is what made the window
+     indistinguishable from an ordinary timer. */
+  const held = (snap, extra) => at(Object.assign(stub(), { engaged: true }), snap, extra).takeScramble();
+  /* Publishing used to be attempted only when a snapshot happened to arrive,
+     so one failure on a quiet day meant no further attempt ever and the window
+     sat on "Publishing today's scramble…" until it was reloaded. Three states
+     used to share that one message; only the genuinely-in-flight one may now
+     end in an ellipsis. */
+  const pub = (extra) => at(Object.assign(stub(), { engaged: true }),
+    { signedIn: true, scramble: null, dayId: '2026-09-08' }, extra);
+
+  check('while attempts remain, the message says it is still trying',
+    /Publishing today’s scramble…$/.test(pub({ _publishTries: 1 }).holdText()));
+
+  check('once the attempts are spent it stops implying something is in flight',
+    !/…$/.test(pub({ _publishTries: 9 }).holdText())
+    && /could not be published/.test(pub({ _publishTries: 9 }).holdText()));
+
+  check('an attempt still running is never reported as given up',
+    pub({ _publishTries: 9, _publishing: true }).gaveUpPublishing() === false);
+
+  check('the refusal reason is carried through to the reader, not just the console',
+    /PERMISSION_DENIED/.test(pub({ _publishTries: 9, publishError: 'PERMISSION_DENIED' }).holdText()));
+
+  /* A listener that errored has detached, so nothing will ever arrive on that
+     node again — the one case where waiting is definitely pointless. */
+  check('a board that cannot be read says so rather than waiting forever',
+    /cannot be read/.test(at(Object.assign(stub(), { engaged: true }),
+      { signedIn: true, scramble: null, readError: 'PERMISSION_DENIED' }).holdText()));
+
+  check('a shut window shows a message where the notation goes, never a scramble',
+    held({ signedIn: true, scramble: null }).hold === 'Publishing today’s scramble…'
+    && held({ signedIn: false }).hold === 'Sign in to be given today’s scramble'
+    && /already done today/.test(held(live, { submittedToday: true }).hold));
+
+  check('a shut window never hands the timer a solvable scramble',
+    ['scramble'].every(k => held({ signedIn: true, scramble: null })[k] === ''));
+
+  check('an armed window hands over today’s scramble and nothing else',
+    at(Object.assign(stub(), { engaged: true }), live, { attempting: true }).takeScramble().scramble
+      === "R U R' U'");
+}
+
+section('scramble of the day — whose avatar URL is safe to fetch');
+{
+  /* A board row is written by somebody else and its `photo` becomes an <img
+     src> in every viewer's browser, on a board that is public to read. An
+     unrestricted string there is a tracking beacon anyone signed in can plant
+     with no help from the app, so the URL is pinned to the host the account
+     picture actually comes from. Same check as the .validate in
+     firebase.rules.json — these are the cases that rule has to refuse. */
+  const good = 'https://lh3.googleusercontent.com/a/ACg8ocK=s96-c';
+  check('a real Google account picture is kept',
+    D.safePhotoUrl(good) === good
+    && D.safePhotoUrl('https://lh6.googleusercontent.com/a/x') !== null);
+
+  check('somebody else’s server is refused, however plausible the path looks',
+    D.safePhotoUrl('https://evil.example/lh3.googleusercontent.com/a.png') === null
+    && D.safePhotoUrl('https://lh3.googleusercontent.com.evil.example/a.png') === null
+    && D.safePhotoUrl('https://notlh3.googleusercontent.com/a.png') === null);
+
+  check('a non-https scheme is refused, including the ones that are not fetches at all',
+    D.safePhotoUrl('http://lh3.googleusercontent.com/a.png') === null
+    && D.safePhotoUrl('//lh3.googleusercontent.com/a.png') === null
+    && D.safePhotoUrl('javascript:alert(1)') === null
+    && D.safePhotoUrl('data:image/svg+xml,<svg onload=alert(1)>') === null);
+
+  check('a missing or malformed photo is simply no photo, never a throw',
+    D.safePhotoUrl(null) === null && D.safePhotoUrl(undefined) === null
+    && D.safePhotoUrl('') === null && D.safePhotoUrl({}) === null);
+
+  // The filter has to survive the trip through the board builder too, or it
+  // is only protecting the rows nobody was going to be attacked by.
+  check('the count board strips a bad photo instead of passing it to an <img>',
+    D.rankByCount({ u_a: { n: 2, name: 'Mallory', photo: 'https://evil.example/t.png' } }, null)[0].photo === null
+    && D.rankByCount({ u_b: { n: 2, name: 'Real', photo: good } }, null)[0].photo === good);
+}
+
+section('scramble of the day — ranking the two boards');
+{
+  const counts = {
+    u_ann:  { n: 12, name: 'Ann' },
+    u_bob:  { n: 40, name: 'Bob' },
+    u_cara: { n: 12, name: 'Cara' },
+  };
+
+  const byCount = D.rankByCount(counts, 'u_cara');
+  check('the solve-count board is ranked by how many solves, most first',
+    byCount.map(r => r.uid).join(' ') === 'u_bob u_ann u_cara',
+    byCount.map(r => `${r.name}:${r.n}`).join(' '));
+
+  /* A tie has to break the same way for everyone looking at the board, or two
+     people compare screenshots and see different orders for the same data.
+     Object key order is not a promise Firebase makes, so the name is. */
+  check('a tie on count breaks by name, so every viewer sees the same order',
+    D.rankByCount({ u_z: { n: 5, name: 'Zoe' }, u_a: { n: 5, name: 'Abe' } }, null)
+      .map(r => r.name).join(' ') === 'Abe Zoe');
+
+  check('the viewer’s own row is marked so the board can highlight it',
+    byCount.filter(r => r.isMe).map(r => r.uid).join(' ') === 'u_cara');
+
+  check('a missing name falls back rather than ranking as undefined',
+    D.rankByCount({ u_x: { n: 3 } }, null)[0].name === 'Cuber');
+
+  check('an empty count board is an empty list, not a throw',
+    D.rankByCount(null, null).length === 0 && D.rankByCount({}, 'u_a').length === 0);
 }
 
 document.getElementById('summary').textContent =
