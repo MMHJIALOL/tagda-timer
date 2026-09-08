@@ -161,6 +161,96 @@ section('sync.js echo detection');
     JSON.stringify(original) === JSON.stringify({ ...original }));
 }
 
+/* ---------------- partitionDeleted (the merge-path guard) ---------------- */
+section('partitionDeleted');
+{
+  const cloud = [{ id: 'a' }, { id: 'b' }, { id: 'c' }];
+  const { live, dead } = Sync.partitionDeleted(cloud, { b: Date.now() });
+  check('a deliberately deleted id is held back from the union',
+    live.length === 2 && !live.some(r => r.id === 'b'));
+  check('and is handed back for removal from the cloud',
+    dead.length === 1 && dead[0].id === 'b');
+  check('with no tombstones at all, everything is live',
+    Sync.partitionDeleted(cloud, {}).live.length === 3);
+  check('an empty cloud partitions cleanly',
+    Sync.partitionDeleted([], { b: 1 }).live.length === 0);
+}
+
+/* ---------------- tombstones ---------------- */
+section('db.js tombstones (the resurrection fix)');
+{
+  const id = 'tomb-test-' + Date.now();
+  const solve = { id, sessionId: 'x', createdAt: Date.now(), timeMs: 4200 };
+
+  await DB.Solves.put(solve);
+  check('a freshly written solve is not tombstoned',
+    (await DB.Tombstones.has('solves', id)) === false);
+
+  await DB.Solves.del(id);
+  check('deleting records a tombstone — the whole point',
+    (await DB.Tombstones.has('solves', id)) === true);
+  check('and the row really is gone locally',
+    (await DB.Solves.get(id)) === undefined);
+
+  // The exact resurrection the bug report describes: the cloud still holds
+  // the row and replays it on the next listener attach. sync.js checks this
+  // flag before writing, so the replay has to be refused.
+  check('a deleted id is still refused after a simulated cloud replay',
+    (await DB.Tombstones.has('solves', id)) === true);
+
+  // Undo (and any re-import) writes the row back, which has to lift the note
+  // or Ctrl+Z would be undone again by the very sync it triggers.
+  await DB.Solves.put(solve);
+  check('writing the row back again clears the tombstone (undo works)',
+    (await DB.Tombstones.has('solves', id)) === false);
+  await DB.Solves.del(id);
+
+  // Batch delete
+  const ids = ['tomb-b1-' + Date.now(), 'tomb-b2-' + Date.now()];
+  await DB.Solves.putMany(ids.map(i => ({ id: i, sessionId: 'x', createdAt: Date.now() })));
+  let delSeen = null;
+  const unsubDel = DB.onWrite('solvesDel', (list) => { delSeen = list; });
+  await DB.Solves.delMany(ids);
+  check('delMany fires one solvesDel event carrying every id',
+    Array.isArray(delSeen) && delSeen.length === 2, `got ${delSeen?.length}`);
+  check('every id in the batch is tombstoned',
+    (await DB.Tombstones.has('solves', ids[0])) && (await DB.Tombstones.has('solves', ids[1])));
+  unsubDel();
+
+  // Single delete fires the same channel, so sync.js needs only one hook.
+  const solo = 'tomb-solo-' + Date.now();
+  await DB.Solves.put({ id: solo, sessionId: 'x', createdAt: Date.now() });
+  let soloSeen = null;
+  const unsubSolo = DB.onWrite('solvesDel', (list) => { soloSeen = list; });
+  await DB.Solves.del(solo);
+  check('del() fires solvesDel with a one-id list',
+    Array.isArray(soloSeen) && soloSeen.length === 1 && soloSeen[0] === solo);
+  unsubSolo();
+
+  // Sessions take the same route.
+  const sid = 'tomb-sess-' + Date.now();
+  let sessDelSeen = null;
+  const unsubSess = DB.onWrite('sessionsDel', (list) => { sessDelSeen = list; });
+  await DB.Sessions.put({ id: sid, name: 'temp', createdAt: Date.now() });
+  await DB.Sessions.del(sid);
+  check('deleting a session tombstones it and fires sessionsDel',
+    (await DB.Tombstones.has('sessions', sid)) && sessDelSeen?.[0] === sid);
+  unsubSess();
+
+  // Pruning is what stops the note list growing without bound.
+  await DB.Tombstones.prune(Date.now() + 91 * 24 * 60 * 60 * 1000);
+  check('prune() drops notes past the TTL',
+    (await DB.Tombstones.has('solves', id)) === false);
+  check('pruning at "now" keeps a note just written',
+    await (async () => {
+      const fresh = 'tomb-fresh-' + Date.now();
+      await DB.Solves.put({ id: fresh, sessionId: 'x', createdAt: Date.now() });
+      await DB.Solves.del(fresh);
+      await DB.Tombstones.prune();
+      return DB.Tombstones.has('solves', fresh);
+    })());
+}
+
 /* ---------------- summary ---------------- */
 document.getElementById('summary').textContent =
   `${pass} passed, ${fail} failed`;
