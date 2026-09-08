@@ -53,6 +53,84 @@
 }
 .account-box.on { border-color: color-mix(in srgb, var(--border) 80%, transparent); background: color-mix(in srgb, var(--surface) 45%, transparent); }
 .account-glyph { display: grid; place-items: center; width: 17px; height: 17px; flex: none; }
+
+/* The SOTD chip. Same box as .account-box above so the two sit as a pair
+   rather than as two unrelated experiments, but in gold rather than the bar's
+   ordinary grey: this is the one control in the row that is about today and
+   stops being available tonight, and nothing else in the bar has that
+   property. Gold is hard-coded rather than themed for the same reason a
+   medal is gold — it is the meaning, not the palette. */
+.sotd-box {
+  width: auto; display: flex; align-items: center; padding: 0 10px 0 8px; gap: 6px;
+  border: 1px solid color-mix(in srgb, #f2c14e 42%, transparent);
+  background: color-mix(in srgb, #f2c14e 13%, transparent);
+  color: #f2c14e;
+  /* Clips the sweep below to the pill. */
+  position: relative; overflow: hidden;
+}
+
+/* The shine plays only while there is something to do — `.done` cancels it
+   below, which is the whole of "shine until it is done".
+
+   A sweep across the pill rather than a pulsing glow, because the bar sits
+   above a timer people stare at — something that brightens and dims in place
+   is caught by peripheral vision every cycle, whereas a highlight that passes
+   and is gone for six seconds is noticed once and then ignored. */
+.sotd-box::after {
+  content: '';
+  position: absolute; inset: 0;
+  background: linear-gradient(105deg,
+    transparent 38%,
+    color-mix(in srgb, #f2c14e 38%, transparent) 50%,
+    transparent 62%);
+  transform: translateX(-120%);
+  animation: sotdShine 6s var(--ease) infinite;
+  pointer-events: none;
+}
+@keyframes sotdShine {
+  0%   { transform: translateX(-120%); }
+  /* Held off-screen for most of the cycle: the sweep is the punctuation, not
+     the sentence. */
+  22%, 100% { transform: translateX(120%); }
+}
+/* Nothing here is load-bearing, so it is the first thing to go for anyone who
+   has asked the OS for less movement. */
+@media (prefers-reduced-motion: reduce) {
+  .sotd-box::after { animation: none; opacity: 0; }
+}
+.sotd-box:hover {
+  border-color: color-mix(in srgb, #f2c14e 62%, transparent);
+  background: color-mix(in srgb, #f2c14e 20%, transparent);
+  color: #f7d98a;
+}
+.sotd-glyph { display: grid; place-items: center; width: 17px; height: 17px; flex: none; }
+.sotd-glyph svg { width: 17px; height: 17px; }
+.sotd-label {
+  font-size: .7rem; font-weight: 700; letter-spacing: .07em;
+  color: inherit;
+}
+/* Once today's attempt is in, main.js adds `done` and the chip stops selling
+   itself: the gold, the label and the sweep all go and it settles into the
+   same quiet outline as the icons either side of it.
+
+   It stays a button. An earlier version hid it entirely, which removed the
+   only route back into the window and so made the board you had just earned a
+   place on unreachable until midnight — the way in has to outlive the
+   invitation. */
+.sotd-box.done {
+  border-color: color-mix(in srgb, var(--border) 80%, transparent);
+  background: color-mix(in srgb, var(--surface) 45%, transparent);
+  color: var(--text-faint);
+  padding: 0;
+  width: 34px; justify-content: center;
+}
+.sotd-box.done:hover {
+  border-color: color-mix(in srgb, var(--border) 80%, transparent);
+  background: color-mix(in srgb, var(--surface) 45%, transparent);
+  color: var(--text);
+}
+.sotd-box.done .sotd-label { display: none; }
+.sotd-box.done::after { content: none; }
 .account-username {
   font-size: .78rem; font-weight: 550; color: var(--text-dim);
   max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -2697,3 +2775,202 @@ body.focus #dock-bottom, body.focus #tile-float-layer { opacity: 0; pointer-even
   padding: 4px 0; border-bottom: 1px solid var(--border);
 }
 .me-trend i { flex: 1; min-width: 2px; background: var(--warn); opacity: .75; border-radius: 1px; }
+
+/* ===========================================================
+   Scramble of the Day — the window's bar, and both boards
+
+   The boards (`.db-*`) are shared: the same markup renders inside the
+   window's card and inside the settings drawer, so a row looks the same
+   wherever you found it. That is why nothing here is scoped under
+   `body.sotd` except the bar and the card that holds them.
+   =========================================================== */
+
+/* No `display` here on purpose. base.css owns whether this bar is on screen
+   (`#sotd-bar { display: none }` / `body.sotd #sotd-bar { display: flex }`),
+   and this file loads after it — so a `display: flex` here would have equal
+   specificity, win on order, and pin the bar over the app permanently
+   whether or not the window was open. Appearance here, visibility there. */
+#sotd-bar {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 90;
+  align-items: center; gap: 16px;
+  padding: 10px 18px;
+  /* A date is not a phrase and must never break across two lines. The bar
+     drops its optional parts as the width goes (see the queries at the foot
+     of this file) rather than letting anything in it wrap. */
+  white-space: nowrap;
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+  backdrop-filter: blur(24px) saturate(1.5); -webkit-backdrop-filter: blur(24px) saturate(1.5);
+  border-bottom: 1px solid var(--border);
+  animation: slideDown 320ms var(--ease);
+}
+@keyframes slideDown { from { transform: translateY(-100%) } to { transform: none } }
+
+.sotd-id { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.sotd-kicker {
+  font-size: .6rem; font-weight: 700; letter-spacing: .18em; text-transform: uppercase;
+  color: var(--accent);
+}
+.sotd-day { font-size: .82rem; font-weight: 600; letter-spacing: -.01em; }
+.sotd-state {
+  font-size: .7rem; color: var(--text-faint);
+  padding-left: 10px; margin-left: 2px; border-left: 1px solid var(--border);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* Green while today's scramble is genuinely on the timer — the one state in
+   which pressing space means something, and worth being able to tell apart at
+   a glance from the three in which it does not. */
+.sotd-state[data-state="ready"] { color: var(--ok); }
+.sotd-state[data-state="done"]  { color: var(--accent); }
+.sotd-clock { font-size: .74rem; color: var(--text-faint); margin-left: auto; }
+.sotd-clock b { color: var(--text); font-weight: 600; }
+#sotd-exit { display: flex; align-items: center; gap: 6px; font-size: .74rem; }
+#sotd-exit svg { width: 13px; height: 13px; }
+
+/* A column down the left, not a sheet across the bottom.
+
+   The bottom sheet it replaced had to cover the middle of the screen to be
+   readable, which put it straight over the timer — and the only way to keep
+   both was to dim the time you had just done to the point of being unreadable.
+   Standing the board up in its own column means nothing overlaps anything: the
+   list is a list, the timer is still the biggest thing on screen, and the two
+   can be read in the same glance instead of one at the other's expense.
+
+   Same split as the bar above: base.css decides when this is displayed. */
+#sotd-board {
+  position: fixed; left: 18px; bottom: 18px; z-index: 91;
+  /* Where the column starts. The default clears a bar plus a two-line
+     scramble, which is the common case and keeps this correct before any
+     script has run; js/dailyui.js then measures the scramble it actually got
+     and sets the variable exactly. Kept as a variable rather than an inline
+     `top` so the two cannot disagree about which one is in charge. */
+  top: var(--sotd-board-top, 200px);
+  width: var(--sotd-board-w);
+  overflow-y: auto; overscroll-behavior: contain;
+  animation: sotdBoardIn 420ms var(--ease);
+}
+@keyframes sotdBoardIn { from { transform: translateX(-18px); opacity: 0 } to { transform: none; opacity: 1 } }
+@keyframes sotdBoardUp { from { transform: translateY(18px); opacity: 0 } to { transform: none; opacity: 1 } }
+
+.sotd-board-card {
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 18px 18px 22px;
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  backdrop-filter: blur(30px) saturate(1.5); -webkit-backdrop-filter: blur(30px) saturate(1.5);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: 0 24px 60px -30px rgba(0,0,0,.7);
+}
+.sotd-board-card h3 {
+  font-size: .64rem; font-weight: 700; letter-spacing: .18em; text-transform: uppercase;
+  color: var(--text-faint);
+  display: flex; align-items: baseline; gap: 10px;
+}
+.sotd-h3-second { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border); }
+.sotd-h3-note { letter-spacing: 0; text-transform: none; font-weight: 400; font-size: .66rem; opacity: .75; }
+
+/* ---------------- the boards themselves ---------------- */
+
+.db-board { display: flex; flex-direction: column; gap: 2px; }
+.db-stack { display: flex; flex-direction: column; gap: 12px; }
+.db-yours-label {
+  font-size: .6rem; font-weight: 700; letter-spacing: .18em; text-transform: uppercase;
+  color: var(--text-faint); margin-bottom: 4px;
+}
+
+.db-row {
+  display: grid;
+  grid-template-columns: 1.6em 24px minmax(0, 1fr) auto auto;
+  align-items: center; gap: 10px;
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
+  /* An explicit transparent border, not none: a row that gains a border only
+     when it is yours would jump one pixel wider the moment it became yours. */
+  border: 1px solid transparent;
+}
+.db-row:nth-child(odd) { background: color-mix(in srgb, var(--text) 3%, transparent); }
+.db-row[data-me="true"] {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+.db-rank {
+  font-size: .72rem; font-weight: 600; font-variant-numeric: tabular-nums;
+  color: var(--text-faint); text-align: right;
+}
+/* The top three read as a podium without needing a medal glyph next to a
+   name, which would have cost the name a column on a phone. */
+.db-row[data-rank="1"] .db-rank { color: #f2c14e; }
+.db-row[data-rank="2"] .db-rank { color: #c9ccd1; }
+.db-row[data-rank="3"] .db-rank { color: #cd8b52; }
+
+.db-face {
+  width: 24px; height: 24px; border-radius: 50%; object-fit: cover; flex: none;
+  background: color-mix(in srgb, var(--text) 10%, transparent);
+}
+.db-face-letter {
+  display: grid; place-items: center;
+  font-size: .68rem; font-weight: 700; color: var(--text-faint);
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.db-name {
+  font-size: .8rem; font-weight: 500;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.db-time { font-size: .84rem; font-weight: 650; font-variant-numeric: tabular-nums; }
+.db-unit { font-size: .66rem; color: var(--text-faint); }
+.db-flag { font-size: .7rem; color: var(--warn); cursor: help; }
+
+/* The sign-in call to action, inside the board card where the reason for it
+   is. The button is full width because it is the only thing to do here. */
+.sotd-signin {
+  display: flex; flex-direction: column; gap: 10px;
+  margin-top: 12px; padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+.sotd-signin-text { font-size: .78rem; line-height: 1.5; color: var(--text-faint); }
+
+.db-empty, .db-locked-text {
+  font-size: .78rem; line-height: 1.55; color: var(--text-faint);
+}
+.db-locked {
+  display: flex; align-items: flex-start; gap: 12px;
+  padding: 14px 16px; border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--text) 4%, transparent);
+  border: 1px dashed var(--border);
+}
+.db-locked-icon { font-size: 1rem; line-height: 1.3; flex: none; opacity: .7; }
+
+/* Below the timer's own breakpoint there is no room for a column beside it,
+   so the board lies back down along the bottom — and is kept short enough
+   that the digits above it stay on screen rather than being covered. */
+/* The state line is the first thing to go: it is the one part of the bar
+   whose information is also on screen somewhere else — as the hold message
+   where the scramble goes, or as the board being locked. */
+@media (max-width: 760px) { .sotd-state { display: none; } }
+
+@media (max-width: 860px) {
+  #sotd-board {
+    left: 12px; right: 12px; top: auto; bottom: 0;
+    width: auto; max-height: 46vh;
+  }
+  /* Lifted clear of the sheet. On a wide screen the preview's usual corner is
+     nowhere near the board; here the board IS the bottom of the screen, and a
+     cube half-buried under a leaderboard is worse than no cube. */
+  body.sotd #panel-cube:not([data-placed="true"]) { bottom: calc(46vh + 14px); }
+  .sotd-board-card { border-bottom: 0; border-radius: 16px 16px 0 0; }
+  /* Its own name rather than redefining sotdBoardIn inside a media block:
+     same-named keyframes across conditions is the kind of thing that resolves
+     differently per engine, and there is nothing to gain by finding out. */
+  #sotd-board { animation-name: sotdBoardUp; }
+}
+
+@media (max-width: 520px) {
+  #sotd-bar { gap: 10px; padding: 8px 12px; }
+  .sotd-kicker { display: none; }
+  /* The qualifier beside the heading is a sentence, and a sentence does not
+     share a line with a heading at this width — it wraps into a shape that
+     reads as neither. */
+  .sotd-board-card h3 { flex-direction: column; align-items: flex-start; gap: 3px; }
+  .db-row { grid-template-columns: 1.4em 22px minmax(0, 1fr) auto auto; gap: 8px; padding: 6px 8px; }
+  .db-face { width: 22px; height: 22px; }
+}
