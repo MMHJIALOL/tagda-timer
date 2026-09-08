@@ -1638,6 +1638,30 @@ section('scramble of the day — when the timer is held shut');
     && held({ signedIn: false }).hold === 'Sign in to be given today’s scramble'
     && /already done today/.test(held(live, { submittedToday: true }).hold));
 
+  /* The window draws that line from takeScramble(), which only runs when the
+     app is asked for a new scramble — so the message was a snapshot of
+     whatever was true when the window opened, and stayed on screen however
+     far the state moved on underneath it. A window that had gone on to fail,
+     retry and give up still read "Reading today's board…". */
+  {
+    let repaints = 0;
+    const ctl = at(Object.assign(stub(), { engaged: true }),
+      { signedIn: true, scramble: null, dayId: '2026-09-08' }, { _readWaits: 1 });
+    ctl.app.nextScramble = () => { repaints++; };
+    const firstLine = ctl.takeScramble().hold;
+    ctl._changed();
+    check('a hold line that is still true is not repainted',
+      repaints === 0 && /Reading today’s board/.test(firstLine), firstLine);
+
+    ctl.publishError = 'PERMISSION_DENIED';
+    ctl._publishTries = 1;
+    ctl._changed();
+    check('a hold line that has stopped being true is repainted',
+      repaints === 1, `${repaints} repaint(s)`);
+    check('…and the new line names the reason rather than repeating the old one',
+      /PERMISSION_DENIED/.test(ctl.takeScramble().hold), ctl.takeScramble().hold);
+  }
+
   check('a shut window never hands the timer a solvable scramble',
     ['scramble'].every(k => held({ signedIn: true, scramble: null })[k] === ''));
 
