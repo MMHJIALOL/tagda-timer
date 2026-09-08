@@ -13,6 +13,7 @@
    =========================================================== */
 
 import { FIREBASE_CONFIG, FIREBASE_VERSION } from './raceapp.js';
+import { clearSotdDone } from './dayid.js';
 
 const APP_NAME = 'tagda-sync';
 
@@ -178,6 +179,14 @@ export function takeRedirectError() {
 export async function signOutUser() {
   const { authMod, auth } = await ensureSdk();
   await authMod.signOut(auth);
+  /* One thing does have to go with the session: the note saying today's
+     Scramble of the Day is already spent. It is a browser-wide line of
+     localStorage rather than an account's, so left alone it retired the gold
+     chip for a signed-out visitor — who has no attempt in, cannot have one,
+     and is exactly the person the invitation is for — and then handed the
+     same finished day to whoever signed in next. dayid.js, not daily.js, so
+     signing out costs no Firebase load it was not already paying for. */
+  clearSotdDone();
 }
 
 /**

@@ -25,7 +25,7 @@ import { toast, confirmToast } from './toast.js';
 // The pure day math only — see js/dayid.js. Imported eagerly on purpose:
 // the top bar needs today's date on first paint, and this file has no
 // dependencies of its own to drag in with it.
-import { dayIdFromServerMs } from './dayid.js';
+import { dayIdFromServerMs, sotdDoneOn, clearSotdDone } from './dayid.js';
 import { openPalette, closePalette, paletteOpen } from './palette.js';
 /* panels.js, sharedlg.js (which drags in sharecard.js and cubenet.js) and
    stackmat.js are imported where they are first needed, not here — see
@@ -131,18 +131,14 @@ const dailyCtl = () => (_daily ? _daily.getDaily(app) : null);
    became unreachable until midnight. "Stop advertising it" and "take it away"
    are not the same instruction, and only the first one is wanted here.
 
-   Decided WITHOUT the network, from the note daily.js leaves behind, because
+   Decided WITHOUT the network, from the note dayid.js keeps, because
    this runs on first paint and the alternative — loading Firebase to draw a
    top bar — would throw away the whole reason that module is lazy. The date
    is this device's, not the server's, which is the one compromise here and a
    safe one: the worst a wound-forward clock buys is a button that was already
    one click away, and whether you may actually submit is settled by a rule
    that has never heard of any of this. */
-const sotdDoneToday = () => {
-  try {
-    return localStorage.getItem('tdt.sotd.doneDay') === dayIdFromServerMs(Date.now());
-  } catch { return false; }
-};
+const sotdDoneToday = () => sotdDoneOn(dayIdFromServerMs(Date.now()));
 
 function syncSotdChip() {
   const btn = $('#btn-daily');
@@ -2701,7 +2697,16 @@ async function startCloudSync() {
   // that only runs if this module gets loaded. Checking persistence alone
   // meant we returned here, never loaded it, and the user landed back on a
   // timer that looked exactly as signed-out as when they left.
-  if (!hasPersistedSession() && !hasPendingRedirect()) return;
+  if (!hasPersistedSession() && !hasPendingRedirect()) {
+    /* Nobody is signed in on this browser, so nobody has an attempt in and
+       the gold chip should be inviting whoever is here to sign in and take
+       one. The note is browser-wide, not per-account, so it outlives the
+       session that wrote it — including a sign-out that happened on some
+       other device, which this one only ever finds out about by not having
+       a session any more. */
+    clearSotdDone();
+    return;
+  }
   const { wireAccountButton } = await import('./sync-ui.js');
   wireAccountButton($('#btn-account'), { setSetting: app.setSetting });
   const err = takeRedirectError();

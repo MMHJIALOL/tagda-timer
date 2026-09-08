@@ -163,3 +163,52 @@ export function formatCountdown(msRemaining) {
   const m = totalMin % 60;
   return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
+
+/* ---------------------------------------------------------
+   The "you have already done today's" note
+   ---------------------------------------------------------
+
+   Where the top bar looks to decide whether to still be inviting you. It
+   lives in this half of the feature, not in daily.js, because main.js has
+   to answer the question on first paint — loading Firebase to render a top
+   bar would undo the whole reason that module is lazy — and because signing
+   out has to be able to clear it without loading Firebase either.
+
+   Cosmetic on purpose. It retires a button; it grants nothing. Editing it by
+   hand gets the gold pill back, which a reload would also have given you,
+   and whether you may actually submit is decided by a database rule that has
+   never heard of it.
+   --------------------------------------------------------- */
+
+export const SOTD_DONE_KEY = 'tdt.sotd.doneDay';
+
+/** Fired whenever the note changes, so the chip redraws without a reload. */
+function announce(dayId) {
+  window.dispatchEvent(new CustomEvent('sotd-done', { detail: { dayId } }));
+}
+
+export function markSotdDone(dayId) {
+  if (!dayId) return;
+  try { localStorage.setItem(SOTD_DONE_KEY, dayId); } catch { /* private mode */ }
+  announce(dayId);
+}
+
+/**
+ * Forget it, and say so.
+ *
+ * Called on sign-out and whenever the database says this account has no
+ * result for today after all. The note is one line of localStorage shared by
+ * every identity that uses this browser, so without this it outlived the
+ * account that earned it: sign out and the chip stayed retired all day even
+ * though a signed-out visitor has no attempt in and cannot have one, and
+ * signing in as somebody else inherited the first account's finished day.
+ */
+export function clearSotdDone() {
+  try { localStorage.removeItem(SOTD_DONE_KEY); } catch { /* private mode */ }
+  announce(null);
+}
+
+/** Whether today, by this device's clock, is the day last submitted. */
+export function sotdDoneOn(dayId) {
+  try { return localStorage.getItem(SOTD_DONE_KEY) === dayId; } catch { return false; }
+}

@@ -24,29 +24,9 @@ import {
   DailyTransport, cloudAvailable,
   CLOCK_SLACK_MS, CLOCK_SLACK_RATIO,
   countSolvesForDay, rankByCount, dayStartMs, safePhotoUrl,
+  markSotdDone, clearSotdDone, sotdDoneOn,
 } from './daily-net.js';
 import { SUSPECT_RATIO } from './raceapp.js';
-
-/**
- * Where the top bar looks to decide whether to still be inviting you.
- *
- * The chip has to be right on the very first paint, before any of this file
- * exists — loading Firebase to render a top bar would undo the whole reason
- * this module is lazy. So the day you last submitted is left here as a note,
- * and main.js compares it against today's date on its own.
- *
- * Cosmetic on purpose. It hides a button; it grants nothing. Editing it by
- * hand gets you the button back, which you could have had by reloading, and
- * whether you may actually submit is decided by a database rule that has
- * never heard of it.
- */
-export const SOTD_DONE_KEY = 'tdt.sotd.doneDay';
-
-function markSotdDone(dayId) {
-  if (!dayId) return;
-  try { localStorage.setItem(SOTD_DONE_KEY, dayId); } catch { /* private mode */ }
-  window.dispatchEvent(new CustomEvent('sotd-done', { detail: { dayId } }));
-}
 
 /**
  * Whether the "most solves today" board is shown.
@@ -266,6 +246,13 @@ export class Daily extends EventTarget {
       this.net.unlockResults();
       this.attempting = false;
       markSotdDone(dayId);
+    } else if (sotdDoneOn(dayId)) {
+      /* The note says today is spent and the database says it is not, so the
+         note is wrong and this is the only place that can ever find out: it
+         belongs to the browser, not to the account, so it survives a sign-out
+         and is inherited by whoever signs in next. The database is the one
+         that knows, and it has just answered. */
+      clearSotdDone();
     }
     this.dispatchEvent(new CustomEvent('change'));
   }

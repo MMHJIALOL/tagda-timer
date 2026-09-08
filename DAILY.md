@@ -219,6 +219,19 @@ Firebase to render a top bar would throw away the entire reason `daily.js` is la
 *day* rather than a boolean is what makes the invitation come back after the reset. It is
 cosmetic either way: editing it by hand restyles a button, and whether you may actually submit
 is settled by a database rule that has never heard of it.
+
+The note belongs to the **browser**, not to the account, so three things throw it away — and
+all three are the same one-line `clearSotdDone()` in [`js/dayid.js`](js/dayid.js), which
+forgets it and raises `sotd-done` so the chip redraws without a reload:
+
+| when | why |
+| --- | --- |
+| signing out (`signOutUser`) | a signed-out visitor has no attempt in and cannot have one — they are exactly who the gold is for |
+| boot with no session at all (`startCloudSync`) | the sign-out may have happened on another device; not having a session is how this one finds out |
+| the database says this account has no result today (`_checkOwnResult`) | covers switching accounts on one browser, and a result that has since gone |
+
+Without them the note simply outlived the account that earned it: sign out and the chip stayed
+retired all day, on a page where signing back in was the only thing it was asking you to do.
 - **Esc leaves, except mid-solve**, where it still means "abandon this solve". The window asks
   the timer whether it is busy rather than reaching into it.
 

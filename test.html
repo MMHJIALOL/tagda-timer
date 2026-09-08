@@ -861,6 +861,30 @@ await new Promise((resolve) => {
 
       note(null);
       check('no note at all leaves the chip inviting', shownChip() && labelled() && shining());
+
+      /* The note belongs to the browser, not to the account, so something has
+         to throw it away when the account goes — otherwise signing out left
+         the chip retired for a visitor who has no attempt in, cannot have
+         one, and is precisely the person the gold is for. clearSotdDone() is
+         what sign-out, boot-without-a-session and a database that disagrees
+         all call; it must both forget the note and say so, since the chip is
+         drawn from the event rather than by polling. */
+      note(today);
+      const { clearSotdDone } = await import('./js/dayid.js');
+      /* The module under test is this page's copy, so its announcement lands
+         on this window; the note itself is localStorage, which the frame
+         shares. So: call it here, then hand the frame the same event the real
+         one would have raised inside it and look at the chip. */
+      let announced = false;
+      const hear = () => { announced = true; };
+      window.addEventListener('sotd-done', hear);
+      clearSotdDone();
+      window.removeEventListener('sotd-done', hear);
+      w.dispatchEvent(new w.CustomEvent('sotd-done'));
+      check('signing out un-retires the chip, and announces it',
+        announced && !w.localStorage.getItem('tdt.sotd.doneDay')
+          && shownChip() && labelled() && shining(),
+        `announced ${announced}, note ${w.localStorage.getItem('tdt.sotd.doneDay')}`);
     }
 
     /* ---------------- the Scramble of the Day window, as it renders ----------------
