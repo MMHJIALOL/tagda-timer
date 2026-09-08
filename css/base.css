@@ -808,6 +808,14 @@ body.sotd #now-playing, body.sotd #learn-bar,
    thing this window exists to prevent, and the fourth is a button for a
    scramble you are supposed to be reading, not collecting. */
 body.sotd #scramble-tools,
+/* Your running ao5 and ao12 belong to the practice session this window is not
+   part of. One official attempt has no average, and a rolling mean of twelve
+   ordinary solves sitting under the one that counts invites you to read the
+   attempt as though it were the thirteenth of them. */
+body.sotd #timer-avgs,
+/* Same for the last-solve delta: there is nothing here for it to be a delta
+   from. */
+body.sotd #last-delta,
 /* The bar overhead already says what this scramble is, so the standing
    "Scramble" caption underneath it is the label repeated twice. */
 body.sotd .scramble-label { display: none; }

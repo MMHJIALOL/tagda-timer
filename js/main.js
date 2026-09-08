@@ -207,16 +207,29 @@ async function openSotd() {
      the scramble happened to be a beat late, which is the usual case. */
   ctl.engage();
 
+  /* Whatever drawer was open stays open behind the window otherwise — the
+     window subtracts the chrome it knows about by class, and the drawer is
+     not chrome, it is a thing somebody deliberately opened. It ends up as a
+     strip down the side of a mode that is supposed to have nothing in it but
+     the scramble and the timer. */
+  closeDrawer();
+
   ui.openSotd(app, ctl, {
     onExit: () => {
       ctl.disengage();
       refit();
       syncSotdChip();
+      // The practice session's last time comes back the moment the window
+      // that was hiding it goes.
+      syncTimerDisplay();
     },
     // Esc mid-solve still means "abandon this solve", not "leave the window".
     solving: () => timer && timer.state !== 'idle' && timer.state !== 'cooldown',
   });
   refit();
+  // `sotd` is on <body> by now, so this clears the practice session's last
+  // time off the digits rather than leaving it under today's scramble.
+  syncTimerDisplay();
 }
 
 /** Nothing to open is better than a click that silently does nothing. */
@@ -627,13 +640,39 @@ async function nextScramble({ clear = false } = {}) {
   showScramble(s);
 }
 
+/**
+ * Whether something other than the generator owns what is on screen.
+ *
+ * The Scramble of the Day window hides the prev/next/copy buttons, which was
+ * mistaken for having removed the ability to step the scramble. It had not:
+ * the keyboard still did it, and Left/Right/N walked straight off today's
+ * official scramble onto a practice one from the history — inside the window
+ * whose entire purpose is that only today's scramble is in it. Since
+ * prevScramble draws from the history directly rather than through
+ * takeScramble, nothing downstream ever got a say.
+ *
+ * Nobody loses an attempt to this — a solve is checked against today's
+ * scramble before it is submitted, so the worst case was a solve that
+ * silently counted for nothing. Which is arguably worse than losing it.
+ */
+/* Read off the body class rather than the controller. `sotd` on <body> IS
+   the window — it is what every other rule about this mode keys on — and
+   asking the DOM costs nothing and cannot disagree with what the viewer is
+   actually looking at. Going through dailyCtl() would have made the guard
+   depend on a lazily-loaded module being loaded, which is true in the app and
+   is exactly the sort of thing that is quietly false somewhere else. */
+const scrambleIsSpokenFor = () =>
+  document.body.classList.contains('sotd') || !!dailyCtl()?.engaged;
+
 function prevScramble() {
+  if (scrambleIsSpokenFor()) { toast('Today’s scramble is the only one in here'); return; }
   if (app.historyPos <= 0) { toast('No earlier scramble'); return; }
   app.historyPos--;
   showScramble(app.scrambleHistory[app.historyPos]);
 }
 
 function forwardScramble() {
+  if (scrambleIsSpokenFor()) { toast('Today’s scramble is the only one in here'); return; }
   if (app.historyPos >= app.scrambleHistory.length - 1) { nextScramble(); return; }
   app.historyPos++;
   showScramble(app.scrambleHistory[app.historyPos]);
@@ -1538,7 +1577,15 @@ async function recordSolve({ timeMs, penalty = 'none', inspectionMs = 0, splits 
  */
 function syncTimerDisplay() {
   if (timer && timer.state !== 'idle' && timer.state !== 'cooldown') return;
-  const last = app.solves.at(-1);
+  /* Inside the Scramble of the Day window the digits start empty and stay
+     empty until today's attempt has actually been made. The number they would
+     otherwise carry in is the last solve of the practice session, which has
+     nothing to do with this scramble — and a time already sitting on the
+     display of a one-shot attempt reads as though the attempt were over.
+     Once it IS over, `submittedToday` is true and the last solve is that
+     attempt, so from then on the ordinary line below is exactly right. */
+  const sotdBlank = document.body.classList.contains('sotd') && !dailyCtl()?.submittedToday;
+  const last = sotdBlank ? null : app.solves.at(-1);
   const v = last ? eff(last) : null;
   $('#time-main').style.opacity = '';
   $('#time-main').textContent = last ? (v === DNF ? 'DNF' : fmt(v)) : '0.00';
@@ -4051,7 +4098,14 @@ function wireShortcuts() {
         break;
 
       case 'n': case 'N': e.preventDefault(); forwardScramble(); break;
-      case 'x': case 'X': e.preventDefault(); openPanel('Your scrambles', 'buildCustomScrambles', undefined, app); break;
+      case 'x': case 'X':
+        e.preventDefault();
+        /* Pasting your own scrambles in here is the same instruction as the
+           arrow keys, one step further round: it replaces today's scramble
+           with one of your choosing, on the one attempt that counts. */
+        if (scrambleIsSpokenFor()) { toast('Today’s scramble is the only one in here'); break; }
+        openPanel('Your scrambles', 'buildCustomScrambles', undefined, app);
+        break;
       case 'ArrowLeft':  e.preventDefault(); prevScramble(); break;
       case 'ArrowRight': e.preventDefault(); forwardScramble(); break;
 
