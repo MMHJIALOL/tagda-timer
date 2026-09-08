@@ -32,16 +32,29 @@ bucket.
 **The database key is that boundary's epoch ms, not the date you'd expect to see.**
 `daily/<dayId>/<event>` in the UI reads as `2026-09-08`, but on the wire the path is
 `daily/<epoch-ms-of-that-day's-00:00-IST>/<event>` (`js/daily-net.js`'s `dayKeyFromServerMs`).
-That is not cosmetic: a security rule can compare a numeric path segment against `now` to
-refuse a write to a day that has not started yet, and it has no date parser to pull a
-comparable instant back out of a string like "2026-09-08". Keying on the string instead would
-have let any signed-in visitor pre-publish a future day's scramble, solve it at leisure, and
-post an unflaggable time once that day genuinely opened — the one rule that makes this whole
-feature fair:
+It is keyed that way so that a rule could compare the day against `now` — the rules language
+has no date parser to pull a comparable instant back out of a string like "2026-09-08".
+
+**That comparison does not work, and the rule no longer pretends to make it.** A `$capture`
+from a path is a **string**; `now` is a **number**; the rules language is strictly typed and a
+cross-type comparison is simply false. So `".validate": "$dayStart <= now"` was false for every
+write, and because `.validate` is evaluated for the ancestors of a write and not only its leaf,
+it refused **every** write anywhere under `daily/` — the scramble nobody could publish and the
+progress nobody could report, both denied by a rule that was meant to be about future days.
+Reads were unaffected, which is what made it look like a client bug for so long.
+
+What is there now is the shape check the path can actually carry:
 
 ```
-"daily": { "$dayStart": { ".validate": "$dayStart <= now", ... } }
+"daily": { "$dayStart": { ".validate": "$dayStart.matches(/^[0-9]{13}$/)", ... } }
 ```
+
+**So the "no pre-publishing a future day" guarantee is not currently enforced.** It never was —
+the rule that claimed it could not evaluate to true. Getting it back means giving the rule
+something numeric to compare, which means putting the day's start inside the node as a value
+rather than only in its key. That is a data-shape change and it is written down here rather
+than done quietly: the exposure is that a signed-in visitor could pre-plant a future day's
+scramble, and the cost of the fix is a migration.
 
 **Status is public; times are private**, the identical split Race mode's rooms use:
 

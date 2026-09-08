@@ -139,7 +139,7 @@
 
     "daily": {
       "$dayStart": {
-        ".validate": "$dayStart <= now",
+        ".validate": "$dayStart.matches(/^[0-9]{13}$/)",
         "$event": {
           "scramble": {
             ".read": true,
@@ -183,7 +183,7 @@
     "dailyCount": {
       "$dayStart": {
         ".read": true,
-        ".validate": "$dayStart <= now",
+        ".validate": "$dayStart.matches(/^[0-9]{13}$/)",
         "$uid": {
           ".write": "auth != null && auth.uid === $uid && (!data.exists() || newData.child('n').val() >= data.child('n').val())",
           ".validate": "newData.hasChildren(['n'])",
