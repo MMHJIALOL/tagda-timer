@@ -921,12 +921,14 @@ await new Promise((resolve) => {
 
       const settle = () => new Promise(r => setTimeout(r, 400));
 
-      const racing = makeCtl({ scrambleLoaded: false });
-      await racing._maybePublishScramble();
+      /* First, so the random-state generator is warm before anything below is
+         timed — a cold WASM load is seconds, and none of these checks are
+         about how long generating takes. */
+      const first = makeCtl({ scrambleLoaded: true, scramble: null });
+      await first._maybePublishScramble();
       await settle();
-      check('a client that has not heard from the scramble node yet publishes nothing',
-        racing.net.published.length === 0,
-        `${racing.net.published.length} write(s) — each one is a new scramble for everybody`);
+      check('the first client of the day, having actually looked, does publish one',
+        first.net.published.length === 1, `${first.net.published.length} write(s)`);
 
       const known = makeCtl({ scrambleLoaded: true, scramble: "R U R' U'" });
       await known._maybePublishScramble();
@@ -934,11 +936,22 @@ await new Promise((resolve) => {
       check('a day that already has a scramble is never written over',
         known.net.published.length === 0, `${known.net.published.length} write(s)`);
 
-      const first = makeCtl({ scrambleLoaded: true, scramble: null });
-      await first._maybePublishScramble();
-      await settle();
-      check('the first client of the day, having actually looked, does publish one',
-        first.net.published.length === 1, `${first.net.published.length} write(s)`);
+      const racing = makeCtl({ scrambleLoaded: false });
+      await racing._maybePublishScramble();
+      check('a client that has not heard from the scramble node yet publishes nothing',
+        racing.net.published.length === 0,
+        `${racing.net.published.length} write(s) — each one is a new scramble for everybody`);
+
+      /* …but standing aside must never be a dead end. The first version of
+         that gate was a bare return, so a listener that never reported left
+         the window on "Publishing today's scramble…" with no attempt made and
+         no retry scheduled — a silent hang in place of the bug it fixed. The
+         wait is bounded, and the transaction is what actually keeps the write
+         once, so a node that will not report is published to anyway. */
+      for (let i = 0; i < 40 && racing.net.published.length === 0; i++) await settle();
+      check('a scramble node that never reports is waited on, then published to anyway',
+        racing.net.published.length === 1,
+        `${racing.net.published.length} write(s) after the wait ran out`);
     }
 
     /* ---------------- the Scramble of the Day window, as it renders ----------------
