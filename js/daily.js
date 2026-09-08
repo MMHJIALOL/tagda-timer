@@ -113,8 +113,14 @@ export class Daily extends EventTarget {
     this.publishError = null;
     this._publishRetry = 0;
     this._publishTries = 0;
-    /** The hold line currently on screen, or null while a real scramble is. */
-    this._shownHold = null;
+    /** The hold line currently on screen, null while a real scramble is, or
+     *  undefined before anything has been shown at all — see _changed(). */
+    this._shownHold = undefined;
+    /** Whether _checkOwnResult has answered at least once for this uid/day.
+     *  Arming an attempt before this is true means arming it against
+     *  whatever submittedToday happened to default to, not what the
+     *  database actually says — see canAttempt(). */
+    this._resultChecked = false;
     /** How many times publishing has stood aside for a listener that has not reported. */
     this._readWaits = 0;
     this._readWait = 0;
@@ -147,6 +153,7 @@ export class Daily extends EventTarget {
     this.eventId = eventId;
     this.attempting = false;
     this.submittedToday = false;
+    this._resultChecked = false;
     this._resetPublishState();
     this.net?.watch(eventId);
     this._checkOwnResult();
@@ -294,12 +301,13 @@ export class Daily extends EventTarget {
   }
 
   async _checkOwnResult() {
-    if (!this.net || !this.snap?.uid) { this.submittedToday = false; return; }
+    if (!this.net || !this.snap?.uid) { this.submittedToday = false; this._resultChecked = false; return; }
     const { event, dayId, uid } = this.snap;
     const has = await this.net.hasOwnResult();
     // The event or the day moved on while we were asking — the answer is stale.
     if (this.snap.event !== event || this.snap.dayId !== dayId || this.snap.uid !== uid) return;
     this.submittedToday = has;
+    this._resultChecked = true;
     if (has) {
       this.net.unlockResults();
       this.attempting = false;
@@ -318,7 +326,14 @@ export class Daily extends EventTarget {
   /* ---------------- attempting today's scramble ---------------- */
 
   canAttempt() {
-    return !!(this.snap?.signedIn && this.snap.scramble && !this.submittedToday && !this.attempting);
+    /* `submittedToday` defaults to false and only becomes trustworthy once
+       _checkOwnResult has actually answered for this uid/day — arming an
+       attempt on the default, before that answer is back, meant every fresh
+       connect (a page load, a reopen of the window) briefly believed nobody
+       had submitted yet and handed out a fresh crack at today's scramble
+       even when the account had already spent it. */
+    return !!(this.snap?.signedIn && this.snap.scramble && this._resultChecked
+      && !this.submittedToday && !this.attempting);
   }
 
   attempt() {
@@ -417,7 +432,14 @@ export class Daily extends EventTarget {
   _changed() {
     if (this.engaged && !this.attempting) {
       const now = this.holdText();
-      if (this._shownHold !== null && this._shownHold !== now) this.app.nextScramble?.();
+      /* `undefined` means nothing has been shown yet, and there is nothing to
+         repaint over. `null` means a real scramble is on screen right now —
+         checking it against `null` here, the same as against any other stale
+         hold, is what corrects a scramble that should never have been shown
+         (e.g. an attempt armed on a submittedToday that had not been checked
+         yet) back to the message that belongs there, the moment the truer
+         answer comes in. */
+      if (this._shownHold !== undefined && this._shownHold !== now) this.app.nextScramble?.();
     }
     this.dispatchEvent(new CustomEvent('change'));
   }

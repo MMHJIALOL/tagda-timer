@@ -555,6 +555,19 @@ app.makeScramble = () => queue.next();
 let scrambleToken = 0;
 
 async function nextScramble({ clear = false } = {}) {
+  /* Bumped before anything else runs, and unconditionally — not only on the
+     branch that used to bump it. nextScramble() is async and the generator
+     branch below can await a cold, multi-second random-state search; a call
+     that starts while that is still in flight and short-circuits early
+     (a race round, an armed daily attempt, a pasted list all `return`
+     before reaching the old token bump) used to leave that outstanding
+     search free to resolve afterwards and overwrite whatever the
+     short-circuit had just shown. That is how the Scramble of the Day
+     window could flash a completely different, ordinary scramble a moment
+     after correctly showing today's: a boot-time generator call was still
+     warming up when the window opened and arrived late, unopposed. */
+  const token = ++scrambleToken;
+
   // Switching event: a big-cube random-state scramble takes a couple of seconds,
   // and leaving the previous event's scramble on screen invites you to solve
   // the wrong one. Say what is happening instead.
@@ -610,8 +623,6 @@ async function nextScramble({ clear = false } = {}) {
     showScramble(own);
     return;
   }
-
-  const token = ++scrambleToken;
 
   /* Learn mode picks the case, so the pre-generated queue -- which deals a
      random one out of the set -- is not what should be on screen. A case
