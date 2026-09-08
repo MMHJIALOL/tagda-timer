@@ -75,6 +75,9 @@ const GENERATE_TIMEOUT_MS = 20000;
 const READ_WAIT_MS = 400;
 const READ_WAIT_TRIES = 4;
 
+/** A write that has not landed by now is not landing on this connection. */
+const PUBLISH_TIMEOUT_MS = 15000;
+
 /** An event only counts as a daily challenge if "one scramble, one time" describes it. */
 export function dailyEligible(eventId) {
   const ev = eventOf(eventId);
@@ -110,6 +113,8 @@ export class Daily extends EventTarget {
     this.publishError = null;
     this._publishRetry = 0;
     this._publishTries = 0;
+    /** The hold line currently on screen, or null while a real scramble is. */
+    this._shownHold = null;
     /** How many times publishing has stood aside for a listener that has not reported. */
     this._readWaits = 0;
     this._readWait = 0;
@@ -145,7 +150,7 @@ export class Daily extends EventTarget {
     this._resetPublishState();
     this.net?.watch(eventId);
     this._checkOwnResult();
-    this.dispatchEvent(new CustomEvent('change'));
+    this._changed();
   }
 
   _onDay(snap) {
@@ -165,7 +170,7 @@ export class Daily extends EventTarget {
     if (this.engaged) this._armIfPossible();
     this._maybePublishScramble();
     this._checkOwnResult();
-    this.dispatchEvent(new CustomEvent('change'));
+    this._changed();
   }
 
   /**
@@ -209,7 +214,7 @@ export class Daily extends EventTarget {
       this._readWaits++;
       clearTimeout(this._readWait);
       this._readWait = setTimeout(() => this._maybePublishScramble(), READ_WAIT_MS);
-      this.dispatchEvent(new CustomEvent('change'));
+      this._changed();
       return;
     }
 
@@ -229,7 +234,15 @@ export class Daily extends EventTarget {
         new Promise((_, rej) => setTimeout(() => rej(new Error('generator-timeout')), GENERATE_TIMEOUT_MS)),
       ]);
       if (this.snap.event !== event || this.snap.dayId !== dayId || this.snap.scramble) return;
-      const out = await this.net.publishScramble(s.scramble);
+      /* Raced, for the same reason the generator above is. A database write
+         with nowhere to go does not fail — it waits for a connection, which
+         may never come, and `_publishing` stays true behind it so nothing
+         retries and nothing gives up. An attempt that never ends is worse
+         than one that fails, because only a failure is ever reported. */
+      const out = await Promise.race([
+        this.net.publishScramble(s.scramble),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('publish-timeout')), PUBLISH_TIMEOUT_MS)),
+      ]);
       this.publishError = out?.ok ? null : (out?.reason || 'refused');
       if (this.publishError) console.warn('[daily] scramble publish refused:', this.publishError);
     } catch (err) {
@@ -238,7 +251,7 @@ export class Daily extends EventTarget {
     } finally {
       this._publishing = false;
       this._scheduleRepublish();
-      this.dispatchEvent(new CustomEvent('change'));
+      this._changed();
     }
   }
 
@@ -299,7 +312,7 @@ export class Daily extends EventTarget {
          that knows, and it has just answered. */
       clearSotdDone();
     }
-    this.dispatchEvent(new CustomEvent('change'));
+    this._changed();
   }
 
   /* ---------------- attempting today's scramble ---------------- */
@@ -317,7 +330,7 @@ export class Daily extends EventTarget {
       toast('Switched to the spacebar timer for today’s scramble', { long: true });
     }
     this.app.nextScramble?.();
-    this.dispatchEvent(new CustomEvent('change'));
+    this._changed();
   }
 
   /* ---------------- being in the window ---------------- */
@@ -330,7 +343,7 @@ export class Daily extends EventTarget {
     // Even when there is nothing to arm yet, the scramble on screen has to
     // stop being an ordinary one immediately — see takeScramble's hold.
     if (!this.attempting) this.app.nextScramble?.();
-    this.dispatchEvent(new CustomEvent('change'));
+    this._changed();
   }
 
   /** Leave the window. An attempt that was never solved is spent on nothing. */
@@ -339,7 +352,7 @@ export class Daily extends EventTarget {
     this.engaged = false;
     this.attempting = false;
     this.app.nextScramble?.();
-    this.dispatchEvent(new CustomEvent('change'));
+    this._changed();
   }
 
   _armIfPossible() {
@@ -351,7 +364,7 @@ export class Daily extends EventTarget {
     if (!this.attempting) return;
     this.attempting = false;
     this.app.nextScramble?.();
-    this.dispatchEvent(new CustomEvent('change'));
+    this._changed();
   }
 
   /** Which of the window's states this is, for the UI to say so out loud. */
@@ -377,9 +390,36 @@ export class Daily extends EventTarget {
        from an ordinary timer: the scramble changed on every solve, none of
        them counted, and nothing ever reached the board. */
     if (!this.attempting || !this.snap?.scramble) {
-      return { scramble: '', hold: this.holdText(), official: true, daily: true };
+      const hold = this.holdText();
+      this._shownHold = hold;
+      return { scramble: '', hold, official: true, daily: true };
     }
+    this._shownHold = null;
     return { scramble: this.snap.scramble, official: true, daily: true };
+  }
+
+  /**
+   * Announce a state change — and repaint the line standing in for the
+   * scramble if it has stopped being true.
+   *
+   * The window draws that line from takeScramble(), and takeScramble() only
+   * runs when the app is asked for a new scramble. So the message was a
+   * SNAPSHOT: whatever holdText() happened to say at the moment the window
+   * opened stayed on screen for the rest of the session, however far the
+   * state moved on underneath it. A window that had gone on to fail, retry
+   * and give up still read "Reading today's board…", which is indeed what it
+   * had been doing, about a second and a half earlier.
+   *
+   * Comparing the text rather than tracking what changed keeps this honest
+   * for every future message too, and costs a string compare on an event
+   * that fires a handful of times a minute.
+   */
+  _changed() {
+    if (this.engaged && !this.attempting) {
+      const now = this.holdText();
+      if (this._shownHold !== null && this._shownHold !== now) this.app.nextScramble?.();
+    }
+    this.dispatchEvent(new CustomEvent('change'));
   }
 
   /** The line that stands in for the scramble when there is nothing to solve. */
@@ -463,7 +503,7 @@ export class Daily extends EventTarget {
     this.submittedToday = true;
     this._lastStatus = null;
     markSotdDone(this.snap.dayId);
-    this.dispatchEvent(new CustomEvent('change'));
+    this._changed();
 
     await this._retry(() => this.net.setProgress({ status: 'done', submitted: true }));
 
@@ -494,7 +534,7 @@ export class Daily extends EventTarget {
       }
     }
     this.net.unlockResults();
-    this.dispatchEvent(new CustomEvent('change'));
+    this._changed();
   }
 
   /**

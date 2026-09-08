@@ -189,6 +189,7 @@ body.inspecting #timer-display { opacity: 0; }
   display: flex; align-items: center; gap: var(--gap);
   min-height: 44px; min-width: 0;
 }
+.topbar-left { display: flex; align-items: center; min-width: 0; flex: 0 0 auto; }
 .brand { display: flex; align-items: center; gap: 9px; user-select: none; flex: 0 0 auto; }
 /* An <img> now, not an icon font glyph — it must not inherit the stroke rules
    that style the rest of the SVG icons. */
@@ -208,6 +209,30 @@ body.inspecting #timer-display { opacity: 0; }
   min-width: 0; flex: 0 1 auto; overflow: hidden;
 }
 .topbar-right { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+
+/* `margin: 0 auto` on a flex row centres the pickers in the space *left over*
+   between the wordmark and the icon cluster -- and those two are nowhere near
+   the same width (155px against 480px), so the row landed 163px left of the
+   page's centre while the SCRAMBLE label and the scramble under it sat dead
+   centre. Three lines that should share one axis, and two of them disagreed
+   with the one you actually read.
+
+   Giving both outer groups the same flex rule makes them the same width, and
+   a centred thing between two equal weights is centred on the page. It is
+   done in flexbox rather than a three-column grid on purpose: when the bar is
+   too narrow for two 480px sides, `min-width: max-content` freezes the icon
+   cluster at its own width and flexbox hands the rest to the left group, so
+   the row slides back off centre by however much is missing instead of
+   overlapping the icons -- which is exactly what the equivalent grid does.
+   Perfect above ~1530px, and progressively less wrong below it.
+
+   Only above 1040px: below that the bar wraps and the centre group becomes
+   its own scrolling row, where being centred is not the question. */
+@media (min-width: 1041px) {
+  .topbar-left, .topbar-right { flex: 1 1 0; min-width: max-content; }
+  .topbar-right { justify-content: flex-end; }
+  .topbar-center { margin: 0; }
+}
 
 /* =================== SCRAMBLE =================== */
 #scramble-zone {
