@@ -72,6 +72,14 @@ import { dayIdFromServerMs, nextResetMs, dayKeyFromServerMs } from './dayid.js';
 const emptySnapshot = (event) => ({
   event, dayId: null, uid: null, signedIn: false, displayName: null, photoURL: null,
   scramble: null, progress: {}, results: {}, resultsUnlocked: false, readError: null,
+  /* Whether the scramble node has actually reported yet.
+     `scramble: null` alone cannot answer "has anybody published today's?" —
+     it is also what a listener that has not yet delivered its first value
+     looks like, and watch() emits once before that happens. Publishing on
+     that emit is how every client ended up generating its own: each refresh
+     raced the read, and a client that beat it wrote a brand new scramble
+     over the day's. Nothing publishes until this is true. */
+  scrambleLoaded: false,
   /* The solve-count board. Keyed by day only, never by event — it counts
      everything you did today, whatever puzzle it was on. */
   counts: {},
@@ -154,6 +162,7 @@ export class DailyTransport extends EventTarget {
     this._eventUnsubs.push(
       S.onValue(this._ref(`${base}/scramble`), (s) => {
         this.snap.scramble = s.val() || null;
+        this.snap.scrambleLoaded = true;
         this.snap.readError = null;
         this._emit();
       }, (err) => {
@@ -163,6 +172,10 @@ export class DailyTransport extends EventTarget {
            scramble…" for the rest of the session with nothing anywhere
            saying why. It is recorded and surfaced now. */
         this.snap.readError = err?.code || String(err?.message || err);
+        /* Emphatically NOT scrambleLoaded. A node we cannot read is a node we
+           must not publish to: we would be writing a scramble we can never be
+           told has already been written, which is the same "everyone gets
+           their own" failure with a worse cause. holdText says so instead. */
         console.warn('[daily] scramble read failed', this.snap.readError);
         this._emit();
       }),
@@ -239,17 +252,35 @@ export class DailyTransport extends EventTarget {
     const S = this._sdk;
     const { event } = this.snap;
     if (!this._dayKey || !event) return { ok: false, reason: 'not-watching' };
+    const ref = this._ref(`daily/${this._dayKey}/${event}/scramble`);
     try {
-      await S.set(this._ref(`daily/${this._dayKey}/${event}/scramble`), scramble);
-      /* Adopt it immediately rather than waiting for the listener to hand our
-         own write back. Normally it does so within a moment; if it has died
-         (see the read handler above) it never will, and there is no reason to
-         be blocked on being told a thing we just successfully did. */
-      if (this.snap.event === event && !this.snap.scramble) {
-        this.snap.scramble = scramble;
+      /* A transaction, not a set().
+         `set()` overwrites. That was survivable only because the rule says
+         `!data.exists()` — so the whole "one scramble for everyone, all day"
+         guarantee rested entirely on a rules file that has to be published by
+         hand, separately from the app, and is not published on a fresh
+         deployment. Until it is, every client that loses the read race writes
+         a new scramble over the day's, and it changes on every refresh for
+         everyone at once.
+         runTransaction is the same guarantee made by the client instead:
+         `undefined` aborts, so an existing value is never replaced, whatever
+         the rules happen to allow. Two clients racing still cost nothing —
+         the loser is handed the winner's value in the result and adopts it. */
+      const out = await S.runTransaction(ref, (cur) => (cur === null ? scramble : undefined));
+      const settled = out?.snapshot?.val() || null;
+      /* Adopt whatever is now on the node — ours if we committed, theirs if we
+         aborted — rather than waiting for the listener to hand it back.
+         Normally it does so within a moment; if it has died (see the read
+         handler above) it never will, and there is no reason to be blocked on
+         being told a thing we have just been told. */
+      if (this.snap.event === event && settled && !this.snap.scramble) {
+        this.snap.scramble = settled;
+        this.snap.scrambleLoaded = true;
         this._emit();
       }
-      return { ok: true };
+      // Losing the race is a success: today's scramble exists, which was the
+      // entire point of the write. Only an empty node afterwards is a failure.
+      return settled ? { ok: true } : { ok: false, reason: 'empty-after-write' };
     } catch (err) {
       // Somebody else's scramble arriving is the benign case, and it is
       // distinguishable: their write is already on the node we just read.

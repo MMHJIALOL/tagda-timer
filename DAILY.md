@@ -107,11 +107,31 @@ There is no Cloud Function publishing scrambles on a timer — same honest limit
 already documents about its own rounds. Instead: whichever signed-in visitor opens the panel
 first and finds today's event without a scramble generates one, via the same official
 random-state generator every other scramble in the app comes from, and writes it write-once.
-Anyone who loses that race gets the winner's scramble back a moment later — ties are broken by
-the database rule, not by coordination.
+Anyone who loses that race gets the winner's scramble back a moment later.
 
 In practice this means a new scramble appears within minutes of the boundary as long as
 somebody visits shortly after it — not on the boundary to the second, and never before it.
+
+### Two things make "write-once" actually true
+
+The one promise this feature makes is that everybody, all day, gets the same scramble. Both
+halves of keeping it were originally left to the database rule, and both have since had to be
+made true on the client as well — the rule is published by hand, separately from the app, and
+until somebody does that there is nothing enforcing any of this.
+
+**Nobody publishes before they have looked.** `snap.scramble === null` is not "nobody has
+published today's": it is equally "the listener has not delivered its first value yet", and
+`watch()` emits once before that happens. Reading the first as the second meant every page load
+raced its own read, and any load that won generated a fresh scramble and wrote it — so the
+day's scramble changed on every refresh, for everyone at once. `snap.scrambleLoaded` is the
+distinction, and `_maybePublishScramble` refuses to run until it is true. A node whose read was
+*refused* never sets it: publishing into something you cannot read back is the same failure
+with a worse cause.
+
+**The write is a transaction, not a `set()`.** `set()` overwrites; `runTransaction` returning
+`undefined` aborts, so an existing scramble is never replaced whatever the rules happen to
+allow. Losing the race costs nothing — the loser is handed the winner's value in the
+transaction result and adopts it without waiting for the listener.
 
 ---
 
