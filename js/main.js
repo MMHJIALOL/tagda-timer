@@ -212,11 +212,17 @@ async function openSotd() {
       ctl.disengage();
       refit();
       syncSotdChip();
+      // The practice session's last time comes back the moment the window
+      // that was hiding it goes.
+      syncTimerDisplay();
     },
     // Esc mid-solve still means "abandon this solve", not "leave the window".
     solving: () => timer && timer.state !== 'idle' && timer.state !== 'cooldown',
   });
   refit();
+  // `sotd` is on <body> by now, so this clears the practice session's last
+  // time off the digits rather than leaving it under today's scramble.
+  syncTimerDisplay();
 }
 
 /** Nothing to open is better than a click that silently does nothing. */
@@ -1538,7 +1544,15 @@ async function recordSolve({ timeMs, penalty = 'none', inspectionMs = 0, splits 
  */
 function syncTimerDisplay() {
   if (timer && timer.state !== 'idle' && timer.state !== 'cooldown') return;
-  const last = app.solves.at(-1);
+  /* Inside the Scramble of the Day window the digits start empty and stay
+     empty until today's attempt has actually been made. The number they would
+     otherwise carry in is the last solve of the practice session, which has
+     nothing to do with this scramble — and a time already sitting on the
+     display of a one-shot attempt reads as though the attempt were over.
+     Once it IS over, `submittedToday` is true and the last solve is that
+     attempt, so from then on the ordinary line below is exactly right. */
+  const sotdBlank = document.body.classList.contains('sotd') && !dailyCtl()?.submittedToday;
+  const last = sotdBlank ? null : app.solves.at(-1);
   const v = last ? eff(last) : null;
   $('#time-main').style.opacity = '';
   $('#time-main').textContent = last ? (v === DNF ? 'DNF' : fmt(v)) : '0.00';

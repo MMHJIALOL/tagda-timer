@@ -963,7 +963,12 @@ await new Promise((resolve) => {
        actually see -- a rule that lost a specificity fight leaves the sidebar
        sitting there with the class applied and the DOM looking correct. */
     {
-      const chrome = ['#topbar', '#sidebar', '#sidebar-right', '#dock-bottom', '#tile-float-layer'];
+      const chrome = ['#topbar', '#sidebar', '#sidebar-right', '#dock-bottom', '#tile-float-layer',
+        /* Your running ao5/ao12 belong to the practice session this window is
+           not part of: one official attempt has no average, and a rolling mean
+           of twelve ordinary solves under the one that counts invites reading
+           the attempt as the thirteenth of them. */
+        '#timer-avgs'];
       const box = sel => d.querySelector(sel)?.getBoundingClientRect() || { width: 0, height: 0 };
       const visible = sel => {
         const e = d.querySelector(sel);
