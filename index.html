@@ -29,11 +29,11 @@
      perfect in incognito, which is a miserable thing to debug.
      /js/ is `must-revalidate` and does not depend on this, but keep the number
      in step anyway rather than leaving two answers to the same question. -->
-<link rel="modulepreload" href="js/main.js?v=44">
-<link rel="stylesheet" href="css/fonts.css?v=44">
-<link rel="stylesheet" href="css/tokens.css?v=44">
-<link rel="stylesheet" href="css/base.css?v=44">
-<link rel="stylesheet" href="css/components.css?v=44">
+<link rel="modulepreload" href="js/main.js?v=45">
+<link rel="stylesheet" href="css/fonts.css?v=45">
+<link rel="stylesheet" href="css/tokens.css?v=45">
+<link rel="stylesheet" href="css/base.css?v=45">
+<link rel="stylesheet" href="css/components.css?v=45">
 <link rel="icon" href="assets/favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="assets/logo-192.png">
 <link rel="apple-touch-icon" href="assets/logo-180.png">
@@ -196,6 +196,33 @@
           <path d="M5.2 4.1h13l-2.5 3.9 2.5 3.9h-13z"/>
           <path d="M5.2 8h6.5M11.7 4.1v7.8"/>
         </svg>
+      </button>
+      <!-- A trophy for the Scramble of the Day — the same scramble for
+           everyone, once a day, with two leaderboards behind it. Unlike every
+           other button in this row it does not open the drawer: it enters the
+           window, which is a mode rather than a panel.
+
+           A labelled gold pill rather than another bare outline icon, built on
+           the same box as the account chip beside it. Two reasons: a row of
+           identically-weighted grey glyphs gives no clue that one of them is a
+           thing that expires today, and a trophy drawn in the same 1.5px
+           outline as a gear does not read as a trophy at all — the cup is
+           filled so the silhouette survives at 17px.
+
+           It disappears once you have done today's, which is the whole point
+           of labelling it: an invitation that is still sitting there after you
+           have accepted it is just clutter. js/main.js owns that (see
+           `syncSotdChip`), and does it from a local note of which day you last
+           submitted, so the top bar needs no network to decide. -->
+      <button class="icon-btn sotd-box" id="btn-daily" title="Scramble of the Day">
+        <span class="sotd-glyph">
+          <svg viewBox="0 0 24 24">
+            <path d="M7 4h10v4a5 5 0 01-10 0z" fill="currentColor" stroke="none"/>
+            <path d="M7 5H4.5a2.5 2.5 0 002.5 4.5M17 5h2.5a2.5 2.5 0 01-2.5 4.5"/>
+            <path d="M12 13v4M9 21h6M10 17h4v2a2 2 0 01-2 2 2 2 0 01-2-2z"/>
+          </svg>
+        </span>
+        <span class="sotd-label">SOTD</span>
       </button>
       <button class="icon-btn" id="btn-help" title="Keyboard shortcuts  (?)">
         <svg viewBox="0 0 24 24"><path d="M16.2 4.2L7.8 19.8" stroke-width="2.4"/><circle cx="12" cy="12" r="9.2" opacity=".3"/></svg>
@@ -544,6 +571,32 @@
 <!-- ============ OVERLAYS ============ -->
 <div id="scrim" hidden></div>
 
+<!-- Scramble of the Day.
+
+     This is not a modal: pressing the trophy puts `sotd` on <body>, which
+     subtracts the topbar, both sidebars, the dock and the tiles and leaves
+     today's scramble and the timer sitting on their own. That is why these
+     two live here as ordinary markup rather than being built by
+     js/dailyui.js — the window is a layout, and a layout that only exists
+     once some JavaScript has run is one that can end up half-applied.
+
+     The bar carries the day, the countdown and the way out; the board card
+     stays hidden until you have submitted a time, because until then there
+     is genuinely nothing you are allowed to see in it. -->
+<div id="sotd-bar">
+  <div class="sotd-id">
+    <span class="sotd-kicker">Scramble of the Day</span>
+    <b class="sotd-day">&mdash;</b>
+    <span class="sotd-state"></span>
+  </div>
+  <div class="sotd-clock">resets in <b class="sotd-count">&mdash;</b></div>
+  <button class="ghost-btn" id="sotd-exit" title="Leave (Esc)">
+    <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    <span>Leave</span>
+  </button>
+</div>
+<div id="sotd-board" hidden></div>
+
 <!-- generic popover host -->
 <div id="popover" hidden></div>
 
@@ -596,7 +649,7 @@
   </div>
 </div>
 
-<script type="module" src="js/main.js?v=44"></script>
+<script type="module" src="js/main.js?v=45"></script>
 <script>
 (function () {
   var isFile = location.protocol === 'file:';

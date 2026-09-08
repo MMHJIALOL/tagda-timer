@@ -9,7 +9,7 @@ import { PRESETS, TIMER_FONTS, exportTheme, importTheme } from './theme.js';
 import { SHADER_NAMES } from './bg.js';
 import { summarize, byCase, eff, DNF, bestAvg, statWindow, bldSummary } from './stats.js';
 import { renderTrend, renderHistogram, renderHeatmap, renderCaseBars } from './charts.js';
-import { MODES, EVENTS } from './events.js';
+import { MODES, EVENTS, EVENT_ORDER } from './events.js';
 import { setFor } from './scramble.js';
 import { toast, confirmToast } from './toast.js';
 import { exportAll, Assets, Solves, LetterPairs } from './db.js';
@@ -1902,6 +1902,119 @@ export function buildRace(app) {
           + 'submit is bound to the exact scramble it was solved on, it can only be written once, '
           + 'and it is compared against the window the server itself timed it in.' }),
       ));
+    };
+
+    render();
+  };
+}
+
+/* ---------------- Scramble of the Day: the leaderboards ----------------
+
+   The window (js/dailyui.js) is where you SOLVE today's scramble. This panel
+   is where you read the boards afterwards without one — switch events, look
+   at yesterday's rank, check the count board on a phone. Both draw through
+   the same board builders, so nothing here can drift from what the window
+   shows. */
+
+/** Cleared at the top of every buildDaily() call — see buildAccountRow's identical reasoning. */
+let _dailyUnsub = null;
+let _dailyTick = 0;
+
+const DAILY_PANEL = 'Scramble of the Day';
+
+export function buildDaily(app) {
+  return (body) => {
+    if (_dailyUnsub) { _dailyUnsub(); _dailyUnsub = null; }
+    clearInterval(_dailyTick);
+
+    let ctl = null, ui = null;
+    const onChange = () => { if (drawerName() === DAILY_PANEL) render(); };
+
+    const render = async () => {
+      const mod = await app.dailyModule();
+      ui ??= await import('./dailyui.js');
+      const { dailyEligible, formatCountdown } = mod;
+      if (!ctl) {
+        ctl = mod.getDaily(app);
+        // Subscribed once per drawer-open, not once per render() call —
+        // render() itself is called from inside this same handler.
+        ctl.addEventListener('change', onChange);
+        _dailyUnsub = () => ctl.removeEventListener('change', onChange);
+      }
+      const cloud = mod.cloudAvailable();
+      if (cloud) ctl.connect().catch(() => {});
+
+      body.innerHTML = '';
+      clearInterval(_dailyTick);
+
+      if (!cloud) {
+        body.append(group(DAILY_PANEL,
+          el('div', { class: 'race-hero-warn', text:
+            'No Firebase project is configured on this deployment, so there is no shared board to '
+            + 'read or write. See RACE.md — the Scramble of the Day rides on the same project Race mode does.' }),
+        ));
+        return;
+      }
+
+      const snap = ctl.snap;
+      const options = EVENT_ORDER.filter(dailyEligible).map(id => ({ value: id, label: EVENTS[id]?.short || id }));
+
+      /* ---- today, and the way into the window ---- */
+      const countdown = el('b', { text: '—' });
+      body.append(group('Today',
+        el('div', { class: 'race-hero', style: { alignItems: 'baseline' } },
+          el('div', {},
+            el('div', { class: 'race-hero-title', text: snap?.dayId || '—' }),
+            el('div', { class: 'race-hero-sub' }, 'resets in ', countdown),
+          ),
+        ),
+        el('div', { class: 'race-hero-sub', text:
+          'Same scramble as everyone else, once a day. One official attempt, like a competition single — '
+          + 'nobody’s time is visible to you until you have submitted your own.' }),
+        ctl.submittedToday
+          ? el('div', { class: 'hint-note', text: 'You have already submitted today’s attempt for this event.' })
+          : el('button', {
+              class: 'btn primary full', text: 'Open the Scramble of the Day',
+              onclick: () => { closeDrawer(); $('#btn-daily').click(); },
+            }),
+        row('Event', select(options, ctl.eventId, (v) => { ctl.setEvent(v); render(); })),
+      ));
+
+      const tick = () => {
+        if (drawerName() !== DAILY_PANEL) { clearInterval(_dailyTick); return; }
+        const s = ctl.snap;
+        if (!s?.nextResetMs || !ctl.net) return;
+        ctl.checkRollover();
+        countdown.textContent = formatCountdown(s.nextResetMs - ctl.net.serverNow());
+      };
+      tick();
+      _dailyTick = setInterval(tick, 1000);
+
+      /* ---- board one: today's times for the chosen event ---- */
+      const doneCount = ctl.submittedCount();
+      body.append(group('Today’s times',
+        el('div', { class: 'race-hero-sub', text:
+          `${doneCount} ${doneCount === 1 ? 'person has' : 'people have'} done today’s scramble.` }),
+        ui.timeBoard(ctl.ranked(), ctl.revealed),
+      ));
+
+      /* ---- board two: who solved the most, of anything ----
+         Behind mod.SHOW_COUNT_BOARD, which is currently false — see the comment
+         on it in js/daily.js. Left wired up rather than deleted so turning the
+         feature back on is one boolean, not an archaeology exercise. */
+      if (mod.SHOW_COUNT_BOARD) {
+        const mine = ctl.myCount();
+        body.append(group('Most solves today',
+          el('div', { class: 'race-hero-sub', text:
+            'Every solve you record today, whatever the event — not just this one. '
+            + 'Resets with the board above, at midnight IST.' }),
+          ui.countBoard(ctl.countBoard()),
+          snap?.signedIn
+            ? el('div', { class: 'hint-note', text: `You have done ${mine} ${mine === 1 ? 'solve' : 'solves'} today.` })
+            : el('div', { class: 'hint-note', text:
+                'Sign in with the account icon in the top bar to appear on either board.' }),
+        ));
+      }
     };
 
     render();

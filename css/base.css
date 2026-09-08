@@ -230,7 +230,7 @@ body.inspecting #timer-display { opacity: 0; }
 @media (max-width: 760px) { #scramble-wrap { padding: 0; } }
 .scramble {
   font-family: var(--font-mono);
-  font-size: calc(clamp(1.15rem, 2.45vw, 1.95rem) * var(--scramble-scale));
+  font-size: calc(clamp(1.15rem, 2.45vw, 1.95rem) * var(--scramble-scale) * var(--scramble-boost, 1));
   font-weight: 600; line-height: 1.6; letter-spacing: .012em;
   text-align: center; color: var(--text);
   padding: 13px 20px; border-radius: var(--radius-sm);
@@ -247,8 +247,8 @@ body.inspecting #timer-display { opacity: 0; }
    type just enough to fit. */
 .scramble.oneline { white-space: nowrap; overflow: hidden; }
 .scramble:hover { background: color-mix(in srgb, var(--text) 6%, transparent); }
-.scramble.multiline { text-align: left; font-size: calc(clamp(.8rem, 1.35vw, 1.05rem) * var(--scramble-scale)); }
-.scramble.long { font-size: calc(clamp(.8rem, 1.45vw, 1.08rem) * var(--scramble-scale)); }
+.scramble.multiline { text-align: left; font-size: calc(clamp(.8rem, 1.35vw, 1.05rem) * var(--scramble-scale) * var(--scramble-boost, 1)); }
+.scramble.long { font-size: calc(clamp(.8rem, 1.45vw, 1.08rem) * var(--scramble-scale) * var(--scramble-boost, 1)); }
 /* Two lines of notation at the one-line leading read as one solid block with a
    crack through it. When the fit gives up and lets the text wrap (or the
    scramble carries its own line breaks), it gets the room to be two lines:
@@ -761,6 +761,100 @@ body.zen #panel-cube, body.zen #creator-chip,
 body.zen #dock-bottom, body.zen #tile-float-layer { display: none; }
 body.zen #app { grid-template-rows: auto 1fr; }
 body.zen #stage { grid-template-columns: minmax(0, 1fr); }
+
+/* ---------------- Scramble of the Day ----------------
+
+   The same subtraction zen mode does, taken one step further, plus a bar of
+   its own. Written as its own block rather than folded into the `body.zen`
+   selector above because the two are not the same idea: zen is a preference
+   you toggle and forget, this is a mode you are in for one scramble and then
+   leave, and it has chrome of its own that zen must never grow. */
+/* `#panel-cube` is deliberately NOT in this list. The cube preview is not
+   chrome — it is how you read the scramble, and a scramble you cannot check
+   yourself against is exactly the thing you do not want on the one attempt
+   that counts. It was hidden in the first version of this window and that was
+   simply wrong. */
+body.sotd #topbar, body.sotd #sidebar, body.sotd #sidebar-right,
+body.sotd #creator-chip,
+body.sotd #dock-bottom, body.sotd #tile-float-layer,
+body.sotd #now-playing, body.sotd #learn-bar,
+/* Prev / next / copy / paste-your-own. All four are wrong in here: three of
+   them step the timer onto a scramble that is not today's, which is the one
+   thing this window exists to prevent, and the fourth is a button for a
+   scramble you are supposed to be reading, not collecting. */
+body.sotd #scramble-tools,
+/* The bar overhead already says what this scramble is, so the standing
+   "Scramble" caption underneath it is the label repeated twice. */
+body.sotd .scramble-label { display: none; }
+body.sotd #app { grid-template-rows: auto 1fr; }
+body.sotd #stage { grid-template-columns: minmax(0, 1fr); }
+
+/* Room for the bar, so the scramble does not start underneath it. */
+body.sotd #scramble-zone { padding-top: 58px; }
+
+/* The scramble is the reason the window exists, so it is given the size it
+   could never have had with a sidebar either side of it.
+
+   Applied as a multiplier on the existing three size tiers rather than as a
+   flat font-size, which is the version that had to be thrown away: a fixed
+   2rem is fine for a 3x3 and runs a 5x5 scramble straight off the screen,
+   because the tiers exist precisely to stop that. Boosting them keeps the
+   tier that was chosen for this scramble and only spends the room the
+   missing sidebars just freed up. `--scramble-scale` is the reader's own
+   size preference and stays untouched underneath it. */
+body.sotd { --scramble-boost: 1.35; --sotd-board-w: min(360px, 30vw); }
+
+/* Nothing is shifted sideways, and both attempts to do so are worth recording
+   because each looked reasonable and each was worse than this.
+
+   Shifting only the timer put it in the middle of the free space while the
+   scramble stayed on the middle of the viewport, so the two things the window
+   exists to show sat on two different axes. Shifting both — padding the
+   scramble by the column's width — lined them up, but paid for it out of the
+   scramble: a third of its width went to making room, and the line-fitter
+   duly set it SMALLER inside the window than outside, which is the opposite
+   of the point.
+
+   So the column is placed under the scramble instead of beside it (js/
+   dailyui.js measures where that is), and nothing needs to move: the scramble
+   keeps the full width, the timer stays centred on the screen where it always
+   is, and the board sits in the empty left-hand region beside the digits. */
+body.sotd #scramble-wrap { max-width: min(1100px, 92vw); }
+/* The `long` tier exists because a 21-move scramble in a normal layout has to
+   share the screen with a dock, a tile row and two sidebars. In here it shares
+   the screen with nothing, so it starts from the ordinary tier and lets
+   fitScrambleToLine shrink or wrap it from there — which it will, because that
+   is the one thing that function guarantees. The clamp is repeated rather than
+   factored out on purpose: this rule is "use the other tier", and writing it
+   as anything else would hide that. */
+body.sotd #scramble-text.long {
+  font-size: calc(clamp(1.15rem, 2.45vw, 1.95rem) * var(--scramble-scale) * var(--scramble-boost, 1));
+}
+/* The hold message is the only thing on screen in the states where it shows,
+   so it is set to be read from where you actually sit rather than at the size
+   a line of prose gets when a whole app is competing with it. Not boosted via
+   --scramble-boost: that multiplier is on the notation tiers, and this is
+   deliberately not notation. */
+body.sotd #scramble-text.race-hold { font-size: clamp(1.05rem, 1.9vw, 1.4rem); }
+
+/* The preview keeps its ordinary bottom-right corner. It was briefly moved up
+   under the bar to dodge the board when the board was a bottom sheet; with the
+   board in a left column there is nothing to dodge, and the corner it has
+   everywhere else in the app is the one place people already look for it. */
+
+/* Both of these are markup in index.html at all times — see the comment
+   there — so they are display:none by default and shown only in the window.
+   `[hidden]` still wins on the board, which is how "submit a time to see it"
+   is expressed without a second class to keep in sync. */
+/* The timer is NOT dimmed once you have submitted. An earlier version faded
+   it to 12% so the board could sit on top of it, and the result was that the
+   time you had just done — the single number you most want to read at that
+   moment — was the least legible thing on screen. Moving the board out to its
+   own column removed the reason for the fade rather than tuning it. */
+
+#sotd-bar, #sotd-board { display: none; }
+body.sotd #sotd-bar { display: flex; }
+body.sotd #sotd-board:not([hidden]) { display: block; }
 
 /* =================== HOLD / ARM INDICATOR =================== */
 /* Sits under the digits and is the one piece of arming feedback that survives

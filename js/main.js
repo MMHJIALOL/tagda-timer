@@ -22,6 +22,10 @@ import { SPOTIFY_CLIENT_ID, DEV_MODE_LIMIT, OWNER_NEEDS_PREMIUM } from './spotif
 import { popover, closePopover, popoverOpen } from './popover.js';
 import { trace, traceRecord, BLD_EVENTS, TRACEABLE_EVENTS } from './bldtrace.js';
 import { toast, confirmToast } from './toast.js';
+// The pure day math only — see js/dayid.js. Imported eagerly on purpose:
+// the top bar needs today's date on first paint, and this file has no
+// dependencies of its own to drag in with it.
+import { dayIdFromServerMs, sotdDoneOn, clearSotdDone } from './dayid.js';
 import { openPalette, closePalette, paletteOpen } from './palette.js';
 /* panels.js, sharedlg.js (which drags in sharecard.js and cubenet.js) and
    stackmat.js are imported where they are first needed, not here — see
@@ -103,6 +107,117 @@ app.raceModule = () => loadRace();
 
 /** The live controller, or null if race.js has never been loaded. */
 const raceCtl = () => (_race ? _race.getRace(app) : null);
+
+/* Same reasoning as race mode: nothing about the daily leaderboard is
+   fetched until the panel is opened. */
+let _daily = null;
+const loadDaily = lazy(() => import('./daily.js'), m => (_daily = m));
+app.dailyModule = () => loadDaily();
+
+/** The live controller, or null if daily.js has never been loaded. */
+const dailyCtl = () => (_daily ? _daily.getDaily(app) : null);
+
+/* ---------------------------------------------------------
+   Scramble of the Day — the top-bar chip
+   ---------------------------------------------------------
+
+   The gold SOTD pill is an invitation, so the INVITATION stops once you have
+   accepted it — the gold, the label and the shine all go, and it settles back
+   into an ordinary quiet icon among the others.
+
+   What must never go is the button. Hiding it outright was the first attempt
+   and it was plainly wrong: this is the only way into the window, so removing
+   it the moment you submitted meant the board you had just earned a place on
+   became unreachable until midnight. "Stop advertising it" and "take it away"
+   are not the same instruction, and only the first one is wanted here.
+
+   Decided WITHOUT the network, from the note dayid.js keeps, because
+   this runs on first paint and the alternative — loading Firebase to draw a
+   top bar — would throw away the whole reason that module is lazy. The date
+   is this device's, not the server's, which is the one compromise here and a
+   safe one: the worst a wound-forward clock buys is a button that was already
+   one click away, and whether you may actually submit is settled by a rule
+   that has never heard of any of this. */
+const sotdDoneToday = () => sotdDoneOn(dayIdFromServerMs(Date.now()));
+
+function syncSotdChip() {
+  const btn = $('#btn-daily');
+  if (!btn) return;
+  const done = sotdDoneToday();
+  btn.classList.toggle('done', done);
+  btn.title = done
+    ? 'Scramble of the Day — today’s board'
+    : 'Scramble of the Day';
+}
+
+/* ---------------------------------------------------------
+   Scramble of the Day — entering and leaving the window
+   ---------------------------------------------------------
+
+   The button does three things in order, and the order is the point: load
+   the feature, arm the attempt, then show the window. Arming BEFORE the
+   window appears is what makes "only today's scramble is there" true rather
+   than nearly true — the scramble on the timer is already today's by the
+   time anything is on screen, so the window never flashes yesterday's
+   practice scramble on its way in.
+
+   Leaving cancels an armed attempt. That is not the only defensible choice,
+   but it is the honest one: an attempt you cannot see is an attempt that can
+   be spent by accident, and today's is the only one you get. */
+let _sotdUi = null;
+const loadSotdUi = lazy(() => import('./dailyui.js'), m => (_sotdUi = m));
+
+/* Entering and leaving the window changes how much room the scramble has —
+   both sidebars come and go — and fitScrambleToLine measures that room once,
+   when the scramble is set. Without this the scramble keeps whatever size it
+   was given in the layout it is no longer in: set for a narrow column and
+   then stranded tiny in the middle of an empty screen. */
+const refit = () => {
+  fitScrambleToLine($('#scramble-text'));
+  /* Again on the next frame. The first call is enough whenever the class
+     change has already been styled, but entering the window also swaps the
+     grid out from under the scramble, and a fit measured against a box the
+     browser has not finished resolving sizes the type for the layout that is
+     on its way out. Fitting twice costs one extra measure and removes the
+     race entirely. */
+  requestAnimationFrame(() => fitScrambleToLine($('#scramble-text')));
+};
+
+async function openSotd() {
+  let mod, ui;
+  try {
+    [mod, ui] = await Promise.all([loadDaily(), loadSotdUi()]);
+  } catch (err) { return lazyFailed('the Scramble of the Day', err); }
+
+  if (!mod.cloudAvailable()) {
+    toast('No leaderboard is configured on this deployment — see RACE.md', { kind: 'bad', long: true });
+    return;
+  }
+  const ctl = mod.getDaily(app);
+  try { await ctl.connect(); }
+  catch (err) { return lazyFailed('the Scramble of the Day', err); }
+
+  if (!ctl.snap?.signedIn) {
+    toast('Sign in with the account icon to take part in today’s scramble', { long: true });
+  }
+
+  /* engage(), not attempt(). The window arms itself the moment today's
+     scramble exists and holds the timer shut until then — checking once here
+     was the bug that made the whole window behave like an ordinary timer when
+     the scramble happened to be a beat late, which is the usual case. */
+  ctl.engage();
+
+  ui.openSotd(app, ctl, {
+    onExit: () => {
+      ctl.disengage();
+      refit();
+      syncSotdChip();
+    },
+    // Esc mid-solve still means "abandon this solve", not "leave the window".
+    solving: () => timer && timer.state !== 'idle' && timer.state !== 'cooldown',
+  });
+  refit();
+}
 
 /** Nothing to open is better than a click that silently does nothing. */
 function lazyFailed(what, err) {
@@ -452,6 +567,25 @@ async function nextScramble({ clear = false } = {}) {
     return;
   }
 
+  /* An armed daily attempt outranks the generator for the same reason a race
+     round does, but sits behind one: racing and attempting the daily
+     challenge at once would mean two features fighting over which scramble
+     is on screen, and a live room is the one already committed to by other
+     people waiting on you. */
+  const daily = dailyCtl()?.takeScramble();
+  if (daily) {
+    /* A hold is a message standing in for a scramble, exactly as in a race
+       round: today's is not published yet, or you have already spent your one
+       attempt at it. It never joins the history — the arrows must not be able
+       to step back onto a sentence. */
+    if (daily.hold) { showScramble(daily, true); return; }
+    app.scrambleHistory.push(daily);
+    if (app.scrambleHistory.length > 40) app.scrambleHistory.shift();
+    app.historyPos = app.scrambleHistory.length - 1;
+    showScramble(daily);
+    return;
+  }
+
   // A pasted list always wins: while one is loaded, the generator is not
   // consulted at all, so the order you pasted is the order you get.
   const own = takeCustom();
@@ -726,6 +860,11 @@ function fitScrambleToLine(node) {
   node.classList.remove('oneline', 'wrapped');
   // Scrambles with real line breaks in them (megaminx, multi-blind) mean it.
   if (node.classList.contains('multiline')) return;
+  /* A hold is a sentence standing in for a scramble, and the whole of this
+     function is about packing notation onto one line. Left to run on prose it
+     shrinks a message to fit a width it was never meant to fill, so a screen
+     whose only content is that message ends up whispering it. */
+  if (node.classList.contains('race-hold')) return;
 
   // `oneline` is nowrap, so scrollWidth is the true width of the whole
   // scramble set as a single line — the number the rest of this needs.
@@ -785,6 +924,7 @@ function wireTimer() {
        into it you are. A tick broadcast would be a live time by another name,
        which is the exact thing race mode exists not to leak. */
     raceCtl()?.onTimerState(st);
+    dailyCtl()?.onTimerState(st);
     display.className = `state-${st === 'cooldown' ? 'idle' : st}`;
 
     // The countdown owns the screen from the moment inspection starts until the
@@ -1353,6 +1493,14 @@ async function recordSolve({ timeMs, penalty = 'none', inspectionMs = 0, splits 
   /* Submitted after the local write, never before: the solve is yours whatever
      the room makes of it, and a refused upload must not cost you the time. */
   if (racing) race.onSolveRecorded(solve).catch(err => console.warn('[race] submit failed', err));
+
+  const daily = dailyCtl();
+  if (daily?.attempting) daily.onSolveRecorded(solve).catch(err => console.warn('[daily] submit failed', err));
+  /* Unconditional, and deliberately not inside the branch above: the second
+     board counts how many solves you did today of ANYTHING, so a 4x4 solve
+     with the daily panel never opened still belongs on it. A no-op unless
+     daily.js is loaded and signed in — see Daily#pushCount. */
+  daily?.pushCount();
   app.sessionCounts.set(app.session.id, app.solves.length);
 
   /* Graded after the local write, so a case is judged on the solve as it was
@@ -2396,7 +2544,7 @@ async function clearSession() {
  * the one place that has to know — and it is also what stops a second attempt
  * being timed against a scramble you have already sent a result for.
  */
-const timerInputLive = () => app.settings.inputMode === 'timer' && !raceCtl()?.locked();
+const timerInputLive = () => app.settings.inputMode === 'timer' && !raceCtl()?.locked() && !dailyCtl()?.locked();
 
 function applyInputMode() {
   const mode = app.settings.inputMode || 'timer';
@@ -2549,7 +2697,16 @@ async function startCloudSync() {
   // that only runs if this module gets loaded. Checking persistence alone
   // meant we returned here, never loaded it, and the user landed back on a
   // timer that looked exactly as signed-out as when they left.
-  if (!hasPersistedSession() && !hasPendingRedirect()) return;
+  if (!hasPersistedSession() && !hasPendingRedirect()) {
+    /* Nobody is signed in on this browser, so nobody has an attempt in and
+       the gold chip should be inviting whoever is here to sign in and take
+       one. The note is browser-wide, not per-account, so it outlives the
+       session that wrote it — including a sign-out that happened on some
+       other device, which this one only ever finds out about by not having
+       a session any more. */
+    clearSotdDone();
+    return;
+  }
   const { wireAccountButton } = await import('./sync-ui.js');
   wireAccountButton($('#btn-account'), { setSetting: app.setSetting });
   const err = takeRedirectError();
@@ -3614,6 +3771,11 @@ function wireChrome() {
   $('#btn-settings').addEventListener('click', () => openPanel('Settings', 'buildSettings', undefined, app));
   $('#btn-spotify').addEventListener('click', () => openPanel('Spotify', 'buildSpotify', undefined, app));
   $('#btn-race').addEventListener('click', () => openPanel('Race', 'buildRace', undefined, app));
+  $('#btn-daily').addEventListener('click', () => openSotd());
+  syncSotdChip();
+  // daily.js fires this the moment a result lands, so the chip goes without
+  // waiting for the window to be closed.
+  window.addEventListener('sotd-done', syncSotdChip);
   $('#btn-help').addEventListener('click', () => openPanel('Keyboard shortcuts', 'buildShortcuts', { wide: true }));
   $('#btn-about').addEventListener('click', () => openPanel('About', 'buildAbout', undefined, app));
   $('#btn-open-history').addEventListener('click', () => openPanel('All solves', 'buildHistory', { wide: true }, app));
@@ -3966,6 +4128,8 @@ function openPaletteWithCommands() {
       { kind: 'go', label: 'Reconstruct a scramble', key: 'Y', run: () => $('#btn-recon').click() },
       { kind: 'go', label: 'Cross + 1 trainer', key: 'L', keywords: 'cross plus one f2l lookahead first pair', run: () => $('#btn-xp1').click() },
       { kind: 'go', label: 'Race', keywords: 'room multiplayer versus head to head', run: () => $('#btn-race').click() },
+      { kind: 'go', label: 'Scramble of the Day', keywords: 'leaderboard daily global scramble competition single sotd', run: () => $('#btn-daily').click() },
+      { kind: 'go', label: 'Daily leaderboards', keywords: 'board times solves ranking daily', run: () => openPanel('Scramble of the Day', 'buildDaily', undefined, app) },
       { kind: 'do', label: 'Reconstruct the last solve', run: () => app.solves.at(-1) ? reconstructSolve(app.solves.at(-1)) : toast('No solves yet') },
       { kind: 'go', label: 'Pick trainer cases', key: 'K', run: () => setFor(app.settings.mode) ? openPanel('Cases', 'buildCases', undefined, app) : toast('Current mode has no case list') },
       { kind: 'do', key: 'L', keywords: 'learn spaced repetition algorithm memorise drill teach',
