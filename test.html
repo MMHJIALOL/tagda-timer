@@ -964,6 +964,12 @@ await new Promise((resolve) => {
        sitting there with the class applied and the DOM looking correct. */
     {
       const chrome = ['#topbar', '#sidebar', '#sidebar-right', '#dock-bottom', '#tile-float-layer',
+        /* A drawer left open before the window was entered stayed open behind
+           it, as a strip down the side of a mode meant to hold nothing but the
+           scramble and the timer. It is closed on the way in rather than
+           hidden by class: it is not chrome, it is something somebody opened.
+        */
+        '#drawer',
         /* Your running ao5/ao12 belong to the practice session this window is
            not part of: one official attempt has no average, and a rolling mean
            of twelve ordinary solves under the one that counts invites reading
@@ -1015,6 +1021,21 @@ await new Promise((resolve) => {
 
       // Its own header -- the day, the countdown and the way out -- is the only
       // chrome the window keeps, and a window with no way out is a trap.
+      /* The window hides the prev/next buttons, which was mistaken for having
+         removed the ability to step the scramble. The keyboard still did it,
+         straight off today's official scramble onto a practice one, inside
+         the mode whose whole purpose is that only today's is in it. */
+      {
+        const before = d.querySelector('#scramble-text').textContent;
+        for (const key of ['ArrowLeft', 'ArrowRight', 'n', 'x']) {
+          d.dispatchEvent(new w.KeyboardEvent('keydown', { key, bubbles: true }));
+        }
+        await new Promise(r => setTimeout(r, 300));
+        check('inside the window the keyboard cannot step off today’s scramble',
+          d.querySelector('#scramble-text').textContent === before,
+          `${before.slice(0, 24)}… -> ${d.querySelector('#scramble-text').textContent.slice(0, 24)}…`);
+      }
+
       check('the window keeps its own header, with a way back out',
         visible('#sotd-bar') && visible('#sotd-exit'));
 
