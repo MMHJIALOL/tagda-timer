@@ -55,7 +55,7 @@ const wrap = (req) => new Promise((res, rej) => {
    subscriber, and it reaches in through this tiny pub-sub instead of db.js
    importing Firebase. Fired after the local write has already succeeded, so
    a hook throwing or a slow cloud push can never affect what IndexedDB has. */
-const hooks = { solves: [], solvesBatch: [], sessions: [], kv: [] };
+const hooks = { solves: [], solvesBatch: [], sessions: [], solvesDel: [], sessionsDel: [], kv: [] };
 
 export function onWrite(store, fn) {
   hooks[store].push(fn);
@@ -68,22 +68,123 @@ function emit(store, record) {
   }
 }
 
+/* ---------------- tombstones ----------------
+   A deleted row leaves a note behind saying it was deleted on purpose.
+
+   Without one, a delete is indistinguishable from never having had the row:
+   it empties the local record and nothing else, so the cloud copy outlives
+   it and the next listener attach — which every page reload performs —
+   streams the solve straight back down into IndexedDB. The note is what
+   lets sync.js tell "this device has never seen that" apart from "this
+   device threw that away".
+
+   Kept here rather than in sync.js because a delete has to be remembered
+   whether or not sync is running: signed out, offline, or before auth has
+   resolved, the note is still the thing that stops the row coming back on
+   the next sign-in.
+
+   Deliberately local and never uploaded. It guards THIS browser's copy;
+   other devices learn of the delete from the cloud row actually being
+   removed, so there is no second tree to keep — and no new rules to
+   publish by hand for one to be writable. */
+const TOMBSTONE_KEY = '_deleted';
+const TOMBSTONE_TTL_MS = 90 * 24 * 60 * 60 * 1000;
+
+/* Read once and held in memory so the guard on the receiving end of a sync
+   is a map lookup, not an IndexedDB round-trip per incoming record — the
+   first attach after a sign-in replays the entire history at once. */
+let _tomb = null;
+let _tombPromise = null;
+
+function loadTombstones() {
+  if (_tomb) return Promise.resolve(_tomb);
+  if (!_tombPromise) _tombPromise = (async () => {
+    const raw = (await wrap((await tx('kv')).get(TOMBSTONE_KEY))) || {};
+    _tomb = { solves: raw.solves || {}, sessions: raw.sessions || {} };
+    return _tomb;
+  })();
+  return _tombPromise;
+}
+
+/* Written straight through the store rather than via KV.set: this is
+   bookkeeping, not a settings key, and it has no business waking the kv
+   write hook. Concurrent callers all mutate the one in-memory object
+   synchronously before awaiting, so the last write out carries every
+   change rather than clobbering a sibling's. */
+function saveTombstones() {
+  return tx('kv', 'readwrite').then(store => wrap(store.put(_tomb, TOMBSTONE_KEY)));
+}
+
+export const Tombstones = {
+  async all() { return loadTombstones(); },
+  async has(store, id) { return !!(await loadTombstones())[store][id]; },
+
+  async record(store, ids) {
+    const t = await loadTombstones();
+    const now = Date.now();
+    let changed = false;
+    for (const id of ids) if (!t[store][id]) { t[store][id] = now; changed = true; }
+    if (changed) await saveTombstones();
+  },
+
+  /* A row written back is a row that is wanted again — undo, a re-import, a
+     restore. Clearing the note here is what keeps Ctrl+Z working across the
+     cloud instead of racing the delete it is undoing. */
+  async clear(store, ids) {
+    const t = await loadTombstones();
+    let changed = false;
+    for (const id of ids) if (t[store][id]) { delete t[store][id]; changed = true; }
+    if (changed) await saveTombstones();
+  },
+
+  /* Notes old enough that every device has long since seen the removal are
+     just dead weight in the kv blob. A device that has been offline longer
+     than this comes back and re-uploads — the same thing that would happen
+     if it had never synced at all. */
+  async prune(now = Date.now()) {
+    const t = await loadTombstones();
+    let changed = false;
+    for (const store of ['solves', 'sessions']) {
+      for (const [id, at] of Object.entries(t[store])) {
+        if (now - at > TOMBSTONE_TTL_MS) { delete t[store][id]; changed = true; }
+      }
+    }
+    if (changed) await saveTombstones();
+  },
+};
+
 /* ---------------- solves ---------------- */
 export const Solves = {
-  async put(solve)      { const r = await wrap((await tx('solves', 'readwrite')).put(solve)); emit('solves', solve); return r; },
+  async put(solve)      {
+    const r = await wrap((await tx('solves', 'readwrite')).put(solve));
+    await Tombstones.clear('solves', [solve.id]);
+    emit('solves', solve);
+    return r;
+  },
   async putMany(list)   {
     const store = await tx('solves', 'readwrite');
     await Promise.all(list.map(s => wrap(store.put(s))));
+    await Tombstones.clear('solves', list.map(s => s.id));
     // One batch event, not one per solve — a 1000-solve csTimer import
     // firing 1000 individual cloud writes would be needless amplification
     // (and, offline, 1000 concurrent queue appends racing each other).
     emit('solvesBatch', list);
   },
   async get(id)         { return wrap((await tx('solves')).get(id)); },
-  async del(id)         { return wrap((await tx('solves', 'readwrite')).delete(id)); },
+  async del(id)         {
+    const r = await wrap((await tx('solves', 'readwrite')).delete(id));
+    await Tombstones.record('solves', [id]);
+    emit('solvesDel', [id]);
+    return r;
+  },
   async delMany(ids)    {
+    if (!ids.length) return;
     const store = await tx('solves', 'readwrite');
     await Promise.all(ids.map(id => wrap(store.delete(id))));
+    await Tombstones.record('solves', ids);
+    // One event for the batch, mirroring putMany: clearing a 500-solve
+    // session is a single multi-path delete upstream, not 500 of them.
+    emit('solvesDel', ids);
   },
   /** Chronological (oldest first) list for a session. */
   async bySession(sessionId) {
@@ -104,9 +205,19 @@ export const Solves = {
 
 /* ---------------- sessions ---------------- */
 export const Sessions = {
-  async put(s)  { const r = await wrap((await tx('sessions', 'readwrite')).put(s)); emit('sessions', s); return r; },
+  async put(s)  {
+    const r = await wrap((await tx('sessions', 'readwrite')).put(s));
+    await Tombstones.clear('sessions', [s.id]);
+    emit('sessions', s);
+    return r;
+  },
   async get(id) { return wrap((await tx('sessions')).get(id)); },
-  async del(id) { return wrap((await tx('sessions', 'readwrite')).delete(id)); },
+  async del(id) {
+    const r = await wrap((await tx('sessions', 'readwrite')).delete(id));
+    await Tombstones.record('sessions', [id]);
+    emit('sessionsDel', [id]);
+    return r;
+  },
   async all()   {
     const list = await wrap((await tx('sessions')).getAll());
     return list.sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.createdAt - b.createdAt);

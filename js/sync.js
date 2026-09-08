@@ -9,13 +9,21 @@
        to local IndexedDB.
      - a failed or offline push is queued (in the 'kv' store, key
        '_syncQueue') and retried on reconnect.
+     - a delete is mirrored too: the cloud row is removed, and db.js's
+       tombstone stops the copy already in flight from landing back.
 
-   Nothing here ever deletes a local or remote record — merges only add.
-   See mergeOnSignIn(), which is the one place data from two devices that
-   have never met before gets combined.
+   Deleting used to be the one thing that did NOT cross the wire, which
+   made it look like it had not worked at all: the row left IndexedDB, the
+   cloud kept its copy, and the next reload's onChildAdded handed it
+   straight back. A delete is now as real as a write in both directions.
+
+   Merging two histories, on the other hand, is still additive — see
+   mergeOnSignIn(), the one place data from two devices that have never met
+   before gets combined. It just no longer counts a deliberately deleted
+   solve as something the other side is missing.
    =========================================================== */
 
-import { Solves, Sessions, KV, onWrite } from './db.js';
+import { Solves, Sessions, KV, Tombstones, onWrite } from './db.js';
 import { onAuthChange, getDatabaseHandle } from './sync-auth.js';
 
 const QUEUE_KEY = '_syncQueue';
@@ -51,6 +59,22 @@ export function unionById(localList, remoteList) {
   for (const r of localList) byId.set(r.id, r);
   for (const r of remoteList) if (!byId.has(r.id)) byId.set(r.id, r);
   return [...byId.values()];
+}
+
+/**
+ * Splits a cloud list into what this device still wants and what it has
+ * already thrown away.
+ *
+ * A union treats "absent locally" as "missing here, copy it down", which is
+ * right for a device that has never seen the record and exactly wrong for
+ * one that deleted it on purpose — that is the resurrection, in the merge
+ * path rather than the listener path. The tombstones say which is which,
+ * and the dead half is what gets cleared from the cloud instead.
+ */
+export function partitionDeleted(list, tombs) {
+  const live = [], dead = [];
+  for (const r of list) (tombs[r.id] ? dead : live).push(r);
+  return { live, dead };
 }
 
 /** Keeps whichever side is further along (higher `box`) per case, same rule as db.js importAll. */
@@ -147,6 +171,16 @@ async function pushOrQueue(path, value) {
   }
 }
 
+async function removeOrQueue(path) {
+  if (!_sdk || navigator.onLine === false) { await queueWrite({ kind: 'remove', path }); return; }
+  try {
+    await _sdk.remove(_sdk.ref(_sdk.db, path));
+  } catch (err) {
+    console.warn('[sync] remove failed, queued for retry', path, err?.code || err);
+    await queueWrite({ kind: 'remove', path });
+  }
+}
+
 async function pushUpdateOrQueue(updates) {
   if (!Object.keys(updates).length) return;
   if (!_sdk || navigator.onLine === false) { await queueWrite({ kind: 'update', updates }); return; }
@@ -183,6 +217,7 @@ async function flushQueue() {
   for (const entry of q) {
     if (!ownedByCurrentUser(entry)) continue;
     if (entry.kind === 'update') await pushUpdateOrQueue(entry.updates);
+    else if (entry.kind === 'remove') await removeOrQueue(entry.path);
     else await pushOrQueue(entry.path, entry.value);
   }
 }
@@ -211,6 +246,23 @@ function pushSolvesBatch(list) {
   pushUpdateOrQueue(updates);
 }
 
+/**
+ * A multi-path update whose values are all null — one round trip that
+ * clears every id at once, so emptying a 500-solve session costs the same
+ * as deleting a single one.
+ */
+function pushDeletes(store, ids) {
+  const updates = {};
+  for (const id of ids) {
+    if (isEcho(`${store}Del:${id}`, null)) continue;
+    updates[userPath(store, id)] = null;
+  }
+  pushUpdateOrQueue(updates);
+}
+
+const pushSolvesDel = (ids) => pushDeletes('solves', ids);
+const pushSessionsDel = (ids) => pushDeletes('sessions', ids);
+
 function pushSession(session) {
   if (isEcho(`sessions:${session.id}`, session)) return;
   pushOrQueue(userPath('sessions', session.id), session);
@@ -223,16 +275,61 @@ function pushKv({ key, value }) {
   _kvTimers.set(key, setTimeout(() => pushOrQueue(userPath(key), value), KV_DEBOUNCE_MS));
 }
 
+/**
+ * A record this device deleted is not a record it is missing.
+ *
+ * The cloud copy outlives the local delete whenever the removal could not
+ * be pushed at the time — offline, signed out, mid-sign-in, or a rejected
+ * write — and onChildAdded replays it the moment the listener attaches
+ * again. That replay is what a reload is, and it is what used to bring
+ * deleted solves back. So: refuse the write, and re-issue the removal the
+ * cloud never got. The delete completes itself the next time the device is
+ * online, rather than being lost the first time it wasn't.
+ */
+async function rejectAsDeleted(store, id) {
+  if (!(await Tombstones.has(store, id))) return false;
+  // Not awaited: the first attach replays the whole tree, and making each
+  // refusal wait on a round trip would serialise that behind the network.
+  // Caught, though — an unhandled rejection here would surface as a bare
+  // console error with nothing to tie it to the delete it came from.
+  removeOrQueue(userPath(store, id)).catch(err =>
+    console.warn('[sync] could not re-remove a deleted record', store, id, err?.code || err));
+  return true;
+}
+
 async function applyRemoteSolve(solve) {
   if (!solve || !solve.id) return;
+  if (await rejectAsDeleted('solves', solve.id)) return;
   _lastRemoteJSON.set(`solves:${solve.id}`, JSON.stringify(solve));
   await Solves.put(solve);
 }
 
 async function applyRemoteSession(session) {
   if (!session || !session.id) return;
+  if (await rejectAsDeleted('sessions', session.id)) return;
   _lastRemoteJSON.set(`sessions:${session.id}`, JSON.stringify(session));
   await Sessions.put(session);
+}
+
+/**
+ * Another device (or this one, echoed back) removed the row. Deleting it
+ * locally also records the tombstone, which is what makes the removal stick
+ * on this device across the reload that follows.
+ *
+ * The echo marker is set for the same reason the write path sets one: our
+ * own removal comes back to us as onChildRemoved, and without it the local
+ * delete that applies would push the removal a second time, forever.
+ */
+async function applyRemoteSolveRemoved(id) {
+  if (!id) return;
+  _lastRemoteJSON.set(`solvesDel:${id}`, JSON.stringify(null));
+  await Solves.del(id);
+}
+
+async function applyRemoteSessionRemoved(id) {
+  if (!id) return;
+  _lastRemoteJSON.set(`sessionsDel:${id}`, JSON.stringify(null));
+  await Sessions.del(id);
 }
 
 async function applyRemoteLearn(remote) {
@@ -268,7 +365,7 @@ async function applyRemoteSettings(remote) {
 }
 
 async function attachListeners() {
-  const { db, ref, onChildAdded, onChildChanged, onValue } = _sdk;
+  const { db, ref, onChildAdded, onChildChanged, onChildRemoved, onValue } = _sdk;
   const solvesRef = ref(db, userPath('solves'));
   const sessionsRef = ref(db, userPath('sessions'));
   const settingsRef = ref(db, userPath('settings'));
@@ -276,8 +373,10 @@ async function attachListeners() {
 
   _unsubs.push(onChildAdded(solvesRef, (s) => applyRemoteSolve(s.val())));
   _unsubs.push(onChildChanged(solvesRef, (s) => applyRemoteSolve(s.val())));
+  _unsubs.push(onChildRemoved(solvesRef, (s) => applyRemoteSolveRemoved(s.key)));
   _unsubs.push(onChildAdded(sessionsRef, (s) => applyRemoteSession(s.val())));
   _unsubs.push(onChildChanged(sessionsRef, (s) => applyRemoteSession(s.val())));
+  _unsubs.push(onChildRemoved(sessionsRef, (s) => applyRemoteSessionRemoved(s.key)));
   _unsubs.push(onValue(settingsRef, (s) => { if (s.exists()) applyRemoteSettings(s.val()); }));
   _unsubs.push(onValue(learnRef, (s) => { if (s.exists()) applyRemoteLearn(s.val()); }));
 }
@@ -301,8 +400,19 @@ export async function mergeOnSignIn(user) {
     get(ref(db, userPath('solves'))),
     get(ref(db, userPath('sessions'))),
   ]);
-  const cloudSolves = cloudSolvesSnap.exists() ? Object.values(cloudSolvesSnap.val()) : [];
-  const cloudSessions = cloudSessionsSnap.exists() ? Object.values(cloudSessionsSnap.val()) : [];
+  const allCloudSolves = cloudSolvesSnap.exists() ? Object.values(cloudSolvesSnap.val()) : [];
+  const allCloudSessions = cloudSessionsSnap.exists() ? Object.values(cloudSessionsSnap.val()) : [];
+
+  /* Anything this device deleted is dropped from the cloud side before it is
+     counted or unioned, and queued for removal upstream. Otherwise the merge
+     is the second way a deleted solve comes back: the listener path is
+     guarded, but a sign-in reads the tree directly and would union the very
+     rows the tombstones exist to keep out — and then write them to both
+     sides, making the resurrection permanent. */
+  const tombs = await Tombstones.all();
+  const { live: cloudSolves, dead: deadSolves } = partitionDeleted(allCloudSolves, tombs.solves);
+  const { live: cloudSessions, dead: deadSessions } = partitionDeleted(allCloudSessions, tombs.sessions);
+  const dead = { solves: deadSolves.map(s => s.id), sessions: deadSessions.map(s => s.id) };
 
   const action = decideMergeAction({
     localCount: localSolves.length,
@@ -310,7 +420,7 @@ export async function mergeOnSignIn(user) {
     mergedBefore: hasMergedBefore(_uid),
   });
   if (action === 'upload') {
-    await performMerge({ localSolves, localSessions, cloudSolves, cloudSessions });
+    await performMerge({ localSolves, localSessions, cloudSolves, cloudSessions, dead });
     return null;
   }
 
@@ -320,11 +430,11 @@ export async function mergeOnSignIn(user) {
     cloudCount: cloudSolves.length,
     totalCount: mergedCount,
     email: user?.email || '',
-    confirm: () => performMerge({ localSolves, localSessions, cloudSolves, cloudSessions }),
+    confirm: () => performMerge({ localSolves, localSessions, cloudSolves, cloudSessions, dead }),
   };
 }
 
-async function performMerge({ localSolves, localSessions, cloudSolves, cloudSessions }) {
+async function performMerge({ localSolves, localSessions, cloudSolves, cloudSessions, dead = { solves: [], sessions: [] } }) {
   const mergedSolves = unionById(localSolves, cloudSolves);
   const mergedSessions = unionById(localSessions, cloudSessions);
   const [localLearn, cloudLearnSnap] = await Promise.all([
@@ -333,7 +443,8 @@ async function performMerge({ localSolves, localSessions, cloudSolves, cloudSess
   ]);
   const mergedLearn = mergeLearn(localLearn, cloudLearnSnap.exists() ? cloudLearnSnap.val() : {});
 
-  // Write the union back to both sides — additive only, nothing cleared.
+  // Write the union back to both sides. Additive for everything either side
+  // still has; the only thing cleared is what this device deleted on purpose.
   for (const s of mergedSolves) await Solves.put(s);
   for (const s of mergedSessions) await Sessions.put(s);
   if (Object.keys(mergedLearn).length) await KV.set('learn', mergedLearn);
@@ -344,6 +455,10 @@ async function performMerge({ localSolves, localSessions, cloudSolves, cloudSess
   if (Object.keys(mergedLearn).length) updates[userPath('learn')] = mergedLearn;
   const settings = await KV.get('settings', null);
   if (settings) updates[userPath('settings')] = settings;
+  // Same batch, so the account's leftovers go in the one round trip that
+  // uploads the union rather than a second pass that could half-apply.
+  for (const id of dead.solves) updates[userPath('solves', id)] = null;
+  for (const id of dead.sessions) updates[userPath('sessions', id)] = null;
   await pushUpdateOrQueue(updates);
   // Stamped here rather than by the dialog, so the silent path counts too:
   // once this browser and this account have been reconciled, every later
@@ -355,11 +470,18 @@ async function performMerge({ localSolves, localSessions, cloudSolves, cloudSess
 let _writeUnsubs = [];
 
 async function start() {
+  // Before the listeners, never after: attaching replays the whole tree, and
+  // every incoming record is checked against the tombstones. Pruning behind
+  // that replay could drop a note a split second before the row it guards
+  // against arrives.
+  await Tombstones.prune();
   await attachListeners();
   _writeUnsubs = [
     onWrite('solves', pushSolve),
     onWrite('solvesBatch', pushSolvesBatch),
     onWrite('sessions', pushSession),
+    onWrite('solvesDel', pushSolvesDel),
+    onWrite('sessionsDel', pushSessionsDel),
     onWrite('kv', pushKv),
   ];
   window.addEventListener('online', flushQueue);
