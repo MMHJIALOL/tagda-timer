@@ -887,6 +887,60 @@ await new Promise((resolve) => {
         `announced ${announced}, note ${w.localStorage.getItem('tdt.sotd.doneDay')}`);
     }
 
+    /* ---------------- one scramble a day, for everybody ----------------
+
+       The single promise the whole feature makes. It broke because
+       `snap.scramble === null` was read as "nobody has published today's"
+       when it also means "the listener has not delivered its first value
+       yet" — and watch() emits once before that happens. Every refresh then
+       raced its own read, the winner generated and wrote a brand new
+       scramble, and the day's scramble changed under everyone.
+
+       Driven through a stub transport rather than Firebase: what is being
+       checked is the controller's decision to publish at all, and that
+       decision is made before anything touches the network. */
+    {
+      const { Daily } = await import('./js/daily.js');
+
+      const makeCtl = (snapPatch) => {
+        const ctl = new Daily({ settings: { event: '333', inputMode: 'timer' }, nextScramble: () => {} });
+        ctl.snap = {
+          event: '333', dayId: '2026-09-08', uid: 'u1', signedIn: true,
+          scramble: null, scrambleLoaded: false, progress: {}, results: {},
+          ...snapPatch,
+        };
+        ctl.net = {
+          published: [],
+          publishScramble(s) { this.published.push(s); return Promise.resolve({ ok: true }); },
+          hasOwnResult: () => Promise.resolve(false),
+          unlockResults() {},
+          setProgress: () => Promise.resolve(),
+        };
+        return ctl;
+      };
+
+      const settle = () => new Promise(r => setTimeout(r, 400));
+
+      const racing = makeCtl({ scrambleLoaded: false });
+      await racing._maybePublishScramble();
+      await settle();
+      check('a client that has not heard from the scramble node yet publishes nothing',
+        racing.net.published.length === 0,
+        `${racing.net.published.length} write(s) — each one is a new scramble for everybody`);
+
+      const known = makeCtl({ scrambleLoaded: true, scramble: "R U R' U'" });
+      await known._maybePublishScramble();
+      await settle();
+      check('a day that already has a scramble is never written over',
+        known.net.published.length === 0, `${known.net.published.length} write(s)`);
+
+      const first = makeCtl({ scrambleLoaded: true, scramble: null });
+      await first._maybePublishScramble();
+      await settle();
+      check('the first client of the day, having actually looked, does publish one',
+        first.net.published.length === 1, `${first.net.published.length} write(s)`);
+    }
+
     /* ---------------- the Scramble of the Day window, as it renders ----------------
 
        The point of this window is subtraction: it is worth having only if the

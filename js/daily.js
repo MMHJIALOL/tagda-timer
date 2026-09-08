@@ -170,6 +170,17 @@ export class Daily extends EventTarget {
        used to get, and leave a bogus error behind. */
     const { event, dayId } = this.snap;
     if (!event || !dayId) return;
+    /* And not before the scramble node has actually reported.
+       `snap.scramble === null` does not mean "nobody has published today's" —
+       it is equally what a listener that has not delivered its first value
+       yet looks like, and watch() emits once before that happens. Publishing
+       on that emit is the bug that made the day's scramble change on every
+       refresh: each load raced its own read, and whoever beat it generated
+       and wrote a fresh scramble, which everybody then saw. The rules were
+       supposed to catch that (`!data.exists()`), but they are published by
+       hand and separately from the app, so until they are there is nothing
+       between a lost race and a new scramble for the whole world. */
+    if (!this.snap.scrambleLoaded) return;
 
     this._publishing = true;
     clearTimeout(this._publishRetry);
