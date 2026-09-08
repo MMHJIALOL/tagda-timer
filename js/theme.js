@@ -105,6 +105,14 @@ export const DEFAULTS = {
   soundOnPB: true,
   mouseTimer: false,            // click-to-time; off so a stray click cannot start a solve
   inputMode: 'timer',           // timer = spacebar/touch | manual = typed | stackmat = aux jack
+  /* 0/1 = off. 2-6 splits every solve into that many phases: the split key
+     (same one that ends the solve) advances to the next phase instead, the
+     way BLD's memo/exec split already does with a fixed count of 1 — this is
+     that same timer.js primitive with the count exposed as a setting, for
+     CFOP's cross/F2L/OLL/PLL or whatever else you press it. Off on a blind
+     event, where the memo/exec split already owns the key. */
+  multiphase: 0,
+  phasesCollapsed: true,        // the post-solve phase breakdown starts folded away
 
   // appearance
   theme: 'nebula',

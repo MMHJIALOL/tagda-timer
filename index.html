@@ -300,6 +300,18 @@
       </div>
     </div>
 
+    <!-- Multiphase breakdown. Only mounted when Settings > Timer > Multiphase
+         splits is on for a non-blind event, and collapsed by default — same
+         shape as the BLD zone above, for the same reason: a solve cut into
+         four phases should not turn the screen under the clock into a table
+         unless you actually ask to see it. -->
+    <div id="phase-zone" hidden>
+      <div id="phase-bar">
+        <button class="ghost-btn sm" id="btn-phase-toggle" aria-expanded="false" aria-controls="phase-panel">Show breakdown</button>
+      </div>
+      <div id="phase-panel" hidden></div>
+    </div>
+
     <!-- Learn mode. Sits under the case label because it is about the case you
          were just dealt: what stage it is at, the algorithm itself (shown for a
          case you have never seen, and on demand for one you have), and what the
@@ -425,6 +437,12 @@
              beside the scramble because focus mode fades the scramble away,
              and which phase you are in is the one thing worth seeing mid-solve. -->
         <div id="phase-readout" hidden><span id="phase-name">memo</span><span id="phase-times"></span></div>
+
+        <!-- Multiphase live readout — the cstimer-style stacked cumulative/delta
+             list at the clock's corner. Only ever populated when Settings >
+             Timer > Multiphase splits is on; the memo/exec readout above owns
+             blind events instead. -->
+        <div id="phase-live" hidden></div>
 
         <div id="pace-ghost" hidden>
           <div id="pace-fill"></div>

@@ -642,6 +642,14 @@ export function buildSettings(app) {
         row('Start with the mouse', toggle(S.mouseTimer, v => set('mouseTimer', v)), 'click the screen to start and stop — touch always works'),
         row('Confirm misfires', toggle(S.confirmShortSolves, v => set('confirmShortSolves', v)), 'ask before recording a sub-0.5s solve'),
         row('Sound on PB', toggle(S.soundOnPB, v => set('soundOnPB', v))),
+        row('Multiphase splits', chips([
+          { value: 0, label: 'Off' },
+          { value: 2, label: '2' },
+          { value: 3, label: '3' },
+          { value: 4, label: '4' },
+          { value: 5, label: '5' },
+        ], S.multiphase || 0, v => set('multiphase', +v)),
+          'press the split key mid-solve to close a phase instead of stopping — cross/F2L/OLL/PLL, whatever you use it for. Off on blind events, which already split memo/exec.'),
       ),
 
       group('Learn mode',

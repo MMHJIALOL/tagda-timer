@@ -416,6 +416,7 @@ async function init() {
   wireHistoryScroll();
   wireHistorySort();
   wireBld();
+  wirePhaseZone();
   syncEventConfig();
 
   // A pasted scramble list outlives a reload — losing your competition round
@@ -1093,7 +1094,7 @@ function wireTimer() {
   // On a blind event the first press mid-solve ends the memo instead of the
   // solve. The digits change colour, which is feedback you get without having
   // to read anything — the point of the split at speed.
-  timer.addEventListener('split', (e) => phaseSplit(e.detail.atMs));
+  timer.addEventListener('split', (e) => phaseSplit(e.detail));
 
   timer.addEventListener('stop', (e) => onSolveFinished(e.detail));
 }
@@ -1197,6 +1198,10 @@ const bldTraceable = () => TRACEABLE_EVENTS.has(app.settings.event);
 /** Is the memo/exec split armed for the event we are on? */
 const bldSplitOn = () => bldEvent() && !!app.settings.bld?.memoExecSplit;
 
+/** Is the generic N-phase split armed? Blind events keep the memo/exec split. */
+const multiphaseOn = () => !bldEvent() && Number(app.settings.multiphase) >= 2;
+const phaseCount = () => Math.max(2, Math.min(6, Math.round(Number(app.settings.multiphase) || 0)));
+
 /* Expanded or not. Deliberately a module variable and not a setting: rule 1
    says the panel starts collapsed every time the app opens, and a persisted
    toggle is exactly the escape hatch that would quietly undo it. The
@@ -1237,7 +1242,32 @@ function bldOf(sc) {
 app.bldChanged = () => { bldEpoch++; syncBldTimer(); renderBld(); };
 
 function syncBldTimer() {
-  if (timer) timer.cfg.phaseSplits = bldSplitOn() ? 1 : 0;
+  if (timer) timer.cfg.phaseSplits = bldSplitOn() ? 1 : multiphaseOn() ? phaseCount() - 1 : 0;
+}
+
+/** Hides the whole multiphase zone on a blind event or with the setting off. */
+function syncPhaseZoneVisibility() {
+  const zone = $('#phase-zone');
+  if (!zone) return;
+  zone.hidden = !multiphaseOn();
+  if (zone.hidden) $('#phase-panel').replaceChildren();
+}
+
+function wirePhaseZone() {
+  const panel = $('#phase-panel');
+  const toggle = $('#btn-phase-toggle');
+  if (!panel || !toggle) return;
+  const applyCollapsed = (collapsed) => {
+    panel.hidden = collapsed;
+    toggle.setAttribute('aria-expanded', String(!collapsed));
+    toggle.textContent = collapsed ? 'Show breakdown' : 'Hide breakdown';
+  };
+  applyCollapsed(app.settings.phasesCollapsed !== false);
+  toggle.addEventListener('click', () => {
+    const collapsed = !panel.hidden;
+    applyCollapsed(collapsed);
+    app.setSetting('phasesCollapsed', collapsed);
+  });
 }
 
 function renderBld() { renderBldInner(); bldFit(); }
@@ -1422,35 +1452,81 @@ async function bldPairPopover(anchor, pair) {
   popover(anchor, items);
 }
 
-/* ---------------- memo / execution split ---------------- */
+/* ---------------- memo/exec split, and the generic N-phase split ---------------- */
 function phaseReset() {
   $('#timer-display').classList.remove('phase-memo', 'phase-exec');
   const r = $('#phase-readout');
   if (r) { r.hidden = true; $('#phase-times').textContent = ''; }
+  const live = $('#phase-live');
+  if (live) { live.hidden = true; live.replaceChildren(); }
 }
 
 function phaseStart() {
-  if (!bldSplitOn()) return;
-  $('#timer-display').classList.add('phase-memo');
-  const r = $('#phase-readout');
-  r.hidden = false;
-  $('#phase-name').textContent = 'memo';
-  $('#phase-times').textContent = '';
+  if (bldSplitOn()) {
+    $('#timer-display').classList.add('phase-memo');
+    const r = $('#phase-readout');
+    r.hidden = false;
+    $('#phase-name').textContent = 'memo';
+    $('#phase-times').textContent = '';
+    return;
+  }
+  if (multiphaseOn()) {
+    const live = $('#phase-live');
+    if (live) { live.replaceChildren(); live.hidden = false; }
+  }
 }
 
-function phaseSplit(atMs) {
-  const d = $('#timer-display');
-  d.classList.remove('phase-memo');
-  d.classList.add('phase-exec');
-  $('#phase-name').textContent = 'exec';
-  $('#phase-times').textContent = 'memo ' + fmt(atMs);
+/** One line in the live readout — "=" for the first phase, "+" after. */
+function phaseLiveRow(ms, first) {
+  return el('div', { class: 'phase-live-row' },
+    el('span', { class: 'sign', text: first ? '=' : '+' }),
+    el('span', { class: 'val', text: fmt(ms) }));
 }
 
-/** memo/exec numbers for a finished solve, from the raw split list. */
+function phaseSplit({ atMs, phaseMs, index }) {
+  if (bldSplitOn()) {
+    const d = $('#timer-display');
+    d.classList.remove('phase-memo');
+    d.classList.add('phase-exec');
+    $('#phase-name').textContent = 'exec';
+    $('#phase-times').textContent = 'memo ' + fmt(atMs);
+    return;
+  }
+  if (multiphaseOn()) {
+    const live = $('#phase-live');
+    if (live) live.append(phaseLiveRow(phaseMs, index === 0));
+  }
+}
+
+/** memo/exec numbers for a finished BLD solve, from the raw split list. */
 function phasesOf(splits, timeMs) {
   if (!splits || !splits.length) return null;
   const memoMs = Math.min(splits[0], timeMs);
   return { memoMs, execMs: Math.max(0, timeMs - memoMs) };
+}
+
+/** Every phase of a finished multiphase solve, as one delta per phase. */
+function multiphaseSplitsOf(splits, timeMs) {
+  if (!splits || !splits.length) return null;
+  const out = [];
+  let prev = 0;
+  for (const s of splits) { out.push(Math.max(0, Math.round(s - prev))); prev = s; }
+  out.push(Math.max(0, Math.round(timeMs - prev)));
+  return out;
+}
+
+/** The last solve's per-phase breakdown, inside the (possibly collapsed) zone. */
+function renderPhaseBreakdown(phasesMs, timeMs) {
+  const panel = $('#phase-panel');
+  if (!panel || !phasesMs?.length) return;
+  panel.replaceChildren(
+    el('div', { class: 'phase-row' }, ...phasesMs.map((ms, i) =>
+      el('div', { class: 'phase-chip' },
+        el('b', { text: `P${i + 1}` }),
+        el('i', { text: fmt(ms) }))),
+    ),
+    el('div', { class: 'phase-total', text: `total ${fmt(timeMs)}` }),
+  );
 }
 
 /* =========================================================
@@ -1461,6 +1537,16 @@ async function onSolveFinished(res) {
   const main = $('#time-main');
   main.textContent = fmt(res.timeMs);
   $('#time-penalty').textContent = res.penalty === '+2' ? '+2' : res.penalty === 'DNF' ? 'DNF' : '';
+
+  // The stopping press closes the last phase, which never gets a 'split' event
+  // of its own — so its line is added here, once, from the finished result.
+  if (multiphaseOn() && res.splits?.length) {
+    const live = $('#phase-live');
+    if (live) {
+      const lastMs = Math.max(0, res.timeMs - res.splits[res.splits.length - 1]);
+      live.append(phaseLiveRow(lastMs, false));
+    }
+  }
 
   if (res.suspicious && app.settings.confirmShortSolves) {
     // A misfire is obvious the instant it happens — you felt the stack move.
@@ -1506,6 +1592,8 @@ async function recordSolve({ timeMs, penalty = 'none', inspectionMs = 0, splits 
     }
   }
 
+  const phasesMs = multiphaseOn() ? multiphaseSplitsOf(splits, timeMs) : null;
+
   const solve = {
     id: uid(),
     sessionId: app.session.id,
@@ -1523,10 +1611,12 @@ async function recordSolve({ timeMs, penalty = 'none', inspectionMs = 0, splits 
     // session it landed in.
     ...(racing ? { race: true, roomId: race.snap?.roomId || null } : {}),
     ...(bld ? { bld } : {}),
+    ...(phasesMs ? { phases: phasesMs } : {}),
   };
   if (bld?.memoMs != null) {
     $('#phase-times').textContent = `memo ${fmt(bld.memoMs)} · exec ${fmt(bld.execMs)}`;
   }
+  if (phasesMs) renderPhaseBreakdown(phasesMs, timeMs);
   app.solves.push(solve);
   await Solves.put(solve);
   /* Submitted after the local write, never before: the solve is yours whatever
@@ -1843,6 +1933,7 @@ function historyRowData(i) {
       s.penalty === '+2' ? 'plus2' : '',
       v === best && v !== DNF ? 'pb' : '',
       trim.best.has(i) ? 'best-in-avg' : '',
+      s.phases?.length ? 'has-phases' : '',
     ].filter(Boolean).join(' '),
     idx: String(i + 1),
     time: v === DNF ? 'DNF' : fmt(v) + (s.penalty === '+2' ? '+' : ''),
@@ -1903,7 +1994,10 @@ function historyChip(i, data) {
 
   const chip = el('div', { class: d.cls, role: 'listitem' },
     el('span', { class: 'idx', text: d.idx }),
-    el('span', { class: 't', text: d.time }),
+    el('span', {
+      class: 't', text: d.time,
+      title: d.solve.phases?.length ? 'Has a phase breakdown — click for the split' : '',
+    }),
     ...cells,
     recon,
   );
@@ -2334,6 +2428,15 @@ function solveMenu(solve, anchor) {
       label: 'Diagnose this DNF',
       onSelect: () => openPanel('DNF post-mortem', 'buildPostMortem', { wide: true }, app, solve),
     }] : []),
+    // Any solve with phases recorded gets its breakdown right here — the zone
+    // under the clock only ever shows the one you just did, so this is the
+    // only way back into an older solve's split.
+    ...(solve.phases?.length ? [
+      { sep: true },
+      { title: 'Phase breakdown' },
+      { node: el('div', { class: 'phase-row pop-phases' }, ...solve.phases.map((ms, i) =>
+          el('div', { class: 'phase-chip' }, el('b', { text: `P${i + 1}` }), el('i', { text: fmt(ms) })))) },
+    ] : []),
     { sep: true },
     { label: 'Delete solve', badge: 'Del', onSelect: () => deleteThrottled(solve) },
   ]);
@@ -3408,6 +3511,7 @@ function applyAll(changed) {
   if (changed === 'cubeView') { updateLabels(); if (app.scramble) showScramble(app.scramble, true); }
   if (!changed || changed === 'inputMode') applyInputMode();
   if (!changed || changed === 'bld') { bldEpoch++; syncBldTimer(); renderBld(); }
+  if (!changed || changed === 'multiphase') { syncBldTimer(); syncPhaseZoneVisibility(); phaseReset(); }
 }
 app.applyAll = () => applyAll();
 app.refreshBackground = () => applyBackground(bg, app.settings);
@@ -3421,7 +3525,8 @@ function syncEventConfig() {
   // if the solver asked for that in settings. Never forced open either way.
   bldOpen = bldEvent() && !!app.settings.bld?.showBreakdownByDefault;
   syncBldTimer();
-  if (!bldSplitOn()) phaseReset();
+  syncPhaseZoneVisibility();
+  if (!bldSplitOn() && !multiphaseOn()) phaseReset();
   renderBld();
 }
 
