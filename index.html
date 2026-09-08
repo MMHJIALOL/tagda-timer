@@ -29,11 +29,11 @@
      perfect in incognito, which is a miserable thing to debug.
      /js/ is `must-revalidate` and does not depend on this, but keep the number
      in step anyway rather than leaving two answers to the same question. -->
-<link rel="modulepreload" href="js/main.js?v=45">
-<link rel="stylesheet" href="css/fonts.css?v=45">
-<link rel="stylesheet" href="css/tokens.css?v=45">
-<link rel="stylesheet" href="css/base.css?v=45">
-<link rel="stylesheet" href="css/components.css?v=45">
+<link rel="modulepreload" href="js/main.js?v=51">
+<link rel="stylesheet" href="css/fonts.css?v=51">
+<link rel="stylesheet" href="css/tokens.css?v=51">
+<link rel="stylesheet" href="css/base.css?v=51">
+<link rel="stylesheet" href="css/components.css?v=51">
 <link rel="icon" href="assets/favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="assets/logo-192.png">
 <link rel="apple-touch-icon" href="assets/logo-180.png">
@@ -99,10 +99,18 @@
 
   <!-- ---------- TOP BAR ---------- -->
   <header id="topbar">
-    <button class="brand" id="brand" title="Tagda Timer — click the cube">
-      <img class="brand-mark" src="assets/logo-96.png" alt="" width="96" height="96" decoding="async">
-      <span class="brand-text">Tagda <b>Timer</b></span>
-    </button>
+    <!-- The wordmark is wrapped rather than left bare so the bar has a left
+         group that can be told to weigh the same as the icon cluster on the
+         right -- that is what puts the picker row on the page's centre line
+         instead of the centre of whatever was left over. The button keeps its
+         own size inside it, so the growing box is inert space and not a
+         400px-wide invisible target that toggles the mascot. -->
+    <div class="topbar-left">
+      <button class="brand" id="brand" title="Tagda Timer — click the cube">
+        <img class="brand-mark" src="assets/logo-96.png" alt="" width="96" height="96" decoding="async">
+        <span class="brand-text">Tagda <b>Timer</b></span>
+      </button>
+    </div>
 
     <div class="topbar-center">
       <div class="seg" id="event-seg">
@@ -649,7 +657,7 @@
   </div>
 </div>
 
-<script type="module" src="js/main.js?v=45"></script>
+<script type="module" src="js/main.js?v=51"></script>
 <script>
 (function () {
   var isFile = location.protocol === 'file:';

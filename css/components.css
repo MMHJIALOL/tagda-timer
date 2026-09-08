@@ -201,6 +201,12 @@
 @media (max-width: 1080px) {
   .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .stat.wide { grid-column: 1 / -1; }
+  /* Seven figures into two columns leaves ao100 sitting in the left half of a
+     row with a hole beside it, directly above a consistency bar that already
+     spans the width -- a gap in the middle of the block with nothing to be.
+     It takes the whole row too, so the two full-width rows read as the pair
+     they are and the tiles above stay a clean three-by-two. */
+  .stat[data-k="ao100"] { grid-column: 1 / -1; }
 }
 .stat {
   display: flex; flex-direction: column; gap: 2px;
@@ -433,7 +439,12 @@
   margin: 0 calc(var(--pad) * -0.5);
   /* The extra right pad is the list's scrollbar, measured at render time —
      without it every heading sits a scrollbar-width right of its column. */
-  padding: 4px calc(var(--pad) * 0.5 + 8px + var(--hist-sbw, 0px)) 3px calc(var(--pad) * 0.5 + 8px);
+  /* +1px for the 1px transparent border a .solve-chip carries so that its
+     hover outline can appear without the row jumping. That border is inside
+     the chip's box, so the chip's grid is 2px narrower than a header laid out
+     on the same padding -- enough to walk every heading a pixel off the
+     numbers it names, in opposite directions at the two ends of the row. */
+  padding: 4px calc(var(--pad) * 0.5 + 9px + var(--hist-sbw, 0px)) 3px calc(var(--pad) * 0.5 + 9px);
   font-size: .58rem; font-weight: 700; letter-spacing: .14em; text-transform: uppercase;
   color: var(--text-faint);
   border-bottom: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
@@ -445,6 +456,13 @@
   cursor: pointer; user-select: none;
   font: inherit; color: inherit; letter-spacing: inherit; text-transform: inherit;
   background: none; border: 0; padding: 0;
+  /* A <button> centres its own label. The heading cells were built as buttons
+     so the columns could be sorted, and that one inherited default was enough
+     to park "TIME" in the middle of a 79px track whose numbers are all flush
+     left -- the label naming a column it did not sit over. The average
+     headings are wrapped in .col-avg and right-aligned there, so this only has
+     to answer for the ones standing in a track on their own. */
+  text-align: inherit;
   transition: color var(--dur-fast) var(--ease);
 }
 .hist-cols [data-sort]:hover { color: var(--text); }
@@ -904,7 +922,12 @@ input[type="range"]::-moz-range-thumb {
 
 @media (max-width: 860px) {
   #topbar { position: relative; }
-  #btn-menu { display: flex; }
+  /* The icon row it stands in for is what used to carry `margin-left: auto`,
+     and that row is display:none down here -- so the button that replaced it
+     was landing 12px to the right of the wordmark, in the middle of an
+     otherwise empty bar, with its own dropdown then opening from the far
+     right edge it was nowhere near. It inherits the row's job here. */
+  #btn-menu { display: flex; margin-left: auto; }
   .topbar-right { display: none; }
   .topbar-right.open {
     display: flex; flex-direction: column; align-items: stretch; gap: 2px;
@@ -1381,15 +1404,25 @@ input[type="range"]::-moz-range-thumb {
   font-size: .55rem; font-weight: 700; letter-spacing: .16em;
   text-transform: uppercase; color: var(--text-faint);
 }
-.bests-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(52px, 1fr)); gap: 4px; }
+/* Five bests, and an auto-fit with a 52px floor let only four of them onto a
+   sidebar row -- so ao100 sat alone under a full row of four, reading as an
+   afterthought rather than the fifth of a set. Worse, whether it happened at
+   all depended on a dozen pixels: the block is ~12px narrower once the stats
+   body has a scrollbar, so the ragged row came and went as the session grew.
+   Five is not a count that changes, so it is written down rather than guessed
+   at, and the tiles take whatever fifth of the row they are given. The bottom
+   dock overrides this to a flex row (see the [data-dock] block below), which
+   is where a different count per row was ever wanted. */
+.bests-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; }
 .bst {
   display: flex; flex-direction: column; gap: 1px;
-  padding: 5px 6px; border-radius: 7px;
+  /* A fifth of a 242px sidebar is 45px, and "AO100" has to fit inside it. */
+  padding: 5px 4px; border-radius: 7px;
   background: color-mix(in srgb, var(--gold) 9%, transparent);
   border: 1px solid color-mix(in srgb, var(--gold) 18%, transparent);
 }
 .bst span {
-  font-size: .52rem; font-weight: 700; letter-spacing: .1em;
+  font-size: .52rem; font-weight: 700; letter-spacing: .04em;
   text-transform: uppercase; color: var(--text-faint);
 }
 .bst b {
@@ -1397,6 +1430,12 @@ input[type="range"]::-moz-range-thumb {
   font-size: calc(.76rem * var(--sidebar-text));
   color: var(--gold); font-variant-numeric: tabular-nums;
 }
+/* Neither line has ever been allowed to be wider than its tile, but nothing
+   said so, so a best that ran past a minute pushed its own tile wide and shunted
+   the other four along -- five tiles that are meant to be a set, and one of them
+   a different size for the rest of the session. Same answer as the solve list
+   gives a long time: it ends early rather than printing over its neighbour. */
+.bst span, .bst b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ---------------- the trend chart is a way into the full charts --------- */
 #mini-chart-btn {
