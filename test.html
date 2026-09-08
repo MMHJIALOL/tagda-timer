@@ -954,6 +954,55 @@ await new Promise((resolve) => {
         `${racing.net.published.length} write(s) after the wait ran out`);
     }
 
+    /* ---------------- arming an attempt against a stale submittedToday ----------------
+
+       `submittedToday` starts false and only becomes trustworthy once
+       _checkOwnResult has actually answered for this uid/day — that answer is
+       a network round trip, so every fresh connect() (a page load, a reopen
+       of the window) has a window where the account had already spent today's
+       attempt but the controller did not know it yet. _onDay used to arm on
+       whatever submittedToday happened to be at that instant, which handed
+       out a fresh, real, official scramble to solve again — and once the
+       check came back a moment later and corrected the flag, nothing repainted
+       the screen, because _changed()'s staleness guard could not tell "a real
+       scramble is on screen" apart from "nothing has been shown yet" (both
+       read as `_shownHold === null`). */
+    {
+      const { Daily } = await import('./js/daily.js');
+      let shown = undefined;
+      const ctl = new Daily({
+        settings: { event: '333', inputMode: 'timer' },
+        nextScramble: () => { shown = ctl.takeScramble(); },
+      });
+      ctl.net = {
+        // The database says today is already spent — but the answer takes a
+        // tick to arrive, same as a real transport's would.
+        hasOwnResult: () => Promise.resolve(true),
+        unlockResults() {},
+        setProgress: () => Promise.resolve(),
+      };
+      ctl.snap = {
+        event: '333', dayId: '2026-09-08', uid: 'u1', signedIn: true,
+        scramble: "R U R' U'", scrambleLoaded: true, progress: {}, results: {},
+      };
+
+      ctl.engage();          // arms (or does not) before the check below resolves
+      ctl._checkOwnResult(); // what a real connect()/_onDay would already have kicked off
+      check('engaging does not arm an attempt before knowing whether today is spent',
+        !ctl.attempting, `attempting=${ctl.attempting}`);
+      check('and so does not hand out the real scramble in the meantime',
+        !shown?.scramble, `shown=${JSON.stringify(shown)}`);
+
+      await Promise.resolve().then(() => {}).then(() => {}); // let hasOwnResult's promise settle
+      await new Promise(r => setTimeout(r, 0));
+
+      check('once the check answers, the window still is not armed',
+        !ctl.attempting && ctl.submittedToday, `attempting=${ctl.attempting} submittedToday=${ctl.submittedToday}`);
+      check('and the screen has been corrected to say so, not left on a stale scramble',
+        shown?.hold?.includes('already') && !shown?.scramble,
+        `shown=${JSON.stringify(shown)}`);
+    }
+
     /* ---------------- the Scramble of the Day window, as it renders ----------------
 
        The point of this window is subtraction: it is worth having only if the
