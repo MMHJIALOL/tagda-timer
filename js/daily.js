@@ -63,6 +63,18 @@ const PUBLISH_BACKOFF_MS = [1500, 4000, 10000, 20000];
 /** A random-state search that has not finished by now is not going to. */
 const GENERATE_TIMEOUT_MS = 20000;
 
+/**
+ * How long to let the scramble listener report before publishing without it.
+ *
+ * Short, and bounded, because the wait is a courtesy rather than a guarantee:
+ * the transaction in publishScramble is what actually makes the write
+ * write-once. Four looks at 400ms is long enough for a listener that is
+ * merely slow and short enough that a listener that is never coming does not
+ * strand the window.
+ */
+const READ_WAIT_MS = 400;
+const READ_WAIT_TRIES = 4;
+
 /** An event only counts as a daily challenge if "one scramble, one time" describes it. */
 export function dailyEligible(eventId) {
   const ev = eventOf(eventId);
@@ -98,6 +110,9 @@ export class Daily extends EventTarget {
     this.publishError = null;
     this._publishRetry = 0;
     this._publishTries = 0;
+    /** How many times publishing has stood aside for a listener that has not reported. */
+    this._readWaits = 0;
+    this._readWait = 0;
     /** The count last written, so an unchanged total is not rewritten. */
     this._lastCount = -1;
   }
@@ -170,17 +185,33 @@ export class Daily extends EventTarget {
        used to get, and leave a bogus error behind. */
     const { event, dayId } = this.snap;
     if (!event || !dayId) return;
-    /* And not before the scramble node has actually reported.
+    /* Prefer not to publish before the scramble node has reported.
        `snap.scramble === null` does not mean "nobody has published today's" —
        it is equally what a listener that has not delivered its first value
        yet looks like, and watch() emits once before that happens. Publishing
        on that emit is the bug that made the day's scramble change on every
        refresh: each load raced its own read, and whoever beat it generated
-       and wrote a fresh scramble, which everybody then saw. The rules were
-       supposed to catch that (`!data.exists()`), but they are published by
-       hand and separately from the app, so until they are there is nothing
-       between a lost race and a new scramble for the whole world. */
-    if (!this.snap.scrambleLoaded) return;
+       and wrote a fresh scramble, which everybody then saw.
+
+       A PREFERENCE, with a deadline, and never a dead end. The first version
+       of this was a bare `return`, which was worse than the bug it fixed: a
+       listener that never reports — and there is no promise that it must —
+       left the window sitting on "Publishing today's scramble…" forever with
+       no attempt made, no retry scheduled and nothing anywhere saying why.
+       That is exactly the silent hang _scheduleRepublish exists to kill, and
+       it had been reintroduced one line above it.
+
+       Waiting is only an optimisation now, because publishScramble is a
+       transaction: it cannot overwrite an existing scramble whatever this
+       decides. So a node that will not report is waited on briefly, out of
+       courtesy, and then published to anyway. */
+    if (!this.snap.scrambleLoaded && this._readWaits < READ_WAIT_TRIES) {
+      this._readWaits++;
+      clearTimeout(this._readWait);
+      this._readWait = setTimeout(() => this._maybePublishScramble(), READ_WAIT_MS);
+      this.dispatchEvent(new CustomEvent('change'));
+      return;
+    }
 
     this._publishing = true;
     clearTimeout(this._publishRetry);
@@ -241,8 +272,11 @@ export class Daily extends EventTarget {
   /** A new day or event is a fresh start for all of the above. */
   _resetPublishState() {
     clearTimeout(this._publishRetry);
+    clearTimeout(this._readWait);
     this._publishRetry = 0;
+    this._readWait = 0;
     this._publishTries = 0;
+    this._readWaits = 0;
     this.publishError = null;
   }
 
@@ -365,6 +399,20 @@ export class Daily extends EventTarget {
         return 'Today’s scramble could not be published after several tries'
              + (this.publishError ? ` (${this.publishError})` : '')
              + ' — reload, or see DAILY.md if this keeps happening.';
+      }
+      /* An attempt has already failed and another is queued. Saying only
+         "Publishing…" here hid the reason for the best part of a minute —
+         four tries with a twenty-second generator timeout behind each — and
+         a wait with no explanation is indistinguishable from a hang. The
+         reason is known the moment the first attempt fails, so it is said
+         then rather than kept back until the last one. */
+      if (this.publishError) {
+        return `Still trying to publish today’s scramble (${this.publishError})…`;
+      }
+      /* Only while the courtesy wait is actually running: once an attempt has
+         been made, "reading" is no longer what is happening. */
+      if (!this.snap.scrambleLoaded && !this._publishTries && this._readWaits) {
+        return 'Reading today’s board…';
       }
       return 'Publishing today’s scramble…';
     }
