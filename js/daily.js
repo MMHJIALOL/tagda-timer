@@ -668,13 +668,44 @@ export class Daily extends EventTarget {
    */
   ranked() {
     if (!this.revealed || !this.snap?.results) return [];
-    return Object.entries(this.snap.results)
+    return this._rank(this.snap.results, this.snap.progress);
+  }
+
+  /**
+   * A day's results in board order. Shared by today's live `ranked()` and by
+   * the past-day lookup below, so a row of history is ordered and flagged by
+   * exactly the same rules today's is — the two cannot drift, because there
+   * is only one of them.
+   */
+  _rank(results, progress) {
+    return Object.entries(results || {})
       .map(([uid, r]) => ({
         uid, result: r, e: eff(r),
-        isMe: uid === this.snap.uid,
-        clockOff: this._clockMismatch(uid, r),
+        isMe: uid === this.snap?.uid,
+        clockOff: this._clockMismatch(r, progress?.[uid]),
       }))
       .sort((a, b) => a.e - b.e);
+  }
+
+  /**
+   * One past day's board, fetched once.
+   *
+   * The reveal gate is unchanged and deliberately so: the rules let you read
+   * a day's `results` only if you have a row in it, for every day and not
+   * just today, so a day you sat out comes back `denied` and stays that way.
+   * That is the same bargain today's board offers, applied to history.
+   *
+   * Returns `{ dayId, eventId, rows, denied, scramble }` — never throws for
+   * the locked case, because "you did not play that day" is an answer the
+   * panel has to draw rather than an error it has to report.
+   */
+  async pastBoard(dayId, eventId = this.eventId) {
+    if (!this.net) await this.connect();
+    const out = await this.net.readDay(String(dayStartMs(dayId)), eventId);
+    return {
+      dayId, eventId, scramble: out.scramble, denied: out.denied,
+      rows: out.denied ? [] : this._rank(out.results, out.progress),
+    };
   }
 
   /**
@@ -682,8 +713,7 @@ export class Daily extends EventTarget {
    * `progress` is public, so this can be computed for every row, not just
    * your own — same check as race.js's `_clockMismatch`.
    */
-  _clockMismatch(uid, result) {
-    const prog = this.snap?.progress?.[uid];
+  _clockMismatch(result, prog) {
     if (!prog?.startedAt || !prog?.finishedAt) return false;
     const observed = prog.finishedAt - prog.startedAt;
     if (!(observed > 0)) return false;
@@ -713,4 +743,4 @@ export function getDaily(app) {
 }
 
 export { cloudAvailable } from './daily-net.js';
-export { dayIdFromServerMs, nextResetMs, formatCountdown } from './daily-net.js';
+export { dayIdFromServerMs, nextResetMs, formatCountdown, shiftDayId } from './daily-net.js';

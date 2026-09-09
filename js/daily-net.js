@@ -318,6 +318,42 @@ export class DailyTransport extends EventTarget {
   }
 
   /**
+   * Read one past day's board once, without disturbing the live one.
+   *
+   * Deliberately NOT watch(): that is the pointer at TODAY, and everything
+   * hanging off it — the countdown, the rollover check, whether an attempt
+   * may still be armed — is keyed to the day it currently names. Pointing it
+   * at history to look something up and pointing it back afterwards would
+   * make "which day is this transport on" a question with two answers, and
+   * the submit path would be reading whichever one lost the race.
+   *
+   * So this touches no instance state at all: three `get`s and a plain
+   * object back, the same one-shot shape hasOwnResult() uses.
+   *
+   * `results` is gated per day by the rules — you may read a day's board only
+   * if you have a row in it — so a refusal here is the ordinary answer for a
+   * day you sat out, not a fault. It comes back as `denied` rather than as a
+   * throw, because the caller has to draw something either way and "you did
+   * not play that day" is not an error to report. A refusal on `scramble` or
+   * `progress` would be, both being public, so those are left to reject.
+   */
+  async readDay(dayKey, eventId) {
+    const S = this._sdk;
+    if (!S || !dayKey || !eventId) return { scramble: null, progress: {}, results: {}, denied: true };
+    const base = `daily/${dayKey}/${eventId}`;
+    const [scramble, progress] = await Promise.all([
+      S.get(this._ref(`${base}/scramble`)).then(s => s.val() || null, () => null),
+      S.get(this._ref(`${base}/progress`)).then(s => s.val() || {}, () => ({})),
+    ]);
+    try {
+      const results = (await S.get(this._ref(`${base}/results`))).val() || {};
+      return { scramble, progress, results, denied: false };
+    } catch {
+      return { scramble, progress, results: {}, denied: true };
+    }
+  }
+
+  /**
    * Start reading everyone else's times for the watched day/event.
    *
    * Not attached until the caller knows the reveal rule will allow it —
