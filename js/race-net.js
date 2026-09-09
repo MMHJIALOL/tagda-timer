@@ -9,7 +9,7 @@
      leave()           exit, and reap the room if you were the last out
      setProgress(p)    your status for the live round — never a time
      submitResult(r)   your time for the live round — write-once
-     sendChat(text)    say something to the room — refused while a round runs
+     sendChat(text)    say something to the room — open in every phase
      openRound(n, i)   publish a round's scramble (write-once, first wins)
      advanceRound(n)   move the room's pointer forward by exactly one
      unlockResults()   start reading other people's times
@@ -37,23 +37,18 @@
    which is exactly why there is no ".read" anywhere above it.
 
    ---------------------------------------------------------
-   Why chat is frozen while a round is live
+   Chat is always open
    ---------------------------------------------------------
 
-   `chat` sits beside them and is readable by the whole room, always. That is
-   only safe because of the other half of its rule: a message cannot be
-   WRITTEN while `meta/phase` is 'racing'.
+   `chat` sits beside them and is readable and writable by the whole room at
+   any time, round or no round.
 
-   Gating the write on the sender having finished would not have worked, and
-   the reason is worth writing down. The leak is not about who is talking, it
-   is about who is reading: a player who has finished typing "7.2, finally"
-   hands their time to everybody still mid-solve, and no rule that looks at
-   the author can see that coming. The only gate that holds is one where
-   nobody can post at all until the round is over — at which point the times
-   are unlocked anyway and there is nothing left to leak.
-
-   So chat is a lobby thing. During a round the panel goes read-only and the
-   backlog stays on screen, which is also just correct: you are solving.
+   It used to be frozen during a round, on the grounds that somebody typing
+   "7.2, finally" leaks their time to everybody still mid-solve. That is real
+   but it is a room problem, not a rules problem — the same person can say it
+   out loud — and the freeze cost every room the thing chat is for: reacting
+   while it is happening. `results` stays gated exactly as before, so the
+   times themselves are still unreadable until you have sent your own.
    =========================================================== */
 
 import {
@@ -325,13 +320,10 @@ class FirebaseTransport extends EventTarget {
   }
 
   /**
-   * Say something to the room.
+   * Say something to the room, in any phase.
    *
-   * The 'racing' check the rule enforces is not repeated here on purpose: the
-   * UI already refuses to send during a round, and duplicating the condition
-   * in a third place is how the three of them drift apart. What this does do
-   * is let the rejection surface, so a caller can tell the difference between
-   * "sent" and "the room would not take it".
+   * Rejections are left to surface, so a caller can tell the difference
+   * between "sent" and "the room would not take it".
    */
   async sendChat(text) {
     const body = cleanChat(text);
@@ -659,20 +651,12 @@ class LocalTransport extends EventTarget {
     });
   }
 
-  /**
-   * The local room's chat, with the freeze kept by hand.
-   *
-   * There are no rules here to lean on — every tab is the same trusted
-   * origin — so the phase check that the Firebase side gets for free has to
-   * be written out. It is politeness rather than a guarantee, which is what
-   * everything else in this transport is too.
-   */
+  /** The local room's chat. Open in every phase, same as the hosted one. */
   async sendChat(text) {
     const body = cleanChat(text);
     if (!body || !this.snap.roomId) return;
     const uid = this.snap.uid;
     this._mutate((room) => {
-      if (room.meta?.phase === 'racing') return false;
       room.chat ||= [];
       room.chat.push({
         id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,

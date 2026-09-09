@@ -25,7 +25,7 @@ import {
   ROOM_MAX, ROWS_BEFORE_FOLD, CODE_ALPHABET, CODE_LENGTH,
   GRACE_MS, SOFT_TIMEOUT_MS, SUSPECT_RATIO,
   CLOCK_SLACK_MS, CLOCK_SLACK_RATIO,
-  CHAT_MAX_LEN, CHAT_COOLDOWN_MS,
+  CHAT_MAX_LEN, CHAT_COOLDOWN_MS, RACE_EMOJI,
 } from './raceapp.js';
 
 /**
@@ -58,19 +58,6 @@ const SETTLE_MS = 700;
  * mechanism two clients starting at once already rely on.
  */
 const ORPHAN_ROUND_MS = 6000;
-
-/**
- * The tray, in the order it is drawn.
- *
- * Twenty, deliberately — enough that the thing you want is usually there,
- * few enough that it is two rows of ten in a 240px rail rather than a
- * scrolling grid nobody reads to the bottom of. Weighted towards what a race
- * room actually says: well played, unlucky, that was a lockup, go again.
- */
-const RACE_EMOJI = [
-  '🔥', '😭', '💀', '😂', '🎉', '👏', '🧊', '⚡', '😤', '🙃',
-  '👀', '🤝', '💪', '🐢', '🎯', '😅', '🫠', '🥶', '🤯', '🏆',
-];
 
 /** How long to keep retrying a write the room needs before giving up on it. */
 const RETRY_MS = [400, 1200];
@@ -1170,16 +1157,6 @@ export class Race extends EventTarget {
 
   /* ---------------- chat ---------------- */
 
-  /**
-   * Chat is a lobby thing.
-   *
-   * Not a UI preference — the database refuses the write too, and the reason
-   * is written out at the top of race-net.js. The short version: the leak
-   * this mode exists to prevent is about who is READING, so the only gate
-   * that holds is one where nobody can post while anybody is still solving.
-   */
-  get chatFrozen() { return this.phase === 'racing'; }
-
   /** Everything currently on the wire, oldest first. */
   get chatLog() { return this.snap?.chat || []; }
 
@@ -1235,7 +1212,7 @@ export class Race extends EventTarget {
 
   _openEmoji() {
     const chat = this._node?.querySelector('.race-chat');
-    if (!chat || this.chatFrozen) return;
+    if (!chat) return;
     chat.querySelector('.race-emoji').hidden = false;
     chat.querySelector('.race-chat-emoji').setAttribute('aria-expanded', 'true');
   }
@@ -1273,7 +1250,6 @@ export class Race extends EventTarget {
     const body = cleanChat(input.value);
     if (!body) { input.value = ''; return; }
 
-    if (this.chatFrozen) { toast('Chat opens again when the round ends'); return; }
     /* A cooldown rather than a queue. Holding Enter down is the only way
        anybody hits this, and the honest answer to that is to drop the extra
        presses on the floor, not to send them a moment later. */
@@ -1312,7 +1288,6 @@ export class Race extends EventTarget {
    * Deliberately never touches the input or the form: those are built once in
    * _ensurePanel and live for as long as the panel does, because a text field
    * replaced between two keystrokes loses what you typed and the caret with
-   * it. The only thing the render does to the composer is enable or disable
    * it.
    */
   _syncChat() {
@@ -1321,21 +1296,6 @@ export class Race extends EventTarget {
     if (!wrap) return;
 
     const log = this.chatLog;
-    const frozen = this.chatFrozen;
-
-    wrap.dataset.frozen = String(frozen);
-
-    const input = wrap.querySelector('.race-chat-input');
-    input.disabled = frozen;
-    input.placeholder = frozen ? 'Chat opens when the round ends' : 'Say something…';
-    /* A disabled field keeps focus in some browsers and loses it in others,
-       and a chat box that swallows the spacebar the instant a round starts
-       would be the worst bug this feature could ship. Give the keyboard back
-       to the timer explicitly. */
-    if (frozen && document.activeElement === input) input.blur();
-    // Nothing to pick an emoji into while the round is running.
-    if (frozen) this._closeEmoji();
-    wrap.querySelector('.race-chat-emoji').disabled = frozen;
 
     const host = wrap.querySelector('.race-chat-log');
     const sig = log.map(m => m.id).join(',');

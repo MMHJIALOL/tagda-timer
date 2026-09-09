@@ -185,15 +185,6 @@ export async function shareRecon({ scramble, title, steps, moves, zb = false }) 
   });
 }
 
-/** The reconstruction's playback, already encoded as a GIF by reconexport.js. */
-export function shareReconGif(blob, { moves, zb = false } = {}) {
-  present({ blob, mime: 'image/gif' }, {
-    title: 'Share this playback',
-    filename: `tagda-reconstruction-${stamp()}.gif`,
-    text: shareText('Reconstruction', `${moves} moves${zb ? ', ZBLL finish' : ''}`),
-  });
-}
-
 /** An average: only the counting times and their scrambles, as asked. */
 export async function shareAverage(solves, { label, value, trimmed } = {}) {
   if (!solves?.length) { toast('Nothing to share yet'); return; }

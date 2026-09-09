@@ -23,22 +23,6 @@ const SOURCES = [
   'https://cdn.cubing.net/v0/js/cubing/twisty',
 ];
 
-/* twisty-player's shadow root — and the ones nested inside it for its own
-   3D viewer — are closed by default. That is fine for everything except
-   js/reconexport.js, which needs to reach the WebGL canvas inside to record
-   the GIF export, and there is no attribute that asks for an open one. This
-   forces every shadow root created from here on open, before the player
-   ever exists, so the nested viewer's own attachShadow calls (which happen
-   later, once its chunk lazy-loads, not synchronously with the player's own
-   constructor) get caught too. It only changes what this element's own
-   internals allow inspecting, not anything else on the page. */
-{
-  const attachShadow = Element.prototype.attachShadow;
-  Element.prototype.attachShadow = function (init) {
-    return attachShadow.call(this, { ...init, mode: 'open' });
-  };
-}
-
 /* The panel's own stylesheet, fetched on the first open for the same reason
    the module is: most sessions never come in here. */
 function loadCss() {
@@ -869,10 +853,6 @@ function build() {
             class: 'ghost-btn sm rc-share', text: 'share',
             title: 'Make a share card of this reconstruction', onclick: shareCard,
           }),
-          ui.exportGifBtn = el('button', {
-            class: 'ghost-btn sm', text: 'export gif',
-            title: 'Export the cube playing this reconstruction as a GIF', onclick: exportGif,
-          }),
           el('button', { class: 'ghost-btn sm', text: 'undo', onclick: undo }),
           el('button', { class: 'ghost-btn sm danger', text: 'clear', onclick: () => { S.steps = []; commit(); } }))),
       ui.steps),
@@ -941,44 +921,6 @@ async function shareCard() {
   } catch (err) {
     console.warn('[recon] share', err);
     toast('Could not open the share sheet', { kind: 'bad' });
-  }
-}
-
-/** Play the whole reconstruction on the workbench cube and export that
-    playback as a looping GIF, then hand it to the same share sheet the
-    static card uses. Loaded on demand, like the card. */
-async function exportGif() {
-  if (!S.steps.length) { toast('Reconstruct something first'); return; }
-  if (!player) { toast('Cube preview unavailable', { kind: 'bad' }); return; }
-  if (ui.exportGifBtn.disabled) return;
-  ui.exportGifBtn.disabled = true;
-  const label = ui.exportGifBtn.textContent;
-  try {
-    const [exp, dlg] = await Promise.all([import('./reconexport.js'), import('./sharedlg.js')]);
-    toast('Recording the cube…');
-    // Cue the cube up exactly the way showCube() does everywhere else —
-    // canonical() is what translates this app's move spelling (RW, typed
-    // moves, all of it) into what twisty-player actually accepts. Skipping
-    // it is what made the 3D viewer fail to reinitialize reliably.
-    player.pause?.();
-    player.setAttribute('control-panel', 'none');
-    player.setAttribute('experimental-setup-alg', canonical(S.scramble) ?? '');
-    player.setAttribute('alg', canonical(allMoves()) ?? '');
-    player.jumpToStart?.();
-    const blob = await exp.exportReconGif({
-      player, moveCount: moveCount(),
-      onProgress: (p) => { ui.exportGifBtn.textContent = `encoding ${Math.round(p * 100)}%`; },
-    });
-    dlg.shareReconGif(blob, { moves: moveCount(), zb: cardSteps().some(st => st.zb) });
-  } catch (err) {
-    console.warn('[recon] export gif', err);
-    toast(err?.message || 'Could not export a GIF', { kind: 'bad' });
-  } finally {
-    ui.exportGifBtn.disabled = false;
-    ui.exportGifBtn.textContent = label;
-    // The export leaves the player mid-playback of the whole solve — put the
-    // cube back to whatever the panel was actually showing before it ran.
-    renderCube();
   }
 }
 

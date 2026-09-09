@@ -23,7 +23,7 @@ import { onAuthChange } from './sync-auth.js';
 import {
   DailyTransport, cloudAvailable,
   CLOCK_SLACK_MS, CLOCK_SLACK_RATIO,
-  countSolvesForDay, rankByCount, dayStartMs, safePhotoUrl,
+  countSolvesForDay, rankByCount, dayStartMs, safePhotoUrl, cleanNote,
   markSotdDone, clearSotdDone, sotdDoneOn,
 } from './daily-net.js';
 import { SUSPECT_RATIO } from './raceapp.js';
@@ -656,6 +656,40 @@ export class Daily extends EventTarget {
   }
 
   /* ---------------- derived view, read by panels.js ---------------- */
+
+  /** Whatever note is on your own row today, or '' if there is none. */
+  get myNote() {
+    return this.snap?.results?.[this.snap?.uid]?.note || '';
+  }
+
+  /**
+   * Say one line about your solve, on your own row.
+   *
+   * Only after submitting: the note lives ON the result, so there is nothing
+   * to attach it to until the time is in — and the board you are talking to
+   * is not readable before then either.
+   *
+   * Written straight through and painted from the listener's echo, except
+   * for the local copy set here so the composer does not appear to lose what
+   * you typed during the round trip.
+   */
+  async setNote(text) {
+    if (!this.net || !this.submittedToday) return;
+    const body = cleanNote(text);
+    try {
+      await this._retry(() => this.net.setNote(body));
+      const mine = this.snap?.results?.[this.snap?.uid];
+      if (mine) mine.note = body;
+      this._changed();
+      return true;
+    } catch (err) {
+      console.warn('[daily] note refused', err);
+      toast(String(err?.code || err).includes('PERMISSION_DENIED')
+        ? 'The board would not take that note — this database is running rules from before notes existed. Publish firebase.rules.json.'
+        : 'Could not save that note', { kind: 'bad', long: true });
+      return false;
+    }
+  }
 
   /** How many people have sent in a time today — never how fast any of them were. */
   submittedCount() {

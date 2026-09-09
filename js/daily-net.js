@@ -64,6 +64,20 @@ export * from './dayid.js';
 // transport below calls all three of these directly.
 import { dayIdFromServerMs, nextResetMs, dayKeyFromServerMs } from './dayid.js';
 
+/**
+ * Longest note a row will carry, matched by the database rule.
+ *
+ * One line, because that is what the board has room for: a name, a time and
+ * whatever fits between them on a row in a 300px column. Anything longer is
+ * a chat message, and the room to have that conversation is race mode.
+ */
+export const NOTE_MAX_LEN = 80;
+
+/** Collapse the whitespace and cut it to the cap. Same shape as race chat. */
+export function cleanNote(text) {
+  return String(text || '').replace(/\s+/g, ' ').trim().slice(0, NOTE_MAX_LEN);
+}
+
 /* ---------------------------------------------------------
    Transport
    --------------------------------------------------------- */
@@ -305,6 +319,26 @@ export class DailyTransport extends EventTarget {
     if (!this._dayKey || !event || !uid) throw new Error('not-signed-in');
     await S.set(this._ref(`daily/${this._dayKey}/${event}/results/${uid}`),
       { ...result, submittedAt: S.serverTimestamp() });
+  }
+
+  /**
+   * Attach (or replace) the one-line note on your own row.
+   *
+   * A separate write from submitResult on purpose: the result is sealed the
+   * moment it lands, and the note is written afterwards, from the board,
+   * once you can see who else is on it. The rules give `note` its own
+   * ".write" for exactly that — see firebase.rules.json.
+   *
+   * Written into the day the caller names, not necessarily today's: a note
+   * can be added to yesterday's row from the history view without moving the
+   * transport off the day it is watching.
+   */
+  async setNote(text, dayKey = this._dayKey) {
+    const { event, uid } = this.snap;
+    if (!dayKey || !event || !uid) throw new Error('not-signed-in');
+    const body = cleanNote(text);
+    await this._sdk.set(this._ref(`daily/${dayKey}/${event}/results/${uid}/note`), body);
+    return body;
   }
 
   /** Has this uid already submitted today, for this event? */
