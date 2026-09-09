@@ -15,6 +15,7 @@ import {
 } from './sharecard.js';
 
 let host = null;
+let previewUrl = null;   // object URL for a blob preview, revoked on close
 
 export const shareOpen = () => !!host;
 
@@ -22,6 +23,7 @@ export function closeShare() {
   if (!host) return;
   host.remove();
   host = null;
+  if (previewUrl) { URL.revokeObjectURL(previewUrl); previewUrl = null; }
   document.removeEventListener('keydown', onKey, true);
 }
 
@@ -46,15 +48,31 @@ const ICONS = {
 };
 
 /**
- * Open the sheet for an already-drawn canvas.
+ * Open the sheet for a rendered card, or for a pre-built file.
+ *
+ * `media` is either an already-drawn `<canvas>` (the PNG cards) or
+ * `{ blob, mime }` for something rendered elsewhere (a GIF export). A blob
+ * has nowhere reliable to go on the clipboard — most browsers only accept
+ * `image/png` there — so that button drops out for it; save and the native
+ * share sheet both work the same way either way.
+ *
  * `filename` and `text` are what the save and the social links use.
  */
-function present(canvas, { title, filename, text }) {
+function present(media, { title, filename, text }) {
   closeShare();
 
+  const isCanvas = media instanceof HTMLCanvasElement;
+  const mime = isCanvas ? 'image/png' : media.mime;
+  const getBlob = () => (isCanvas ? canvasBlob(media) : Promise.resolve(media.blob));
+
   const stage = el('div', { class: 'sh-stage' });
-  canvas.classList.add('sh-canvas');
-  stage.append(canvas);
+  if (isCanvas) {
+    media.classList.add('sh-canvas');
+    stage.append(media);
+  } else {
+    previewUrl = URL.createObjectURL(media.blob);
+    stage.append(el('img', { class: 'sh-canvas', src: previewUrl, alt: title }));
+  }
 
   const busy = (btn, fn) => async () => {
     if (btn.disabled) return;
@@ -62,35 +80,42 @@ function present(canvas, { title, filename, text }) {
     try { await fn(); } finally { btn.disabled = false; }
   };
 
-  const copyBtn = el('button', { class: 'sh-act primary' }, svg(ICONS.copy), el('span', { text: 'Copy image' }));
-  copyBtn.addEventListener('click', busy(copyBtn, async () => {
-    const blob = await canvasBlob(canvas);
-    // Only Chromium-family browsers put a PNG on the clipboard. Everywhere
-    // else, say so rather than pretending it worked.
-    if (!blob || !window.ClipboardItem || !navigator.clipboard?.write) {
-      toast('This browser cannot copy images — use save instead', { kind: 'bad' });
-      return;
-    }
-    try {
-      await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
-      toast('Card copied to the clipboard', { kind: 'good' });
-    } catch {
-      toast('The clipboard was blocked — use save instead', { kind: 'bad' });
-    }
-  }));
+  const buttons = [];
 
-  const saveBtn = el('button', { class: 'sh-act' }, svg(ICONS.save), el('span', { text: 'Save image' }));
+  if (isCanvas) {
+    const copyBtn = el('button', { class: 'sh-act primary' }, svg(ICONS.copy), el('span', { text: 'Copy image' }));
+    copyBtn.addEventListener('click', busy(copyBtn, async () => {
+      const blob = await getBlob();
+      // Only Chromium-family browsers put a PNG on the clipboard. Everywhere
+      // else, say so rather than pretending it worked.
+      if (!blob || !window.ClipboardItem || !navigator.clipboard?.write) {
+        toast('This browser cannot copy images — use save instead', { kind: 'bad' });
+        return;
+      }
+      try {
+        await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+        toast('Card copied to the clipboard', { kind: 'good' });
+      } catch {
+        toast('The clipboard was blocked — use save instead', { kind: 'bad' });
+      }
+    }));
+    buttons.push(copyBtn);
+  }
+
+  const saveBtn = el('button', { class: isCanvas ? 'sh-act' : 'sh-act primary' },
+    svg(ICONS.save), el('span', { text: isCanvas ? 'Save image' : 'Save' }));
   saveBtn.addEventListener('click', busy(saveBtn, async () => {
-    const blob = await canvasBlob(canvas);
-    if (!blob) { toast('Could not render the image', { kind: 'bad' }); return; }
-    download(filename, blob, 'image/png');
+    const blob = await getBlob();
+    if (!blob) { toast('Could not render the file', { kind: 'bad' }); return; }
+    download(filename, blob, mime);
     toast('Saved', { kind: 'good' });
   }));
+  buttons.push(saveBtn);
 
   const shareBtn = el('button', { class: 'sh-act' }, svg(ICONS.share), el('span', { text: 'Share' }));
   shareBtn.addEventListener('click', busy(shareBtn, async () => {
-    const blob = await canvasBlob(canvas);
-    const file = blob ? new File([blob], filename, { type: 'image/png' }) : null;
+    const blob = await getBlob();
+    const file = blob ? new File([blob], filename, { type: mime }) : null;
     // The native sheet is the good path — it reaches Instagram, which has no
     // web share endpoint of its own. The links below are the fallback.
     if (file && navigator.canShare?.({ files: [file] })) {
@@ -101,8 +126,9 @@ function present(canvas, { title, filename, text }) {
         if (err?.name === 'AbortError') return;
       }
     }
-    toast('No share sheet here — pick a network below, or save the image');
+    toast('No share sheet here — pick a network below, or save the file');
   }));
+  buttons.push(shareBtn);
 
   const links = el('div', { class: 'sh-links' },
     ...socialLinks(text).map(l =>
@@ -124,7 +150,7 @@ function present(canvas, { title, filename, text }) {
           svg('<path d="M6 6l12 12M18 6L6 18"/>')),
       ),
       stage,
-      el('div', { class: 'sh-acts' }, copyBtn, saveBtn, shareBtn),
+      el('div', { class: `sh-acts${buttons.length < 3 ? ' two' : ''}` }, ...buttons),
       el('div', { class: 'sh-share-row' }, el('span', { class: 'sh-share-lbl', text: 'share to' }), links),
       foot,
     ),
@@ -155,6 +181,15 @@ export async function shareRecon({ scramble, title, steps, moves, zb = false }) 
   present(canvas, {
     title: 'Share this reconstruction',
     filename: `tagda-reconstruction-${stamp()}.png`,
+    text: shareText('Reconstruction', `${moves} moves${zb ? ', ZBLL finish' : ''}`),
+  });
+}
+
+/** The reconstruction's playback, already encoded as a GIF by reconexport.js. */
+export function shareReconGif(blob, { moves, zb = false } = {}) {
+  present({ blob, mime: 'image/gif' }, {
+    title: 'Share this playback',
+    filename: `tagda-reconstruction-${stamp()}.gif`,
     text: shareText('Reconstruction', `${moves} moves${zb ? ', ZBLL finish' : ''}`),
   });
 }
