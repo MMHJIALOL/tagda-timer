@@ -62,6 +62,12 @@ competition single. Without that, the read gate above would be its own exploit: 
 throwaway time to unlock the board, read everyone else's times, then rewrite your own to just
 beat the best one.
 
+**…except the note.** Each row carries an optional one‑line note (80 characters, emoji
+welcome), written from the board after you have submitted and editable afterwards. It is the
+one field of a result that is not sealed, and it has its own `.write` to say so — a write rule
+deeper in the tree ORs with the ones above it, so `note` stays editable while `timeMs` beside
+it does not. Nothing in the ranking reads it, so there is nothing to gain by editing it.
+
 **Your identity is your Google account, not an anonymous one.** Race mode signs you in
 anonymously on purpose — a room's identity is meant to be throwaway. A leaderboard needs the
 opposite: a name that is still you tomorrow and on your other devices. This feature rides on the
@@ -83,7 +89,7 @@ microphone, no screen recording. Ever.
 | Rule | What it stops |
 |---|---|
 | `results` readable only once your own exists | Reading the day's times before you've earned them |
-| `results/<uid>` write-once | Submitting a decoy, peeking, then editing your time down |
+| `results/<uid>` write-once (except `note`) | Submitting a decoy, peeking, then editing your time down |
 | `timeMs` checked against the server-stamped solve window | Pausing the app and typing in a fabricated number afterwards |
 
 The timing check is the same formula Race mode's rounds use: your submitted time against the

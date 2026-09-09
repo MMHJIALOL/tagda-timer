@@ -2344,10 +2344,7 @@ body.focus #dock-bottom, body.focus #tile-float-layer { opacity: 0; pointer-even
 .race-row.editable:hover { border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
 
 /* ---- room chat ----
-   A lobby thing, and it looks like one: the whole block goes quiet and
-   read-only the moment a round starts, because that is exactly when the
-   database stops accepting messages. See the note at the top of race-net.js
-   for why the freeze is the gate rather than something cleverer. */
+   Open in every phase, lobby or mid-round. */
 .race-chat {
   display: flex; flex-direction: column; gap: 5px;
   margin-top: 8px; padding-top: 8px;
@@ -2464,10 +2461,6 @@ body.focus #dock-bottom, body.focus #tile-float-layer { opacity: 0; pointer-even
   stroke-linecap: round; stroke-linejoin: round;
 }
 .race-chat-send:hover { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
-.race-chat[data-frozen="true"] .race-chat-send { opacity: .4; pointer-events: none; }
-/* Dimmed, never hidden. The backlog is still worth reading mid-round; it is
-   only saying anything new that has to wait. */
-.race-chat[data-frozen="true"] .race-chat-log { opacity: .62; }
 
 /* ---- standings ---- */
 .race-board {
@@ -3050,10 +3043,55 @@ body.focus #dock-bottom, body.focus #tile-float-layer { opacity: 0; pointer-even
   font-size: .68rem; font-weight: 700; color: var(--text-faint);
   background: color-mix(in srgb, var(--accent) 18%, transparent);
 }
+.db-who { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .db-name {
   font-size: .8rem; font-weight: 500;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+/* One line, and only ever one: the cap is 80 characters but the column is
+   narrower than that in most themes, so it ellipsises and carries the whole
+   thing in its title. */
+.db-note {
+  font-size: .68rem; color: var(--text-faint);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* ---- the note composer, under today's board ---- */
+.db-note-box { margin-top: 8px; }
+.db-note-row { display: flex; gap: 6px; align-items: center; }
+.db-note-input {
+  flex: 1; min-width: 0;
+  font: inherit; font-size: .76rem;
+  padding: 6px 9px;
+  color: var(--text);
+  background: color-mix(in srgb, var(--text) 4%, transparent);
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+}
+.db-note-input:focus {
+  outline: none;
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+}
+.db-note-emoji {
+  flex: none; width: 28px; height: 28px;
+  display: grid; place-items: center;
+  font-size: .82rem; line-height: 1;
+  background: none; color: var(--text-dim);
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.db-note-emoji:hover { border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+.db-emoji {
+  display: grid; grid-template-columns: repeat(10, 1fr); gap: 2px;
+  margin-top: 6px; padding: 5px;
+  background: color-mix(in srgb, var(--text) 4%, transparent);
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+}
+.db-emoji-btn {
+  aspect-ratio: 1; display: grid; place-items: center;
+  font-size: .82rem; line-height: 1;
+  background: none; border: 0; border-radius: 4px; cursor: pointer;
+}
+.db-emoji-btn:hover { background: color-mix(in srgb, var(--accent) 22%, transparent); }
 .db-time { font-size: .84rem; font-weight: 650; font-variant-numeric: tabular-nums; }
 .db-unit { font-size: .66rem; color: var(--text-faint); }
 .db-flag { font-size: .7rem; color: var(--warn); cursor: help; }

@@ -151,3 +151,20 @@ export const CHAT_HISTORY = 60;
 
 /** Minimum gap between two messages from the same client. */
 export const CHAT_COOLDOWN_MS = 700;
+
+/**
+ * The emoji tray, in the order it is drawn.
+ *
+ * Twenty, deliberately — enough that the thing you want is usually there,
+ * few enough that it is two rows of ten in a 240px rail rather than a
+ * scrolling grid nobody reads to the bottom of. Weighted towards what a race
+ * room actually says: well played, unlucky, that was a lockup, go again.
+ *
+ * Lives here rather than in race.js because the Scramble of the Day note
+ * composer draws the same tray, and two lists of twenty characters would
+ * have drifted apart the first time anybody added one.
+ */
+export const RACE_EMOJI = [
+  '🔥', '😭', '💀', '😂', '🎉', '👏', '🧊', '⚡', '😤', '🙃',
+  '👀', '🤝', '💪', '🐢', '🎯', '😅', '🫠', '🥶', '🤯', '🏆',
+];

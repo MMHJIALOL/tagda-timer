@@ -48,7 +48,8 @@
 import { el, fmt } from './util.js';
 import { signIn } from './sync-auth.js';
 import { toast } from './toast.js';
-import { formatCountdown, safePhotoUrl, shiftDayId } from './daily-net.js';
+import { formatCountdown, safePhotoUrl, shiftDayId, cleanNote, NOTE_MAX_LEN } from './daily-net.js';
+import { RACE_EMOJI } from './raceapp.js';
 // Policy lives with the controller — see the comment on it there.
 import { SHOW_COUNT_BOARD } from './daily.js';
 
@@ -129,7 +130,12 @@ function timeRow(r, i) {
   return el('div', { class: 'db-row', dataset: { me: String(r.isMe), rank: String(i + 1) } },
     el('span', { class: 'db-rank', text: String(i + 1) }),
     avatar(res.name, res.photo),
-    el('span', { class: 'db-name', text: res.name || 'Cuber' }),
+    /* Name and note share one grid cell, stacked. A sixth column for the note
+       would have taken the width off the name on a phone, and the note is the
+       thing you can afford to lose the tail of — the name is not. */
+    el('div', { class: 'db-who' },
+      el('span', { class: 'db-name', text: res.name || 'Cuber' }),
+      res.note ? el('span', { class: 'db-note', text: res.note, title: res.note }) : null),
     (res.suspect || r.clockOff)
       ? el('span', { class: 'db-flag', text: '⚑', title: r.clockOff
           ? 'The submitted time is shorter than the window the server timed it in'
@@ -137,6 +143,96 @@ function timeRow(r, i) {
       : null,
     el('span', { class: 'db-time', text: shown }),
   );
+}
+
+/* ---------------------------------------------------------
+   The one-line note
+   --------------------------------------------------------- */
+
+/**
+ * Say one line about your solve, shown on your own row.
+ *
+ * Only drawn once you have submitted, because the note is a field of the
+ * result and there is no row to hang it on before that.
+ *
+ * Save-on-blur as well as on submit: this is a single field with no
+ * surrounding form to give Enter an obvious meaning, and a note that
+ * silently vanishes because you clicked away instead of pressing Enter is
+ * the one failure mode worth spending eight lines to avoid.
+ */
+function noteComposer(ctl) {
+  let current = ctl.myNote;
+
+  const input = el('input', {
+    class: 'db-note-input', type: 'text', autocomplete: 'off',
+    maxlength: String(NOTE_MAX_LEN), value: current,
+    placeholder: 'Say one line about it…', 'aria-label': 'Your note on today’s solve',
+  });
+
+  const save = async () => {
+    const body = cleanNote(input.value);
+    // Nothing to write, and nothing to tell anybody about.
+    if (body === cleanNote(current)) return;
+    current = body;
+    input.value = body;
+    if (await ctl.setNote(body)) toast(body ? 'Note saved' : 'Note removed');
+  };
+
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+    /* Escape puts back what was there rather than clearing it — clearing is
+       what the empty field already means, and it deletes the note. */
+    if (e.key === 'Escape') { e.preventDefault(); input.value = current; input.blur(); }
+    // The window is under an app that treats the spacebar as the timer.
+    e.stopPropagation();
+  });
+  input.addEventListener('keyup', (e) => e.stopPropagation());
+  input.addEventListener('blur', save);
+
+  const tray = el('div', { class: 'db-emoji', hidden: true },
+    RACE_EMOJI.map(ch => el('button', {
+      class: 'db-emoji-btn', type: 'button', text: ch, title: ch,
+      /* mousedown, not click: a click on the tray blurs the field first, and
+         the blur handler saves — so by the time click fired the emoji would
+         be going into a field that had already been written without it.
+         preventDefault keeps the focus where it is. */
+      onmousedown: (e) => {
+        e.preventDefault();
+        const at = input.selectionStart ?? input.value.length;
+        const to = input.selectionEnd ?? at;
+        input.value = (input.value.slice(0, at) + ch + input.value.slice(to)).slice(0, NOTE_MAX_LEN);
+        const caret = Math.min(at + ch.length, input.value.length);
+        input.setSelectionRange(caret, caret);
+        input.focus();
+      },
+    })));
+
+  const emojiBtn = el('button', {
+    class: 'db-note-emoji', type: 'button', title: 'Emoji', text: '🙂',
+    'aria-label': 'Emoji', 'aria-expanded': 'false',
+    onmousedown: (e) => e.preventDefault(),
+    onclick: () => {
+      tray.hidden = !tray.hidden;
+      emojiBtn.setAttribute('aria-expanded', String(!tray.hidden));
+    },
+  });
+
+  const box = el('div', { class: 'db-note-box' },
+    el('div', { class: 'db-note-row' }, input, emojiBtn),
+    tray,
+  );
+
+  /* Built once and kept, because the board around it is redrawn from
+     scratch every time anybody's result or progress lands — and a text field
+     replaced mid-sentence loses what you typed and the caret with it. The
+     server's copy is only adopted while the field is not being used. */
+  box.refresh = () => {
+    const live = ctl.myNote;
+    if (live === current) return;
+    current = live;
+    if (document.activeElement !== input) input.value = live;
+  };
+  return box;
 }
 
 /* ---------------------------------------------------------
@@ -353,6 +449,14 @@ export function openSotd(app, ctl, { onExit, solving = () => false } = {}) {
      the single most useful thing the window can say, because it explains why.
      The count board is public and needs no gate at all, so it was being
      withheld for no reason whatsoever. */
+  /* Kept across renders — see the note on box.refresh in noteComposer. */
+  let noteBox = null;
+  const note = () => {
+    noteBox ||= noteComposer(ctl);
+    noteBox.refresh();
+    return noteBox;
+  };
+
   const renderBoard = () => {
     board.innerHTML = '';
     board.hidden = false;
@@ -372,6 +476,11 @@ export function openSotd(app, ctl, { onExit, solving = () => false } = {}) {
          bar above, the rollover check and an armed attempt all stay pointed
          at today however far back this has been walked. */
       past ? history.view(ctl.eventId) : timeBoard(ctl.ranked(), ctl.revealed),
+      /* Under the board rather than over it: the board is what the window is
+         for, and the note is something you do once, after reading it. Today
+         only — a past day's rows come from a one-shot read that the composer
+         has no live copy of. */
+      (!past && ctl.revealed) ? note() : null,
       ctl.snap?.signedIn ? null : signInPrompt(),
       SHOW_COUNT_BOARD ? [
         el('h3', { class: 'sotd-h3-second' }, 'Most solves today',

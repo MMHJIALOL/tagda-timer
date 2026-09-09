@@ -636,25 +636,6 @@ section('reconstruction steps');
     spots(-80, 30).D.front && !spots(-80, 30).U.front);
 }
 
-/* ---------------- reconstruction export ----------------
-   The GIF pipeline itself (MediaRecorder, a hidden <video>, gif.js in a
-   worker) is real-browser-media plumbing, not something a fast self-test
-   should be driving end to end on every run. What is checked here is the
-   two things that would silently break the feature without ever throwing
-   where a developer is looking: the module still exports what recon.js
-   calls, and the vendored encoder is actually there rather than 404ing the
-   moment someone clicks the button. */
-section('reconstruction export');
-{
-  const Exp = await import('./js/reconexport.js');
-  check('reconexport exports exportReconGif', typeof Exp.exportReconGif === 'function');
-
-  const gifOk = await fetch('./vendor/gifjs/gif.js').then(r => r.ok).catch(() => false);
-  const workerOk = await fetch('./vendor/gifjs/gif.worker.js').then(r => r.ok).catch(() => false);
-  check('vendored gif.js is present', gifOk);
-  check('vendored gif.worker.js is present', workerOk);
-}
-
 /* ---------------- the last-layer libraries ----------------
    Two thousand algs scraped off a website is two thousand chances to ship one
    that does not work, and a suggestion that does not work is worse than no
@@ -1777,6 +1758,45 @@ section('scramble of the day — when the timer is held shut');
   check('an armed window hands over today’s scramble and nothing else',
     at(Object.assign(stub(), { engaged: true }), live, { attempting: true }).takeScramble().scramble
       === "R U R' U'");
+}
+
+section('scramble of the day — the one-line note');
+{
+  const Daily = (await import('./js/daily.js')).Daily;
+  const { cleanNote, NOTE_MAX_LEN } = await import('./js/daily-net.js');
+
+  check('a note is collapsed to one line and cut to the cap',
+    cleanNote('  two   spaces' + String.fromCharCode(10) + 'and a newline  ') === 'two spaces and a newline'
+    && cleanNote('x'.repeat(500)).length === NOTE_MAX_LEN
+    && cleanNote(null) === '');
+
+  /* The note lives ON the result, so there is nothing to attach it to until
+     the time is in — and the rules refuse it for the same reason. */
+  const ctl = (submitted) => {
+    const d = new Daily({ settings: { event: '333' }, solves: [] });
+    d.snap = { uid: 'u1', results: { u1: { timeMs: 8000 } } };
+    d.submittedToday = submitted;
+    d.net = { sent: [], setNote(t) { this.sent.push(t); return Promise.resolve(t); } };
+    return d;
+  };
+
+  const before = ctl(false);
+  await before.setNote('nice one');
+  check('nothing is written before today’s attempt is submitted',
+    before.net.sent.length === 0);
+
+  const after = ctl(true);
+  await after.setNote('  first sub-10 🔥  ');
+  check('after submitting, the cleaned note is written and shown on your own row',
+    after.net.sent.length === 1
+    && after.net.sent[0] === 'first sub-10 🔥'
+    && after.myNote === 'first sub-10 🔥');
+
+  const cleared = ctl(true);
+  cleared.snap.results.u1.note = 'oops';
+  await cleared.setNote('');
+  check('an emptied note deletes the one that was there',
+    cleared.net.sent[0] === '' && cleared.myNote === '');
 }
 
 section('scramble of the day — whose avatar URL is safe to fetch');

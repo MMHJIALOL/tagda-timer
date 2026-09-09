@@ -44,22 +44,14 @@ You may read the results collection only once *your own* result is in it.
 submit a throwaway time to unlock the reveal, read everyone else's real times, then
 rewrite your own to just beat the best one. `!data.exists()` closes it.
 
-**Chat is frozen while a round is live.** The room has a chat box, and it is readable by
-everybody in the room, always. That is only safe because of the other half of its rule:
+**Chat is always open.** The room has a chat box, readable and writable by everybody in the
+room in every phase, round or no round.
 
-```
-".write": "... && root.child('rooms/' + $roomId + '/meta/phase').val() != 'racing'"
-```
-
-Gating on the *sender* would not have worked, and the reason is the whole point. The leak
-is not about who is talking, it is about who is reading — a player who has finished typing
-"7.2, finally" hands their time to everybody still mid‑solve, and no rule that inspects the
-author can see that coming. The only gate that holds is one where nobody can post until the
-round is over, at which point the times are unlocked anyway and there is nothing left to
-leak.
-
-So chat is a lobby thing: talk before the round, talk after it, and during it the panel goes
-read‑only with the backlog still on screen. Which is also just correct — you are solving.
+It used to be frozen mid‑round, on the grounds that somebody typing "7.2, finally" hands
+their time to everyone still solving. That is real, but it is a room problem rather than a
+rules problem — the same person can say it out loud — and the freeze cost every room the one
+thing chat is for: reacting while it is happening. `results` is gated exactly as before, so
+nobody's actual time is readable until you have sent your own.
 
 ---
 
@@ -91,11 +83,11 @@ real solve. The job is to make fabricating a time inconvenient, not to referee a
 - Joining a room forces the input source back to the real spacebar timer, so times cannot be
   typed in during a race.
 - `meta` is writable by anybody in the room, so a modified client could set `phase` back to
-  `'lobby'` mid‑round purely to unfreeze the chat and post a time into it. It cannot do that
-  quietly: the phase is what every panel in the room is drawn from, so the round visibly ends
-  for everyone at the same moment. Locking `phase` down properly means deciding in a rule who
-  the host is, and host is derived rather than stored precisely so that nobody has to hold an
-  election — see §5.
+  `'lobby'` mid‑round to end the round early for everyone. It cannot do that quietly: the
+  phase is what every panel in the room is drawn from, so the round visibly ends for everyone
+  at the same moment. Locking `phase` down properly means deciding in a rule who the host is,
+  and host is derived rather than stored precisely so that nobody has to hold an election —
+  see §5.
 - The 24‑player room cap is checked by the client on join, not by the rules. Realtime Database
   rules cannot count children — `numChildren()` is a JS SDK method, not a rules one — so a
   genuinely enforced cap needs fixed seat slots or a Cloud Function. Neither is built.

@@ -69,7 +69,7 @@
           ".read": "auth != null",
 
           "$msgId": {
-            ".write": "auth != null && !data.exists() && newData.child('uid').val() === auth.uid && root.child('rooms/' + $roomId + '/meta/phase').val() != 'racing'",
+            ".write": "auth != null && !data.exists() && newData.child('uid').val() === auth.uid",
             ".validate": "newData.hasChildren(['uid', 'name', 'text', 'at'])",
             "uid":  { ".validate": "newData.isString() && newData.val().length <= 64" },
             "name": { ".validate": "newData.isString() && newData.val().length <= 24" },
@@ -170,6 +170,7 @@
               "timeMs":      { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 36000000" },
               "penalty":     { ".validate": "newData.isString() && newData.val().length <= 8" },
               "name":        { ".validate": "newData.isString() && newData.val().length <= 32" },
+              "note":        { ".write": "auth != null && auth.uid === $uid", ".validate": "newData.isString() && newData.val().length <= 80" },
               "photo":       { ".validate": "newData.isString() && newData.val().length <= 300 && newData.val().matches(/^https:[/][/]lh[0-9]+[.]googleusercontent[.]com[/]/)" },
               "suspect":     { ".validate": "newData.isBoolean() || !newData.exists()" },
               "submittedAt": { ".validate": "newData.isNumber()" },

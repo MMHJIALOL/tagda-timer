@@ -237,14 +237,6 @@ screen is untouched until you ask for it.
   is one line however many goes it took, all four pairs are F2L, and a trailing
   U turn is written out as the AUF it is. The time is the headline and the move
   count the footnote under it; a ZBLL finish is called out under both.
-- **Export gif** turns the workbench's own cube animation — scramble through
-  to solved — into a looping GIF: something Discord, X and forums will play
-  inline without the native share sheet a PNG relies on. It is recorded from
-  the real playback (`canvas.captureStream` into `MediaRecorder`), decoded
-  back into frames, and encoded with a vendored `gif.js` running in its own
-  worker so the page never blocks. Everything happens on your machine; the
-  intermediate recording never leaves it and is never itself offered as a
-  download — only the finished GIF is.
 
 Any scramble works, not just a recorded solve — paste one into the field at the top,
 or pick a past solve from *from a solve*.
@@ -379,7 +371,6 @@ js/cube3.js           the 3x3 model: notation, state, CFOP phase detection
 js/solver.js          cross / F2L search, last layer by simulation
 js/solver.worker.js   runs that search off the main thread
 js/recon.js           the reconstruction workbench
-js/reconexport.js     records the workbench cube's playback and encodes it as a GIF
 js/panels.js          settings / stats / history / case picker drawers
 js/db.js              IndexedDB
 js/gear.js            the gear log — your cubes, their lube and tension, what changed when
@@ -387,9 +378,7 @@ cubes.json            cube picker seeds (brand, model, event, tags)
 lubes.json            lube picker seeds (brand, name, viscosity, type)
 js/fx.js              confetti, shockwave, audio callouts
 vendor/cubing/        mirrored cubing.js (works offline)
-vendor/gifjs/         mirrored gif.js (works offline)
 tools/mirror_cubing.py  re-download that mirror
-tools/mirror_gifjs.py   re-download the gif.js mirror
 serve.py              no-cache dev server
 start.bat             double-click launcher
 test.html             self test — open it in a browser to run it
