@@ -1695,6 +1695,7 @@ body.focus #mascot { opacity: 0; pointer-events: none; transition: opacity 220ms
 }
 .sh-canvas { display: block; width: 100%; height: auto; }
 .sh-acts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.sh-acts.two { grid-template-columns: repeat(2, 1fr); }
 .sh-act {
   display: flex; align-items: center; justify-content: center; gap: 7px;
   padding: 11px 8px; border-radius: 13px; cursor: pointer;
@@ -2980,6 +2981,16 @@ body.focus #dock-bottom, body.focus #tile-float-layer { opacity: 0; pointer-even
 }
 .sotd-h3-second { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border); }
 .sotd-h3-note { letter-spacing: 0; text-transform: none; font-weight: 400; font-size: .66rem; opacity: .75; }
+
+/* The past-day picker above the time board (settings drawer only — the SOTD
+   window is about today and deliberately has no way to leave it). */
+.daily-daynav { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.daily-daynav .btn { padding: 4px 12px; font-size: .9rem; line-height: 1.1; }
+.daily-daynav .btn[disabled] { opacity: .4; pointer-events: none; }
+.daily-daynav-day {
+  font-size: .74rem; font-weight: 600; letter-spacing: .04em;
+  font-variant-numeric: tabular-nums; color: var(--text-dim);
+}
 
 /* ---------------- the boards themselves ---------------- */
 

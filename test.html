@@ -1576,6 +1576,21 @@ section('daily leaderboard — day id and reset math');
     D.dayIdFromServerMs(Date.parse('2028-02-28T18:30:00.000Z')) === '2028-02-29'
     && D.dayIdFromServerMs(Date.parse('2028-02-29T18:30:00.000Z')) === '2028-03-01');
 
+  /* Walking the day picker in the SOTD panel. Month, year and leap-day ends
+     are the cases a naive "subtract one from the date field" gets wrong. */
+  check('stepping a day back and forward again lands on the day it started on',
+    D.shiftDayId(D.shiftDayId('2026-09-08', -1), 1) === '2026-09-08'
+    && D.shiftDayId('2026-09-08', 0) === '2026-09-08');
+  check('stepping a day crosses month and year ends',
+    D.shiftDayId('2026-09-01', -1) === '2026-08-31'
+    && D.shiftDayId('2026-01-01', -1) === '2025-12-31'
+    && D.shiftDayId('2025-12-31', 1) === '2026-01-01');
+  check('stepping a day crosses a leap day rather than skipping it',
+    D.shiftDayId('2028-03-01', -1) === '2028-02-29'
+    && D.shiftDayId('2028-02-29', -1) === '2028-02-28');
+  check('a stepped day id still names the boundary the database is keyed by',
+    D.dayIdFromServerMs(D.dayStartMs(D.shiftDayId('2026-09-08', -7))) === '2026-09-01');
+
   check('the countdown formats hours and minutes, floored to the minute',
     D.formatCountdown(4 * 3600000 + 12 * 60000 + 59000) === '4h 12m');
   check('the countdown reads as "less than a minute" rather than "0h 0m"',

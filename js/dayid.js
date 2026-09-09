@@ -41,6 +41,18 @@ export function dayStartMs(dayId) {
   return Date.parse(`${dayId}T00:00:00.000Z`) - IST_OFFSET_MS;
 }
 
+/**
+ * The day id `delta` days away from `dayId`.
+ *
+ * Goes through the boundary instant rather than adding to the calendar
+ * fields, so it inherits the same immunity to the machine's timezone that
+ * dayIdFromServerMs has: every IST day is exactly 86400000ms wide (no DST),
+ * so stepping a boundary by a day and reading the label back is exact.
+ */
+export function shiftDayId(dayId, delta) {
+  return dayIdFromServerMs(dayStartMs(dayId) + delta * 86400000);
+}
+
 /** The next reset instant at or after a server-verified instant. */
 export function nextResetMs(serverMs) {
   return dayStartMs(dayIdFromServerMs(serverMs)) + 86400000;
