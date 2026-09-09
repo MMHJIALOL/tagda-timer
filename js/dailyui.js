@@ -48,7 +48,7 @@
 import { el, fmt } from './util.js';
 import { signIn } from './sync-auth.js';
 import { toast } from './toast.js';
-import { formatCountdown, safePhotoUrl } from './daily-net.js';
+import { formatCountdown, safePhotoUrl, shiftDayId } from './daily-net.js';
 // Policy lives with the controller — see the comment on it there.
 import { SHOW_COUNT_BOARD } from './daily.js';
 
@@ -137,6 +137,115 @@ function timeRow(r, i) {
       : null,
     el('span', { class: 'db-time', text: shown }),
   );
+}
+
+/* ---------------------------------------------------------
+   Walking back through the days
+   ---------------------------------------------------------
+
+   The board is drawn in two places — the window and the settings drawer —
+   so the picker is one object used by both rather than two copies of the
+   same cache. It owns three things that are easy to get subtly wrong and
+   worth getting wrong only once:
+
+     - which day is being looked at, held OUT of the caller's render
+       function. Both callers redraw on every controller change (a countdown
+       tick, somebody else's time landing), so a picked day stored inside a
+       render would snap back to today a second after it was picked;
+     - the one fetched day, cached. Without that, each of those redraws
+       fires another read of the same node;
+     - dropping a read that lands after the picker has moved on, so a slow
+       day never draws itself under the wrong heading.
+
+   Today is `null` rather than its own date, which is what makes flipping
+   forward to it resume the LIVE board instead of freezing a snapshot of it
+   taken on the way past.
+   --------------------------------------------------------- */
+
+/** @param redraw  what the caller does to put a new board on screen */
+export function dayHistory(ctl, redraw) {
+  let day = null;
+  let got = null;
+  /** The read in flight, so a redraw mid-fetch does not start a second one. */
+  let pending = null;
+
+  const load = (dayId, eventId) => {
+    const key = `${dayId}|${eventId}`;
+    if (pending === key) return;
+    pending = key;
+    ctl.pastBoard(dayId, eventId).then(
+      r => { got = r; },
+      err => {
+        console.warn('[daily] past board read failed', err);
+        got = { dayId, eventId, rows: [], denied: false, error: true };
+      },
+    ).then(() => {
+      if (pending === key) pending = null;
+      if (day === dayId && ctl.eventId === eventId) redraw();
+    });
+  };
+
+  return {
+    /** The day being looked at, or null while that is today. */
+    get day() { return day; },
+
+    /** The board for the picked day, started on the first look at it. */
+    view(eventId) {
+      // Only a read of exactly this day AND event is usable — the window and
+      // the panel both let the event change underneath this picker.
+      const cur = (got && got.dayId === day && got.eventId === eventId) ? got : null;
+      if (!cur) load(day, eventId);
+      return pastView(cur);
+    },
+
+    /** The ‹ · › control itself. `today` is the live day id, or null before it loads. */
+    nav(today) {
+      const shown = day || today;
+      return el('div', { class: 'daily-daynav' },
+        el('button', {
+          class: 'btn', text: '‹', title: 'The day before',
+          'aria-label': 'The day before', disabled: !shown,
+          onclick: () => { day = shiftDayId(shown, -1); redraw(); },
+        }),
+        el('span', { class: 'daily-daynav-day', text: day ? shown : 'Today' }),
+        el('button', {
+          // Today is the far end in this direction: there is no board for a
+          // day that has not happened, and the rules would refuse one anyway.
+          class: 'btn', text: '›', title: 'The day after',
+          'aria-label': 'The day after', disabled: !day,
+          onclick: () => {
+            const to = shiftDayId(shown, 1);
+            day = (today && to >= today) ? null : to;
+            redraw();
+          },
+        }),
+      );
+    },
+  };
+}
+
+/**
+ * What a past day looks like before, during and after it fails.
+ *
+ * The locked case is not an error and is deliberately not worded as one: the
+ * rules let you read a day's results only if you have a row in that day —
+ * the same "send your own time first" bargain today's board makes, which for
+ * a day already over simply cannot be met any more.
+ */
+function pastView(got) {
+  if (!got) return el('div', { class: 'db-empty', text: 'Loading that day’s board…' });
+  if (got.error) {
+    return el('div', { class: 'db-empty', text:
+      'Could not read that day’s board — check your connection.' });
+  }
+  if (got.denied) {
+    return el('div', { class: 'db-locked' },
+      el('div', { class: 'db-locked-icon', text: '🔒' }),
+      el('div', { class: 'db-locked-text', text:
+        'You did not submit an attempt for this event that day, so its board stays '
+        + 'locked. The reveal rule applies to every day, not just today.' }));
+  }
+  return timeBoard(got.rows, true);
 }
 
 /* ---------------------------------------------------------
@@ -247,9 +356,22 @@ export function openSotd(app, ctl, { onExit, solving = () => false } = {}) {
   const renderBoard = () => {
     board.innerHTML = '';
     board.hidden = false;
+    const today = ctl.snap?.dayId || null;
+    const past = history.day;
     board.append(el('div', { class: 'sotd-board-card' },
-      el('h3', { text: 'Today’s times' }),
-      timeBoard(ctl.ranked(), ctl.revealed),
+      /* The heading and the picker share a row: the column is narrow and
+         parked under the scramble, so a control on a line of its own costs
+         the board a row of names to buy nothing. */
+      el('div', { class: 'sotd-board-head' },
+        /* The picker beside it is already showing the date, so the heading
+           does not repeat it — it says only what kind of board this is. */
+        el('h3', { text: past ? 'Times' : 'Today’s times' }),
+        history.nav(today)),
+      /* Today is the LIVE board, off the running listeners and their reveal
+         gate. A past day is a one-shot read that never touches them, so the
+         bar above, the rollover check and an armed attempt all stay pointed
+         at today however far back this has been walked. */
+      past ? history.view(ctl.eventId) : timeBoard(ctl.ranked(), ctl.revealed),
       ctl.snap?.signedIn ? null : signInPrompt(),
       SHOW_COUNT_BOARD ? [
         el('h3', { class: 'sotd-h3-second' }, 'Most solves today',
@@ -258,6 +380,10 @@ export function openSotd(app, ctl, { onExit, solving = () => false } = {}) {
       ] : null,
     ));
   };
+
+  /* Declared after renderBoard because it calls it, and before onChange ever
+     runs, which is the only thing that matters for the closure. */
+  const history = dayHistory(ctl, () => { renderBoard(); placeBoard(); });
 
   const onChange = () => {
     dayNode.textContent = ctl.snap?.dayId || '—';
