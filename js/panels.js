@@ -13,6 +13,8 @@ import { MODES, EVENTS, EVENT_ORDER } from './events.js';
 import { setFor } from './scramble.js';
 import { toast, confirmToast } from './toast.js';
 import { exportAll, Assets, Solves, LetterPairs } from './db.js';
+import { Gear, GearLog, LOG_KINDS, newGear, newLogEntry, gearLabel,
+         loadSeeds, filterByCube, markersFor, activeGearId, setActiveGearId } from './gear.js';
 import { buildAccountRow } from './sync-ui.js';
 import { DEFAULT_SPEFFZ_MAP, DEFAULT_BLD, CORNER_STICKER_KEYS, EDGE_STICKER_KEYS,
          frontsFor, cornerStickerName, edgeStickerName, pieceAtFacelet, faceletsOfPiece,
@@ -794,6 +796,216 @@ export function buildSettings(app) {
 /* =========================================================
    STATISTICS
    ========================================================= */
+/* =========================================================
+   GEAR — the cubes you own, and what you did to them
+   ========================================================= */
+
+/* A real <select> rather than an input with a <datalist> behind it.
+   The datalist version needed two clicks — one to focus the field, another
+   before the browser would show the list — and it only committed what you
+   picked once the field lost focus. A select opens on the first click and
+   fires on the choice itself.
+
+   The seeds are still only a shortcut: the last entry opens a text box, so
+   an unlisted brand, a cube that shipped last week, or a lube somebody mixed
+   themselves is typed in and kept exactly as typed. */
+const CUSTOM = '__custom__';
+
+function picker(value, groups, placeholder, onChange) {
+  const known = groups.some(g => g.values.includes(value));
+  const sel = el('select', { class: 'inp' }, el('option', { value: '', text: placeholder }));
+  for (const g of groups) {
+    const parent = g.label ? el('optgroup', { label: g.label }) : sel;
+    for (const v of g.values) parent.append(el('option', { value: v }, v));
+    if (g.label) sel.append(parent);
+  }
+  sel.append(el('option', { value: CUSTOM, text: 'something else — type it' }));
+  sel.value = value ? (known ? value : CUSTOM) : '';
+
+  const free = el('input', {
+    class: 'inp', placeholder: 'type it', value: known ? '' : (value || ''),
+    hidden: known || !value,
+  });
+
+  sel.addEventListener('change', () => {
+    const custom = sel.value === CUSTOM;
+    free.hidden = !custom;
+    if (custom) { free.focus(); onChange(free.value.trim()); }
+    else onChange(sel.value);
+  });
+  // `input`, not `change`: what you typed is the value the moment you type it,
+  // so saving without leaving the field cannot lose it.
+  free.addEventListener('input', () => onChange(free.value.trim()));
+
+  return el('div', { class: 'picker' }, sel, free);
+}
+
+/* Models are grouped by brand — 77 of them in one flat list is a scroll,
+   grouped it is the brand you already picked. */
+const groupBy = (rows, key, val) => {
+  const out = new Map();
+  for (const r of rows) {
+    if (!r[key] || !r[val]) continue;
+    if (!out.has(r[key])) out.set(r[key], new Set());
+    out.get(r[key]).add(r[val]);
+  }
+  return [...out].map(([label, values]) => ({ label, values: [...values] }));
+};
+const flat = (rows, key) => [{ label: '', values: [...new Set(rows.map(r => r[key]).filter(Boolean))] }];
+
+/** The add/edit form. `draft` is mutated in place and written on save. */
+function gearForm(draft, seeds, saveLabel, after) {
+  const set = (k, v) => { draft[k] = v; };
+  return group(saveLabel,
+    row('Your name for it', el('input', {
+      class: 'inp', value: draft.name, placeholder: 'main 3x3',
+      oninput: (e) => set('name', e.target.value.trim()),
+    }), 'optional — the brand and model are used if you leave it empty'),
+    row('Brand', picker(draft.brand, flat(seeds.cubes, 'brand'), 'pick a brand', v => set('brand', v)),
+      'not listed? pick “something else” and type it'),
+    row('Model', picker(draft.model, groupBy(seeds.cubes, 'brand', 'model'), 'pick a model', v => set('model', v))),
+    row('Event', select(EVENT_ORDER.map(id => ({ value: id, label: EVENTS[id].name })), draft.event, v => set('event', v))),
+    row('Tension', el('input', {
+      class: 'inp', value: draft.tension, placeholder: '4 out, 3 compression',
+      oninput: (e) => set('tension', e.target.value.trim()),
+    })),
+    row('Lube brand', picker(draft.lubeBrand, flat(seeds.lubes, 'brand'), 'pick a brand', v => set('lubeBrand', v))),
+    row('Lube', picker(draft.lube, groupBy(seeds.lubes, 'brand', 'name'), 'pick a lube', v => set('lube', v))),
+    row('Notes', el('input', {
+      class: 'inp', value: draft.notes, placeholder: 'anything worth remembering',
+      oninput: (e) => set('notes', e.target.value.trim()),
+    })),
+    el('div', { class: 'row' }, el('div', { class: 'lbl' }), el('button', {
+      class: 'ghost-btn', text: saveLabel.toLowerCase(),
+      onclick: async () => { await Gear.put(draft); toast('Saved', { kind: 'good' }); after(draft); },
+    })),
+  );
+}
+
+export function buildGear(app) {
+  return async (body) => {
+    const redraw = () => openDrawer('Gear', buildGear(app), { wide: true });
+
+    const seeds = await loadSeeds();
+    let owned = [];
+    try { owned = await Gear.all(); }
+    catch (err) {
+      console.warn('[gear] collection unavailable', err);
+      body.append(el('div', { class: 'hint-note', text:
+        'Your gear could not be read from this browser’s storage.' }));
+      return;
+    }
+    const activeId = app.gear?.activeId ?? null;
+
+    body.append(el('div', { class: 'hint-note', html:
+      'The cube you mark <b>active</b> is tagged onto every solve you record from then on. ' +
+      'Past solves are left alone — they were done on whatever they were done on, and ' +
+      'back-filling them would invent the answer the statistics are supposed to give you. ' +
+      'Once you own a cube, the trend chart in <b>Statistics</b> can be filtered to it, with a ' +
+      'dashed line wherever you logged a change.' }));
+
+    /* The log for one cube, redrawn on its own so adding an entry does not
+       tear down and rebuild every card in the drawer. */
+    async function renderLog(g, host) {
+      host.innerHTML = '';
+      let log = [];
+      try { log = await GearLog.byGear(g.id); }
+      catch (err) { console.warn('[gear] log unavailable', err); return; }
+
+      const kind = select(Object.entries(LOG_KINDS).map(([value, label]) => ({ value, label })), 'lubed', () => {});
+      const text = el('input', { class: 'inp', placeholder: 'what changed (optional)' });
+      host.append(el('div', { class: 'row gear-log-add' }, kind, text, el('button', {
+        class: 'ghost-btn', text: 'log it',
+        onclick: async () => {
+          await GearLog.put(newLogEntry(g.id, { kind: kind.value, text: text.value.trim() }));
+          text.value = '';
+          renderLog(g, host);
+        },
+      })));
+
+      for (const e of log) {
+        host.append(el('div', { class: 'row gear-log-row' },
+          el('div', { class: 'lbl' },
+            el('span', { text: `${LOG_KINDS[e.kind] || e.kind}${e.text ? ' — ' + e.text : ''}` }),
+            el('span', { class: 'sub', text: fmtDate(e.at) })),
+          el('button', {
+            class: 'chip', text: 'remove',
+            onclick: async () => { await GearLog.del(e.id); renderLog(g, host); },
+          })));
+      }
+    }
+
+    function editCube(g) {
+      openDrawer(`Gear — ${gearLabel(g)}`, (b) => {
+        b.append(
+          el('div', { class: 'row' }, el('div', { class: 'lbl' }),
+            el('button', { class: 'ghost-btn', text: 'back to gear', onclick: redraw })),
+          // Renaming the cube you are on has to move the topbar label with it.
+          gearForm({ ...g }, seeds, 'Save changes', (saved) => {
+            if (app.gear?.activeId === saved.id) app.setGearLabel?.(gearLabel(saved));
+            redraw();
+          }),
+        );
+      }, { wide: true });
+    }
+
+    const cards = el('div', { class: 'gear-list' });
+    if (!owned.length) cards.append(el('div', { class: 'sub', text: 'No cubes yet. Add one below.' }));
+
+    for (const g of owned) {
+      const isActive = g.id === activeId;
+      const bits = [
+        EVENTS[g.event]?.short || g.event,
+        [g.brand, g.model].filter(Boolean).join(' '),
+        g.tension ? `tension ${g.tension}` : '',
+        [g.lubeBrand, g.lube].filter(Boolean).join(' '),
+      ].filter(Boolean).join(' · ');
+
+      const logHost = el('div', { class: 'gear-log' });
+      cards.append(el('div', { class: 'group gear-card' },
+        el('div', { class: 'row' },
+          el('div', { class: 'lbl' },
+            el('span', { text: gearLabel(g) + (isActive ? '  ·  active' : '') }),
+            el('span', { class: 'sub', text: bits })),
+          el('div', { class: 'chips' },
+            el('button', {
+              class: `chip ${isActive ? 'on' : ''}`,
+              text: isActive ? 'active' : 'make active',
+              onclick: async () => {
+                const next = isActive ? null : g.id;
+                await setActiveGearId(next);
+                app.gear = { ...(app.gear || {}), activeId: next };
+                app.setGearLabel?.(next ? gearLabel(g) : null);
+                toast(next ? `Solves are now tagged ${gearLabel(g)}` : 'Solves are no longer tagged',
+                  { kind: 'good' });
+                redraw();
+              },
+            }),
+            el('button', { class: 'chip', text: 'edit', onclick: () => editCube(g) }),
+            el('button', {
+              class: 'chip', text: 'delete',
+              onclick: async () => {
+                if (!await confirmToast(`Delete ${gearLabel(g)} and its log?`, 'delete')) return;
+                await Gear.del(g.id);
+                if (app.gear?.activeId === g.id) { app.gear.activeId = null; app.setGearLabel?.(null); }
+                /* The solves keep their cubeId. They really were done on it,
+                   and a filter that quietly forgets that is worse than one
+                   that offers a cube you no longer own. */
+                toast('Cube deleted — the solves it recorded are untouched');
+                redraw();
+              },
+            }),
+          )),
+        g.notes ? el('div', { class: 'sub', text: g.notes }) : null,
+        logHost));
+      renderLog(g, logHost);
+    }
+
+    body.append(group('Your cubes', cards));
+    body.append(gearForm(newGear({}), seeds, 'Add a cube', redraw));
+  };
+}
+
 export function buildStats(app) {
   return (body) => {
     const solves = app.solves;
@@ -827,11 +1039,46 @@ export function buildStats(app) {
 
     const hoverInfo = el('div', { class: 'bs-sub', style: { minHeight: '1.2em' } });
     const trendHost = el('div');
+    /* The cube filter starts as "all cubes" and stays that way if you own
+       none — the row appears only once there is something to choose between,
+       so a session that has never touched the gear log looks exactly as it
+       did before. */
+    const cubePick = el('select', { class: 'inp' }, el('option', { value: '', text: 'all cubes' }));
+    const cubeRow = el('div', { class: 'chart-filter', hidden: true },
+      el('span', { class: 'bs-sub', text: 'Cube' }), cubePick);
+
+    const drawTrend = (list, markers) => {
+      renderTrend(trendHost, list, (s, i) => {
+        hoverInfo.textContent = s ? `#${i + 1}  ${eff(s) === DNF ? 'DNF' : fmt(eff(s))}  ·  ${s.scramble.slice(0, 60)}` : '';
+      }, { markers });
+    };
+
     body.append(el('div', { class: 'chart-card' },
-      el('h4', { text: 'Trend — solves, ao5, ao12, PB' }), trendHost, hoverInfo));
-    renderTrend(trendHost, solves, (s, i) => {
-      hoverInfo.textContent = s ? `#${i + 1}  ${eff(s) === DNF ? 'DNF' : fmt(eff(s))}  ·  ${s.scramble.slice(0, 60)}` : '';
-    });
+      el('h4', { text: 'Trend — solves, ao5, ao12, PB' }), cubeRow, trendHost, hoverInfo));
+    drawTrend(solves, []);
+
+    (async () => {
+      let owned = [];
+      try { owned = await Gear.all(); } catch (err) { console.warn('[gear] chart filter unavailable', err); return; }
+      if (!owned.length) return;
+      for (const g of owned) cubePick.append(el('option', { value: g.id, text: gearLabel(g) }));
+      cubeRow.hidden = false;
+      cubePick.addEventListener('change', async () => {
+        const id = cubePick.value;
+        const list = filterByCube(solves, id);
+        /* Only the selected cube's events are drawn. Every cube's log on one
+           line would be a picket fence you cannot read a change out of. */
+        let markers = [];
+        if (id) {
+          try {
+            const log = await GearLog.byGear(id);
+            markers = markersFor(list, log).map(m => ({ ...m, label: LOG_KINDS[m.kind] || m.kind }));
+          } catch (err) { console.warn('[gear] log unavailable', err); }
+        }
+        hoverInfo.textContent = '';
+        drawTrend(list, markers);
+      });
+    })();
 
     const histHost = el('div');
     body.append(el('div', { class: 'chart-card' }, el('h4', { text: 'Distribution' }), histHost));

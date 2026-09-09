@@ -118,7 +118,14 @@ export function renderMiniTrend(svg, solves) {
 /* ---------------------------------------------------------
    Full trend chart (stats drawer) with hover scrub
    --------------------------------------------------------- */
-export function renderTrend(host, solves, onHover) {
+/**
+ * The session's times, with rolling averages and your PB.
+ *
+ * `markers` are gear-log events already placed on a solve index by
+ * gear.js — a re-lube or a tension change drawn where the first solve after
+ * it sits, so a step in the line can be read against what you changed.
+ */
+export function renderTrend(host, solves, onHover, { markers = [] } = {}) {
   host.innerHTML = '';
   const W = 660, H = 210, L = 46, R = 10, T = 12, B = 22;
   const svg = svgEl('svg', { viewBox: `0 0 ${W} ${H}` });
@@ -171,6 +178,24 @@ export function renderTrend(host, solves, onHover) {
   vals.forEach((v, i) => {
     if (v === DNF) svg.append(svgEl('line', { x1: x(i), x2: x(i), y1: T, y2: H - B, stroke: 'var(--danger)', 'stroke-width': 1, opacity: .35 }));
   });
+
+  /* Gear events. Dashed so they cannot be mistaken for the solid DNF rules,
+     and titled rather than labelled in place — a session with a dozen
+     re-lubes would otherwise be a wall of overlapping text. */
+  for (const m of markers) {
+    if (m.index < 0 || m.index >= solves.length) continue;
+    const gx = x(m.index);
+    const rule = svgEl('line', {
+      class: 'gear-mark', x1: gx, x2: gx, y1: T, y2: H - B,
+      stroke: 'var(--accent-2)', 'stroke-width': 1.2, 'stroke-dasharray': '3 3', opacity: .7,
+    });
+    const title = svgEl('title');
+    title.textContent = m.text ? `${m.label || m.kind} — ${m.text}` : (m.label || m.kind);
+    rule.append(title);
+    svg.append(rule);
+    const tick = svgEl('circle', { cx: gx, cy: T + 3, r: 2.5, fill: 'var(--accent-2)', opacity: .9 });
+    svg.append(tick);
+  }
 
   // hover
   const cursor = svgEl('line', { x1: 0, x2: 0, y1: T, y2: H - B, stroke: 'var(--text-faint)', 'stroke-width': 1, opacity: 0 });

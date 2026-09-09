@@ -636,6 +636,25 @@ section('reconstruction steps');
     spots(-80, 30).D.front && !spots(-80, 30).U.front);
 }
 
+/* ---------------- reconstruction export ----------------
+   The GIF pipeline itself (MediaRecorder, a hidden <video>, gif.js in a
+   worker) is real-browser-media plumbing, not something a fast self-test
+   should be driving end to end on every run. What is checked here is the
+   two things that would silently break the feature without ever throwing
+   where a developer is looking: the module still exports what recon.js
+   calls, and the vendored encoder is actually there rather than 404ing the
+   moment someone clicks the button. */
+section('reconstruction export');
+{
+  const Exp = await import('./js/reconexport.js');
+  check('reconexport exports exportReconGif', typeof Exp.exportReconGif === 'function');
+
+  const gifOk = await fetch('./vendor/gifjs/gif.js').then(r => r.ok).catch(() => false);
+  const workerOk = await fetch('./vendor/gifjs/gif.worker.js').then(r => r.ok).catch(() => false);
+  check('vendored gif.js is present', gifOk);
+  check('vendored gif.worker.js is present', workerOk);
+}
+
 /* ---------------- the last-layer libraries ----------------
    Two thousand algs scraped off a website is two thousand chances to ship one
    that does not work, and a suggestion that does not work is worse than no
@@ -1823,6 +1842,137 @@ section('scramble of the day — ranking the two boards');
 
   check('an empty count board is an empty list, not a throw',
     D.rankByCount(null, null).length === 0 && D.rankByCount({}, 'u_a').length === 0);
+}
+
+/* ---------------- gear log ----------------
+   The IndexedDB CRUD underneath is a thin mirror of db.js, which the suite
+   does not test either — what is worth checking is the logic that can be
+   wrong without throwing: the seed files matching the app's own vocabulary,
+   the custom escape hatch never refusing anything, and the solve/marker
+   arithmetic the chart filter depends on. */
+const Gear = await import('./js/gear.js');
+const Ev = await import('./js/events.js');
+
+section('gear — seed files');
+{
+  const cubes = await (await fetch('./cubes.json')).json();
+  const lubes = await (await fetch('./lubes.json')).json();
+
+  check('cubes.json is a flat list of complete entries',
+    Array.isArray(cubes) && cubes.length > 20
+    && cubes.every(c => c.brand && c.model && c.event && Array.isArray(c.tags)),
+    `${cubes.length} cubes`);
+
+  /* A cube's event is what the chart filter and the picker group by. If it is
+     not one of the app's own ids, the entry is invisible rather than wrong —
+     the worst kind of seed-data bug. */
+  check('every cube names an event the app actually has',
+    cubes.every(c => Ev.EVENTS[c.event]),
+    cubes.filter(c => !Ev.EVENTS[c.event]).map(c => c.event).join(' ') || 'all valid');
+
+  check('no cube is listed twice',
+    new Set(cubes.map(c => `${c.brand} ${c.model}`)).size === cubes.length);
+
+  check('lubes.json is a flat list of complete entries',
+    Array.isArray(lubes) && lubes.length > 10
+    && lubes.every(l => l.brand && l.name), `${lubes.length} lubes`);
+
+  check('every lube viscosity and type is one of the documented values',
+    lubes.every(l => ['light', 'medium', 'heavy'].includes(l.viscosity))
+    && lubes.every(l => ['silicone', 'weight', 'differential'].includes(l.type)));
+
+  check('no lube is listed twice',
+    new Set(lubes.map(l => `${l.brand} ${l.name}`)).size === lubes.length);
+
+  // DaYan is a brand with no models rather than guessed ones — the point of
+  // the row is that it routes you to typing your own.
+  check('DaYan is present and routes to custom',
+    cubes.some(c => c.brand === 'DaYan' && c.tags.includes('custom')));
+
+  check('both lists carry an "Other" escape hatch',
+    cubes.some(c => c.brand === 'Other') && lubes.some(l => l.brand === 'Other'));
+}
+
+section('gear — records');
+{
+  const g = Gear.newGear({ brand: 'MoYu', model: 'WeiLong V11 (Standard)', name: 'main 3x3' });
+  check('a new cube gets an id, a created stamp and the event it is for',
+    !!g.id && typeof g.createdAt === 'number' && g.event === '333');
+
+  /* The seeds are autocomplete, never an enum. Anything typed has to survive,
+     because new cubes ship faster than this file is edited. */
+  const odd = Gear.newGear({ brand: 'Some Brand', model: 'Never Heard Of It', event: 'sq1' });
+  check('a cube that is in neither list is accepted exactly as typed',
+    odd.brand === 'Some Brand' && odd.model === 'Never Heard Of It' && odd.event === 'sq1');
+
+  check('an empty new cube is still a valid record, not a throw',
+    !!Gear.newGear({}).id && Gear.newGear({}).name === '');
+
+  check('the label falls back through name, model, then brand',
+    Gear.gearLabel({ name: 'main', model: 'V11', brand: 'MoYu' }) === 'main'
+    && Gear.gearLabel({ model: 'V11', brand: 'MoYu' }) === 'MoYu V11'
+    && Gear.gearLabel({ brand: 'MoYu' }) === 'MoYu'
+    && Gear.gearLabel({}) === 'Untitled cube');
+
+  const logs = [
+    { id: 'a', gearId: 'g1', at: 100, kind: 'lubed' },
+    { id: 'b', gearId: 'g1', at: 300, kind: 'tension' },
+    { id: 'c', gearId: 'g1', at: 200, kind: 'note' },
+  ];
+  check('a cube’s log reads newest first',
+    Gear.sortLog(logs).map(l => l.id).join('') === 'bca');
+
+  check('sorting the log does not mutate what it was handed',
+    (Gear.sortLog(logs), logs.map(l => l.id).join('')) === 'abc');
+}
+
+section('gear — filtering solves and placing markers');
+{
+  const S1 = [
+    { id: 's1', cubeId: 'g1', createdAt: 1000 },
+    { id: 's2', cubeId: 'g2', createdAt: 2000 },
+    { id: 's3', cubeId: 'g1', createdAt: 3000 },
+    { id: 's4', createdAt: 4000 },              // recorded before gear existed
+  ];
+
+  check('no cube chosen means every solve, including ones from before gear existed',
+    Gear.filterByCube(S1, null).length === 4 && Gear.filterByCube(S1, '').length === 4);
+
+  check('choosing a cube keeps only that cube’s solves',
+    Gear.filterByCube(S1, 'g1').map(s => s.id).join(' ') === 's1 s3');
+
+  /* An untagged solve is not evidence about any cube. Folding it into
+     whichever cube is selected would be inventing data. */
+  check('an untagged solve belongs to no cube rather than to all of them',
+    Gear.filterByCube(S1, 'g2').map(s => s.id).join(' ') === 's2');
+
+  check('filtering an empty session is empty, not a throw',
+    Gear.filterByCube([], 'g1').length === 0 && Gear.filterByCube(null, 'g1').length === 0);
+
+  const events = [
+    { id: 'e1', gearId: 'g1', at: 500,  kind: 'lubed' },   // before the first solve
+    { id: 'e2', gearId: 'g1', at: 2500, kind: 'tension' }, // between s2 and s3
+    { id: 'e3', gearId: 'g1', at: 9000, kind: 'lubed' },   // after the last solve
+  ];
+  const m = Gear.markersFor(S1, events);
+
+  /* A marker is drawn at a solve index, so an event has to land on the first
+     solve done AFTER it — that is the solve where the change would show. An
+     event after the last solve has nothing to mark yet and is dropped rather
+     than pinned to the right-hand edge, where it would read as a change that
+     already affected the times. */
+  check('an event lands on the first solve done after it',
+    m.length === 2 && m[0].index === 0 && m[1].index === 2,
+    m.map(x => `${x.id}@${x.index}`).join(' '));
+
+  check('an event after the last solve is not drawn at all',
+    !m.some(x => x.id === 'e3'));
+
+  check('markers carry their kind so the chart can label them',
+    m[1].kind === 'tension');
+
+  check('no events is no markers, not a throw',
+    Gear.markersFor(S1, []).length === 0 && Gear.markersFor(S1, null).length === 0);
 }
 
 document.getElementById('summary').textContent =

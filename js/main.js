@@ -5,6 +5,7 @@
 import { $, $$, el, uid, fmt, fmtLive, clamp, copy, download, toCSV, debounce,
          parseTimeInput, parseScrambleList } from './util.js';
 import { Solves, Sessions, KV, Assets, LetterPairs, importAll, onWrite } from './db.js';
+import { activeGearId, Gear, gearLabel } from './gear.js';
 import { EVENTS, EVENT_ORDER, MODES, modesForEvent, eventOf, modeOf } from './events.js';
 import { ScrambleQueue, setFor, cubingAvailable, generate } from './scramble.js';
 import { createLearn } from './learnmode.js';
@@ -383,6 +384,24 @@ async function init() {
      (algs.html, §6.1), and scramble generation is synchronous, so the handful
      of stored orders is read once here rather than awaited mid-scramble. */
   await loadLibraryPrefs();
+
+  /* Which cube is on the desk. Read once here so tagging a solve is a field
+     read rather than a database round-trip on the recording path — and left
+     null on failure, because a gear log that cannot be read must cost you a
+     tag, never a solve. */
+  app.gear = { activeId: null };
+  try { app.gear.activeId = await activeGearId(); }
+  catch (err) { console.warn('[gear] active cube unavailable', err); }
+
+  /* The pill in the topbar says which cube is being tagged onto your solves,
+     so the answer is on screen rather than one drawer away. Called again by
+     the Gear panel whenever you make a different one active. */
+  app.setGearLabel = (text) => { $('#gear-label').textContent = text || 'Cube'; };
+  if (app.gear.activeId) {
+    Gear.get(app.gear.activeId)
+      .then(g => app.setGearLabel(g ? gearLabel(g) : null))
+      .catch(() => {});
+  }
 
   // sessions
   app.sessions = await Sessions.all();
@@ -1613,6 +1632,10 @@ async function recordSolve({ timeMs, penalty = 'none', inspectionMs = 0, splits 
     scramble: app.scramble?.scramble || '',
     caseId: app.scramble?.caseId || null,
     caseName: app.scramble?.caseName || null,
+    // Which cube it was done on, same shape as the case tag above. Null when
+    // no gear is marked active, and absent entirely on every solve recorded
+    // before the gear log existed — both mean "no evidence", not "any cube".
+    cubeId: app.gear?.activeId || null,
     timeMs,
     penalty,
     inspectionMs,
@@ -3930,6 +3953,7 @@ function wireChrome() {
   }));
   $('#btn-xp1').addEventListener('click', () => openXp1());
   $('#btn-stats').addEventListener('click', () => openPanel('Statistics', 'buildStats', { wide: true }, app));
+  $('#btn-gear').addEventListener('click', () => openPanel('Gear', 'buildGear', { wide: true }, app));
   $('#btn-theme').addEventListener('click', () => openPanel('Appearance', 'buildAppearance', undefined, app));
   $('#btn-settings').addEventListener('click', () => openPanel('Settings', 'buildSettings', undefined, app));
   $('#btn-spotify').addEventListener('click', () => openPanel('Spotify', 'buildSpotify', undefined, app));
@@ -4237,6 +4261,7 @@ function wireShortcuts() {
       case 'y': case 'Y': e.preventDefault(); $('#btn-recon').click(); break;
       case 'l': case 'L': e.preventDefault(); $('#btn-xp1').click(); break;
       case 'p': case 'P': e.preventDefault(); $('#btn-spotify').click(); break;
+      case 'u': case 'U': e.preventDefault(); $('#btn-gear').click(); break;
       case 'l': case 'L':
         e.preventDefault();
         learn.setEnabled(!learn.enabled);
@@ -4293,6 +4318,7 @@ function openPaletteWithCommands() {
       { kind: 'go', label: 'All solves', key: 'H', run: () => $('#btn-open-history').click() },
       { kind: 'go', label: 'Appearance', key: 'T', run: () => $('#btn-theme').click() },
       { kind: 'go', label: 'Settings', key: ',', run: () => $('#btn-settings').click() },
+      { kind: 'go', label: 'Gear', key: 'U', keywords: 'cube lube tension magnets hardware collection', run: () => $('#btn-gear').click() },
       { kind: 'go', label: 'Keyboard shortcuts', key: '?', run: () => $('#btn-help').click() },
       { kind: 'go', label: 'About', key: 'B', run: () => $('#btn-about').click() },
       { kind: 'go', label: 'Reconstruct a scramble', key: 'Y', run: () => $('#btn-recon').click() },
