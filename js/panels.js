@@ -1936,17 +1936,9 @@ export function buildDaily(app) {
     clearInterval(_dailyTick);
 
     let ctl = null, ui = null;
-
-    /* Which day the time board is showing, as a `YYYY-MM-DD`, or null for
-       "today". Held out here rather than inside render() because render() runs
-       again on every controller change — a countdown tick, a result landing —
-       and a picked day that lived inside it would snap back to today a second
-       after you picked it.
-
-       `past` is the one day fetched, cached for the same reason: without it
-       every one of those re-renders would fire another read of the same node. */
-    let viewDay = null;
-    let past = null;
+    /* The day picker's own state, built on the first render — it is the same
+       object the window uses, so the two cannot drift. See dayHistory. */
+    let history = null;
 
     const onChange = () => { if (drawerName() === DAILY_PANEL) render(); };
 
@@ -1961,6 +1953,7 @@ export function buildDaily(app) {
         ctl.addEventListener('change', onChange);
         _dailyUnsub = () => ctl.removeEventListener('change', onChange);
       }
+      history ??= ui.dayHistory(ctl, render);
       const cloud = mod.cloudAvailable();
       if (cloud) ctl.connect().catch(() => {});
 
@@ -2013,80 +2006,23 @@ export function buildDaily(app) {
       /* ---- board one: the times for the chosen event, on the chosen day ----
 
          Today is the live board — `ctl.ranked()` off the running listeners,
-         reveal gate and all. A past day is a one-shot read through
-         ctl.pastBoard(), which never touches those listeners: the countdown
-         above, the rollover check and an armed attempt all stay pointed at
-         today no matter how far back this picker has been walked. */
+         reveal gate and all. A past day is a one-shot read that never touches
+         them, so the countdown above, the rollover check and an armed attempt
+         all stay pointed at today no matter how far back this has been
+         walked. Both halves are the window's, drawn through dayHistory. */
       const today = snap?.dayId || null;
-      const shown = viewDay || today;
+      const past = history.day;
 
-      const step = (delta) => {
-        const to = mod.shiftDayId(shown, delta);
-        // Today is the far end in one direction, and it is `null` rather than
-        // its own date so that flipping back to it resumes the LIVE board
-        // instead of freezing a snapshot of it taken on the way past.
-        viewDay = (today && to >= today) ? null : to;
-        render();
-      };
-
-      const dayNav = el('div', { class: 'daily-daynav' },
-        el('button', {
-          class: 'btn', text: '‹', title: 'The day before',
-          disabled: !shown,
-          onclick: () => step(-1),
-        }),
-        el('span', { class: 'daily-daynav-day', text: viewDay ? shown : 'Today' }),
-        el('button', {
-          class: 'btn', text: '›', title: 'The day after',
-          disabled: !viewDay,
-          onclick: () => step(1),
-        }),
-      );
-
-      if (!viewDay) {
+      if (!past) {
         const doneCount = ctl.submittedCount();
-        body.append(group('Today’s times', dayNav,
+        body.append(group('Today’s times', history.nav(today),
           el('div', { class: 'race-hero-sub', text:
             `${doneCount} ${doneCount === 1 ? 'person has' : 'people have'} done today’s scramble.` }),
           ui.timeBoard(ctl.ranked(), ctl.revealed),
         ));
       } else {
-        // Only the cached read for exactly this day AND event is usable — the
-        // event picker above moves independently of this one.
-        const got = (past && past.dayId === viewDay && past.eventId === ctl.eventId) ? past : null;
-        body.append(group(`Times for ${viewDay}`, dayNav,
-          !got
-            ? el('div', { class: 'db-empty', text: 'Loading that day’s board…' })
-            : got.error
-              ? el('div', { class: 'db-empty', text: 'Could not read that day’s board — check your connection.' })
-              : got.denied
-                /* Not an error, and not worded as one. The rules let you read a
-                   day's results only if you have a row in that day — the same
-                   "send your own time first" bargain today's board makes, which
-                   for a day already over simply cannot be met any more. */
-                ? el('div', { class: 'db-locked' },
-                    el('div', { class: 'db-locked-icon', text: '🔒' }),
-                    el('div', { class: 'db-locked-text', text:
-                      'You did not submit an attempt for this event that day, so its board '
-                      + 'stays locked. The reveal rule applies to every day, not just today.' }))
-                : ui.timeBoard(got.rows, true),
-        ));
-
-        if (!got) {
-          /* Stamped with the day and event it was asked FOR, so a slow read
-             that lands after the picker has moved on is dropped rather than
-             drawn under the wrong heading. */
-          const want = { dayId: viewDay, eventId: ctl.eventId };
-          ctl.pastBoard(want.dayId, want.eventId)
-            .then(r => { past = r; }, err => {
-              console.warn('[daily] past board read failed', err);
-              past = { ...want, rows: [], denied: false, error: true };
-            })
-            .then(() => {
-              if (viewDay === want.dayId && ctl.eventId === want.eventId
-                  && drawerName() === DAILY_PANEL) render();
-            });
-        }
+        // The picker below carries the date, so the group title does not repeat it.
+        body.append(group('Times', history.nav(today), history.view(ctl.eventId)));
       }
 
       /* ---- board two: who solved the most, of anything ----

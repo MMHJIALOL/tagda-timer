@@ -2982,13 +2982,27 @@ body.focus #dock-bottom, body.focus #tile-float-layer { opacity: 0; pointer-even
 .sotd-h3-second { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border); }
 .sotd-h3-note { letter-spacing: 0; text-transform: none; font-weight: 400; font-size: .66rem; opacity: .75; }
 
-/* The past-day picker above the time board (settings drawer only — the SOTD
-   window is about today and deliberately has no way to leave it). */
-.daily-daynav { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
-.daily-daynav .btn { padding: 4px 12px; font-size: .9rem; line-height: 1.1; }
-.daily-daynav .btn[disabled] { opacity: .4; pointer-events: none; }
+/* The past-day picker. One control, drawn in both places the board is — the
+   window's card and the settings drawer — so it is styled here once rather
+   than per caller. In the window it sits on the heading's own row; in the
+   drawer the heading is a group title above it, hence the margin. */
+.sotd-board-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.sotd-board-head h3 { margin: 0; }
+.sotd-board-head .daily-daynav { margin: 0; flex: none; }
+
+.daily-daynav { display: flex; align-items: center; gap: 6px; margin-bottom: 10px; }
+.daily-daynav .btn {
+  padding: 2px 9px; font-size: .95rem; line-height: 1.15;
+  /* The arrows are the one control here that must not move under the cursor:
+     they sit inches from a running timer, and the lift every other .btn gets
+     on hover reads as the board itself twitching. */
+  transform: none;
+}
+.daily-daynav .btn:hover { transform: none; }
+.daily-daynav .btn[disabled] { opacity: .35; pointer-events: none; }
 .daily-daynav-day {
-  font-size: .74rem; font-weight: 600; letter-spacing: .04em;
+  min-width: 5.6em; text-align: center;
+  font-size: .72rem; font-weight: 600; letter-spacing: .03em;
   font-variant-numeric: tabular-nums; color: var(--text-dim);
 }
 
