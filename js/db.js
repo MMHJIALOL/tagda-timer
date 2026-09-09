@@ -1,11 +1,12 @@
 /* ===========================================================
    Tagda Timer — IndexedDB layer (no dependencies)
    Stores: solves, sessions, kv (settings), assets (bg blobs),
-           letterPairs (the blindfolded pair dictionary)
+           letterPairs (the blindfolded pair dictionary),
+           gear + gearLog (the cubes you own and what you did to them)
    =========================================================== */
 
 const DB_NAME = 'tagdatimer';
-const DB_VER  = 2;
+const DB_VER  = 3;
 let _db = null;
 
 function openDB() {
@@ -34,6 +35,16 @@ function openDB() {
       if (!db.objectStoreNames.contains('letterPairs')) {
         db.createObjectStore('letterPairs', { keyPath: 'pair' });
       }
+      // v3 — the gear log. Two stores rather than an array on each cube: the
+      // log is append-mostly and read on its own by the chart, so growing it
+      // must not mean rewriting the cube record every time.
+      if (!db.objectStoreNames.contains('gear')) {
+        db.createObjectStore('gear', { keyPath: 'id' });
+      }
+      if (!db.objectStoreNames.contains('gearLog')) {
+        const g = db.createObjectStore('gearLog', { keyPath: 'id' });
+        g.createIndex('byGear', 'gearId');
+      }
       void e;
     };
     req.onsuccess = () => { _db = req.result; resolve(_db); };
@@ -41,11 +52,14 @@ function openDB() {
   });
 }
 
-function tx(store, mode = 'readonly') {
+/* Exported so a store can live in its own module without opening a second
+   connection to the same database — gear.js owns the gear stores, this file
+   still owns the schema, because the version number is one number. */
+export function tx(store, mode = 'readonly') {
   return openDB().then(db => db.transaction(store, mode).objectStore(store));
 }
 
-const wrap = (req) => new Promise((res, rej) => {
+export const wrap = (req) => new Promise((res, rej) => {
   req.onsuccess = () => res(req.result);
   req.onerror = () => rej(req.error);
 });
@@ -283,6 +297,13 @@ export async function exportAll() {
     solves: await Solves.all(),
     settings: await KV.get('settings', {}),
     letterPairs: await LetterPairs.all(),
+    /* The gear log rides along, read straight from the stores rather than
+       through gear.js — that module imports this one, and a backup must not
+       depend on the direction of that arrow. A solve carries a `cubeId`, so
+       leaving the cubes out would restore solves pointing at nothing. */
+    gear: await wrap((await tx('gear')).getAll()),
+    gearLog: await wrap((await tx('gearLog')).getAll()),
+    gearActive: await KV.get('gear.active', null),
     // What you have learned is not a setting and not a solve, and losing it to
     // a restore would quietly reset every case you had worked up to known.
     learn: await KV.get('learn', {}),
@@ -301,6 +322,19 @@ export async function importAll(data, { merge = true } = {}) {
   // Backups written before the dictionary existed simply have no key here.
   if (Array.isArray(data.letterPairs) && data.letterPairs.length) {
     await LetterPairs.putMany(data.letterPairs);
+  }
+  /* Gear is merged in by id, never cleared: a restore that wiped the cubes
+     you own would orphan every `cubeId` on the solves already here. Backups
+     written before the gear log existed have no key at all. */
+  for (const [name, rows] of [['gear', data.gear], ['gearLog', data.gearLog]]) {
+    if (!Array.isArray(rows) || !rows.length) continue;
+    const store = await tx(name, 'readwrite');
+    await Promise.all(rows.map(r => wrap(store.put(r))));
+  }
+  /* Only if this browser has not already chosen one — the cube on your desk
+     is a fact about here and now, not about the machine the backup came from. */
+  if (data.gearActive && !(await KV.get('gear.active', null))) {
+    await KV.set('gear.active', data.gearActive);
   }
   /* Merged rather than replaced: restoring an old backup onto a machine you
      have been learning on should not throw away the newer schedule. Where both

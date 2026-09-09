@@ -3112,3 +3112,21 @@ body.focus #dock-bottom, body.focus #tile-float-layer { opacity: 0; pointer-even
   .db-row { grid-template-columns: 1.4em 22px minmax(0, 1fr) auto auto; gap: 8px; padding: 6px 8px; }
   .db-face { width: 22px; height: 22px; }
 }
+
+/* ---- gear log ----
+   Nearly everything here is already a .group of .row, so this only adds the
+   bits that have no equivalent: the card stack, and the log tucked under a
+   cube so it reads as belonging to it rather than as a sibling section. */
+.chart-filter { display: flex; align-items: center; gap: 10px; }
+.chart-filter select { max-width: 220px; }
+.gear-list { display: flex; flex-direction: column; gap: 10px; }
+.gear-card { gap: 6px; }
+.gear-log {
+  display: flex; flex-direction: column; gap: 4px;
+  margin-left: 12px; padding-left: 12px;
+  border-left: 2px solid var(--border);
+}
+.gear-log-add { gap: 8px; align-items: center; }
+.gear-log-add .inp { flex: 1; }
+.gear-log-row .sub { font-variant-numeric: tabular-nums; }
+.picker { display: flex; flex-direction: column; gap: 6px; min-width: 220px; }
