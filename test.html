@@ -1497,17 +1497,32 @@ section('blindfolded tracing');
   check('a different buffer still traces to a memo that solves the cube', badBuf === 0,
     badBuf ? `${badBuf} failed` : 'DF / DFL buffers');
 
+  /* The buffer dropdown offers these exact strings, and a buffer the letter
+     map cannot spell is a buffer whose letter reads "?" — which is how a
+     corner list generated from the other spelling of each sticker got away
+     with never selecting the saved buffer. */
+  check('every buffer the settings can offer has a letter in the scheme',
+    [...B.CORNER_STICKER_KEYS, ...B.EDGE_STICKER_KEYS].every(k => B.DEFAULT_SPEFFZ_MAP[k])
+    && B.DEFAULT_SPEFFZ_MAP[B.DEFAULT_BLD.edgeBuffer] && B.DEFAULT_SPEFFZ_MAP[B.DEFAULT_BLD.cornerBuffer]);
+
   /* --- a scramble that ends in a rotation ---
-     WCA 3BLD scrambles do, and the cube you are handed is the rotated one,
-     so the letters must change with it while the memo still works. */
+     WCA 3BLD scrambles end in wide moves, so the cube is handed to you turned.
+     A solver who turns it back to their own colours before memo must get the
+     same letters either way; one who memos it as handed must not. */
   const base = "R U R' F' U2 L' B L B2 U' R2 D2 F2 U2 F2";
   const rotated = base + " x2 y'";
   const a = B.trace(base, speffz);
   const b = B.trace(rotated, speffz);
+  const asHanded = { ...speffz, reorient: false };
+  const c = B.trace(rotated, asHanded);
   check('a trailing rotation still yields a memo that solves the cube', replay(rotated, speffz).ok);
-  check('a trailing rotation changes the letters — the cube is handed to you turned',
-    a.edges.targets.map(x => x.letter).join('') !== b.edges.targets.map(x => x.letter).join(''),
+  check('turning the cube back before memo keeps the letters the rotation would have moved',
+    a.edges.targets.map(x => x.letter).join('') === b.edges.targets.map(x => x.letter).join(''),
     `${a.edges.targets.map(x => x.letter).join('')} vs ${b.edges.targets.map(x => x.letter).join('')}`);
+  check('memoing the cube as handed instead reads the rotation into the letters',
+    b.edges.targets.map(x => x.letter).join('') !== c.edges.targets.map(x => x.letter).join(''),
+    `${b.edges.targets.map(x => x.letter).join('')} vs ${c.edges.targets.map(x => x.letter).join('')}`);
+  check('memoing the cube as handed still solves it', replay(rotated, asHanded).ok);
   check('a trailing rotation does not change how many targets there are',
     a.edges.targets.length === b.edges.targets.length
     && a.corners.targets.length === b.corners.targets.length);
