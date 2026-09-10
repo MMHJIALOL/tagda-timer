@@ -66,10 +66,19 @@ export const DEFAULT_BLD = {
   edgeBuffer: 'UF',
   cornerBuffer: 'UFR',
   orientation: { up: 'U', front: 'F' },
+  /* Turn the cube back to your own colours before memo — what most solvers
+     do, and the reason a scramble's trailing wide moves must not rename
+     every letter. Off means you memo the cube exactly as it was handed to
+     you, whichever colour ends up on top. */
+  reorient: true,
   scheme: 'speffz',
   letters: { ...DEFAULT_SPEFFZ_MAP },
   showBreakdownByDefault: false,
   memoExecSplit: true,
+  /* Buffers and hold are personal enough that guessing them silently is
+     worse than asking once. The breakdown offers the setup instead of a
+     trace until this is true. */
+  configured: false,
 };
 
 /** Events where the blindfolded workflow applies at all. */
@@ -264,7 +273,10 @@ export function trace(scramble, bld = DEFAULT_BLD) {
   if (!applied) return null;
 
   const rho = faceMap(bld.orientation?.up || 'U', bld.orientation?.front || 'F');
-  const frame = applied.frame;
+  /* `applied.frame` is how the scramble's own rotations left the cube. A
+     solver who turns it back to white-on-top first never sees that, so it is
+     only consulted when they said they memo it as handed. */
+  const frame = bld.reorient === false ? applied.frame : IDENTITY_MAP;
   /** A face of the solver's letter scheme, as a face of the state array. */
   const physical = (f) => frame[rho[f]] || f;
   const toPhysical = (name) => [...String(name)].map(physical).join('');

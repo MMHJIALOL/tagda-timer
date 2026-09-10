@@ -21,7 +21,7 @@ import { loadLibraryPrefs } from './alglibrary.js';
 import { initTiles, applyTiles, measureLayout } from './tiles.js';
 import { SPOTIFY_CLIENT_ID, DEV_MODE_LIMIT, OWNER_NEEDS_PREMIUM } from './spotifyapp.js';
 import { popover, closePopover, popoverOpen } from './popover.js';
-import { trace, traceRecord, BLD_EVENTS, TRACEABLE_EVENTS } from './bldtrace.js';
+import { trace, traceRecord, BLD_EVENTS, TRACEABLE_EVENTS, DEFAULT_SPEFFZ_MAP } from './bldtrace.js';
 import { toast, confirmToast } from './toast.js';
 // The pure day math only — see js/dayid.js. Imported eagerly on purpose:
 // the top bar needs today's date on first paint, and this file has no
@@ -1267,6 +1267,20 @@ function wireBld() {
   }
   $('#btn-bld-settings')?.addEventListener('click', () =>
     openPanel('Blindsolving', 'buildBlindsolving', {}, app));
+  /* Two ways past the setup card, and both of them end the asking: opening
+     the drawer is itself an answer, since whatever is in there when it closes
+     is what the solver has chosen. */
+  $('#btn-bld-setup')?.addEventListener('click', () => {
+    bldConfigured();
+    openPanel('Blindsolving', 'buildBlindsolving', {}, app);
+  });
+  $('#btn-bld-setup-ok')?.addEventListener('click', () => bldConfigured());
+}
+
+/** The solver has answered the setup card — never ask again, trace from now on. */
+function bldConfigured() {
+  app.setSetting('bld', { ...app.settings.bld, configured: true });
+  app.bldChanged?.();
 }
 
 /** The trace for a scramble, computed on first reveal and then kept on it. */
@@ -1328,10 +1342,12 @@ function renderBldInner() {
 
   const rows = [$('#bld-edges').closest('.bld-row'), $('#bld-corners').closest('.bld-row')];
   const note = $('#bld-note');
+  const setup = $('#bld-setup');
   const show = (on) => rows.forEach(r => { if (r) r.hidden = !on; });
 
   if (!bldTraceable()) {
     show(false);
+    setup.hidden = true;
     $('#bld-parity').hidden = true;
     note.hidden = false;
     // Two different reasons, and saying the wrong one is worse than saying
@@ -1344,6 +1360,25 @@ function renderBldInner() {
         + 'wing and centre cycles would be worse than saying so.';
     return;
   }
+
+  /* Rule 2 taken to its end: if the buffers and the hold are settings, then
+     the defaults are a guess, and a guessed letter is indistinguishable from
+     a real one on screen. Ask once, then never again. */
+  if (!app.settings.bld?.configured) {
+    show(false);
+    setup.hidden = false;
+    $('#bld-parity').hidden = true;
+    note.hidden = true;
+    const b = app.settings.bld || {};
+    const letters = { ...DEFAULT_SPEFFZ_MAP, ...(b.letters || {}) };
+    const name = (st) => `${letters[st] || '?'} (${st})`;
+    $('#bld-setup-now').textContent =
+      `${name(b.edgeBuffer || 'UF')} / ${name(b.cornerBuffer || 'UFR')}, `
+      + `${b.orientation?.up || 'U'} on top with ${b.orientation?.front || 'F'} in front, `
+      + `${b.scheme === 'custom' ? 'your own letters' : 'Speffz'}`;
+    return;
+  }
+  setup.hidden = true;
 
   const t = bldOf(app.scramble);
   show(true);

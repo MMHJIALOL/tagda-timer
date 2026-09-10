@@ -253,98 +253,6 @@
   </header>
 
   <!-- ---------- SCRAMBLE ---------- -->
-  <section id="scramble-zone" class="fade-layer">
-    <div class="scramble-label">Scramble</div>
-    <div id="scramble-wrap">
-      <div id="scramble-text" class="scramble" tabindex="-1">Warming up scrambler&hellip;</div>
-      <div id="scramble-tools">
-        <button class="ghost-btn" id="btn-prev-scramble" title="Previous scramble">
-          <svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg>
-        </button>
-        <button class="ghost-btn" id="btn-copy-scramble" title="Copy scramble  (Ctrl+C)">
-          <svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/></svg>
-        </button>
-        <button class="ghost-btn" id="btn-custom-scramble" title="Enter your own scrambles  (X)">
-          <svg viewBox="0 0 24 24"><path d="M4 6h11M4 12h7M4 18h11M17 9v9M13.5 12.5L17 9l3.5 3.5"/></svg>
-        </button>
-        <button class="ghost-btn" id="btn-next-scramble" title="New scramble  (N)">
-          <svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
-        </button>
-      </div>
-    </div>
-    <!-- What Spotify says is playing. Off unless album theming is linked and
-         the setting is on -- the timer screen is meant to be empty. -->
-    <div id="now-playing" hidden></div>
-    <!-- Shown only while a pasted list is being worked through: which one you
-         are on, and the way back out to generated scrambles. -->
-    <div id="custom-bar" hidden>
-      <span class="cb-dot" aria-hidden="true"></span>
-      <span id="custom-pos">custom 1 / 1</span>
-      <button class="cb-x" id="btn-custom-exit" title="Back to generated scrambles">&times;</button>
-    </div>
-    <div id="case-label" hidden></div>
-
-    <!-- The 3BLD target breakdown. Only mounted on a blindfolded event, and
-         collapsed even then: a solver mid-training wants the scramble and
-         nothing else, so the cycles stay behind one button. -->
-    <div id="bld-zone" hidden>
-      <div id="bld-bar">
-        <button class="ghost-btn sm" id="btn-bld-toggle" aria-expanded="false" aria-controls="bld-panel">Show breakdown</button>
-        <span class="bld-split" id="bld-split" hidden></span>
-      </div>
-      <div id="bld-panel" hidden>
-        <div class="bld-row">
-          <span class="bld-lbl">Edges</span>
-          <div class="bld-chips" id="bld-edges"></div>
-        </div>
-        <div class="bld-row">
-          <span class="bld-lbl">Corners</span>
-          <div class="bld-chips" id="bld-corners"></div>
-        </div>
-        <div class="bld-foot">
-          <span class="bld-badge parity" id="bld-parity" hidden>parity</span>
-          <span class="bld-note" id="bld-note"></span>
-          <button class="ghost-btn sm" id="btn-bld-settings" title="Blindsolving settings">
-            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1"/></svg>
-          </button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Multiphase breakdown. Only mounted when Settings > Timer > Multiphase
-         splits is on for a non-blind event, and collapsed by default — same
-         shape as the BLD zone above, for the same reason: a solve cut into
-         four phases should not turn the screen under the clock into a table
-         unless you actually ask to see it. -->
-    <div id="phase-zone" hidden>
-      <div id="phase-bar">
-        <button class="ghost-btn sm" id="btn-phase-toggle" aria-expanded="false" aria-controls="phase-panel">Show breakdown</button>
-      </div>
-      <div id="phase-panel" hidden></div>
-    </div>
-
-    <!-- Learn mode. Sits under the case label because it is about the case you
-         were just dealt: what stage it is at, the algorithm itself (shown for a
-         case you have never seen, and on demand for one you have), and what the
-         last solve did to its schedule. Hidden entirely unless learn is on. -->
-    <div id="learn-bar" hidden>
-      <div id="learn-progress">
-        <span class="lp-seg new"><b id="lp-new">0</b> new</span>
-        <span class="lp-seg learning"><b id="lp-learning">0</b> learning</span>
-        <span class="lp-seg mature"><b id="lp-mature">0</b> known</span>
-        <span class="lp-seg due"><b id="lp-due">0</b> due</span>
-        <button class="ghost-btn" id="btn-learn-exit" title="Leave learn mode">&times;</button>
-      </div>
-      <div id="learn-alg" hidden>
-        <span class="la-tag" id="learn-tag">new case</span>
-        <span class="la-alg" id="learn-alg-text"></span>
-      </div>
-      <div id="learn-actions">
-        <button class="chip" id="btn-learn-peek" title="Show the algorithm  (G) — counts as not knowing it">show me the alg</button>
-        <span id="learn-verdict"></span>
-      </div>
-    </div>
-  </section>
 
   <!-- ---------- MAIN ---------- -->
   <main id="stage">
@@ -427,6 +335,121 @@
     </aside>
 
     <!-- CENTRE: timer -->
+    <!-- CENTRE COLUMN: the scramble and the digits, in one track.
+
+         The scramble used to be a full-width row above this grid, which meant
+         the two rails started below it and the top corners of the screen were
+         dead space. It is centre content, so it lives in the centre column. -->
+    <div id="center">
+  <section id="scramble-zone" class="fade-layer">
+    <div class="scramble-label">Scramble</div>
+    <div id="scramble-wrap">
+      <div id="scramble-text" class="scramble" tabindex="-1">Warming up scrambler&hellip;</div>
+      <div id="scramble-tools">
+        <button class="ghost-btn" id="btn-prev-scramble" title="Previous scramble">
+          <svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg>
+        </button>
+        <button class="ghost-btn" id="btn-copy-scramble" title="Copy scramble  (Ctrl+C)">
+          <svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/></svg>
+        </button>
+        <button class="ghost-btn" id="btn-custom-scramble" title="Enter your own scrambles  (X)">
+          <svg viewBox="0 0 24 24"><path d="M4 6h11M4 12h7M4 18h11M17 9v9M13.5 12.5L17 9l3.5 3.5"/></svg>
+        </button>
+        <button class="ghost-btn" id="btn-next-scramble" title="New scramble  (N)">
+          <svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
+        </button>
+      </div>
+    </div>
+    <!-- What Spotify says is playing. Off unless album theming is linked and
+         the setting is on -- the timer screen is meant to be empty. -->
+    <div id="now-playing" hidden></div>
+    <!-- Shown only while a pasted list is being worked through: which one you
+         are on, and the way back out to generated scrambles. -->
+    <div id="custom-bar" hidden>
+      <span class="cb-dot" aria-hidden="true"></span>
+      <span id="custom-pos">custom 1 / 1</span>
+      <button class="cb-x" id="btn-custom-exit" title="Back to generated scrambles">&times;</button>
+    </div>
+    <div id="case-label" hidden></div>
+
+    <!-- The 3BLD target breakdown. Only mounted on a blindfolded event, and
+         collapsed even then: a solver mid-training wants the scramble and
+         nothing else, so the cycles stay behind one button. -->
+    <div id="bld-zone" hidden>
+      <div id="bld-bar">
+        <button class="ghost-btn sm" id="btn-bld-toggle" aria-expanded="false" aria-controls="bld-panel">Show breakdown</button>
+        <!-- Buffers and hold belong next to the letters they produce, not three
+             clicks into a settings drawer. -->
+        <button class="ghost-btn sm icon" id="btn-bld-settings" title="Your buffers, hold and letters">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1"/></svg>
+        </button>
+        <span class="bld-split" id="bld-split" hidden></span>
+      </div>
+      <div id="bld-panel" hidden>
+        <!-- Shown instead of a trace until the solver has said which buffers
+             and which hold are theirs. Guessed letters read as real ones, and
+             a wrong one is worse than none. -->
+        <div id="bld-setup" hidden>
+          <div class="bld-setup-title">Whose letters should these be?</div>
+          <div class="bld-setup-note">
+            A breakdown is only your memo if it is read against your buffers, your hold and your
+            scheme. Set them once — <b id="bld-setup-now">UF / UFR, white on top, Speffz</b> — or take
+            the Speffz defaults as they are.
+          </div>
+          <div class="bld-setup-actions">
+            <button class="ghost-btn sm" id="btn-bld-setup">Set mine up</button>
+            <button class="ghost-btn sm" id="btn-bld-setup-ok">These are mine</button>
+          </div>
+        </div>
+        <div class="bld-row">
+          <span class="bld-lbl">Edges</span>
+          <div class="bld-chips" id="bld-edges"></div>
+        </div>
+        <div class="bld-row">
+          <span class="bld-lbl">Corners</span>
+          <div class="bld-chips" id="bld-corners"></div>
+        </div>
+        <div class="bld-foot">
+          <span class="bld-badge parity" id="bld-parity" hidden>parity</span>
+          <span class="bld-note" id="bld-note"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Multiphase breakdown. Only mounted when Settings > Timer > Multiphase
+         splits is on for a non-blind event, and collapsed by default — same
+         shape as the BLD zone above, for the same reason: a solve cut into
+         four phases should not turn the screen under the clock into a table
+         unless you actually ask to see it. -->
+    <div id="phase-zone" hidden>
+      <div id="phase-bar">
+        <button class="ghost-btn sm" id="btn-phase-toggle" aria-expanded="false" aria-controls="phase-panel">Show breakdown</button>
+      </div>
+      <div id="phase-panel" hidden></div>
+    </div>
+
+    <!-- Learn mode. Sits under the case label because it is about the case you
+         were just dealt: what stage it is at, the algorithm itself (shown for a
+         case you have never seen, and on demand for one you have), and what the
+         last solve did to its schedule. Hidden entirely unless learn is on. -->
+    <div id="learn-bar" hidden>
+      <div id="learn-progress">
+        <span class="lp-seg new"><b id="lp-new">0</b> new</span>
+        <span class="lp-seg learning"><b id="lp-learning">0</b> learning</span>
+        <span class="lp-seg mature"><b id="lp-mature">0</b> known</span>
+        <span class="lp-seg due"><b id="lp-due">0</b> due</span>
+        <button class="ghost-btn" id="btn-learn-exit" title="Leave learn mode">&times;</button>
+      </div>
+      <div id="learn-alg" hidden>
+        <span class="la-tag" id="learn-tag">new case</span>
+        <span class="la-alg" id="learn-alg-text"></span>
+      </div>
+      <div id="learn-actions">
+        <button class="chip" id="btn-learn-peek" title="Show the algorithm  (G) — counts as not knowing it">show me the alg</button>
+        <span id="learn-verdict"></span>
+      </div>
+    </div>
+  </section>
     <section id="timer-zone">
       <!-- Everything the eye reads as "the timer" lives in one box, so it can be
            centred on the screen rather than on the space the header left over. -->
@@ -493,6 +516,7 @@
         <div id="last-delta" hidden></div>
       </div>
     </section>
+    </div>
     <!-- RIGHT COLUMN: the numbers -->
     <aside id="sidebar-right" class="fade-layer">
       <!-- The right rail: the numbers you glance at, away from the times list

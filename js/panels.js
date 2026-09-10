@@ -17,9 +17,9 @@ import { Gear, GearLog, LOG_KINDS, newGear, newLogEntry, gearLabel,
          loadSeeds, filterByCube, markersFor, activeGearId, setActiveGearId } from './gear.js';
 import { buildAccountRow } from './sync-ui.js';
 import { DEFAULT_SPEFFZ_MAP, DEFAULT_BLD, CORNER_STICKER_KEYS, EDGE_STICKER_KEYS,
-         frontsFor, cornerStickerName, edgeStickerName, pieceAtFacelet, faceletsOfPiece,
+         frontsFor, pieceAtFacelet, faceletsOfPiece,
          pieceName, samePiece, diagnose } from './bldtrace.js';
-import { CORNER_NAMES, EDGE_NAMES, FACES } from './cube3.js';
+import { FACES } from './cube3.js';
 
 /* ---------------- drawer shell ---------------- */
 
@@ -1162,9 +1162,13 @@ export function buildStats(app) {
    replace.
    ========================================================= */
 
-/** Every sticker of a piece type, as face-first names — a buffer is a sticker. */
-const CORNER_STICKERS = CORNER_NAMES.flatMap((_, i) => [0, 1, 2].map(j => cornerStickerName(i, j)));
-const EDGE_STICKERS   = EDGE_NAMES.flatMap((_, i) => [0, 1].map(j => edgeStickerName(i, j)));
+/* Every sticker of a piece type, as face-first names — a buffer is a sticker.
+   These are the scheme's own keys rather than names spun out of CORNER_NAMES:
+   a corner sticker has two spellings ("UFR" and "URF" are one sticker), and
+   the letter map is keyed by only one of them, so generating the other set
+   left half the corner list lettered "?" and the saved buffer unselectable. */
+const CORNER_STICKERS = CORNER_STICKER_KEYS;
+const EDGE_STICKERS   = EDGE_STICKER_KEYS;
 
 export function buildBlindsolving(app) {
   return (body) => {
@@ -1178,6 +1182,16 @@ export function buildBlindsolving(app) {
     const redraw = () => openDrawer('Blindsolving', buildBlindsolving(app));
 
     const lettersOf = () => ({ ...DEFAULT_SPEFFZ_MAP, ...(bld().letters || {}) });
+
+    /* A buffer is picked as a sticker, because which sticker it is decides
+       the orientation of every shot — but nobody thinks of theirs as "UR",
+       they think of it as "B". So the list says both, in letter order. */
+    const bufferOptions = (stickers) => {
+      const letters = lettersOf();
+      return stickers
+        .map(v => ({ value: v, label: `${letters[v] || '?'} · ${v}`, key: letters[v] || 'ZZ' }))
+        .sort((a, b) => a.key.localeCompare(b.key) || a.value.localeCompare(b.value));
+    };
 
     /* The scheme editor. Corners and edges each carry their own A-X, so
        duplicates are only duplicates within one of the two halves. */
@@ -1223,9 +1237,9 @@ export function buildBlindsolving(app) {
         'tracer — change a buffer and every breakdown from the next scramble on is re-read against it.' }),
 
       group('Buffers',
-        row('Edge buffer', select(EDGE_STICKERS.map(v => ({ value: v, label: v })), bld().edgeBuffer,
+        row('Edge buffer', select(bufferOptions(EDGE_STICKERS), bld().edgeBuffer,
           v => set({ edgeBuffer: v })), 'the sticker you shoot from, not just the piece'),
-        row('Corner buffer', select(CORNER_STICKERS.map(v => ({ value: v, label: v })), bld().cornerBuffer,
+        row('Corner buffer', select(bufferOptions(CORNER_STICKERS), bld().cornerBuffer,
           v => set({ cornerBuffer: v }))),
       ),
 
@@ -1237,9 +1251,13 @@ export function buildBlindsolving(app) {
         }), 'which face was up when you assigned the letters'),
         row('Front face', select(frontsFor(up).map(f => ({ value: f, label: f })), front,
           v => set({ orientation: { up, front: v } }))),
+        row('Turn it back before memo', toggle(bld().reorient !== false, v => set({ reorient: v })),
+          'on: the faces above always mean the same colours. off: you memo the cube exactly as the '
+          + 'scramble hands it to you, wide moves and all'),
         el('div', { class: 'hint-note', text:
-          'The default is the WCA one — white on top, green on front. A scramble is always applied ' +
-          'in that orientation, so this says how you hold the cube afterwards, not how it was scrambled.' }),
+          'The default is the WCA one — white on top, green on front. A WCA blind scramble ends in '
+          + 'wide moves, so the cube arrives turned; leave the switch on and the tracer turns it back '
+          + 'the way you do, rather than renaming every letter.' }),
       ),
 
       group('Letter scheme',
