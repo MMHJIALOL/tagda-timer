@@ -254,93 +254,6 @@
 
   <!-- ---------- SCRAMBLE ---------- -->
 
-  <!-- ---------- MAIN ---------- -->
-  <main id="stage">
-
-    <!-- LEFT COLUMN: times on top, stats collapsed at the bottom -->
-    <aside id="sidebar" class="fade-layer">
-
-      <section class="panel" id="panel-times" data-tile="times">
-        <button class="tile-grip" type="button" title="Drag to move — drop on a highlighted zone to dock" aria-label="Move this panel"><svg viewBox="0 0 24 24"><circle cx="9" cy="7" r="1.5"/><circle cx="15" cy="7" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="17" r="1.5"/><circle cx="15" cy="17" r="1.5"/></svg></button>
-        <div class="panel-head">
-          <span id="hist-title">Times</span>
-          <span class="panel-sub" id="stat-count">0 solves</span>
-        </div>
-        <!-- Says what each column is, and sorts by it. Same grid as the solve
-             chip below, so every label sits over the column it names — and the
-             ones that hold numbers are buttons: click to order the session by
-             that column, click the active one again to go back to solve order.
-             Filled in by renderHistCols(), because which averages are shown is
-             yours to choose: each has a pencil that swaps the column for any
-             other average. The last cell is the reconstruct button's column. -->
-        <div class="hist-cols"></div>
-        <div id="hist-list" role="list"></div>
-        <div class="times-foot">
-          <button class="ghost-btn sm" id="btn-open-history" title="All solves  (H)">
-            <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg> all
-          </button>
-          <button class="ghost-btn sm danger" id="btn-clear-session" title="Clear session  (Ctrl+Shift+Del)">
-            <svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg> clear
-          </button>
-        </div>
-      </section>
-
-      <!-- Now playing. Hidden entirely until Spotify is linked and the panel is
-           switched on, so it costs nothing for anyone who never uses it.
-           The swatches are the point: they are the colours actually pulled out
-           of this cover, sitting next to the cover, so the link between the art
-           and the interface is something you can see rather than infer. -->
-      <section class="panel" id="panel-spotify" data-tile="spotify" hidden>
-        <button class="tile-grip" type="button" title="Drag to move — drop on a highlighted zone to dock" aria-label="Move this panel"><svg viewBox="0 0 24 24"><circle cx="9" cy="7" r="1.5"/><circle cx="15" cy="7" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="17" r="1.5"/><circle cx="15" cy="17" r="1.5"/></svg></button>
-        <div class="panel-head">
-          <span>Now playing</span>
-          <span class="panel-sub" id="np-state">not linked</span>
-        </div>
-        <a id="np-card" href="#" target="_blank" rel="noopener noreferrer" title="Open in Spotify">
-          <span class="np-art-wrap">
-            <img id="np-art" alt="" width="112" height="112" decoding="async">
-            <span class="np-art-empty" aria-hidden="true">
-              <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.2"/><path d="M7 9.1c3.3-1 7.2-.7 10.2.9"/><path d="M7.7 12.3c2.7-.8 5.9-.5 8.4.8"/><path d="M8.3 15.4c2.2-.6 4.6-.4 6.5.6"/></svg>
-            </span>
-          </span>
-          <span class="np-meta">
-            <span class="np-title" id="np-title">Nothing playing</span>
-            <span class="np-artist" id="np-artist"></span>
-            <span class="np-swatches" id="np-swatches" aria-hidden="true"></span>
-          </span>
-        </a>
-        <!-- Transport. Hidden until the link is known to allow it, so a free
-             account never gets a row of buttons that only 403. -->
-        <div class="np-controls" id="np-controls" hidden>
-          <button class="np-btn" id="np-prev" title="Previous track" aria-label="Previous track">
-            <svg viewBox="0 0 24 24"><path d="M18 6L9 12l9 6V6z" fill="currentColor" stroke="none"/><path d="M6 5.5v13" stroke-linecap="round"/></svg>
-          </button>
-          <button class="np-btn np-play" id="np-play" title="Play / pause" aria-label="Play or pause">
-            <svg id="np-play-icon" viewBox="0 0 24 24"><path d="M8 5.5l10 6.5-10 6.5V5.5z" fill="currentColor" stroke="none"/></svg>
-          </button>
-          <button class="np-btn" id="np-next" title="Next track" aria-label="Next track">
-            <svg viewBox="0 0 24 24"><path d="M6 6l9 6-9 6V6z" fill="currentColor" stroke="none"/><path d="M18 5.5v13" stroke-linecap="round"/></svg>
-          </button>
-        </div>
-        <div class="np-note" id="np-note" hidden></div>
-        <div class="np-progress" id="np-progress" hidden>
-          <div class="np-bar"><div class="np-fill" id="np-fill"></div></div>
-          <div class="np-times">
-            <span id="np-elapsed">0:00</span>
-            <span id="np-duration">0:00</span>
-          </div>
-        </div>
-      </section>
-
-    </aside>
-
-    <!-- CENTRE: timer -->
-    <!-- CENTRE COLUMN: the scramble and the digits, in one track.
-
-         The scramble used to be a full-width row above this grid, which meant
-         the two rails started below it and the top corners of the screen were
-         dead space. It is centre content, so it lives in the centre column. -->
-    <div id="center">
   <section id="scramble-zone" class="fade-layer">
     <div class="scramble-label">Scramble</div>
     <div id="scramble-wrap">
@@ -450,6 +363,88 @@
       </div>
     </div>
   </section>
+
+  <!-- ---------- MAIN ---------- -->
+  <main id="stage">
+
+    <!-- LEFT COLUMN: times on top, stats collapsed at the bottom -->
+    <aside id="sidebar" class="fade-layer">
+
+      <section class="panel" id="panel-times" data-tile="times">
+        <button class="tile-grip" type="button" title="Drag to move — drop on a highlighted zone to dock" aria-label="Move this panel"><svg viewBox="0 0 24 24"><circle cx="9" cy="7" r="1.5"/><circle cx="15" cy="7" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="17" r="1.5"/><circle cx="15" cy="17" r="1.5"/></svg></button>
+        <div class="panel-head">
+          <span id="hist-title">Times</span>
+          <span class="panel-sub" id="stat-count">0 solves</span>
+        </div>
+        <!-- Says what each column is, and sorts by it. Same grid as the solve
+             chip below, so every label sits over the column it names — and the
+             ones that hold numbers are buttons: click to order the session by
+             that column, click the active one again to go back to solve order.
+             Filled in by renderHistCols(), because which averages are shown is
+             yours to choose: each has a pencil that swaps the column for any
+             other average. The last cell is the reconstruct button's column. -->
+        <div class="hist-cols"></div>
+        <div id="hist-list" role="list"></div>
+        <div class="times-foot">
+          <button class="ghost-btn sm" id="btn-open-history" title="All solves  (H)">
+            <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg> all
+          </button>
+          <button class="ghost-btn sm danger" id="btn-clear-session" title="Clear session  (Ctrl+Shift+Del)">
+            <svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg> clear
+          </button>
+        </div>
+      </section>
+
+      <!-- Now playing. Hidden entirely until Spotify is linked and the panel is
+           switched on, so it costs nothing for anyone who never uses it.
+           The swatches are the point: they are the colours actually pulled out
+           of this cover, sitting next to the cover, so the link between the art
+           and the interface is something you can see rather than infer. -->
+      <section class="panel" id="panel-spotify" data-tile="spotify" hidden>
+        <button class="tile-grip" type="button" title="Drag to move — drop on a highlighted zone to dock" aria-label="Move this panel"><svg viewBox="0 0 24 24"><circle cx="9" cy="7" r="1.5"/><circle cx="15" cy="7" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="17" r="1.5"/><circle cx="15" cy="17" r="1.5"/></svg></button>
+        <div class="panel-head">
+          <span>Now playing</span>
+          <span class="panel-sub" id="np-state">not linked</span>
+        </div>
+        <a id="np-card" href="#" target="_blank" rel="noopener noreferrer" title="Open in Spotify">
+          <span class="np-art-wrap">
+            <img id="np-art" alt="" width="112" height="112" decoding="async">
+            <span class="np-art-empty" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.2"/><path d="M7 9.1c3.3-1 7.2-.7 10.2.9"/><path d="M7.7 12.3c2.7-.8 5.9-.5 8.4.8"/><path d="M8.3 15.4c2.2-.6 4.6-.4 6.5.6"/></svg>
+            </span>
+          </span>
+          <span class="np-meta">
+            <span class="np-title" id="np-title">Nothing playing</span>
+            <span class="np-artist" id="np-artist"></span>
+            <span class="np-swatches" id="np-swatches" aria-hidden="true"></span>
+          </span>
+        </a>
+        <!-- Transport. Hidden until the link is known to allow it, so a free
+             account never gets a row of buttons that only 403. -->
+        <div class="np-controls" id="np-controls" hidden>
+          <button class="np-btn" id="np-prev" title="Previous track" aria-label="Previous track">
+            <svg viewBox="0 0 24 24"><path d="M18 6L9 12l9 6V6z" fill="currentColor" stroke="none"/><path d="M6 5.5v13" stroke-linecap="round"/></svg>
+          </button>
+          <button class="np-btn np-play" id="np-play" title="Play / pause" aria-label="Play or pause">
+            <svg id="np-play-icon" viewBox="0 0 24 24"><path d="M8 5.5l10 6.5-10 6.5V5.5z" fill="currentColor" stroke="none"/></svg>
+          </button>
+          <button class="np-btn" id="np-next" title="Next track" aria-label="Next track">
+            <svg viewBox="0 0 24 24"><path d="M6 6l9 6-9 6V6z" fill="currentColor" stroke="none"/><path d="M18 5.5v13" stroke-linecap="round"/></svg>
+          </button>
+        </div>
+        <div class="np-note" id="np-note" hidden></div>
+        <div class="np-progress" id="np-progress" hidden>
+          <div class="np-bar"><div class="np-fill" id="np-fill"></div></div>
+          <div class="np-times">
+            <span id="np-elapsed">0:00</span>
+            <span id="np-duration">0:00</span>
+          </div>
+        </div>
+      </section>
+
+    </aside>
+
+    <!-- CENTRE: timer -->
     <section id="timer-zone">
       <!-- Everything the eye reads as "the timer" lives in one box, so it can be
            centred on the screen rather than on the space the header left over. -->
@@ -516,7 +511,6 @@
         <div id="last-delta" hidden></div>
       </div>
     </section>
-    </div>
     <!-- RIGHT COLUMN: the numbers -->
     <aside id="sidebar-right" class="fade-layer">
       <!-- The right rail: the numbers you glance at, away from the times list
