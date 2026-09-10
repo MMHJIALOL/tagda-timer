@@ -18,6 +18,7 @@
             "scramble":     { ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 2000)" },
             "caseId":       { ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 64)" },
             "caseName":     { ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 128)" },
+            "cubeId":       { ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 64)" },
             "timeMs":       { ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 0 && newData.val() <= 36000000)" },
             "penalty":      { ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 16)" },
             "inspectionMs": { ".validate": "!newData.exists() || newData.isNumber()" },
@@ -26,6 +27,7 @@
             "race":         { ".validate": "!newData.exists() || newData.isBoolean()" },
             "roomId":       { ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 16)" },
             "bld":          { ".validate": true },
+            "phases":       { ".validate": true },
             "recon":        { ".validate": true },
             "$other":       { ".validate": false }
           }
