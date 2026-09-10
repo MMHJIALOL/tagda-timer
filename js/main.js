@@ -1261,7 +1261,9 @@ function wireBld() {
      boxes directly rather than hoping a resize lands at the right moment. */
   if (typeof ResizeObserver === 'function') {
     const ro = new ResizeObserver(debounce(() => bldFit(), 60));
-    for (const id of ['app', 'bld-zone']) {
+    // The panel is positioned out of the flow, so its own growth no longer
+    // shows up as the zone changing size — watch the panel itself as well.
+    for (const id of ['app', 'bld-zone', 'bld-panel']) {
       const node = document.getElementById(id);
       if (node) ro.observe(node);
     }
@@ -1326,7 +1328,10 @@ function wirePhaseZone() {
   });
 }
 
-function renderBld() { renderBldInner(); bldFit(); }
+/* The cube preview parks in a corner the open panel can reach into, and only
+   measureLayout() knows how to move it, so a breakdown that appears or goes
+   away is a layout change like any other. */
+function renderBld() { renderBldInner(); bldFit(); app.refreshLayout?.(); }
 
 function renderBldInner() {
   const zone = $('#bld-zone');
@@ -1441,7 +1446,9 @@ function bldFitOnce() {
   const vh = innerHeight || document.documentElement.clientHeight;
   if (!vh) return;                    // measured before the window has a size
   const coreBox = core.getBoundingClientRect(), digitsBox = digits.getBoundingClientRect();
-  const over = zone.getBoundingClientRect().bottom + 18 - digitsBox.top;
+  // The panel, not the zone: the panel hangs out of the flow under the bar, so
+  // the zone's own box stops at the button and says nothing about the overlap.
+  const over = panel.getBoundingClientRect().bottom + 18 - digitsBox.top;
 
   /* How far down there is to go. Below the desktop breakpoint the rails stack
      under the timer rather than sitting beside it — and already overlap it
