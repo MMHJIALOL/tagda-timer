@@ -133,6 +133,12 @@ const faceOfVec = (v) => FACES.find(f => VEC[f].every((x, i) => x === v[i]));
 
 export const IDENTITY_MAP = { U: 'U', D: 'D', L: 'L', R: 'R', F: 'F', B: 'B' };
 
+/* The standard colour scheme, and the reason face letters are worth
+   translating at all: nobody holds "U on top", they hold white on top. Only
+   ever a label — nothing in the trace reads a colour. */
+export const FACE_COLOURS = { U: 'white', D: 'yellow', F: 'green', B: 'blue', R: 'red', L: 'orange' };
+export const faceLabel = (f) => `${f} — ${FACE_COLOURS[f] || '?'}`;
+
 /**
  * Which physical face each face of the letter scheme refers to.
  * Two faces on the same axis are not a holdable orientation, so those

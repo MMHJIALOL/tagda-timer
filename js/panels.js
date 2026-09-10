@@ -17,7 +17,7 @@ import { Gear, GearLog, LOG_KINDS, newGear, newLogEntry, gearLabel,
          loadSeeds, filterByCube, markersFor, activeGearId, setActiveGearId } from './gear.js';
 import { buildAccountRow } from './sync-ui.js';
 import { DEFAULT_SPEFFZ_MAP, DEFAULT_BLD, CORNER_STICKER_KEYS, EDGE_STICKER_KEYS,
-         frontsFor, pieceAtFacelet, faceletsOfPiece,
+         frontsFor, faceLabel, pieceAtFacelet, faceletsOfPiece,
          pieceName, samePiece, diagnose } from './bldtrace.js';
 import { FACES } from './cube3.js';
 
@@ -1244,12 +1244,12 @@ export function buildBlindsolving(app) {
       ),
 
       group('Orientation',
-        row('Up face', select(FACES.map(f => ({ value: f, label: f })), up, (v) => {
+        row('Up face', select(FACES.map(f => ({ value: f, label: faceLabel(f) })), up, (v) => {
           const fronts = frontsFor(v);
           set({ orientation: { up: v, front: fronts.includes(front) ? front : fronts[0] } });
           redraw();
         }), 'which face was up when you assigned the letters'),
-        row('Front face', select(frontsFor(up).map(f => ({ value: f, label: f })), front,
+        row('Front face', select(frontsFor(up).map(f => ({ value: f, label: faceLabel(f) })), front,
           v => set({ orientation: { up, front: v } }))),
         row('Turn it back before memo', toggle(bld().reorient !== false, v => set({ reorient: v })),
           'on: the faces above always mean the same colours. off: you memo the cube exactly as the '

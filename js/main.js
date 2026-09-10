@@ -21,7 +21,8 @@ import { loadLibraryPrefs } from './alglibrary.js';
 import { initTiles, applyTiles, measureLayout } from './tiles.js';
 import { SPOTIFY_CLIENT_ID, DEV_MODE_LIMIT, OWNER_NEEDS_PREMIUM } from './spotifyapp.js';
 import { popover, closePopover, popoverOpen } from './popover.js';
-import { trace, traceRecord, BLD_EVENTS, TRACEABLE_EVENTS, DEFAULT_SPEFFZ_MAP } from './bldtrace.js';
+import { trace, traceRecord, BLD_EVENTS, TRACEABLE_EVENTS, DEFAULT_SPEFFZ_MAP,
+         FACE_COLOURS } from './bldtrace.js';
 import { toast, confirmToast } from './toast.js';
 // The pure day math only — see js/dayid.js. Imported eagerly on purpose:
 // the top bar needs today's date on first paint, and this file has no
@@ -1372,9 +1373,10 @@ function renderBldInner() {
     const b = app.settings.bld || {};
     const letters = { ...DEFAULT_SPEFFZ_MAP, ...(b.letters || {}) };
     const name = (st) => `${letters[st] || '?'} (${st})`;
+    const colour = (f) => `${FACE_COLOURS[f] || '?'} (${f})`;
     $('#bld-setup-now').textContent =
       `${name(b.edgeBuffer || 'UF')} / ${name(b.cornerBuffer || 'UFR')}, `
-      + `${b.orientation?.up || 'U'} on top with ${b.orientation?.front || 'F'} in front, `
+      + `${colour(b.orientation?.up || 'U')} on top with ${colour(b.orientation?.front || 'F')} in front, `
       + `${b.scheme === 'custom' ? 'your own letters' : 'Speffz'}`;
     return;
   }
