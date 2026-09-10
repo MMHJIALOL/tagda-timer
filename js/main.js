@@ -215,6 +215,17 @@ async function openSotd() {
      the scramble and the timer. */
   closeDrawer();
 
+  /* The title card, for as long as today is still ahead of you. Once
+     the day's scramble is submitted the trophy has been earned and the
+     ceremony is just a delay in front of the board, so it stops — until
+     tomorrow, when `sotdDoneToday()` turns over on its own.
+
+     It goes here rather than on the button so that a deployment with no
+     leaderboard, or a connect that fails, never spends three seconds of
+     somebody's time on the way to an error. Awaited, so the window
+     opens into a clean frame. */
+  if (!sotdDoneToday()) await (await import('./sotd-intro.js')).playSotdIntro();
+
   ui.openSotd(app, ctl, {
     onExit: () => {
       ctl.disengage();
