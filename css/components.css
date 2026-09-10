@@ -2675,8 +2675,14 @@ body.focus #dock-bottom, body.focus #tile-float-layer { opacity: 0; pointer-even
 }
 #btn-bld-toggle:hover { color: var(--text); border-color: var(--accent); }
 
+/* Out of the flow on purpose. In it, opening the breakdown made the scramble
+   row taller, and a taller row pushed both sidebars down the screen — the
+   panel you asked for should not move the rest of the page. It hangs under
+   the bar instead, and bldFit() in main.js is what keeps it off the digits. */
 #bld-panel {
-  width: min(100%, 640px);
+  position: absolute; top: 100%; left: 50%; transform: translateX(-50%);
+  margin-top: 8px;
+  width: min(92vw, 640px);
   display: flex; flex-direction: column; gap: 8px;
   padding: 12px 14px; border-radius: var(--radius-sm);
   border: 1px solid var(--border);
