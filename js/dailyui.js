@@ -492,7 +492,10 @@ export function openSotd(app, ctl, { onExit, solving = () => false } = {}) {
 
   /* Declared after renderBoard because it calls it, and before onChange ever
      runs, which is the only thing that matters for the closure. */
-  const history = dayHistory(ctl, () => { renderBoard(); placeBoard(); });
+  /* A past day's read can land after the window has closed, and renderBoard
+     un-hides the card — so a slow fetch put the board back over the ordinary
+     timer. Only the window that asked may draw. */
+  const history = dayHistory(ctl, () => { if (open !== state) return; renderBoard(); placeBoard(); });
 
   const onChange = () => {
     dayNode.textContent = ctl.snap?.dayId || '—';

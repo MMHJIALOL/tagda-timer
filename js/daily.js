@@ -51,6 +51,9 @@ export const SHOW_COUNT_BOARD = false;
 /** How long to keep retrying a write the leaderboard needs before giving up. */
 const RETRY_MS = [400, 1200];
 
+/** How long before asking again whether today is spent, when the last ask got no answer. */
+const RECHECK_MS = 3000;
+
 /**
  * How long to wait between attempts at publishing today's scramble, and so
  * how many attempts there are. Generous at the far end because the thing most
@@ -121,6 +124,9 @@ export class Daily extends EventTarget {
      *  whatever submittedToday happened to default to, not what the
      *  database actually says — see canAttempt(). */
     this._resultChecked = false;
+    /** The account|day|event that `_resultChecked` is about, and the one being asked about right now. */
+    this._resultKey = null;
+    this._checking = null;
     /** How many times publishing has stood aside for a listener that has not reported. */
     this._readWaits = 0;
     this._readWait = 0;
@@ -167,6 +173,10 @@ export class Daily extends EventTarget {
     // A board that reset under you starts your count again from the solves
     // that belong to the new day, rather than carrying yesterday's total.
     if (rolled) this.pushCount();
+    /* First, because it resets synchronously when the account, day or event
+       has changed — arming below on the previous key's answer would hand out
+       an attempt the new key has not been checked for. */
+    this._checkOwnResult();
     /* Arm as soon as there is something to arm ON, rather than only at the
        moment the window opened. Today's scramble usually arrives a beat after
        that — it may still be being generated and written by whoever got there
@@ -176,7 +186,6 @@ export class Daily extends EventTarget {
        submitted, and so the board never unlocked either. */
     if (this.engaged) this._armIfPossible();
     this._maybePublishScramble();
-    this._checkOwnResult();
     this._changed();
   }
 
@@ -300,27 +309,83 @@ export class Daily extends EventTarget {
     this.publishError = null;
   }
 
+  /** Whose result, on which day, for which event — null until all three are known. */
+  _ownKey() {
+    const s = this.snap;
+    return s?.uid && s.dayId && s.event ? `${s.uid}|${s.dayId}|${s.event}` : null;
+  }
+
   async _checkOwnResult() {
-    if (!this.net || !this.snap?.uid) { this.submittedToday = false; this._resultChecked = false; return; }
-    const { event, dayId, uid } = this.snap;
+    const key = this._ownKey();
+    /* A different account, day or event: everything known so far was about
+       something else. Reset before the first await, so a caller's very next
+       line cannot arm an attempt on the previous key's answer. */
+    if (key !== this._resultKey) {
+      this._resultKey = key;
+      this._resultChecked = false;
+      this.submittedToday = false;
+      this.attempting = false;
+    }
+    /* Once per key, not once per snapshot. Every snapshot lands here —
+       anybody's progress, the clock offset, the results listener — and each
+       one used to be another read of the same row. */
+    if (!key || !this.net || this._resultChecked || this._checking === key) return;
+    this._checking = key;
     const has = await this.net.hasOwnResult();
-    // The event or the day moved on while we were asking — the answer is stale.
-    if (this.snap.event !== event || this.snap.dayId !== dayId || this.snap.uid !== uid) return;
+    if (this._checking === key) this._checking = null;
+    /* `null` is "could not ask", which is not "no". The first snapshot arrives
+       before watch() has chosen a day or an event, and that "no" used to be
+       trusted: today's scramble landed a beat later, the window armed on it
+       and drew it, and then the real answer swapped it for "come back after
+       the reset". Left unchecked and asked again shortly, because a quiet day
+       may bring no further snapshot to ask on. */
+    if (this._ownKey() !== key) return;
+    if (has === null) {
+      clearTimeout(this._recheck);
+      this._recheck = setTimeout(() => this._checkOwnResult(), RECHECK_MS);
+      return;
+    }
     this.submittedToday = has;
     this._resultChecked = true;
     if (has) {
       this.net.unlockResults();
       this.attempting = false;
-      markSotdDone(dayId);
-    } else if (sotdDoneOn(dayId)) {
-      /* The note says today is spent and the database says it is not, so the
-         note is wrong and this is the only place that can ever find out: it
-         belongs to the browser, not to the account, so it survives a sign-out
-         and is inherited by whoever signs in next. The database is the one
-         that knows, and it has just answered. */
-      clearSotdDone();
+      markSotdDone(this.snap.dayId);
+    } else {
+      if (sotdDoneOn(this.snap.dayId)) {
+        /* The note says today is spent and the database says it is not, so the
+           note is wrong and this is the only place that can ever find out: it
+           belongs to the browser, not to the account, so it survives a sign-out
+           and is inherited by whoever signs in next. The database is the one
+           that knows, and it has just answered. */
+        clearSotdDone();
+      }
+      /* Armed here as well as in _onDay. When this answer is the last thing to
+         arrive — the ordinary case on a quiet day — no further snapshot comes
+         along to arm it, and the window sat on its placeholder with today's
+         scramble already in hand. */
+      if (this.engaged) this._armIfPossible();
     }
     this._changed();
+  }
+
+  /**
+   * Resolves once the database has said whether today is already spent for
+   * this account and event, or after `ms`, whichever comes first.
+   *
+   * For the window's intro: the localStorage note is only written when a
+   * result lands in THIS browser, so on a fresh one it says nothing and the
+   * title card played for somebody who had already submitted. Signed out there
+   * is no answer coming, so there is nothing to wait for.
+   */
+  ownResultKnown(ms) {
+    return new Promise((resolve) => {
+      const done = () => { clearTimeout(timer); this.removeEventListener('change', on); resolve(); };
+      const on = () => { if (this._resultChecked || !this.snap?.signedIn) done(); };
+      const timer = setTimeout(done, ms);
+      this.addEventListener('change', on);
+      on();
+    });
   }
 
   /* ---------------- attempting today's scramble ---------------- */
@@ -353,6 +418,13 @@ export class Daily extends EventTarget {
   /** Enter the window: from here until disengage(), the timer is the day's. */
   engage() {
     if (this.engaged) return;
+    /* The window solves in the timer's event: the solve underneath it is
+       recorded against app.settings.event, in that event's session. This
+       controller is a singleton that took its event once, when it was built,
+       so after doing 4x4's scramble of the day and going back to 3x3 the
+       window opened on 4x4 again — a 4x4 scramble on a 3x3 timer — until a
+       reload. setEvent ignores an event the daily challenge does not run. */
+    this.setEvent(this.app.settings.event);
     this.engaged = true;
     this._armIfPossible();
     // Even when there is nothing to arm yet, the scramble on screen has to
@@ -478,6 +550,8 @@ export class Daily extends EventTarget {
       }
       return 'Publishing today’s scramble…';
     }
+    // Today's scramble is here; whether you may still attempt it is not known yet.
+    if (!this._resultChecked) return 'Checking whether today’s attempt is already in…';
     return 'Nothing to solve right now';
   }
 
@@ -521,13 +595,23 @@ export class Daily extends EventTarget {
     // the event or the day could have moved on mid-attempt.
     if (String(solve.scramble || '').trim() !== String(this.snap.scramble).trim()) return;
 
+    /* Where this solve belongs, pinned before the first await: the progress
+       write and its retries leave room for the board to move to another event
+       or day, and the result must still land on the one it was solved in. */
+    const at = this.net.target?.();
+    const { dayId } = this.snap;
     this.attempting = false;
     this.submittedToday = true;
     this._lastStatus = null;
-    markSotdDone(this.snap.dayId);
     this._changed();
 
-    await this._retry(() => this.net.setProgress({ status: 'done', submitted: true }));
+    /* Best effort, and never a gate on the result. It used to be awaited bare,
+       so a refused progress write threw straight past the submit and the time
+       was lost while the window already read "attempt submitted". The rules'
+       clock check is skipped when `finishedAt` is missing, so the result is
+       still accepted without it. */
+    try { await this._retry(() => this.net.setProgress({ status: 'done', submitted: true }, at)); }
+    catch (err) { console.warn('[daily] progress refused', err); }
 
     const result = {
       timeMs: Math.round(solve.timeMs),
@@ -535,8 +619,9 @@ export class Daily extends EventTarget {
       name: this._name(),
       suspect: this._looksSuspect(solve) || null,
     };
+    let landed = true;
     try {
-      await this._retry(() => this.net.submitResult({ ...result, photo: this._photo() }));
+      await this._retry(() => this.net.submitResult({ ...result, photo: this._photo() }, at));
     } catch (err) {
       /* Once more without the avatar.
 
@@ -549,12 +634,18 @@ export class Daily extends EventTarget {
          entire point. */
       console.warn('[daily] result refused, retrying without the avatar', err);
       try {
-        await this._retry(() => this.net.submitResult(result));
+        await this._retry(() => this.net.submitResult(result, at));
       } catch (err2) {
+        landed = false;
         console.warn('[daily] result refused', err2);
         toast('Today’s board would not accept that time', { kind: 'bad' });
       }
     }
+    /* Only a result that landed retires the day. The note used to be written
+       before the submit, so a time the board never took still skipped the
+       intro and dimmed the chip as though today were done. */
+    if (!landed) return;
+    markSotdDone(dayId);
     this.net.unlockResults();
     this._changed();
   }
@@ -757,6 +848,7 @@ export class Daily extends EventTarget {
 
   destroy() {
     clearTimeout(this._publishRetry);
+    clearTimeout(this._recheck);
     this._authUnsub?.();
     this.net?.destroy();
     this.net = null;

@@ -303,21 +303,31 @@ export class DailyTransport extends EventTarget {
     }
   }
 
-  async setProgress(patch) {
+  /**
+   * Where a write for the current attempt lands, pinned now.
+   *
+   * A submit awaits a progress write and its retries first, and watch() can
+   * move the transport to another event or day in that gap — so a result that
+   * read `_dayKey` and `snap.event` at the moment of writing could be filed
+   * under an event it was never solved in.
+   */
+  target() {
+    return { dayKey: this._dayKey, event: this.snap.event, uid: this.snap.uid };
+  }
+
+  async setProgress(patch, { dayKey, event, uid } = this.target()) {
     const S = this._sdk;
-    const { event, uid } = this.snap;
-    if (!this._dayKey || !event || !uid) return;
+    if (!dayKey || !event || !uid) return;
     const out = { ...patch };
     if (patch.status === 'solving') out.startedAt = S.serverTimestamp();
     if (patch.status === 'done') out.finishedAt = S.serverTimestamp();
-    await S.update(this._ref(`daily/${this._dayKey}/${event}/progress/${uid}`), out);
+    await S.update(this._ref(`daily/${dayKey}/${event}/progress/${uid}`), out);
   }
 
-  async submitResult(result) {
+  async submitResult(result, { dayKey, event, uid } = this.target()) {
     const S = this._sdk;
-    const { event, uid } = this.snap;
-    if (!this._dayKey || !event || !uid) throw new Error('not-signed-in');
-    await S.set(this._ref(`daily/${this._dayKey}/${event}/results/${uid}`),
+    if (!dayKey || !event || !uid) throw new Error('not-signed-in');
+    await S.set(this._ref(`daily/${dayKey}/${event}/results/${uid}`),
       { ...result, submittedAt: S.serverTimestamp() });
   }
 
@@ -341,14 +351,25 @@ export class DailyTransport extends EventTarget {
     return body;
   }
 
-  /** Has this uid already submitted today, for this event? */
+  /**
+   * Has this uid already submitted today, for this event?
+   *
+   * `null` when that cannot be asked — nothing watched yet, or the read
+   * failed. Answering `false` there told the controller "not played today",
+   * and it armed a fresh attempt for an account that had already spent it.
+   */
   async hasOwnResult() {
     const { event, uid } = this.snap;
-    if (!this._dayKey || !event || !uid) return false;
+    if (!this._dayKey || !event || !uid) return null;
     try {
       const s = await this._sdk.get(this._ref(`daily/${this._dayKey}/${event}/results/${uid}`));
       return s.exists();
-    } catch { return false; }
+    } catch (err) {
+      /* A refusal IS the answer. `results` is readable only once your own row
+         is in it, so from here a row that does not exist looks exactly like
+         PERMISSION_DENIED. Anything else — offline, a timeout — is unknown. */
+      return /permission.denied/i.test(String(err?.code || err?.message || err)) ? false : null;
+    }
   }
 
   /**

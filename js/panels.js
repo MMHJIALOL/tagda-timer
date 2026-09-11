@@ -2256,7 +2256,14 @@ export function buildDaily(app) {
           ? el('div', { class: 'hint-note', text: 'You have already submitted today’s attempt for this event.' })
           : el('button', {
               class: 'btn primary full', text: 'Open the Scramble of the Day',
-              onclick: () => { closeDrawer(); $('#btn-daily').click(); },
+              onclick: async () => {
+                /* The window solves in the timer's event (see Daily#engage), so
+                   opening it on the event picked here means moving the timer
+                   there too — otherwise the window would follow the timer
+                   straight back to whatever it was on. */
+                if (app.settings.event !== ctl.eventId) await app.setEvent(ctl.eventId);
+                closeDrawer(); $('#btn-daily').click();
+              },
             }),
         row('Event', select(options, ctl.eventId, (v) => { ctl.setEvent(v); render(); })),
       ));

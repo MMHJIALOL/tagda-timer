@@ -185,7 +185,18 @@ const refit = () => {
   requestAnimationFrame(() => fitScrambleToLine($('#scramble-text')));
 };
 
+/* One at a time. The chip, the palette and the panel's button all land here,
+   and it awaits a connect, a database read and a three-second title card — a
+   second press inside that gap played a second intro over the first. */
+let _sotdOpening = false;
+
 async function openSotd() {
+  if (_sotdOpening || _sotdUi?.sotdOpen()) return;
+  _sotdOpening = true;
+  try { await enterSotd(); } finally { _sotdOpening = false; }
+}
+
+async function enterSotd() {
   let mod, ui;
   try {
     [mod, ui] = await Promise.all([loadDaily(), loadSotdUi()]);
@@ -203,11 +214,10 @@ async function openSotd() {
     toast('Sign in with the account icon to take part in today’s scramble', { long: true });
   }
 
-  /* engage(), not attempt(). The window arms itself the moment today's
-     scramble exists and holds the timer shut until then — checking once here
-     was the bug that made the whole window behave like an ordinary timer when
-     the scramble happened to be a beat late, which is the usual case. */
-  ctl.engage();
+  /* Pointed at the timer's event before anything is asked about it — the
+     own-result check below is a check of one event. engage() does the same,
+     and by then this has made it a no-op. */
+  ctl.setEvent(app.settings.event);
 
   /* Whatever drawer was open stays open behind the window otherwise — the
      window subtracts the chrome it knows about by class, and the drawer is
@@ -221,11 +231,32 @@ async function openSotd() {
      ceremony is just a delay in front of the board, so it stops — until
      tomorrow, when `sotdDoneToday()` turns over on its own.
 
+     Asked of the database first, not only of the note: the note is written
+     when a result lands in THIS browser, so on a fresh one it says nothing
+     and the intro played for an account that had already submitted. Bounded,
+     so a slow read costs a moment and never the window.
+
      It goes here rather than on the button so that a deployment with no
      leaderboard, or a connect that fails, never spends three seconds of
      somebody's time on the way to an error. Awaited, so the window
      opens into a clean frame. */
-  if (!sotdDoneToday()) await (await import('./sotd-intro.js')).playSotdIntro();
+  await ctl.ownResultKnown(1500);
+  if (!ctl.submittedToday && !sotdDoneToday()) {
+    // A title card that fails to load is not a reason to lose the window.
+    try { await (await import('./sotd-intro.js')).playSotdIntro(); }
+    catch (err) { console.warn('[sotd] intro failed', err); }
+  }
+
+  /* engage(), not attempt(). The window arms itself the moment today's
+     scramble exists and holds the timer shut until then — checking once here
+     was the bug that made the whole window behave like an ordinary timer when
+     the scramble happened to be a beat late, which is the usual case.
+
+     After the intro rather than before it, and immediately before the window
+     that disengages it on exit: nothing between the two can now throw and
+     leave the timer engaged with no window around it, which only a reload
+     could undo. */
+  ctl.engage();
 
   ui.openSotd(app, ctl, {
     onExit: () => {
@@ -3632,6 +3663,8 @@ async function setEvent(id) {
   timer.reset();
   persist();
   app.scrambleHistory = [];
+  // Inside the window the day's scramble follows the timer — see Daily#engage.
+  if (dailyCtl()?.engaged) dailyCtl().setEvent(id);
   refreshQueue(); nextScramble({ clear: true });
   renderAll();
 }
