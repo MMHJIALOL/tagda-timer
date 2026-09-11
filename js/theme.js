@@ -103,6 +103,8 @@ export const DEFAULTS = {
   paceRef: 'pb',                // pb | ao5
   confirmShortSolves: true,
   soundOnPB: true,
+  metronome: false,             // a click on the beat while the timer runs
+  metronomeBpm: 60,
   mouseTimer: false,            // click-to-time; off so a stray click cannot start a solve
   inputMode: 'timer',           // timer = spacebar/touch | manual = typed | stackmat = aux jack
   /* 0/1 = off. 2-6 splits every solve into that many phases: the split key

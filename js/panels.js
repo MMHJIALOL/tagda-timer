@@ -644,6 +644,9 @@ export function buildSettings(app) {
         row('Start with the mouse', toggle(S.mouseTimer, v => set('mouseTimer', v)), 'click the screen to start and stop — touch always works'),
         row('Confirm misfires', toggle(S.confirmShortSolves, v => set('confirmShortSolves', v)), 'ask before recording a sub-0.5s solve'),
         row('Sound on PB', toggle(S.soundOnPB, v => set('soundOnPB', v))),
+        row('Metronome', toggle(S.metronome, v => set('metronome', v)),
+          'a click on the beat while the timer runs — one move per beat to practise a smooth cross and F2L'),
+        row('Metronome speed', slider(S.metronomeBpm, 30, 240, 5, v => set('metronomeBpm', v), v => v + ' bpm')),
         row('Multiphase splits', chips([
           { value: 0, label: 'Off' },
           { value: 2, label: '2' },
