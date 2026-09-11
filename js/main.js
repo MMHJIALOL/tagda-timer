@@ -13,7 +13,7 @@ import { Timer, INSPECT_MS } from './timer.js';
 import { Background } from './bg.js';
 import { CubeView } from './cube.js';
 import { makeDraggable } from './drag.js';
-import { flash, shockwave, confetti, chime, callout, beep } from './fx.js';
+import { flash, shockwave, confetti, chime, callout, beep, metronome } from './fx.js';
 import { summarize, eff, DNF, bestSingle, bestAvg, trimmedIndices, byCase, sessionBests, rollingSeries, statWindow, STAT_LABELS } from './stats.js';
 import { renderMiniTrend } from './charts.js';
 import { DEFAULTS, loadSettings, saveSettings, applyTheme, applyBackground, themeColors, setAlbumTint } from './theme.js';
@@ -1027,6 +1027,7 @@ function wireTimer() {
     document.body.classList.toggle('holding', st === 'holding');
     document.body.classList.toggle('armed', st === 'ready');
     updateHoldBar(st);
+    metronome(st === 'running' && app.settings.metronome ? app.settings.metronomeBpm : 0);
 
     if (st === 'running') {
       phaseStart();

@@ -195,17 +195,44 @@ function ac() {
   return audioCtx;
 }
 
+function tone(c, freq, ms, type, gain, t, attack = 0.012) {
+  const osc = c.createOscillator();
+  const g = c.createGain();
+  osc.type = type; osc.frequency.value = freq;
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(gain, t + attack);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + ms / 1000);
+  osc.connect(g); g.connect(c.destination);
+  osc.start(t); osc.stop(t + ms / 1000 + 0.02);
+}
+
 export function beep(freq = 880, ms = 130, type = 'sine', gain = 0.16) {
+  try { const c = ac(); tone(c, freq, ms, type, gain, c.currentTime); }
+  catch { /* audio unavailable */ }
+}
+
+/**
+ * Metronome click at `bpm`; 0 stops it.
+ *
+ * Clicks are booked on the audio clock a little ahead of time rather than fired
+ * from setInterval, so a heavy frame (the 3D cube, a stats redraw) cannot push a
+ * beat late — the interval only has to wake often enough to book the next one.
+ */
+let metro = null;
+export function metronome(bpm) {
+  clearInterval(metro); metro = null;
+  if (!bpm) return;
   try {
     const c = ac();
-    const osc = c.createOscillator();
-    const g = c.createGain();
-    osc.type = type; osc.frequency.value = freq;
-    g.gain.setValueAtTime(0, c.currentTime);
-    g.gain.linearRampToValueAtTime(gain, c.currentTime + 0.012);
-    g.gain.exponentialRampToValueAtTime(0.0001, c.currentTime + ms / 1000);
-    osc.connect(g); g.connect(c.destination);
-    osc.start(); osc.stop(c.currentTime + ms / 1000 + 0.02);
+    const gap = 60 / bpm;
+    let next = c.currentTime;
+    const book = () => {
+      // A throttled background tab wakes late: skip the missed beats, never burst them.
+      if (next < c.currentTime) next = c.currentTime;
+      while (next < c.currentTime + 0.1) { tone(c, 1600, 35, 'square', 0.1, next, 0.003); next += gap; }
+    };
+    book();
+    metro = setInterval(book, 25);
   } catch { /* audio unavailable */ }
 }
 
