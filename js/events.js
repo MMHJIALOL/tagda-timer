@@ -2,7 +2,7 @@
    Tagda Timer — WCA event catalogue + scramble mode catalogue
    =========================================================== */
 
-/** All 17 official WCA events. `puzzle` is the cubing.js puzzle id. */
+/** All 17 official WCA events, plus FTO. `puzzle` is the cubing.js puzzle id. */
 export const EVENTS = {
   '333':    { name: '3x3x3',              short: '3x3',    puzzle: '3x3x3' },
   '222':    { name: '2x2x2',              short: '2x2',    puzzle: '2x2x2' },
@@ -21,12 +21,14 @@ export const EVENTS = {
   '444bf':  { name: '4x4 Blindfolded',    short: '4BLD',   puzzle: '4x4x4',   noInspection: true, hideDuringSolve: true, wrap: true },
   '555bf':  { name: '5x5 Blindfolded',    short: '5BLD',   puzzle: '5x5x5',   noInspection: true, hideDuringSolve: true, wrap: true },
   '333mbf': { name: '3x3 Multi-Blind',    short: 'MBLD',   puzzle: '3x3x3',   noInspection: true, hideDuringSolve: true, multi: true, wrap: true },
+  // Unofficial, but cubing.js ships a random-state FTO scrambler and puzzle.
+  'fto':    { name: 'FTO',                short: 'FTO',    puzzle: 'fto',     wrap: true },
 };
 
 export const EVENT_ORDER = [
   '333', '222', '444', '555', '666', '777',
   '333bf', '333fm', '333oh', 'clock', 'minx',
-  'pyram', 'skewb', 'sq1', '444bf', '555bf', '333mbf',
+  'pyram', 'skewb', 'sq1', '444bf', '555bf', '333mbf', 'fto',
 ];
 
 /**

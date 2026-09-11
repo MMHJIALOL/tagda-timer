@@ -3691,7 +3691,7 @@ function eventFromScrType(scrType = '', name = '') {
     ['222', '222'], ['444', '444'], ['555', '555'], ['666', '666'], ['777', '777'],
     ['clk', 'clock'], ['clock', 'clock'], ['mgm', 'minx'], ['minx', 'minx'],
     ['pyr', 'pyram'], ['pyram', 'pyram'], ['skb', 'skewb'], ['skewb', 'skewb'],
-    ['sq1', 'sq1'], ['sqr', 'sq1'], ['333', '333'],
+    ['sq1', 'sq1'], ['sqr', 'sq1'], ['fto', 'fto'], ['333', '333'],
   ];
   for (const [key, ev] of table) if (probe.includes(key)) return ev;
   return '333';
