@@ -1814,6 +1814,202 @@ section('scramble of the day — the one-line note');
     cleared.net.sent[0] === '' && cleared.myNote === '');
 }
 
+/* -------------------------------------------------------------------
+   Scramble of the Day — state races
+
+   Each check below is a bug report reproduced against a stub transport, so
+   the ordering that caused it is pinned down rather than left to network luck.
+   ------------------------------------------------------------------- */
+section('scramble of the day — state races');
+{
+  const { Daily } = await import('./js/daily.js');
+  const { DailyTransport, sotdDoneOn, clearSotdDone } = await import('./js/daily-net.js');
+  const tick = () => new Promise(r => setTimeout(r, 0));
+  const DAY = '2026-09-08';
+  const today = (patch = {}) => ({
+    event: '333', dayId: DAY, uid: 'u1', signedIn: true,
+    scramble: "R U R' U'", scrambleLoaded: true, progress: {}, results: {}, ...patch,
+  });
+  /** A controller whose every scramble request is logged, the way the window would draw it. */
+  const make = (net, settings = {}) => {
+    const shown = [];
+    const ctl = new Daily({
+      settings: { event: '333', inputMode: 'timer', ...settings }, solves: [],
+      nextScramble: () => { shown.push(ctl.takeScramble()); },
+    });
+    ctl.net = { unlockResults() {}, setProgress: () => Promise.resolve(), watch() {}, ...net };
+    ctl._retry = (fn) => fn();   // one try each; the backoff is not what is under test
+    return { ctl, shown };
+  };
+
+  /* The flash. The first snapshot a transport emits is the server-clock offset,
+     before watch() has chosen a day or an event. Asking "have I submitted?" then
+     can only come back "no" — and that "no" was being trusted, so when today's
+     scramble landed a beat later the window armed on it and drew it, and then
+     the real answer arrived and swapped it for "come back after the reset". */
+  {
+    const { ctl, shown } = make({
+      hasOwnResult: () => Promise.resolve(ctl.snap?.event ? true : false),
+    });
+    ctl.engage();
+    ctl._onDay({ ...today(), event: null, dayId: null, scramble: null, scrambleLoaded: false });
+    await tick();
+    ctl._onDay(today());
+    await tick(); await tick();
+    check('an answer about no day and no event is not taken as "not played today"',
+      !shown.some(s => s?.scramble), `shown ${JSON.stringify(shown.map(s => s?.scramble || s?.hold))}`);
+    check('…and the account that already played ends on the done line, never armed',
+      !ctl.attempting && ctl.submittedToday && /already done/.test(shown.at(-1)?.hold || ''));
+  }
+
+  /* The missing scramble. The attempt was only ever armed from _onDay, so when
+     the own-result check was the LAST thing to answer — the ordinary case on a
+     quiet day — the window sat on its placeholder until some unrelated
+     snapshot happened to arrive. */
+  {
+    let answer;
+    const { ctl, shown } = make({ hasOwnResult: () => new Promise(r => { answer = r; }) });
+    ctl.engaged = true;
+    ctl._onDay(today());
+    answer(false);
+    await tick(); await tick();
+    check('once the check says today is still open, the window arms without waiting for another snapshot',
+      ctl.attempting && shown.at(-1)?.scramble === "R U R' U'",
+      `attempting=${ctl.attempting} last=${JSON.stringify(shown.at(-1))}`);
+  }
+
+  /* Redundant reads. Every snapshot — anybody's progress, the offset, the
+     results listener — fired a fresh database read of the same row. */
+  {
+    let reads = 0;
+    const { ctl } = make({ hasOwnResult: () => { reads++; return Promise.resolve(false); } });
+    for (let i = 0; i < 5; i++) ctl._onDay(today({ progress: { ['x' + i]: {} } }));
+    await tick(); await tick();
+    ctl._onDay(today());
+    check('the own-result row is read once per account, day and event — not once per snapshot',
+      reads === 1, `${reads} read(s)`);
+  }
+
+  /* A read that could not be made is not an answer. */
+  {
+    const t = new DailyTransport();
+    t.snap = { event: '333', uid: 'u1' };
+    const unwatched = await t.hasOwnResult();
+    t._dayKey = '1757269800000';
+    t._sdk = { ref: (db, p) => p, get: () => Promise.reject(new Error('offline')) };
+    const failed = await t.hasOwnResult();
+    check('the transport says "unknown", not "no", when it cannot ask or the read fails',
+      unwatched === null && failed === null, `unwatched=${unwatched} failed=${failed}`);
+
+    /* …but a refusal is an answer. `results` is readable only once your own row
+       exists, so for somebody who has not played yet the read is refused — and
+       calling that "unknown" would leave every new player on "Checking…". */
+    t._sdk.get = () => Promise.reject(Object.assign(new Error('permission_denied at /daily'), { code: 'PERMISSION_DENIED' }));
+    const denied = await t.hasOwnResult();
+    check('a read the rules refuse means "not played yet", not "unknown"',
+      denied === false, `denied=${denied}`);
+  }
+
+  /* The save failure. setProgress('done') was awaited before the result and
+     its failure threw straight past the submit, so a flaky progress write cost
+     the time itself — while the window had already said "attempt submitted". */
+  {
+    const sent = [];
+    const { ctl } = make({
+      hasOwnResult: () => Promise.resolve(false),
+      setProgress: (p) => p.status === 'done' ? Promise.reject(new Error('progress refused')) : Promise.resolve(),
+      submitResult: (r) => { sent.push(r); return Promise.resolve(); },
+    });
+    ctl.snap = today();
+    ctl.attempting = true;
+    await ctl.onSolveRecorded({ scramble: "R U R' U'", timeMs: 9000, penalty: 'none' }).catch(() => {});
+    check('a refused progress write does not stop the result being submitted',
+      sent.length === 1 && sent[0].timeMs === 9000, `${sent.length} result write(s)`);
+  }
+
+  /* …and the result goes where the solve was, even if the transport has
+     moved to another event while the progress write was in flight. */
+  {
+    const net = {
+      cur: '333',
+      target() { return { event: this.cur }; },
+      hasOwnResult: () => Promise.resolve(false),
+      setProgress(p, at) { if (p.status === 'done') this.cur = '444'; return Promise.resolve(); },
+      submitResult(r, at) { this.sentTo = (at || this.target()).event; return Promise.resolve(); },
+    };
+    const { ctl } = make(net);
+    ctl.snap = today();
+    ctl.attempting = true;
+    await ctl.onSolveRecorded({ scramble: "R U R' U'", timeMs: 9000, penalty: 'none' }).catch(() => {});
+    check('a result is written to the event it was solved in, not wherever the board has moved since',
+      ctl.net.sentTo === '333', `sent to ${ctl.net.sentTo}`);
+
+    const paths = [];
+    const t = new DailyTransport();
+    t.snap = { event: '444', uid: 'u1' };
+    t._dayKey = '1';
+    t._sdk = { ref: (db, p) => p, set: (p) => { paths.push(p); return Promise.resolve(); },
+      update: (p) => { paths.push(p); return Promise.resolve(); }, serverTimestamp: () => 0 };
+    const at = t.target?.();
+    t._dayKey = '2'; t.snap.event = '333';
+    try { await t.setProgress({ status: 'done' }, at); await t.submitResult({ timeMs: 1 }, at); } catch {}
+    check('the transport writes to the day and event it was handed, not the one it is watching now',
+      paths.length === 2 && paths.every(p => p.startsWith('daily/1/444/')), paths.join(' ') || 'no writes');
+  }
+
+  /* The done note retires the chip and skips the intro. It was written before
+     the result was, so a result that never landed still read as a finished day. */
+  {
+    clearSotdDone();
+    const { ctl } = make({
+      hasOwnResult: () => Promise.resolve(false),
+      submitResult: () => Promise.reject(new Error('refused')),
+    });
+    ctl.snap = today();
+    ctl.attempting = true;
+    await ctl.onSolveRecorded({ scramble: "R U R' U'", timeMs: 9000, penalty: 'none' }).catch(() => {});
+    check('a result that was never accepted does not mark the day as done',
+      !sotdDoneOn(DAY), `note ${sotdDoneOn(DAY)}`);
+    clearSotdDone();
+  }
+
+  /* The intro. Whether to play it was read off that note before the database
+     had answered, so on a fresh browser — or after the note was cleared — the
+     title card played for an account that had already submitted. The window
+     has to be able to wait for the real answer, briefly. */
+  {
+    let answer;
+    const { ctl } = make({ hasOwnResult: () => new Promise(r => { answer = r; }) });
+    ctl._onDay(today());
+    const known = ctl.ownResultKnown?.(2000);
+    const started = Date.now();
+    setTimeout(() => answer(true), 30);
+    await known;
+    check('the window can wait for the own-result answer before deciding on the intro',
+      !!known && ctl.submittedToday && Date.now() - started < 1500,
+      `waited ${Date.now() - started}ms, submittedToday=${ctl.submittedToday}`);
+    clearSotdDone();
+  }
+
+  /* The event bleed. The controller is a singleton and took its event from the
+     timer once, when it was built. Do 4x4's scramble of the day, go back to
+     3x3, open the window again — and it was still on 4x4, handing a 4x4
+     scramble to a 3x3 timer and a 3x3 session until the page was reloaded. */
+  {
+    const watched = [];
+    const { ctl } = make({ hasOwnResult: () => Promise.resolve(false), watch: (e) => watched.push(e) },
+      { event: '444' });
+    ctl.snap = today({ event: '444' });
+    ctl.engage();
+    ctl.disengage();
+    ctl.app.settings.event = '333';
+    ctl.engage();
+    check('entering the window follows the timer’s current event, not the one the controller was built on',
+      ctl.eventId === '333' && watched.at(-1) === '333', `eventId=${ctl.eventId} watched=${watched.join(',')}`);
+    ctl.disengage();
+  }
+}
+
 section('scramble of the day — whose avatar URL is safe to fetch');
 {
   /* A board row is written by somebody else and its `photo` becomes an <img
