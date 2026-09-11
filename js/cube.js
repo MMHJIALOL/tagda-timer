@@ -108,11 +108,11 @@ export class CubeView {
     this.setView(view);
   }
 
-  /** Only 3x3 has a last-layer view, and only cubes have a usable flat net. */
+  /** Only 3x3 has a last-layer view; cubes and FTO have a usable flat net. */
   supports(view) {
     const cube = /^([234567])x\1x\1$/.test(this.puzzle);
     if (view === 'LL' || view === 'LL3') return this.puzzle === '3x3x3';
-    if (view === '2D') return cube;
+    if (view === '2D') return cube || this.puzzle === 'fto';
     return true;
   }
 
@@ -224,5 +224,9 @@ export class CubeView {
     for (const a of ['camera-latitude', 'camera-longitude', 'camera-distance']) {
       this.player.removeAttribute(a);
     }
+    // Removing the attributes alone leaves the camera where the last drag put
+    // it; only an 'auto' request sends it back to the puzzle's default.
+    try { this.player.experimentalModel.twistySceneModel.orbitCoordinatesRequest.set('auto'); }
+    catch { /* older builds */ }
   }
 }
