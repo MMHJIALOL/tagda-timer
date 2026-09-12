@@ -1,5 +1,5 @@
 /* ===========================================================
-   Tagda Timer — panels, controls, overlays, history, charts
+   Tagda Timer Ã¢â‚¬â€ panels, controls, overlays, history, charts
    =========================================================== */
 
 /* ---------------- glass panel ---------------- */
@@ -40,11 +40,11 @@
 .icon-btn.on { color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); border-color: color-mix(in srgb, var(--accent) 34%, transparent); }
 
 /* The box never changes shape between "square icon" and "pill with a name"
-   at the CSS level — .account-box just adds the extra room and lets
+   at the CSS level Ã¢â‚¬â€ .account-box just adds the extra room and lets
    .account-username decide whether there's anything to show; sync-ui.js
    toggles that content, not this rule. Modeled on .seg-btn (same height,
    same border/background treatment) rather than the plain icon squares
-   either side of it, on purpose — a box reads as "this is your thing", a
+   either side of it, on purpose Ã¢â‚¬â€ a box reads as "this is your thing", a
    bare icon among a row of bare icons doesn't. */
 .account-box {
   width: auto; display: flex; align-items: center; padding: 0 10px 0 8px; gap: 7px;
@@ -59,7 +59,7 @@
    ordinary grey: this is the one control in the row that is about today and
    stops being available tonight, and nothing else in the bar has that
    property. Gold is hard-coded rather than themed for the same reason a
-   medal is gold — it is the meaning, not the palette. */
+   medal is gold Ã¢â‚¬â€ it is the meaning, not the palette. */
 .sotd-box {
   width: auto; display: flex; align-items: center; padding: 0 10px 0 8px; gap: 6px;
   border: 1px solid color-mix(in srgb, #f2c14e 42%, transparent);
@@ -69,11 +69,11 @@
   position: relative; overflow: hidden;
 }
 
-/* The shine plays only while there is something to do — `.done` cancels it
+/* The shine plays only while there is something to do Ã¢â‚¬â€ `.done` cancels it
    below, which is the whole of "shine until it is done".
 
    A sweep across the pill rather than a pulsing glow, because the bar sits
-   above a timer people stare at — something that brightens and dims in place
+   above a timer people stare at Ã¢â‚¬â€ something that brightens and dims in place
    is caught by peripheral vision every cycle, whereas a highlight that passes
    and is gone for six seconds is noticed once and then ignored. */
 .sotd-box::after {
@@ -115,7 +115,7 @@
 
    It stays a button. An earlier version hid it entirely, which removed the
    only route back into the window and so made the board you had just earned a
-   place on unreachable until midnight — the way in has to outlive the
+   place on unreachable until midnight Ã¢â‚¬â€ the way in has to outlive the
    invitation. */
 .sotd-box.done {
   border-color: color-mix(in srgb, var(--border) 80%, transparent);
@@ -145,7 +145,7 @@
 
 .seg { display: flex; }
 /* The centre group is `overflow: hidden`, so a picker that does not fit is not
-   truncated — it is cut off mid-button, and the last one disappears entirely.
+   truncated Ã¢â‚¬â€ it is cut off mid-button, and the last one disappears entirely.
    A flex item will not shrink below its content unless told to, and `.seg` is
    the item; `.seg-btn span` already knows how to ellipsis once it is allowed
    to. Without this the row silently loses a picker between 861px and roughly
@@ -283,7 +283,7 @@
 #panel-cube:hover #cube-grip { opacity: .75; }
 
 /* Dismiss, in the corner of the thing being dismissed. Pinned rather than in
-   the flow so it cannot change the widget's measured height — placePreview
+   the flow so it cannot change the widget's measured height Ã¢â‚¬â€ placePreview
    works off that rect, and a row that appeared on hover would have moved the
    rails every time the pointer crossed it. */
 #cube-close {
@@ -315,11 +315,11 @@
   width: 100%; height: 100%; max-height: 100%; min-height: 0;
   /* No `display` here. twisty-player sets `:host { display: grid }` and its
      internal wrapper takes its height from that grid; overriding the host to
-     `block` collapsed the canvas to 150x0 — a correctly sized element with
+     `block` collapsed the canvas to 150x0 Ã¢â‚¬â€ a correctly sized element with
      nothing painted in it, which is why the preview looked dead. */
   /* Graded to match the rendered logo, which is the look worth having: the
-     library gives no hook for sticker colours or materials — those are baked
-     into its own shaders — so the grade happens on the composited output
+     library gives no hook for sticker colours or materials Ã¢â‚¬â€ those are baked
+     into its own shaders Ã¢â‚¬â€ so the grade happens on the composited output
      instead. Saturation and contrast turn its flat sticker colours into the
      logo's glossy plastic, and the heavier shadow sits the cube on something
      rather than floating it. */
@@ -343,7 +343,7 @@
   background: color-mix(in srgb, var(--surface) 55%, transparent);
   border: 1px solid color-mix(in srgb, var(--border) 65%, transparent);
   backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
-  /* Was opacity:0 until hover, on a panel that could not be hovered — which is
+  /* Was opacity:0 until hover, on a panel that could not be hovered Ã¢â‚¬â€ which is
      how the 2D/3D switch went missing. It is always readable now. */
   opacity: .62; pointer-events: auto;
   transition: opacity var(--dur) var(--ease);
@@ -352,7 +352,7 @@
 
 /* Lives here, not in base.css: components.css loads later, and an equally
    specific rule in the earlier file loses regardless of the media query. */
-/* Floating and draggable, the same as on a desktop — it is a preview you park
+/* Floating and draggable, the same as on a desktop Ã¢â‚¬â€ it is a preview you park
    where it suits the way you hold the phone, and pinning it into the document
    flow took a whole row away from the timer for something 80px tall.
    What it must not do is sit on the scramble, which is what `top: 54px` did:
@@ -367,7 +367,7 @@
     bottom: calc(34vh + 22px);
   }
   #cube-holder { height: calc(clamp(64px, 17vw, 88px) * var(--cube-scale)); }
-  /* Both of these were revealed on hover, on a device that has none — which
+  /* Both of these were revealed on hover, on a device that has none Ã¢â‚¬â€ which
      left the widget with no visible way to move it and no visible 2D/3D
      switch. The grip is also a touch target now, not a 34x13 sliver. */
   #cube-grip { opacity: .55; width: 52px; height: 20px; }
@@ -376,7 +376,7 @@
   .view-toggle { opacity: 1; }
 
   /* Expanded, the stats tile is 46vh rather than 34, and the preview was left
-     floating on top of it. Only while it is still parked in its corner — once
+     floating on top of it. Only while it is still parked in its corner Ã¢â‚¬â€ once
      dragged it is wherever you put it. */
   #app:has(#panel-stats[data-collapsed="false"]) #panel-cube:not([data-placed]) {
     bottom: calc(46vh + 22px);
@@ -387,7 +387,7 @@
 /* A phone on its side has ~375px of height for everything. The preview is the
    first thing to go: it is the one piece here you can rebuild in your head from
    the scramble two rows above it. (Here rather than base.css for the same
-   reason as the block above — `display: flex` is declared in this file.) */
+   reason as the block above Ã¢â‚¬â€ `display: flex` is declared in this file.) */
 @media (max-width: 940px) and (max-height: 500px) and (orientation: landscape) {
   #panel-cube { display: none; }
 }
@@ -411,7 +411,7 @@
      each label sits over its numbers rather than near them. Content-sized
      `auto` could not do that: the heading's letters and a row's "13.66" are
      different widths, and on a narrow sidebar they drifted a good 20px apart.
-     Wide enough for a minutes-long average at any times-list scale — and a
+     Wide enough for a minutes-long average at any times-list scale Ã¢â‚¬â€ and a
      touch narrower than when it was the only one, because two of them have to
      fit beside the times in a sidebar nobody widened. */
   --ao-col: calc(2.9rem * var(--times-scale));
@@ -437,7 +437,7 @@
      can have a hover background that reaches the panel edge. Matching that here
      is what makes the labels line up with the columns rather than sit 9px off. */
   margin: 0 calc(var(--pad) * -0.5);
-  /* The extra right pad is the list's scrollbar, measured at render time —
+  /* The extra right pad is the list's scrollbar, measured at render time Ã¢â‚¬â€
      without it every heading sits a scrollbar-width right of its column. */
   /* +1px for the 1px transparent border a .solve-chip carries so that its
      hover outline can appear without the row jumping. That border is inside
@@ -467,7 +467,7 @@
 }
 .hist-cols [data-sort]:hover { color: var(--text); }
 .hist-cols [data-sort].sorted { color: var(--accent); }
-.hist-cols [data-sort].sorted::after { content: ' ▲'; font-size: .8em; }
+.hist-cols [data-sort].sorted::after { content: ' Ã¢â€“Â²'; font-size: .8em; }
 
 /* An average column heading: which average, and a pencil to change it. Right
    aligned as one unit so "ao12" still ends over its numbers with the pencil
@@ -532,7 +532,7 @@
    over each other are worse than one that ends early. */
 .solve-chip .t   { text-align: left; min-width: 0; overflow: hidden; }
 .solve-chip .tag { font-size: .6rem; color: var(--text-faint); letter-spacing: .06em; }
-/* A running average up to this solve. Quieter than the time itself — it is
+/* A running average up to this solve. Quieter than the time itself Ã¢â‚¬â€ it is
    context, not the number you just set. */
 .solve-chip .avg {
   font-size: calc(.72rem * var(--times-scale));
@@ -543,7 +543,7 @@
   padding: 1px 5px; border-radius: 5px;
 }
 /* An average is a way in, not just a readout: pressing one opens the solves
-   behind that particular average — the ones in the middle of a session that
+   behind that particular average Ã¢â‚¬â€ the ones in the middle of a session that
    were previously unreachable, since only "current" and "best" had a door. */
 .solve-chip .avg.open { cursor: pointer; }
 .solve-chip .avg.open:hover,
@@ -568,7 +568,7 @@
 .solve-chip.plus2 { color: var(--warn); }
 .solve-chip.best-in-avg  { box-shadow: inset 2px 0 0 color-mix(in srgb, var(--ok) 75%, transparent); }
 .solve-chip.removing { animation: chipOut 220ms var(--ease) forwards; }
-/* A small dot after the time on any solve with a phase breakdown — the only
+/* A small dot after the time on any solve with a phase breakdown Ã¢â‚¬â€ the only
    hint, otherwise, that clicking the row opens more than the penalty menu. */
 .solve-chip.has-phases .t::after {
   content: ''; display: inline-block; width: 4px; height: 4px; border-radius: 50%;
@@ -632,7 +632,7 @@
 }
 /* Expanded, the figures scroll rather than being cut off.
    #stats-inner is `overflow: hidden` because that is what makes the 0fr
-   collapse animate cleanly — but it also meant that anywhere the panel was
+   collapse animate cleanly Ã¢â‚¬â€ but it also meant that anywhere the panel was
    shorter than its contents (which on a phone is always) the bottom of the
    grid was simply chopped, with no way to reach it. Scrolling is only turned
    on for the open state, so the collapse still animates against a clipped box.
@@ -707,7 +707,7 @@
   display: flex; align-items: center; justify-content: space-between; gap: 14px;
   min-height: 34px;
 }
-/* :not(.switch) matters — a bare `.row > label` beats `.switch { flex: none }`
+/* :not(.switch) matters Ã¢â‚¬â€ a bare `.row > label` beats `.switch { flex: none }`
    on specificity and stretches the toggle into a slider-looking bar. */
 .row > label:not(.switch), .row > .lbl { font-size: .84rem; color: var(--text-dim); flex: 1; min-width: 0; }
 .row .sub { display: block; font-size: .72rem; color: var(--text-faint); margin-top: 1px; }
@@ -823,7 +823,7 @@ input[type="range"]::-moz-range-thumb {
   letter-spacing: .17em; text-transform: uppercase; color: var(--text-faint);
 }
 .pop-cols { display: grid; grid-template-columns: repeat(2, 1fr); gap: 2px; }
-/* A past solve's phase breakdown, dropped into the solve menu — the same
+/* A past solve's phase breakdown, dropped into the solve menu Ã¢â‚¬â€ the same
    chips the post-solve zone uses, just reached from an older row. */
 .pop-phases { padding: 2px 10px 8px; justify-content: flex-start; }
 
@@ -911,22 +911,22 @@ input[type="range"]::-moz-range-thumb {
 #creator-chip .ig { width: 14px; height: 14px; flex: none; }
 #creator-chip:hover .ig { color: var(--accent); }
 #creator-chip i { font-style: normal; opacity: .6; margin-right: 2px; }
-/* Pinned bottom-left, which below 860px is where the two tiles reach — it sat
+/* Pinned bottom-left, which below 860px is where the two tiles reach Ã¢â‚¬â€ it sat
    on the times column headings at phone width, on the trend chart at tablet
    width, and on the stats panel in landscape. The credit is in the About panel,
    where it can be read rather than squinted past.
    Has to come after the rules above, not in either mobile block further up this
-   file, or the `display: flex` a few lines back simply wins — which is exactly
+   file, or the `display: flex` a few lines back simply wins Ã¢â‚¬â€ which is exactly
    why the landscape version of this rule never did anything. */
 @media (max-width: 860px),
        (max-width: 940px) and (max-height: 500px) and (orientation: landscape) {
   #creator-chip { display: none; }
 }
 
-/* ---------------- mobile topbar menu (§1.1) ---------------- */
+/* ---------------- mobile topbar menu (Ã‚Â§1.1) ---------------- */
 /* Eight icon buttons is fine on a laptop and impossible on a phone. Below the
    breakpoint this file already uses, they fold behind one button and come back
-   as a labelled list — the label is each button's own `title`, so no button
+   as a labelled list Ã¢â‚¬â€ the label is each button's own `title`, so no button
    needed a second copy of its own name in the markup. */
 #btn-menu { display: none; }
 
@@ -942,7 +942,8 @@ input[type="range"]::-moz-range-thumb {
   .topbar-right.open {
     display: flex; flex-direction: column; align-items: stretch; gap: 2px;
     position: absolute; top: calc(100% + 8px); right: 0; z-index: 60;
-    min-width: 210px; padding: 6px; border-radius: var(--radius-sm);
+    min-width: 210px; max-width: calc(100vw - 24px); padding: 6px;
+    max-height: calc(100vh - 72px); overflow-y: auto; border-radius: var(--radius-sm);
     background: color-mix(in srgb, var(--surface) 92%, transparent);
     border: 1px solid var(--border);
     backdrop-filter: blur(var(--panel-blur)); -webkit-backdrop-filter: blur(var(--panel-blur));
@@ -956,10 +957,19 @@ input[type="range"]::-moz-range-thumb {
     display: flex; align-items: center; justify-content: flex-start; gap: 11px;
     padding: 9px 11px; border-color: transparent; background: none;
   }
+  /* The touch-target rule further down also owns `.icon-btn::after`, and it
+     absolutely centres that box on the button. It loses `content` to this
+     more specific rule but keeps the positioning, which is what stacked every
+     label on top of its own icon on a phone. Put the label back in flow. */
   .topbar-right.open .icon-btn::after {
     content: attr(title);
+    position: static; transform: none; width: auto; height: auto;
     font-size: .8rem; font-weight: 550; color: var(--text); white-space: nowrap;
   }
+  /* SOTD already carries a visible label span, and its ::after is the shine
+     sweep -- it wants neither a second name nor a stray gold block in a list. */
+  .topbar-right.open .sotd-box { overflow: visible; }
+  .topbar-right.open .sotd-box::after { content: none; }
   .topbar-right.open .icon-btn:hover { background: color-mix(in srgb, var(--text) 8%, transparent); }
   #btn-menu.on { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 34%, transparent); }
 }
@@ -1024,13 +1034,13 @@ input[type="range"]::-moz-range-thumb {
 
 /* Sideways scrolling alone was not enough. Once the icon buttons and the brand
    had taken their width there were ~60px left for the centre group to scroll
-   inside — a slot too narrow to read one picker in, let alone four. Give the
+   inside Ã¢â‚¬â€ a slot too narrow to read one picker in, let alone four. Give the
    pickers a row of their own instead: the brand and the icons keep the first
    line, the pickers get the full width of the second and still scroll if a
    long session name overruns it.
 
    The threshold was 620px when there were three pickers. Four of them at full
-   width, plus the wordmark and the icon row, need about 1040px on one line —
+   width, plus the wordmark and the icon row, need about 1040px on one line Ã¢â‚¬â€
    below that the last picker was being cut in half by the centre group's
    `overflow: hidden`, on an ordinary laptop window. Two rows there rather than
    a button nobody can read or reach. */
@@ -1260,7 +1270,7 @@ input[type="range"]::-moz-range-thumb {
   width: 14px; height: 3px; border-radius: 2px; flex: none;
   background: var(--lg-color);
 }
-/* The dash pattern is the second channel — the same one the line uses — so the
+/* The dash pattern is the second channel Ã¢â‚¬â€ the same one the line uses Ã¢â‚¬â€ so the
    key still reads when the two colours are hard to tell apart. */
 .lg-swatch[data-dash="dashed"] {
   background: repeating-linear-gradient(to right,
@@ -1600,7 +1610,7 @@ input[type="range"]::-moz-range-thumb {
 }
 #mascot-bar button:hover { color: var(--text); background: color-mix(in srgb, var(--text) 12%, transparent); }
 #mascot-close:hover { color: var(--danger) !important; background: color-mix(in srgb, var(--danger) 16%, transparent) !important; }
-/* He is a toy, not part of the timer — he leaves during a solve like everything else. */
+/* He is a toy, not part of the timer Ã¢â‚¬â€ he leaves during a solve like everything else. */
 body.focus #mascot { opacity: 0; pointer-events: none; transition: opacity 220ms var(--ease); }
 
 /* the brand is a <button> now */
@@ -1609,7 +1619,7 @@ body.focus #mascot { opacity: 0; pointer-events: none; transition: opacity 220ms
 .brand-mark { transition: transform var(--dur) var(--ease-back); }
 
 /* ===========================================================
-   Custom scramble list · manual entry · Stackmat · share card
+   Custom scramble list Ã‚Â· manual entry Ã‚Â· Stackmat Ã‚Â· share card
    =========================================================== */
 
 /* ---------------- the "these are your own scrambles" bar ---------------- */
@@ -1792,13 +1802,13 @@ body.focus #mascot { opacity: 0; pointer-events: none; transition: opacity 220ms
    talks about the spacebar has no business being on screen. */
 body[data-input="manual"] #timer-hint,
 body[data-input="stackmat"] #timer-hint { display: none; }
-/* Focus mode clears the page around the digits — but not the field you are
+/* Focus mode clears the page around the digits Ã¢â‚¬â€ but not the field you are
    typing into, and not the connection status you are watching. */
 body.focus #manual-entry,
 body.focus #stackmat-bar { opacity: 1; }
 
 /* The bottom of the times strip, once it has scrolled all the way back to the
-   first solve of the session — so "nothing more is loading" is stated rather
+   first solve of the session Ã¢â‚¬â€ so "nothing more is loading" is stated rather
    than guessed at. */
 .hist-end {
   padding: 12px 4px 8px;
@@ -1823,7 +1833,7 @@ body.focus #stackmat-bar { opacity: 1; }
 }
 
 /* The confetti canvas sits below the toasts, and a toast blurs whatever is
-   behind it — so a moving canvas means re-blurring its backdrop every frame,
+   behind it Ã¢â‚¬â€ so a moving canvas means re-blurring its backdrop every frame,
    right when the celebration is already the busiest thing on screen. The blur
    is decoration; the celebration is the point. */
 body.celebrating .toast {
@@ -1833,7 +1843,7 @@ body.celebrating .toast {
 }
 
 /* ---- reconstruct, one click from the times list ----
-   It used to ride *over* the ao5 on hover, hiding it — which quietly made the
+   It used to ride *over* the ao5 on hover, hiding it Ã¢â‚¬â€ which quietly made the
    ao5 unclickable with a mouse, since the pointer that reveals the button is
    the same pointer that would have pressed the number underneath it. It has a
    column of its own now: 20px, always reserved so nothing shifts, with the
@@ -1851,7 +1861,7 @@ body.celebrating .toast {
 .solve-chip:hover .chip-recon,
 .chip-recon:focus-visible { opacity: 1; pointer-events: auto; }
 .chip-recon:hover { filter: brightness(1.12); }
-/* No hover on a touch screen, and a permanent button would crowd every row —
+/* No hover on a touch screen, and a permanent button would crowd every row Ã¢â‚¬â€
    the solve menu carries the same entry there, so the column goes too. */
 @media (hover: none) {
   .chip-recon { display: none; }
@@ -1911,10 +1921,10 @@ body.celebrating .toast {
 .tile-grip:active { cursor: grabbing; }
 
 /* The list inside a panel must not replay its entry animation every time the
-   panel changes parent — see tiles.js. */
+   panel changes parent Ã¢â‚¬â€ see tiles.js. */
 body.tiles-moving .solve-chip { animation: none; }
 
-/* Nothing to drag below the mobile breakpoint — see tilesEnabled() in
+/* Nothing to drag below the mobile breakpoint Ã¢â‚¬â€ see tilesEnabled() in
    tiles.js, which uses the same width. */
 @media (max-width: 860px) {
   .tile-grip { display: none; }
@@ -1946,11 +1956,11 @@ body.tiles-moving .solve-chip { animation: none; }
 /* Full width and centred with flexbox rather than `left: 50%` plus a
    translate. A transform makes an element the containing block for every
    `position: fixed` descendant, and a tile being dragged out of this bar is
-   exactly that — with the transform here, its viewport coordinates were
+   exactly that Ã¢â‚¬â€ with the transform here, its viewport coordinates were
    resolved against the bar instead and it shot off to the side of the screen
    the moment you picked it up. */
 #dock-bottom {
-  /* Exactly the strip the snap outline promises — between the two rails, not
+  /* Exactly the strip the snap outline promises Ã¢â‚¬â€ between the two rails, not
      the whole viewport. Full width ran the bar on underneath the rail panels
      and the scramble preview. --dock-x/--dock-w come from bottomZone() in
      tiles.js, the same measurement that draws the outline. */
@@ -1963,7 +1973,7 @@ body.tiles-moving .solve-chip { animation: none; }
   right: auto;
   /* Stacked rows, not a row of cards. Two tiles sharing the width meant two
      half-width strips, and half a screen is not enough for eight figures *or*
-     for a player — the whole reason to be down here is the full width. The
+     for a player Ã¢â‚¬â€ the whole reason to be down here is the full width. The
      player ends up on the bottom row, which is where a player bar belongs. */
   display: flex; flex-direction: column; align-items: stretch; gap: 10px;
   padding: 0 12px;
@@ -1975,7 +1985,7 @@ body.tiles-moving .solve-chip { animation: none; }
    read. */
 #dock-bottom > * { pointer-events: auto; flex: 0 0 auto; min-width: 0; width: auto; }
 /* A player bar belongs at the very bottom of the screen, under anything else
-   docked down here. Only in the bar — the rails keep their own stacking. */
+   docked down here. Only in the bar Ã¢â‚¬â€ the rails keep their own stacking. */
 #dock-bottom > #panel-spotify { order: 2; }
 /* The strip is a good deal narrower than the window now that it sits between
    the rails, so what fits in it is a question about the strip, not about the
@@ -2022,7 +2032,7 @@ body.tiles-moving .solve-chip { animation: none; }
   border-left: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
   padding-left: 14px;
 }
-/* Collapsed, the peek row is the whole panel — let it use the width instead of
+/* Collapsed, the peek row is the whole panel Ã¢â‚¬â€ let it use the width instead of
    wrapping into three cramped lines. Scoped to the collapsed state on purpose:
    `[data-collapsed="false"] .stats-peek { display: none }` has exactly the same
    specificity as this rule, so an unscoped version simply won it by coming
@@ -2033,7 +2043,7 @@ body.tiles-moving .solve-chip { animation: none; }
 #panel-stats[data-dock="bottom"][data-collapsed="true"] .stats-peek > span:nth-child(n + 4) { display: flex; }
 
 /* Below the point where a row of eight figures stops being readable, drop the
-   trailing blocks rather than squeezing everything — measured against the bar
+   trailing blocks rather than squeezing everything Ã¢â‚¬â€ measured against the bar
    itself, not the window. */
 @container dockbar (max-width: 1020px) {
   #panel-stats[data-dock="bottom"] .mini-chart-wrap { display: none; }
@@ -2044,12 +2054,12 @@ body.tiles-moving .solve-chip { animation: none; }
 body.focus #dock-bottom, body.focus #tile-float-layer { opacity: 0; pointer-events: none; }
 #dock-bottom, #tile-float-layer { transition: opacity 420ms var(--ease) 40ms; }
 
-/* How much room the bar is actually taking, measured and written by tiles.js —
+/* How much room the bar is actually taking, measured and written by tiles.js Ã¢â‚¬â€
    its height depends on what is docked in it, and a guessed constant would be
    wrong for every combination but one. Everything anchored to the bottom of the
    screen steps up by it, rather than being buried underneath. */
 /* Each rail stops above whichever of the two things below it reaches higher:
-   the credit chip (left rail only — that is the corner it sits in) or the
+   the credit chip (left rail only Ã¢â‚¬â€ that is the corner it sits in) or the
    bottom bar. Both measured rather than assumed: the chip's own position moves
    when the bar is occupied, and a flat 36px left it clipping the last panel in
    the rail by a few pixels.
@@ -2057,7 +2067,7 @@ body.focus #dock-bottom, body.focus #tile-float-layer { opacity: 0; pointer-even
    The scramble preview is normally NOT one of them: reserving room for it cost
    the solve list a chunk of its height permanently, whether or not the two were
    anywhere near each other, so it moves aside instead. --cube-clear-* is only
-   ever non-zero in the one case where it cannot — a panel in each rail, both
+   ever non-zero in the one case where it cannot Ã¢â‚¬â€ a panel in each rail, both
    reaching down into its corner, so there is no free side to move to. See
    placePreview() in tiles.js. */
 @media (min-width: 861px) {
@@ -2070,7 +2080,7 @@ body.focus #dock-bottom, body.focus #tile-float-layer { opacity: 0; pointer-even
 }
 /* Both of these live in bottom corners, outside the strip the bar occupies, so
    normally neither moves at all. The variables are zero unless the bar really
-   is in front of them — a rail switched off and the bar widening into that
+   is in front of them Ã¢â‚¬â€ a rail switched off and the bar widening into that
    corner, or a phone where it spans the screen. */
 #creator-chip { bottom: max(14px, calc(var(--dock-clear-chip, 0px) + 6px)); }
 @media (min-width: 861px) {
@@ -2081,8 +2091,8 @@ body.focus #dock-bottom, body.focus #tile-float-layer { opacity: 0; pointer-even
 /* The escape hatch: placePreview() flips this on only while the preview's usual
    corner is occupied and this one is not. */
 #panel-cube[data-side="left"] { right: auto; left: 18px; }
-/* ...and when both corners are occupied — a race panel down the right rail and
-   the solve list down the left — the empty strip between the two rails, which
+/* ...and when both corners are occupied Ã¢â‚¬â€ a race panel down the right rail and
+   the solve list down the left Ã¢â‚¬â€ the empty strip between the two rails, which
    is the timer's own floor. --cube-x is measured and written by placePreview. */
 #panel-cube[data-side="centre"] { right: auto; left: var(--cube-x, 50%); }
 @media (max-width: 860px) {
@@ -2128,8 +2138,8 @@ body.focus #dock-bottom, body.focus #tile-float-layer { opacity: 0; pointer-even
 /* =========================================================
    NOW PLAYING, LAID ON ITS SIDE
 
-   The same panel that lives in a rail — same markup, same handlers, same
-   features — rearranged into one row when it is docked across the bottom.
+   The same panel that lives in a rail Ã¢â‚¬â€ same markup, same handlers, same
+   features Ã¢â‚¬â€ rearranged into one row when it is docked across the bottom.
    There is deliberately no second player widget: one that "looks like a bar"
    but reimplements half the controls is two things to keep in step, and the
    half it reimplemented is the half that went missing.
@@ -2137,7 +2147,7 @@ body.focus #dock-bottom, body.focus #tile-float-layer { opacity: 0; pointer-even
 /* Laid out the way a music player's bar is: the record on the left, and one
    centred column holding the transport with the scrubber directly beneath it.
    A grid rather than a row, because the two centre pieces are siblings in the
-   markup — the rail version stacks them in a column and this has to reuse that
+   markup Ã¢â‚¬â€ the rail version stacks them in a column and this has to reuse that
    same markup, so the layout does the arranging instead of a wrapper element. */
 #panel-spotify[data-dock="bottom"] {
   display: grid;
@@ -2147,7 +2157,7 @@ body.focus #dock-bottom, body.focus #tile-float-layer { opacity: 0; pointer-even
   column-gap: 18px; row-gap: 5px;
   padding: 9px 20px;
   /* The cover's own two colours, washed across the bar the way the album
-     header of a music player is — see paintBarTint() in main.js. Falls back to
+     header of a music player is Ã¢â‚¬â€ see paintBarTint() in main.js. Falls back to
      the accent pair, so it looks deliberate before anything is playing and
      when the artwork refuses to be read. */
   background:
@@ -2159,7 +2169,7 @@ body.focus #dock-bottom, body.focus #tile-float-layer { opacity: 0; pointer-even
 }
 [data-motion="off"] #panel-spotify[data-dock="bottom"] { transition: none; }
 
-/* "NOW PLAYING · playing" is a heading for a card in a column. In a bar the
+/* "NOW PLAYING Ã‚Â· playing" is a heading for a card in a column. In a bar the
    artwork and the play button already say both of those things. */
 #panel-spotify[data-dock="bottom"] .panel-head { display: none; }
 
@@ -2173,7 +2183,7 @@ body.focus #dock-bottom, body.focus #tile-float-layer { opacity: 0; pointer-even
 }
 #panel-spotify[data-dock="bottom"] .np-art-wrap { width: 46px; height: 46px; }
 #panel-spotify[data-dock="bottom"] .np-title { font-size: .84rem; }
-/* The two colours pulled out of this cover stay — they are the point of the
+/* The two colours pulled out of this cover stay Ã¢â‚¬â€ they are the point of the
    whole album-tint feature, not decoration to be dropped for a few pixels. */
 #panel-spotify[data-dock="bottom"] .np-swatches { margin-top: 3px; }
 
@@ -2187,7 +2197,7 @@ body.focus #dock-bottom, body.focus #tile-float-layer { opacity: 0; pointer-even
 }
 #panel-spotify[data-dock="bottom"] .np-progress .np-bar { flex: 1 1 auto; height: 4px; }
 /* `display: contents` dissolves the times wrapper so its two figures become
-   siblings of the bar, and `order` puts the elapsed one in front of it —
+   siblings of the bar, and `order` puts the elapsed one in front of it Ã¢â‚¬â€
    elapsed | scrubber | duration, without touching the markup the rail version
    depends on. */
 #panel-spotify[data-dock="bottom"] .np-times { display: contents; }
@@ -2217,15 +2227,15 @@ body.focus #dock-bottom, body.focus #tile-float-layer { opacity: 0; pointer-even
 }
 
 /* The session bests open the same drawer the stat grid does, so they get the
-   same affordance — they used to be figures you could read but not follow. */
+   same affordance Ã¢â‚¬â€ they used to be figures you could read but not follow. */
 .bst { cursor: pointer; }
 
 /* ===========================================================
    RACE MODE
 
    Two jobs that pull in opposite directions. While you are still solving
-   the panel has to convey pressure — how much of the room is already
-   done — while giving away nothing at all about how fast any of them
+   the panel has to convey pressure Ã¢â‚¬â€ how much of the room is already
+   done Ã¢â‚¬â€ while giving away nothing at all about how fast any of them
    were. The moment you finish it becomes a leaderboard and everything
    unlocks at once. That switch is the whole visual design.
    =========================================================== */
@@ -2248,19 +2258,19 @@ body.focus #dock-bottom, body.focus #tile-float-layer { opacity: 0; pointer-even
   letter-spacing: .14em; color: var(--accent);
 }
 /* The rail is a fixed-height flex column, so when it runs out of room it
-   COMPRESSES this panel rather than scrolling — and a compressed flex column
+   COMPRESSES this panel rather than scrolling Ã¢â‚¬â€ and a compressed flex column
    pushes whatever sits at its end straight out of the box. That end is the
    room controls, so a long enough chat log walked "Leave room" off the bottom
    of the screen.
 
    The rule that prevents it: everything in the body holds its natural height
    except the chat, which is the one part that can afford to give. min-height:0
-   is what actually permits the shrink — flex items refuse to go below their
+   is what actually permits the shrink Ã¢â‚¬â€ flex items refuse to go below their
    content without it, which is why the overflow had to go somewhere. */
 /* NOT a scroll container, deliberately, and this is the subtle one.
    `overflow-y: auto` here looks like a safe backstop and is the opposite: an
    overflow container is free to be as tall as its content, so flex stops
-   compressing what is inside it — the chat log below never shrank again, the
+   compressing what is inside it Ã¢â‚¬â€ the chat log below never shrank again, the
    panel simply grew past its rail, and the controls got clipped instead of
    pushed. Leaving overflow alone is what keeps the shrink working. */
 #panel-race { min-height: 0; }
@@ -2269,13 +2279,13 @@ body.focus #dock-bottom, body.focus #tile-float-layer { opacity: 0; pointer-even
   min-height: 0;
 }
 #panel-race .race-body > * { flex: none; }
-/* An explicit floor, not `0` and not `auto` — both were tried and both were
+/* An explicit floor, not `0` and not `auto` Ã¢â‚¬â€ both were tried and both were
    wrong in opposite directions.
    `0` let this box shrink below its own contents: the log and composer spilled
    out while the controls were placed against the collapsed box, so the buttons
    painted on top of the messages.
    `auto` is meant to resolve to the content-based minimum, but through a
-   scrolling child it resolved to the box's FULL height — so it refused to
+   scrolling child it resolved to the box's FULL height Ã¢â‚¬â€ so it refused to
    shrink at all and the panel overflowed its rail instead.
    96px is the composer, the log's own 44px floor and the header, added up: low
    enough to give the panel room, high enough that nothing folds through. */
@@ -2354,7 +2364,7 @@ body.focus #dock-bottom, body.focus #tile-float-layer { opacity: 0; pointer-even
 .race-name > b {
   font-weight: 600; color: var(--text);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  /* A floor, so a crowded row truncates to "Cuber…" rather than collapsing
+  /* A floor, so a crowded row truncates to "CuberÃ¢â‚¬Â¦" rather than collapsing
      to a sliver. In a 200px rail something has to give, and an ellipsis is
      a far better answer than a name nobody can read at all. */
   min-width: 2.8em;
@@ -2403,7 +2413,7 @@ body.focus #dock-bottom, body.focus #tile-float-layer { opacity: 0; pointer-even
   margin-top: 8px; padding-top: 8px;
   border-top: 1px solid var(--border);
 }
-/* A label, not a control. The chat does not fold — see the note in the
+/* A label, not a control. The chat does not fold Ã¢â‚¬â€ see the note in the
    constructor in race.js for why the fold was removed rather than fixed. */
 .race-chat-head {
   display: flex; align-items: center; gap: 6px;
@@ -2453,7 +2463,7 @@ body.focus #dock-bottom, body.focus #tile-float-layer { opacity: 0; pointer-even
 .race-emoji {
   /* Floated over the log rather than wedged into the column.
      Inline, it was ~50px of layout the panel had to find from somewhere, and
-     what it took it from was the room controls — opening the tray pushed the
+     what it took it from was the room controls Ã¢â‚¬â€ opening the tray pushed the
      buttons into the composer. A transient popup should not reflow the panel
      it opens in, so it costs no height at all now and the layout underneath
      does not move when it appears. */
@@ -2580,7 +2590,7 @@ body.focus #dock-bottom, body.focus #tile-float-layer { opacity: 0; pointer-even
 .race-row[data-state="solving"] .race-av { animation: race-pulse 1.6s ease-in-out infinite; }
 
 /* Somebody is done and you are not. Deliberately the loudest thing on the
-   panel while carrying not one digit about how fast they were — that is
+   panel while carrying not one digit about how fast they were Ã¢â‚¬â€ that is
    the entire feeling the mode is built on. */
 .race-row[data-state="locked"] {
   background: color-mix(in srgb, var(--accent) 8%, transparent);
@@ -2683,7 +2693,7 @@ body.focus #dock-bottom, body.focus #tile-float-layer { opacity: 0; pointer-even
    tiles.js switches dragging off under 860px, so there is nowhere
    sensible to park this and the rails are two short strips under the
    timer. It becomes a sheet across the foot of the screen instead,
-   folded to its own header until it is tapped — and folded, that header
+   folded to its own header until it is tapped Ã¢â‚¬â€ and folded, that header
    still answers the only two questions a phone has room for: which room,
    and how much of it is already done. */
 @media (max-width: 860px) {
@@ -2729,7 +2739,7 @@ body.focus #dock-bottom, body.focus #tile-float-layer { opacity: 0; pointer-even
 #btn-bld-toggle:hover { color: var(--text); border-color: var(--accent); }
 
 /* Out of the flow on purpose. In it, opening the breakdown made the scramble
-   row taller, and a taller row pushed both sidebars down the screen — the
+   row taller, and a taller row pushed both sidebars down the screen Ã¢â‚¬â€ the
    panel you asked for should not move the rest of the page. It hangs under
    the bar instead, and bldFit() in main.js is what keeps it off the digits. */
 #bld-panel {
@@ -2762,7 +2772,7 @@ body.focus #dock-bottom, body.focus #tile-float-layer { opacity: 0; pointer-even
   transition: border-color var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
 }
 .bld-chip:hover { border-color: var(--accent); transform: translateY(-1px); }
-/* A lone trailing target is not a pair — say so with the shape, not a label. */
+/* A lone trailing target is not a pair Ã¢â‚¬â€ say so with the shape, not a label. */
 .bld-chip.odd { border-style: dashed; color: var(--warn); }
 
 .bld-l { position: relative; }
@@ -2791,7 +2801,7 @@ body.focus #dock-bottom, body.focus #tile-float-layer { opacity: 0; pointer-even
 .bld-badge.parity { color: var(--bg); background: var(--warn); }
 .bld-note { flex: 1; font-size: .7rem; color: var(--text-faint); line-height: 1.5; }
 /* In the bar next to the toggle, so the letters and the settings that decide
-   them are never more than one click apart — including while the panel is
+   them are never more than one click apart Ã¢â‚¬â€ including while the panel is
    still collapsed. */
 #btn-bld-settings { padding: 5px 8px; border-radius: 99px; border: 1px solid var(--border); color: var(--text-dim); }
 #btn-bld-settings:hover { color: var(--text); border-color: var(--accent); }
@@ -2804,7 +2814,7 @@ body.focus #dock-bottom, body.focus #tile-float-layer { opacity: 0; pointer-even
    Written twice because the timer is positioned two different ways. Above the
    mobile breakpoint it is `fixed` and centred, so the nudge is added to the
    50%. Below it the timer sits in the flow as `relative`, where a bare `top`
-   is already an offset from where it landed — and where `50%` would resolve
+   is already an offset from where it landed Ã¢â‚¬â€ and where `50%` would resolve
    against the containing block and throw it off the page. */
 #timer-core { top: var(--bld-shift, 0px); }
 @media (min-width: 861px) {
@@ -2828,7 +2838,7 @@ body.focus #dock-bottom, body.focus #tile-float-layer { opacity: 0; pointer-even
 /* ---------------- multiphase (cstimer-style N-way split) ---------------- */
 /* Live readout while running: a stacked cumulative/delta list at the clock's
    corner, exactly where csTimer puts it. Purely confirmation that a press
-   landed — the digits stay the thing you are actually reading. */
+   landed Ã¢â‚¬â€ the digits stay the thing you are actually reading. */
 #phase-live {
   position: absolute; top: 0; left: 100%; margin-left: 24px;
   display: flex; flex-direction: column; align-items: flex-start; gap: 3px;
@@ -2849,7 +2859,7 @@ body.focus #dock-bottom, body.focus #tile-float-layer { opacity: 0; pointer-even
 }
 
 /* Post-solve breakdown. Same collapsed-by-default shape as #bld-zone, and
-   deliberately not the same panel — a blind solve is never a multiphase one
+   deliberately not the same panel Ã¢â‚¬â€ a blind solve is never a multiphase one
    (syncPhaseZoneVisibility keeps the two mutually exclusive), so there is
    never a reason to show both at once. */
 #phase-zone {
@@ -2955,7 +2965,7 @@ body.focus #dock-bottom, body.focus #tile-float-layer { opacity: 0; pointer-even
 .me-trend i { flex: 1; min-width: 2px; background: var(--warn); opacity: .75; border-radius: 1px; }
 
 /* ===========================================================
-   Scramble of the Day — the window's bar, and both boards
+   Scramble of the Day Ã¢â‚¬â€ the window's bar, and both boards
 
    The boards (`.db-*`) are shared: the same markup renders inside the
    window's card and inside the settings drawer, so a row looks the same
@@ -2965,7 +2975,7 @@ body.focus #dock-bottom, body.focus #tile-float-layer { opacity: 0; pointer-even
 
 /* No `display` here on purpose. base.css owns whether this bar is on screen
    (`#sotd-bar { display: none }` / `body.sotd #sotd-bar { display: flex }`),
-   and this file loads after it — so a `display: flex` here would have equal
+   and this file loads after it Ã¢â‚¬â€ so a `display: flex` here would have equal
    specificity, win on order, and pin the bar over the app permanently
    whether or not the window was open. Appearance here, visibility there. */
 #sotd-bar {
@@ -2994,7 +3004,7 @@ body.focus #dock-bottom, body.focus #tile-float-layer { opacity: 0; pointer-even
   padding-left: 10px; margin-left: 2px; border-left: 1px solid var(--border);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-/* Green while today's scramble is genuinely on the timer — the one state in
+/* Green while today's scramble is genuinely on the timer Ã¢â‚¬â€ the one state in
    which pressing space means something, and worth being able to tell apart at
    a glance from the three in which it does not. */
 .sotd-state[data-state="ready"] { color: var(--ok); }
@@ -3007,7 +3017,7 @@ body.focus #dock-bottom, body.focus #tile-float-layer { opacity: 0; pointer-even
 /* A column down the left, not a sheet across the bottom.
 
    The bottom sheet it replaced had to cover the middle of the screen to be
-   readable, which put it straight over the timer — and the only way to keep
+   readable, which put it straight over the timer Ã¢â‚¬â€ and the only way to keep
    both was to dim the time you had just done to the point of being unreadable.
    Standing the board up in its own column means nothing overlaps anything: the
    list is a list, the timer is still the biggest thing on screen, and the two
@@ -3046,8 +3056,8 @@ body.focus #dock-bottom, body.focus #tile-float-layer { opacity: 0; pointer-even
 .sotd-h3-second { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border); }
 .sotd-h3-note { letter-spacing: 0; text-transform: none; font-weight: 400; font-size: .66rem; opacity: .75; }
 
-/* The past-day picker. One control, drawn in both places the board is — the
-   window's card and the settings drawer — so it is styled here once rather
+/* The past-day picker. One control, drawn in both places the board is Ã¢â‚¬â€ the
+   window's card and the settings drawer Ã¢â‚¬â€ so it is styled here once rather
    than per caller. In the window it sits on the heading's own row; in the
    drawer the heading is a group title above it, hence the margin. */
 .sotd-board-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
@@ -3188,10 +3198,10 @@ body.focus #dock-bottom, body.focus #tile-float-layer { opacity: 0; pointer-even
 .db-locked-icon { font-size: 1rem; line-height: 1.3; flex: none; opacity: .7; }
 
 /* Below the timer's own breakpoint there is no room for a column beside it,
-   so the board lies back down along the bottom — and is kept short enough
+   so the board lies back down along the bottom Ã¢â‚¬â€ and is kept short enough
    that the digits above it stay on screen rather than being covered. */
 /* The state line is the first thing to go: it is the one part of the bar
-   whose information is also on screen somewhere else — as the hold message
+   whose information is also on screen somewhere else Ã¢â‚¬â€ as the hold message
    where the scramble goes, or as the board being locked. */
 @media (max-width: 760px) { .sotd-state { display: none; } }
 
@@ -3215,7 +3225,7 @@ body.focus #dock-bottom, body.focus #tile-float-layer { opacity: 0; pointer-even
   #sotd-bar { gap: 10px; padding: 8px 12px; }
   .sotd-kicker { display: none; }
   /* The qualifier beside the heading is a sentence, and a sentence does not
-     share a line with a heading at this width — it wraps into a shape that
+     share a line with a heading at this width Ã¢â‚¬â€ it wraps into a shape that
      reads as neither. */
   .sotd-board-card h3 { flex-direction: column; align-items: flex-start; gap: 3px; }
   .db-row { grid-template-columns: 1.4em 22px minmax(0, 1fr) auto auto; gap: 8px; padding: 6px 8px; }

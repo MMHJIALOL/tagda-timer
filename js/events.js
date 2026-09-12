@@ -75,5 +75,8 @@ export function modesForEvent(eventId) {
   });
 }
 
+/** Cube size when the virtual cube can do this event (2x2 to 7x7), else 0. */
+export const virtualSize = id => (/^([2-7])\1\1$/.test(id) ? +id[0] : 0);
+
 export const eventOf  = id => EVENTS[id] || EVENTS['333'];
 export const modeOf   = id => MODES[id]  || MODES['wca'];

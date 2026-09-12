@@ -9,7 +9,7 @@ import { PRESETS, TIMER_FONTS, exportTheme, importTheme } from './theme.js';
 import { SHADER_NAMES } from './bg.js';
 import { summarize, byCase, eff, DNF, bestAvg, statWindow, bldSummary } from './stats.js';
 import { renderTrend, renderHistogram, renderHeatmap, renderCaseBars } from './charts.js';
-import { MODES, EVENTS, EVENT_ORDER } from './events.js';
+import { MODES, EVENTS, EVENT_ORDER, virtualSize } from './events.js';
 import { setFor } from './scramble.js';
 import { toast, confirmToast } from './toast.js';
 import { exportAll, Assets, Solves, LetterPairs } from './db.js';
@@ -602,12 +602,25 @@ export function buildSettings(app) {
           { value: 'timer', label: 'Keyboard' },
           { value: 'manual', label: 'Type them' },
           { value: 'stackmat', label: 'Stackmat (aux)' },
+          { value: 'virtual', label: 'Virtual cube' },
         ], S.inputMode || 'timer', (v) => {
           set('inputMode', v);
           // The note under this row is different for every mode, so redraw.
           openDrawer('Settings', buildSettings(app));
         }),
-          'the spacebar, a time you type in, or a Stackmat plugged into the mic socket'),
+          'the spacebar, a time you type in, a Stackmat, or a cube you turn with the keyboard'),
+        S.inputMode === 'virtual'
+          ? el('div', { class: 'hint-note', html:
+              'Turn the cube with csTimer&rsquo;s keys: <b>I K</b> R, <b>D E</b> L, <b>J F</b> U, ' +
+              '<b>S L</b> D, <b>H G</b> F, <b>W O</b> B, <b>U M</b> r, <b>V R</b> l, <b>5 X</b> M, ' +
+              '<b>T B</b> x, <b>; A</b> y, <b>P Q</b> z (full list under <b>?</b>). The first turn starts ' +
+              'the clock and a solved cube stops it; <b>Space</b> starts inspection, <b>Esc</b> resets. ' +
+              'While it is on, those letters are turns, not shortcuts &mdash; the rest are in ' +
+              '<b>Ctrl+K</b>. For 2x2 to 7x7 only' +
+              (virtualSize(S.event) ? '' : ' &mdash; this event stays on the spacebar') +
+              ', and its solves go in a &ldquo;Virtual&rdquo; session per event so they never mix ' +
+              'with your real averages.' })
+          : null,
         S.inputMode === 'manual'
           ? el('div', { class: 'hint-note', html:
               'Type the time under the clock and press <b>Enter</b>. It understands ' +
@@ -1893,6 +1906,15 @@ export const SHORTCUTS = [
   ]],
   ['Careful', [
     ['Ctrl + Shift + Del', 'clear the whole session'],
+  ]],
+  // Only while Settings > Timing input is "Virtual cube"; these letters then
+  // turn the cube instead of doing what the lists above say.
+  ['Virtual cube', [
+    ['I  K', "R  /  R'"], ['D  E', "L  /  L'"], ['J  F', "U  /  U'"], ['S  L', "D  /  D'"],
+    ['H  G', "F  /  F'"], ['W  O', "B  /  B'"], ['U  M', "r  /  r'"], ['V  R', "l  /  l'"],
+    [',  C', "u  /  u'"], ['Z  /', "d  /  d'"], ['5  6  X  .', "M  /  M'"],
+    ['T  Y  B  N', "x  /  x'"], [';  A', "y  /  y'"], ['P  Q', "z  /  z'"],
+    ['Space', 'inspection'], ['Esc', 'reset the cube'],
   ]],
 ];
 

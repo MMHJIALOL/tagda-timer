@@ -6,7 +6,7 @@ import { $, $$, el, uid, fmt, fmtLive, clamp, copy, download, toCSV, debounce,
          parseTimeInput, parseScrambleList } from './util.js';
 import { Solves, Sessions, KV, Assets, LetterPairs, importAll, onWrite } from './db.js';
 import { activeGearId, Gear, gearLabel } from './gear.js';
-import { EVENTS, EVENT_ORDER, MODES, modesForEvent, eventOf, modeOf } from './events.js';
+import { EVENTS, EVENT_ORDER, MODES, modesForEvent, eventOf, modeOf, virtualSize } from './events.js';
 import { ScrambleQueue, setFor, cubingAvailable, generate } from './scramble.js';
 import { createLearn } from './learnmode.js';
 import { Timer, INSPECT_MS } from './timer.js';
@@ -874,6 +874,7 @@ function showScramble(s, silent = false) {
     const holdView = holdMode.view || app.settings.cubeView;
     cube.configure(ev.puzzle, holdView === 'LL3' ? '3D' : holdView);
     cube.set('');
+    resetVcube();
     return;
   }
 
@@ -920,6 +921,7 @@ function showScramble(s, silent = false) {
   cube.configure(ev.puzzle, view === 'LL3' ? '3D' : view);
   cube.setOrientation(previewOrientation(mode, ev));
   cube.set(s.scramble);
+  resetVcube();
 
   if (s.official === false && mode.kind === 'wca' && !cubingAvailable()) {
     node.title = 'Offline fallback scramble — not competition legal';
@@ -2499,6 +2501,9 @@ COARSE.addEventListener('change', () => updateHint());
 function updateHint() {
   const node = $('#timer-hint');
   if (!node) return;
+  // renderAll calls this after every solve, so the virtual cube's hint has to
+  // live here too or the first solve replaces it with a spacebar one.
+  if (virtualLive()) { node.innerHTML = VIRTUAL_HINT; return; }
   // On a touch screen there is no spacebar, so naming one is worse than saying
   // nothing. Same two states, described with the input the device actually has.
   if (COARSE.matches) {
@@ -2816,18 +2821,41 @@ async function clearSession() {
  * the one place that has to know — and it is also what stops a second attempt
  * being timed against a scramble you have already sent a result for.
  */
-const timerInputLive = () => app.settings.inputMode === 'timer' && !raceCtl()?.locked() && !dailyCtl()?.locked();
+const timerInputLive = () => inputMode() === 'timer' && !raceCtl()?.locked() && !dailyCtl()?.locked();
 
-function applyInputMode() {
-  const mode = app.settings.inputMode || 'timer';
+/* The virtual cube is only a cube for 2x2 to 7x7. Chosen on any other event it
+   falls back to the spacebar, rather than leaving that event with no way to time. */
+function inputMode() {
+  const m = app.settings.inputMode || 'timer';
+  return m === 'virtual' && !virtualSize(app.settings.event) ? 'timer' : m;
+}
+const virtualLive = () => inputMode() === 'virtual';
+
+const VIRTUAL_HINT = 'turn to start &middot; <kbd>space</kbd> inspection &middot; <kbd>esc</kbd> reset';
+
+/** What the timer area shows for the input in use. Also runs on every event change. */
+function applyInputView() {
+  const mode = inputMode();
+  document.body.dataset.input = mode;
   const form = $('#manual-entry');
   const bar = $('#stackmat-bar');
-  document.body.dataset.input = mode;
-
   if (form) form.hidden = mode !== 'manual';
   if (bar) bar.hidden = mode !== 'stackmat';
   const hint = $('#timer-hint');
-  if (hint) hint.hidden = mode !== 'timer';
+  if (hint) hint.hidden = mode !== 'timer' && mode !== 'virtual';
+  updateHint();
+  $('#vcube-wrap').hidden = mode !== 'virtual';
+  if (mode === 'virtual') {
+    loadVcube().then(resetVcube).catch((err) => {
+      console.warn('[vcube] could not start', err);
+      toast('The virtual cube could not load', { kind: 'bad' });
+    });
+  }
+}
+
+function applyInputMode(changed) {
+  const mode = inputMode();
+  applyInputView();
 
   // Anything half-armed on the old source has to go, or a stale hold survives
   // the switch and starts a solve nobody asked for.
@@ -2838,8 +2866,86 @@ function applyInputMode() {
 
   if (mode === 'manual') setTimeout(() => $('#manual-input')?.focus(), 0);
   else $('#manual-input')?.blur();
+
+  if (changed && app.settings.inputMode === 'virtual' && mode !== 'virtual') {
+    toast(`The virtual cube is 2x2 to 7x7 — ${eventOf(app.settings.event).short} stays on the spacebar`, { long: true });
+  }
+  syncVirtualSession().then((moved) => {
+    if (!moved) return;
+    renderAll();
+    if (changed) toast(virtualLive() ? `Virtual solves go in ${app.session.name}` : `Back to ${app.session.name}`);
+  }).catch(err => console.warn('[vcube] session switch failed', err));
 }
 app.applyInputMode = applyInputMode;
+
+/* ---------------- virtual cube ----------------
+   Loaded the first time it is switched on: a second twisty-player and the
+   sticker simulator are nothing anyone on the spacebar needs. */
+let vcube = null;
+const loadVcube = lazy(async () => {
+  const { VirtualCube } = await import('./vcube.js');
+  const view = new CubeView($('#vcube-holder'), null);
+  if (!await view.init()) throw new Error('twisty-player unavailable');
+  view.setHints(false);
+  // The preview is static on purpose (tempo 0); this one has to show each turn.
+  view.player.setAttribute('tempo-scale', '4');
+  return new VirtualCube(view, timer);
+}, v => (vcube = v));
+
+/** Put the scramble on screen onto the virtual cube. */
+function resetVcube() {
+  if (!vcube || !virtualLive()) return;
+  const ev = eventOf(app.settings.event);
+  const s = app.scramble;
+  vcube.reset({
+    puzzle: ev.puzzle,
+    n: virtualSize(app.settings.event),
+    orientation: previewOrientation(modeOf(app.settings.mode), ev),
+    scramble: s && !s.hold ? s.scramble : '',
+  });
+}
+
+/**
+ * Virtual solves live in a session of their own, one per event.
+ *
+ * A keyboard cube is a different skill at a different pace, and its times folded
+ * into a real session would drag every average in it down. Same idea as a
+ * race's session; the triggers are the input switch and the event picker.
+ */
+function sessionFor(eventId, virtual) {
+  const mine = app.sessions.filter(s => s.event === eventId && !!s.virtual === virtual && !s.race);
+  const back = !virtual && mine.find(s => s.id === app.settings.virtualReturnSession);
+  if (back || mine[0]) return back || mine[0];
+  const short = eventOf(eventId).short;
+  const s = {
+    id: uid(), event: eventId, createdAt: Date.now(), order: app.sessions.length,
+    name: virtual ? `Virtual · ${short}` : `${short} · 1`,
+    ...(virtual ? { virtual: true } : {}),
+  };
+  app.sessions.push(s);
+  Sessions.put(s).catch(err => console.warn('[vcube] session not saved', err));
+  return s;
+}
+
+/** Move into the kind of session the input calls for. True if it moved. */
+async function syncVirtualSession() {
+  if (!app.session) return false;
+  const want = virtualLive();
+  const ev = app.settings.event;
+  if (want ? (app.session.virtual && app.session.event === ev) : !app.session.virtual) return false;
+  if (!app.session.virtual) app.settings.virtualReturnSession = app.session.id;
+  // Assigned before the first await, so a race or daily attempt that switches
+  // session straight after this remembers the right one to come back to.
+  const s = sessionFor(ev, want);
+  app.session = s;
+  app.settings.sessionId = s.id;
+  persist();
+  app.solves = await Solves.bySession(s.id);
+  lastStats = {};
+  resetHistoryWindow();
+  syncTimerDisplay();
+  return true;
+}
 
 /* ---------------- typed times ---------------- */
 function wireManualEntry() {
@@ -3632,7 +3738,7 @@ function applyAll(changed) {
     remeasureHistory();
   }
   if (changed === 'cubeView') { updateLabels(); if (app.scramble) showScramble(app.scramble, true); }
-  if (!changed || changed === 'inputMode') applyInputMode();
+  if (!changed || changed === 'inputMode') applyInputMode(changed);
   if (!changed || changed === 'bld') { bldEpoch++; syncBldTimer(); renderBld(); }
   if (!changed || changed === 'multiphase') { syncBldTimer(); syncPhaseZoneVisibility(); phaseReset(); }
   // The window shows the same bpm the settings slider writes, so a change in
@@ -3655,12 +3761,18 @@ function syncEventConfig() {
   syncPhaseZoneVisibility();
   if (!bldSplitOn() && !multiphaseOn()) phaseReset();
   renderBld();
+  // The virtual cube comes and goes with the event: a 3x3 has one, a clock does not.
+  applyInputView();
 }
 
 async function setEvent(id) {
   app.settings.event = id;
-  app.session.event = id;
-  await Sessions.put(app.session);
+  // A virtual session belongs to one event: changing event moves you to that
+  // event's virtual session rather than relabelling this one.
+  if (!await syncVirtualSession()) {
+    app.session.event = id;
+    await Sessions.put(app.session);
+  }
   syncEventConfig();
   // Swap the preview puzzle straight away. A 4x4 random-state scramble takes a
   // few seconds, and leaving the old puzzle on screen until it lands looks broken.
@@ -3857,6 +3969,44 @@ function wireInput() {
   // Keys that stopped a running solve. Their keyup belongs to that same press
   // and must be swallowed too, or it lands on whatever the key normally does.
   const stopKeys = new Set();
+
+  /* The virtual cube owns the letter block while it is on screen: a key csTimer
+     turns a face with is a turn here, and never also a shortcut. Modifier
+     chords, Shift (so ? still opens this list) and the unmapped keys — digits,
+     Delete, the arrows — go on to the shortcut handler as usual. */
+  let vSpace = false;
+  document.addEventListener('keydown', (e) => {
+    if (!vcube || !virtualLive() || isTyping() || modalOpen()) return;
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.code === 'Escape') {
+      // Nothing to reset, or a solve already recorded: Esc means what it always did.
+      if (!vcube.armed || (timer.state === 'idle' && !vcube.moved)) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      const was = timer.state;
+      timer.reset();
+      if (was !== 'idle') timer.emit('cancel');
+      vcube.restart();
+      return;
+    }
+    if (e.code === 'Space') {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      if (e.repeat || timer.state !== 'idle' || !timer.inspectionEnabled || !vcube.armed) return;
+      vSpace = true;
+      timer.down();                        // -> inspecting; the first turn starts the solve
+      return;
+    }
+    if (e.shiftKey || !vcube.key(e.code, e.repeat)) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+  }, true);
+  document.addEventListener('keyup', (e) => {
+    if (e.code !== 'Space' || !vSpace) return;
+    vSpace = false;
+    e.preventDefault();
+    timer.up();
+  }, true);
 
   /**
    * Both listeners run in the CAPTURE phase, before anything else on the
