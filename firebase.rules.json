@@ -42,6 +42,7 @@
             "createdAt": { ".validate": "newData.isNumber()" },
             "order":     { ".validate": "!newData.exists() || newData.isNumber()" },
             "race":      { ".validate": "!newData.exists() || newData.isBoolean()" },
+            "virtual":   { ".validate": "!newData.exists() || newData.isBoolean()" },
             "$other":    { ".validate": false }
           }
         },

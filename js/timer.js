@@ -127,6 +127,22 @@ export class Timer extends EventTarget {
     return true;
   }
 
+  /**
+   * Start and stop from something other than a press: the virtual cube's first
+   * turn, and the cube coming out solved. Stopping goes straight back to idle,
+   * because there is no key still held down to release.
+   */
+  start() {
+    if (this.state === 'idle' || this.state === 'inspecting') this._start();
+  }
+
+  stop() {
+    if (this.state !== 'running') return;
+    this._stop();
+    this._ignoreUp = false;
+    this.up();
+  }
+
   /* ---------------- inspection ---------------- */
 
   _startInspection() {

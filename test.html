@@ -788,6 +788,22 @@ await new Promise((resolve) => {
 
     check('the app booted', w.__tdtBooted === true);
 
+    /* Opened, the metronome window must actually render a box rather than a
+       zero-height stack of controls.
+
+       Not asserted here: whether it starts closed. This iframe inherits the
+       browser's saved settings, so somebody who left the window on would see a
+       failure that is not one. */
+    const metro = d.querySelector('#metro');
+    const metroWasHidden = metro.hidden;
+    metro.hidden = false;
+    const mBox = metro.getBoundingClientRect();
+    const dots = metro.querySelectorAll('#metro-beats i').length;
+    check('the metronome window renders when it is opened',
+      mBox.width > 120 && mBox.height > 80 && dots === 4,
+      `${Math.round(mBox.width)}x${Math.round(mBox.height)}, ${dots} beats`);
+    metro.hidden = metroWasHidden;
+
     // Regression guard: an animation keyframe starting at opacity 0 left the
     // scramble invisible whenever the timeline was paused.
     const sc = d.querySelector('#scramble-text');
@@ -2204,6 +2220,25 @@ section('gear — filtering solves and placing markers');
 
   check('no events is no markers, not a throw',
     Gear.markersFor(S1, []).length === 0 && Gear.markersFor(S1, null).length === 0);
+}
+
+section('virtual cube');
+{
+  const V = await import('./js/vcube.js');
+  const N = await import('./js/cubenet.js');
+  const same = (a, b, n) => JSON.stringify(N.faceletsFor(a, n)) === JSON.stringify(N.faceletsFor(b, n));
+  check('I is R, K is R\'', V.movesFor('KeyI', 3)[0] === 'R' && V.movesFor('KeyK', 3)[0] === "R'");
+  check('a key off the map is not a turn', V.movesFor('Digit2', 3) === null && V.movesFor('Backspace', 3) === null);
+  check('a solved cube is solved', V.isSolved('', 3) && V.isSolved("R R'", 4));
+  check('rotations never unsolve it', V.isSolved('x y2 z\'', 5));
+  check('a scramble is not solved', !V.isSolved("R U R' U'", 3));
+  check('six sexy moves come back solved', V.isSolved(Array(6).fill("R U R' U'").join(' '), 3));
+  check('a 4x4 scramble and its inverse come back solved',
+    V.isSolved("Rw U2 3Fw' L D Rw' Uw F2 F2 Uw' Rw D' L' 3Fw U2 Rw'", 4));
+  check('M on a big cube is every inner layer', same(V.movesFor('Digit5', 5).join(' '), 'M', 5)
+    && same(V.movesFor('KeyX', 4).join(' '), "M'", 4));
+  check('a wide turn on a 2x2 is a rotation', V.movesFor('KeyU', 2)[0] === 'x' && same('x', 'Rw', 2));
+  check('M does nothing on a 2x2', V.movesFor('Digit5', 2).length === 0);
 }
 
 document.getElementById('summary').textContent =

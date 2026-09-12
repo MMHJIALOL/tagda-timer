@@ -158,13 +158,17 @@ export class CubeView {
     // Multi-blind hands over several numbered scrambles; preview the first.
     const only = (scramble || '').replace(/^\s*\d+\)\s*/gm, '').split('\n')[0].trim();
     const clean = this.orientation ? `${this.orientation} ${only}`.trim() : only;
-    if (clean === this.applied) return;
+    // `force` also throws away any turns added on top — the virtual cube's reset.
+    if (clean === this.applied && !opts.force) return;
 
     const apply = () => {
       try {
         this.player.setAttribute('experimental-setup-alg', clean);
         this.player.setAttribute('alg', '');
         this.applied = clean;
+        // A player made during boot holds the new state but draws nothing until
+        // it is asked for a frame; an added turn asks, a bare setup alg does not.
+        if (opts.force) this.player.jumpToEnd?.();
         return true;
       } catch (err) {
         console.warn('[cube] could not render scramble for', this.puzzle, err);
@@ -178,6 +182,12 @@ export class CubeView {
     this.player.experimentalModel?.puzzleLoader?.get?.()
       .then(() => { if (this.applied === clean) apply(); })
       .catch(() => {});
+  }
+
+  /** Animate one turn on top of what is shown. Only the virtual cube does this. */
+  addMove(tok) {
+    try { this.player?.experimentalAddMove(tok); }
+    catch (err) { console.warn('[cube] turn rejected', tok, err); }
   }
 
   setScheme(scheme) {

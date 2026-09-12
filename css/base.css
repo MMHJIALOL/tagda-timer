@@ -478,6 +478,22 @@ body.zen #learn-bar { display: none; }
   }
 }
 
+/* ---------------- virtual cube ----------------
+   csTimer's arrangement: the cube is what you look at, the clock sits to its
+   right. Both are in the flow of the centre column for this mode, so the pair
+   is centred between the rails rather than the digits being pinned over them. */
+#vcube-wrap { width: min(56vh, 52%); aspect-ratio: 1; flex: none; }
+#vcube-holder, #vcube-holder twisty-player { width: 100%; height: 100%; }
+body[data-input="virtual"] #panel-cube { display: none; }
+body[data-input="virtual"] #timer-zone { flex-direction: row; gap: clamp(16px, 3vw, 48px); }
+body[data-input="virtual"] #timer-core,
+body[data-input="virtual"] #inspect-readout { position: relative; left: auto; top: auto; transform: none; }
+body[data-input="virtual"] #timer-display { font-size: min(var(--timer-size), 7vw); }
+@media (max-width: 860px) {
+  #vcube-wrap { width: min(80vw, 40vh); }
+  body[data-input="virtual"] #timer-zone { flex-direction: column; }
+}
+
 #timer-display {
   position: relative;
   font-family: var(--font-timer);

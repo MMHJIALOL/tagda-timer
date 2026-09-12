@@ -12,7 +12,8 @@
 
 import { $, el, copy } from './util.js';
 import { SCHEME, stickerAt } from './cubenet.js';
-import { loadSettings, applyTheme } from './theme.js';
+import { loadSettings, saveSettings, applyTheme } from './theme.js';
+import { mountMetro } from './metro.js';
 import { toast } from './toast.js';
 import {
   SETS, loadSet, caseOf, caseFacelets, displayOrder, loadLibraryPrefs,
@@ -568,7 +569,12 @@ function addRow(setId, caseId, rebuild) {
    --------------------------------------------------------- */
 
 async function init() {
-  applyTheme(await loadSettings());
+  const settings = await loadSettings();
+  applyTheme(settings);
+  /* The metronome belongs here more than anywhere: this is the page you sit on
+     while drilling a case to a beat. Same settings, same window as the timer's
+     — turned on in Settings › Timer › Metronome window over there. */
+  mountMetro(settings, () => saveSettings(settings));
   await loadLibraryPrefs();
 
   for (const btn of document.querySelectorAll('#alglib-tabs .seg-btn')) {

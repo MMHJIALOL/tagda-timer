@@ -104,9 +104,12 @@ export const DEFAULTS = {
   confirmShortSolves: true,
   soundOnPB: true,
   metronome: false,             // a click on the beat while the timer runs
-  metronomeBpm: 60,
+  metronomeBpm: 60,             // shared by the solve-time click and the window
+  metroOpen: false,             // the floating beat meter, for drilling algs
+  metroPos: null,
   mouseTimer: false,            // click-to-time; off so a stray click cannot start a solve
-  inputMode: 'timer',           // timer = spacebar/touch | manual = typed | stackmat = aux jack
+  inputMode: 'timer',           // timer = spacebar/touch | manual = typed | stackmat = aux jack | virtual = keyboard cube
+  virtualReturnSession: null,   // the session to go back to when the virtual cube is switched off
   /* 0/1 = off. 2-6 splits every solve into that many phases: the split key
      (same one that ends the solve) advances to the next phase instead, the
      way BLD's memo/exec split already does with a fixed count of 1 — this is
