@@ -1515,6 +1515,59 @@ input[type="range"]::-moz-range-thumb {
   border: 1px dashed var(--border);
 }
 
+/* ---------------- metronome window ----------------
+   Same floating-widget family as the mascot and the scramble preview: fixed,
+   draggable, pinned with left/top once it has been moved. */
+#metro {
+  position: fixed; right: 26px; top: 120px; z-index: 46;
+  width: 186px; padding: 8px 10px 10px;
+  display: flex; flex-direction: column; gap: 8px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--surface-2) 92%, transparent);
+  border: 1px solid var(--border);
+  backdrop-filter: blur(calc(14px * var(--glass-strength))); -webkit-backdrop-filter: blur(calc(14px * var(--glass-strength)));
+  box-shadow: 0 14px 30px rgba(0,0,0,.4);
+  touch-action: none;
+}
+#metro[data-placed="true"] { right: auto; top: auto; }
+#metro-grip {
+  display: flex; align-items: center; gap: 6px; cursor: move;
+  font-size: .62rem; letter-spacing: .12em; text-transform: uppercase;
+  font-weight: 700; color: var(--text-faint);
+}
+#metro-grip svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; }
+#metro-grip span { flex: 1; }
+#metro-close {
+  width: 18px; height: 18px; border-radius: 6px; cursor: pointer;
+  display: grid; place-items: center; font-size: .9rem; line-height: 1;
+  color: var(--text-faint); background: none; border: 0;
+}
+#metro-close:hover { color: var(--danger); background: color-mix(in srgb, var(--danger) 16%, transparent); }
+#metro-beats { display: flex; gap: 6px; justify-content: center; }
+#metro-beats i {
+  width: 14px; height: 14px; border-radius: 50%;
+  background: color-mix(in srgb, var(--text) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+}
+#metro-beats i.on { background: var(--accent); border-color: transparent; }
+/* The flash is the beat: it is restarted per hit from JS, so it has to be an
+   animation rather than a transition. */
+#metro-beats i.hit { animation: metroHit 220ms var(--ease); }
+@keyframes metroHit { from { transform: scale(1.5); } to { transform: scale(1); } }
+#metro-bpm { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+#metro-bpm button {
+  width: 24px; height: 24px; border-radius: 7px; cursor: pointer;
+  display: grid; place-items: center; font-size: .9rem; font-weight: 700; line-height: 1;
+  color: var(--text-dim); background: color-mix(in srgb, var(--text) 8%, transparent); border: 0;
+}
+#metro-bpm button:hover { color: var(--text); background: color-mix(in srgb, var(--text) 16%, transparent); }
+#metro-read { display: flex; align-items: baseline; gap: 3px; color: var(--text); }
+#metro-read b { font-size: 1.15rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+#metro-read small { font-size: .6rem; letter-spacing: .1em; text-transform: uppercase; color: var(--text-faint); }
+#metro-range { width: 100%; }
+#metro-play { width: 100%; }
+#metro.ticking #metro-play { color: var(--accent); border-color: var(--accent); }
+
 /* ---------------- mascot ---------------- */
 #mascot {
   position: fixed; right: 26px; bottom: 210px; z-index: 45;

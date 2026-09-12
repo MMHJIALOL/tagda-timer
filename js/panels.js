@@ -647,6 +647,8 @@ export function buildSettings(app) {
         row('Metronome', toggle(S.metronome, v => set('metronome', v)),
           'a click on the beat while the timer runs — one move per beat to practise a smooth cross and F2L'),
         row('Metronome speed', slider(S.metronomeBpm, 30, 240, 5, v => set('metronomeBpm', v), v => v + ' bpm')),
+        row('Metronome window', toggle(S.metroOpen, v => set('metroOpen', v)),
+          'a floating beat meter with its own start/stop and bpm — it keeps ticking with the timer idle, for drilling an algorithm to a beat. Drag it anywhere; same speed as the setting above.'),
         row('Multiphase splits', chips([
           { value: 0, label: 'Off' },
           { value: 2, label: '2' },

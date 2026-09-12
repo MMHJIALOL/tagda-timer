@@ -788,6 +788,22 @@ await new Promise((resolve) => {
 
     check('the app booted', w.__tdtBooted === true);
 
+    /* Opened, the metronome window must actually render a box rather than a
+       zero-height stack of controls.
+
+       Not asserted here: whether it starts closed. This iframe inherits the
+       browser's saved settings, so somebody who left the window on would see a
+       failure that is not one. */
+    const metro = d.querySelector('#metro');
+    const metroWasHidden = metro.hidden;
+    metro.hidden = false;
+    const mBox = metro.getBoundingClientRect();
+    const dots = metro.querySelectorAll('#metro-beats i').length;
+    check('the metronome window renders when it is opened',
+      mBox.width > 120 && mBox.height > 80 && dots === 4,
+      `${Math.round(mBox.width)}x${Math.round(mBox.height)}, ${dots} beats`);
+    metro.hidden = metroWasHidden;
+
     // Regression guard: an animation keyframe starting at opacity 0 left the
     // scramble invisible whenever the timeline was paused.
     const sc = d.querySelector('#scramble-text');
