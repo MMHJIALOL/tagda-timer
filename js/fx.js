@@ -219,17 +219,25 @@ export function beep(freq = 880, ms = 130, type = 'sine', gain = 0.16) {
  * beat late — the interval only has to wake often enough to book the next one.
  */
 let metro = null;
-export function metronome(bpm) {
+export function metronome(bpm, onBeat = null) {
   clearInterval(metro); metro = null;
   if (!bpm) return;
   try {
     const c = ac();
     const gap = 60 / bpm;
     let next = c.currentTime;
+    let beat = 0;
     const book = () => {
       // A throttled background tab wakes late: skip the missed beats, never burst them.
       if (next < c.currentTime) next = c.currentTime;
-      while (next < c.currentTime + 0.1) { tone(c, 1600, 35, 'square', 0.1, next, 0.003); next += gap; }
+      while (next < c.currentTime + 0.1) {
+        tone(c, 1600, 35, 'square', 0.1, next, 0.003);
+        // The visual beat is booked off the same audio time as the click, so the
+        // meter cannot drift away from what you hear even when a frame is late.
+        if (onBeat) setTimeout(onBeat, Math.max(0, (next - c.currentTime) * 1000), beat);
+        beat++;
+        next += gap;
+      }
     };
     book();
     metro = setInterval(book, 25);

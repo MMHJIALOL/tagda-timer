@@ -13,7 +13,8 @@ import { Timer, INSPECT_MS } from './timer.js';
 import { Background } from './bg.js';
 import { CubeView } from './cube.js';
 import { makeDraggable } from './drag.js';
-import { flash, shockwave, confetti, chime, callout, beep, metronome } from './fx.js';
+import { flash, shockwave, confetti, chime, callout, beep } from './fx.js';
+import { mountMetro, metroExternal } from './metro.js';
 import { summarize, eff, DNF, bestSingle, bestAvg, trimmedIndices, byCase, sessionBests, rollingSeries, statWindow, STAT_LABELS } from './stats.js';
 import { renderMiniTrend } from './charts.js';
 import { DEFAULTS, loadSettings, saveSettings, applyTheme, applyBackground, themeColors, setAlbumTint } from './theme.js';
@@ -1058,7 +1059,7 @@ function wireTimer() {
     document.body.classList.toggle('holding', st === 'holding');
     document.body.classList.toggle('armed', st === 'ready');
     updateHoldBar(st);
-    metronome(st === 'running' && app.settings.metronome ? app.settings.metronomeBpm : 0);
+    metroExternal(st === 'running' && app.settings.metronome ? app.settings.metronomeBpm : 0);
 
     if (st === 'running') {
       phaseStart();
@@ -3586,6 +3587,7 @@ app.resetSettings = () => {
   // corner, and the rails reserve room in the wrong place.
   cubeDrag?.apply();
   app.applyMascot?.();
+  app.applyMetro?.();
   renderStats();
   measureLayout();
   toast('Settings back to their defaults', { kind: 'good' });
@@ -3633,6 +3635,10 @@ function applyAll(changed) {
   if (!changed || changed === 'inputMode') applyInputMode();
   if (!changed || changed === 'bld') { bldEpoch++; syncBldTimer(); renderBld(); }
   if (!changed || changed === 'multiphase') { syncBldTimer(); syncPhaseZoneVisibility(); phaseReset(); }
+  // The window shows the same bpm the settings slider writes, so a change in
+  // either place has to reach the other one.
+  if (!changed || changed === 'metroOpen' || changed === 'metronomeBpm') app.applyMetro?.();
+  if (changed === 'metronome') metroExternal(0);   // switched off mid-solve
 }
 app.applyAll = () => applyAll();
 app.refreshBackground = () => applyBackground(bg, app.settings);
@@ -3878,6 +3884,9 @@ function wireInput() {
       return;
     }
     if (isTyping() || e.metaKey || e.ctrlKey || e.altKey) return;
+    // The metronome window's own buttons keep the spacebar: pressing Start with
+    // the keyboard must not also start a solve.
+    if (e.target?.closest?.('#metro')) return;
     if (e.code !== 'Space') return;
     e.preventDefault();
     if (modalOpen()) return;
@@ -4201,6 +4210,9 @@ function wireChrome() {
   $('#btn-reset-orbit').addEventListener('click', (e) => { e.stopPropagation(); app.resetCubeOrbit(); });
 
   wireMascot();
+  // Same window as the algorithm library's, built by the same module.
+  const metro = mountMetro(app.settings, persist);
+  app.applyMetro = metro.apply;
 }
 
 /* =========================================================
