@@ -704,9 +704,12 @@
 .group > h3::after { content: ''; flex: 1; height: 1px; background: var(--border); }
 
 .row {
-  display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 14px;
   min-height: 34px;
 }
+/* A control wider than what is left beside its label (four input chips, say)
+   drops onto its own line instead of crushing the label to one word a line. */
+.row > .lbl { flex-basis: 9rem; }
 /* :not(.switch) matters Ã¢â‚¬â€ a bare `.row > label` beats `.switch { flex: none }`
    on specificity and stretches the toggle into a slider-looking bar. */
 .row > label:not(.switch), .row > .lbl { font-size: .84rem; color: var(--text-dim); flex: 1; min-width: 0; }
@@ -890,6 +893,24 @@ input[type="range"]::-moz-range-thumb {
 .toast .t-act:hover { background: color-mix(in srgb, var(--accent) 16%, transparent); }
 .toast.good { border-color: color-mix(in srgb, var(--ok) 45%, transparent); }
 .toast.bad  { border-color: color-mix(in srgb, var(--danger) 45%, transparent); }
+
+/* new best single / average — a ticker across the top of the digits */
+.pb-marquee {
+  position: absolute; left: 0; right: 0; bottom: 100%;
+  overflow: hidden; white-space: nowrap; pointer-events: none;
+  font: 650 .78rem/1.8 var(--font-ui, system-ui), sans-serif;
+  letter-spacing: .22em; text-transform: uppercase; color: var(--accent); text-shadow: none;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 15%, #000 85%, transparent);
+          mask-image: linear-gradient(90deg, transparent, #000 15%, #000 85%, transparent);
+}
+.pb-marquee span { display: inline-block; padding-left: 100%; animation: pbTicker 2.5s linear infinite; }
+.pb-marquee.still { text-align: center; }
+.pb-marquee.still span { padding-left: 0; animation: none; }
+@keyframes pbTicker { to { transform: translateX(-100%); } }
+@media (prefers-reduced-motion: reduce) {
+  .pb-marquee { text-align: center; }
+  .pb-marquee span { padding-left: 0; animation: none; }
+}
 
 /* ---------------- creator chip ---------------- */
 #creator-chip {
@@ -1535,6 +1556,35 @@ input[type="range"]::-moz-range-thumb {
 .about-link .sub { display: block; font-size: .72rem; color: var(--text-faint); margin-top: 2px; }
 .about-arrow { width: 16px; height: 16px; flex: none; color: var(--text-faint); }
 .about-link:hover .about-arrow { color: var(--accent); }
+
+/* ---------------- owner shine & card ----------------
+   Marks whichever row's raceName is the site owner's, in both the race
+   room and the daily leaderboard — see js/ownercard.js. The sweep reuses
+   sotdShine above rather than a second keyframe for the same gesture. */
+.owner-shine {
+  position: relative; display: inline-block; overflow: hidden;
+  /* !important: this sits inside .race-name > b, .db-name and .race-board-name,
+     each of which sets its own color at equal or higher specificity. */
+  color: var(--gold) !important;
+  cursor: pointer;
+}
+.owner-shine::after {
+  content: ''; position: absolute; inset: 0;
+  background: linear-gradient(105deg,
+    transparent 38%, color-mix(in srgb, var(--gold) 55%, transparent) 50%, transparent 62%);
+  transform: translateX(-120%);
+  animation: sotdShine 6s var(--ease) infinite;
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) { .owner-shine::after { animation: none; opacity: 0; } }
+[data-motion="off"] .owner-shine::after { animation: none !important; }
+
+.race-av.owner, .db-face.owner {
+  box-shadow: 0 0 0 1.5px var(--gold); cursor: pointer;
+}
+
+.owner-card { display: flex; flex-direction: column; gap: 10px; width: 250px; max-width: 100%; padding: 2px; }
+.owner-card .about-link { padding: 9px 10px; }
 
 .reel-card { display: flex; flex-direction: column; gap: 8px; }
 .reel-empty {

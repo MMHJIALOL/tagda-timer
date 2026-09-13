@@ -20,6 +20,7 @@ import { DEFAULT_SPEFFZ_MAP, DEFAULT_BLD, CORNER_STICKER_KEYS, EDGE_STICKER_KEYS
          frontsFor, faceLabel, pieceAtFacelet, faceletsOfPiece,
          pieceName, samePiece, diagnose } from './bldtrace.js';
 import { FACES } from './cube3.js';
+import { DEFAULT_CUBE_COLORS } from './cube.js';
 
 /* ---------------- drawer shell ---------------- */
 
@@ -194,11 +195,31 @@ export function buildAppearance(app) {
     };
     renderBgExtra();
 
+    /* cube sticker colours — the preview and the virtual cube */
+    const cubeColors = el('div', { class: 'color-grid' });
+    const drawCubeColors = () => cubeColors.replaceChildren(...Object.entries({
+      U: 'U · top', F: 'F · front', R: 'R · right', D: 'D · bottom', L: 'L · left', B: 'B · back',
+    }).map(([f, label]) => {
+      const inp = el('input', { class: 'inp', type: 'color', value: S.cubeColors?.[f] || DEFAULT_CUBE_COLORS[f] });
+      inp.addEventListener('input', () =>
+        set('cubeColors', { ...DEFAULT_CUBE_COLORS, ...S.cubeColors, [f]: inp.value }));
+      return el('div', { class: 'color-item' }, inp, el('span', { text: label }));
+    }));
+    drawCubeColors();
+
     body.append(
       group('Theme', grid,
         el('div', { class: 'color-grid' },
           colorItem('accent', 'accent', '#7c5cff'),
           colorItem('secondary', 'accent2', '#35e6c5')),
+      ),
+
+      group('Cube colours',
+        cubeColors,
+        row('Stock colours', el('button', {
+          class: 'ghost-btn', text: 'reset',
+          onclick: () => { set('cubeColors', null); drawCubeColors(); },
+        }), '3x3 cubes, preview and virtual'),
       ),
 
       group('Background',
@@ -1954,12 +1975,22 @@ export function buildShortcuts() {
    ABOUT
    ========================================================= */
 
-const IG_HANDLE = 'cubingngagng';
+export const IG_HANDLE = 'cubingngagng';
 const IG_PROFILE = `https://instagram.com/${IG_HANDLE}`;
 const IG_REELS = `https://instagram.com/${IG_HANDLE}/reels/`;
-const GH_HANDLE = 'MMHJIALOL';
-const GH_PROFILE = `https://github.com/${GH_HANDLE}`;
-const AVATAR = 'assets/ishaan.jpg';
+export const GH_HANDLE = 'MMHJIALOL';
+export const GH_PROFILE = `https://github.com/${GH_HANDLE}`;
+export const IG_PROFILE_URL = IG_PROFILE;
+export const AVATAR = 'assets/ishaan.jpg';
+
+/** The raceName that marks a leaderboard/room row as the site owner's — see ownercard.js. */
+export const OWNER_NAME = 'cubingngagng';
+
+export const OWNER_BIO =
+  'Speedcuber, and the person who built this timer. I post solves, reconstructions and ' +
+  'cubing bits on Instagram — come say hello. Tagda Timer is the timer I wanted for my own ' +
+  'practice: WCA-legal random-state scrambles, everything stored on your own machine by ' +
+  'default, with an optional account if you want your solves synced across devices.';
 
 export function buildAbout(app) {
   return (body) => {
@@ -2002,11 +2033,7 @@ export function buildAbout(app) {
           el('div', {},
             el('div', { class: 'about-name', text: 'Ishaan' }),
             el('div', { class: 'about-handle', text: '@' + IG_HANDLE }))),
-        el('div', { class: 'about-bio', text:
-          'Speedcuber, and the person who built this timer. I post solves, reconstructions and ' +
-          'cubing bits on Instagram — come say hello. Tagda Timer is the timer I wanted for my own ' +
-          'practice: WCA-legal random-state scrambles, everything stored on your own machine, no ' +
-          'account and no server.' }),
+        el('div', { class: 'about-bio', text: OWNER_BIO }),
       ),
 
       group('Find me',
