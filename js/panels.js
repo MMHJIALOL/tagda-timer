@@ -1975,12 +1975,22 @@ export function buildShortcuts() {
    ABOUT
    ========================================================= */
 
-const IG_HANDLE = 'cubingngagng';
+export const IG_HANDLE = 'cubingngagng';
 const IG_PROFILE = `https://instagram.com/${IG_HANDLE}`;
 const IG_REELS = `https://instagram.com/${IG_HANDLE}/reels/`;
-const GH_HANDLE = 'MMHJIALOL';
-const GH_PROFILE = `https://github.com/${GH_HANDLE}`;
-const AVATAR = 'assets/ishaan.jpg';
+export const GH_HANDLE = 'MMHJIALOL';
+export const GH_PROFILE = `https://github.com/${GH_HANDLE}`;
+export const IG_PROFILE_URL = IG_PROFILE;
+export const AVATAR = 'assets/ishaan.jpg';
+
+/** The raceName that marks a leaderboard/room row as the site owner's — see ownercard.js. */
+export const OWNER_NAME = 'cubingngagng';
+
+export const OWNER_BIO =
+  'Speedcuber, and the person who built this timer. I post solves, reconstructions and ' +
+  'cubing bits on Instagram — come say hello. Tagda Timer is the timer I wanted for my own ' +
+  'practice: WCA-legal random-state scrambles, everything stored on your own machine by ' +
+  'default, with an optional account if you want your solves synced across devices.';
 
 export function buildAbout(app) {
   return (body) => {
@@ -2023,11 +2033,7 @@ export function buildAbout(app) {
           el('div', {},
             el('div', { class: 'about-name', text: 'Ishaan' }),
             el('div', { class: 'about-handle', text: '@' + IG_HANDLE }))),
-        el('div', { class: 'about-bio', text:
-          'Speedcuber, and the person who built this timer. I post solves, reconstructions and ' +
-          'cubing bits on Instagram — come say hello. Tagda Timer is the timer I wanted for my own ' +
-          'practice: WCA-legal random-state scrambles, everything stored on your own machine, no ' +
-          'account and no server.' }),
+        el('div', { class: 'about-bio', text: OWNER_BIO }),
       ),
 
       group('Find me',
