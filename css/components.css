@@ -707,12 +707,14 @@
   display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 14px;
   min-height: 34px;
 }
-/* A control wider than what is left beside its label (four input chips, say)
-   drops onto its own line instead of crushing the label to one word a line. */
-.row > .lbl { flex-basis: 9rem; }
 /* :not(.switch) matters Ã¢â‚¬â€ a bare `.row > label` beats `.switch { flex: none }`
    on specificity and stretches the toggle into a slider-looking bar. */
 .row > label:not(.switch), .row > .lbl { font-size: .84rem; color: var(--text-dim); flex: 1; min-width: 0; }
+/* A control wider than what is left beside its label (four input chips, say)
+   drops onto its own line instead of crushing the label to one word a line.
+   Comes after the flex:1 shorthand above on purpose: that shorthand resets
+   flex-basis to 0%, so this floor has to win the cascade, not just state it. */
+.row > .lbl { flex-basis: 9rem; }
 .row .sub { display: block; font-size: .72rem; color: var(--text-faint); margin-top: 1px; }
 .row.stack { flex-direction: column; align-items: stretch; gap: 7px; }
 
@@ -893,24 +895,6 @@ input[type="range"]::-moz-range-thumb {
 .toast .t-act:hover { background: color-mix(in srgb, var(--accent) 16%, transparent); }
 .toast.good { border-color: color-mix(in srgb, var(--ok) 45%, transparent); }
 .toast.bad  { border-color: color-mix(in srgb, var(--danger) 45%, transparent); }
-
-/* new best single / average — a ticker across the top of the digits */
-.pb-marquee {
-  position: absolute; left: 0; right: 0; bottom: 100%;
-  overflow: hidden; white-space: nowrap; pointer-events: none;
-  font: 650 .78rem/1.8 var(--font-ui, system-ui), sans-serif;
-  letter-spacing: .22em; text-transform: uppercase; color: var(--accent); text-shadow: none;
-  -webkit-mask-image: linear-gradient(90deg, transparent, #000 15%, #000 85%, transparent);
-          mask-image: linear-gradient(90deg, transparent, #000 15%, #000 85%, transparent);
-}
-.pb-marquee span { display: inline-block; padding-left: 100%; animation: pbTicker 2.5s linear infinite; }
-.pb-marquee.still { text-align: center; }
-.pb-marquee.still span { padding-left: 0; animation: none; }
-@keyframes pbTicker { to { transform: translateX(-100%); } }
-@media (prefers-reduced-motion: reduce) {
-  .pb-marquee { text-align: center; }
-  .pb-marquee span { padding-left: 0; animation: none; }
-}
 
 /* ---------------- creator chip ---------------- */
 #creator-chip {
