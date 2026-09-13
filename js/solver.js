@@ -143,7 +143,7 @@ const NODE_BUDGET = 5_000_000;
  * `h` is a lower bound on the remaining length — the tighter it is, the less
  * of the tree gets walked.
  */
-function searchDepth(start, goal, h, limit, want, out, budget) {
+function searchDepth(start, goal, h, limit, want, out, budget, lead = []) {
   const S = [];
   for (let i = 0; i <= limit; i++) S.push(new Uint8Array(40));
   S[0].set(start);
@@ -154,7 +154,9 @@ function searchDepth(start, goal, h, limit, want, out, budget) {
     if (out.length >= want || nodes > budget.left) return;
     if (d === limit) {
       nodes++;
-      if (goal(S[d])) out.push(Array.from(path.slice(0, limit)));
+      // A line that was already finished a move ago is that line plus a spare
+      // turn, and the slack depths filled the list with exactly those.
+      if (goal(S[d]) && !(d > 0 && goal(S[d - 1]))) out.push(Array.from(path.slice(0, limit)));
       return;
     }
     if (d + h(S[d]) > limit) return;
@@ -163,7 +165,9 @@ function searchDepth(start, goal, h, limit, want, out, budget) {
       if (face === prev) continue;
       // Opposite faces commute, so only one of the two orders is walked —
       // and never a third turn of the same face sandwiched between them.
-      if (prev >= 0 && opposite(face, prev) && face > prev) continue;
+      // The ordering rule is only for pairs inside one path: the move before
+      // the first one was made by a person, and D after their U is a real move.
+      if (d > 0 && opposite(face, prev) && face > prev) continue;
       if (prev2 >= 0 && face === prev2 && opposite(face, prev)) continue;
       nodes++;
       mulInto(S[d + 1], S[d], MOVES[m]);
@@ -172,19 +176,22 @@ function searchDepth(start, goal, h, limit, want, out, budget) {
       if (out.length >= want || nodes > budget.left) return;
     }
   };
-  rec(0, -1, -1);
+  /* `lead` is the solver faces of the last one or two turns already made. Not
+     opening on them is what stops the shortest answer from being "take back
+     what you just typed". */
+  rec(0, lead[0] ?? -1, lead[1] ?? -1);
   budget.left -= nodes;
   return out;
 }
 
 /** Shortest-first enumeration: stop once we have enough, or once we are two
     moves past the first thing that worked. Nobody wants the 12-move cross. */
-function solveGoal(start, goal, h, { want = 60, slack = 2, maxDepth = MAX_DEPTH, budget }) {
+function solveGoal(start, goal, h, { want = 60, slack = 2, maxDepth = MAX_DEPTH, budget, lead = [] }) {
   const out = [];
   let best = -1;
   for (let d = 0; d <= maxDepth; d++) {
     if (budget.left <= 0) break;
-    searchDepth(start, goal, h, d, want, out, budget);
+    searchDepth(start, goal, h, d, want, out, budget, lead);
     if (out.length && best < 0) best = d;
     /* Alternatives are worth having when the answer is short. Once it is eight
        moves or more, one more depth costs an order of magnitude and buys a
@@ -201,7 +208,7 @@ function solveGoal(start, goal, h, { want = 60, slack = 2, maxDepth = MAX_DEPTH,
 
 const COMFORT = { R: 0, U: 0, L: 1, F: 1, D: 2, B: 3 };
 
-function render(path, frame) {
+function render(path, frame, crossFace = null) {
   const toks = path.map(m => {
     const name = MOVE_NAMES[m];
     const solverFace = name[0];
@@ -209,14 +216,41 @@ function render(path, frame) {
   });
   const alg = tidy(toks.join(' '));
   const faces = alg.split(/\s+/).filter(Boolean);
+  // Comfort is about where the layers are, not their letters: with the cross
+  // held on top, D is the free face and U is the one that wrecks the cross.
+  const up = crossFace && toUserFace(frame, crossFace) === 'U';
+  const cost = (f) => COMFORT[up && f === 'U' ? 'D' : up && f === 'D' ? 'U' : f];
   return {
     alg,
     moves: faces.length,
-    awkward: faces.reduce((n, t) => n + COMFORT[t[0]], 0),
+    awkward: faces.reduce((n, t) => n + cost(t[0]), 0),
   };
 }
 
 const byNiceness = (a, b) => a.moves - b.moves || a.awkward - b.awkward || a.alg.localeCompare(b.alg);
+
+/* Easy beats short. A seven-move R U line is what a person does; a six-move
+   line full of F, D and B turns is what a computer does. A move per point of
+   awkwardness is what puts the R U line first. */
+const ease = (x) => x.moves + x.awkward;
+const byEase = (a, b) => ease(a) - ease(b) || byNiceness(a, b);
+
+/**
+ * The top of a pair list, but never all one idea. Each slot keeps its easiest
+ * line as the cube is held and its easiest line from a rotated grip, so a back
+ * pair is not only ever offered as "turn round and do it in front". The rest
+ * fill in by ease.
+ */
+function pickF2L(sorted, limit) {
+  const keep = new Set();
+  const seen = new Set();
+  for (const x of sorted) {
+    const k = `${x.slot}|${!!x.rot}`;
+    if (!seen.has(k)) { seen.add(k); keep.add(x); }
+  }
+  for (const x of sorted) { if (keep.size >= limit) break; keep.add(x); }
+  return sorted.filter(x => keep.has(x)).slice(0, limit);
+}
 
 /* ---------------- the same solution, from a different grip ----------------
    `B' U2 B U' B' U B` and `y R' U2 R U' R' U R` are the same eight turns of
@@ -248,12 +282,12 @@ const rotatedFrame = (frame, rot) => applyAlg(FRAME_PROBE, rot, frame)?.frame ||
  * spellings of the same eight turns is not four suggestions, it is one
  * suggestion crowding three real alternatives off the list.
  */
-function variants(path, frame) {
-  const base = { ...render(path, frame), frame, rot: '' };
+function variants(path, frame, crossFace = null) {
+  const base = { ...render(path, frame, crossFace), frame, rot: '' };
   let best = null;
   for (const rot of GRIPS) {
     const rf = rotatedFrame(frame, rot);
-    const r = render(path, rf);
+    const r = render(path, rf, crossFace);
     if (r.awkward >= base.awkward) continue;
     if (best && r.awkward >= best.awkward) continue;
     // The rotation itself costs a point, so a tie is settled by not rotating.
@@ -459,7 +493,8 @@ function lastLayer(state, frame, analysis) {
  *   list    ranked suggestions
  *   zb      true when the list opens with one-alg finishes for this OLL
  */
-export function suggest(state, frame, analysis, { limit = 20, timeMs = 1500, crossName = null } = {}) {
+export function suggest(state, frame, analysis, { limit = 20, timeMs = 1500, crossName = null, lead = [], slot = null } = {}) {
+  lead = lead.map(f => FACES.indexOf(f)).filter(i => i >= 0);
   const budget = { left: NODE_BUDGET };
   const started = performance.now();
   const out = { kind: analysis.phase, best: -1, list: [], partial: false, face: analysis.face, zb: false };
@@ -482,13 +517,13 @@ export function suggest(state, frame, analysis, { limit = 20, timeMs = 1500, cro
   if (analysis.phase === 'cross') {
     const { dist, slotOf, homes } = crossTable(analysis.face);
     const h = (s) => dist[crossIndex(s, slotOf)];
-    const { best, solutions } = solveGoal(state, crossGoal(homes), h, { want: 120, slack: 2, maxDepth: 9, budget });
+    const { best, solutions } = solveGoal(state, crossGoal(homes), h, { want: 120, slack: 2, maxDepth: 9, budget, lead });
     out.best = best;
     const crossLabel = crossName || `${analysis.face} cross`;
-    out.list = dedupe(solutions.flatMap(p => variants(p, frame).map(v => ({
+    out.list = dedupe(solutions.flatMap(p => variants(p, frame, analysis.face).map(v => ({
       alg: v.alg, moves: v.moves, awkward: v.awkward,
       label: crossLabel, note: gripNote('cross', v.rot),
-    })))).sort(byNiceness).slice(0, limit);
+    })))).sort(byEase).slice(0, limit);
     out.partial = budget.left <= 0;
     return out;
   }
@@ -499,7 +534,10 @@ export function suggest(state, frame, analysis, { limit = 20, timeMs = 1500, cro
   const { dist, slotOf, homes } = crossTable(analysis.face);
   const cross = [0, 0, 0, 0], crossO = [0, 0, 0, 0];
   const done = analysis.slots.filter(s => s.done);
-  const todo = analysis.slots.filter(s => !s.done);
+  let todo = analysis.slots.filter(s => !s.done);
+  /* A slot picked by hand narrows the question to that one pair. */
+  const picked = slot && todo.find(s => s.label === slot);
+  if (picked) todo = [picked];
   const all = [];
   let best = -1;
 
@@ -540,20 +578,22 @@ export function suggest(state, frame, analysis, { limit = 20, timeMs = 1500, cro
     };
     // The last slot is the only search left, so it can afford to look deeper.
     const cap = todo.length === 1 ? 11 : 10;
+    /* Two moves of slack rather than one: the easy line is often a move longer
+       than the optimal one, and it cannot be ranked first if it was never found. */
     const { best: b, solutions } = solveGoal(
       state, pairGoal(homes, done, slot), h,
-      { want: 24, slack: 1, maxDepth: best >= 0 ? Math.min(cap, best + 1) : cap, budget },
+      { want: todo.length === 1 ? 40 : 24, slack: 2, maxDepth: best >= 0 ? Math.min(cap, best + 2) : cap, budget, lead },
     );
     if (b >= 0 && (best < 0 || b < best)) best = b;
     for (const p of solutions) {
       /* The slot is named from the grip the line is written in. Turn the cube
          and the FR pair is the BR pair — calling it the old name is worse than
          not naming it at all. */
-      for (const v of variants(p, frame)) {
-        const where = [...slot.label].map(f => toUserFace(v.frame, f)).join('');
+      for (const v of variants(p, frame, analysis.face)) {
+        const where = slotLabel(slot.label, v.frame);
         all.push({
-          alg: v.alg, moves: v.moves, awkward: v.awkward,
-          label: `${where} pair`, note: gripNote('f2l', v.rot),
+          alg: v.alg, moves: v.moves, awkward: v.awkward, slot: slot.label, rot: v.rot,
+          label: `${where} pair`, note: gripNote(v.rot ? 'f2l' : 'f2l · no rotation', v.rot),
         });
       }
     }
@@ -580,14 +620,14 @@ export function suggest(state, frame, analysis, { limit = 20, timeMs = 1500, cro
         return d > n ? d : n;
       };
       const { best: b, solutions } = solveGoal(
-        state, pairGoal(homes, [], slot), h, { want: 12, slack: 1, maxDepth: 9, budget },
+        state, pairGoal(homes, [], slot), h, { want: 12, slack: 1, maxDepth: 9, budget, lead },
       );
       if (b >= 0 && (best < 0 || b < best)) best = b;
       for (const p of solutions) {
-        for (const v of variants(p, frame)) {
-          const where = [...slot.label].map(f => toUserFace(v.frame, f)).join('');
+        for (const v of variants(p, frame, analysis.face)) {
+          const where = slotLabel(slot.label, v.frame);
           all.push({
-            alg: v.alg, moves: v.moves, awkward: v.awkward,
+            alg: v.alg, moves: v.moves, awkward: v.awkward, slot: slot.label, rot: v.rot,
             label: `${where} pair`, note: gripNote('disturbs a finished pair', v.rot),
           });
         }
@@ -597,7 +637,7 @@ export function suggest(state, frame, analysis, { limit = 20, timeMs = 1500, cro
 
   out.best = best;
   out.partial = out.partial || budget.left <= 0;
-  out.list = dedupe(all).sort(byNiceness).slice(0, limit);
+  out.list = pickF2L(dedupe(all).sort(byEase), limit);
   return out;
 }
 
@@ -743,7 +783,7 @@ export function crossFrame(face, orient = 'bottom') {
  * "RF pair" is a slot nobody has ever called that.
  */
 const NAME_ORDER = { U: 0, D: 1, F: 2, B: 3, R: 4, L: 5 };
-const slotLabel = (label, frame) => [...label]
+export const slotLabel = (label, frame) => [...label]
   .map(f => toUserFace(frame, f))
   .sort((a, b) => NAME_ORDER[a] - NAME_ORDER[b])
   .join('');

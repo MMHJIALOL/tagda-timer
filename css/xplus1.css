@@ -160,6 +160,47 @@ body.xp1-open #bg-root { opacity: 0; }
 }
 .xp-nocube { color: var(--text-faint); font-size: .8rem; text-align: center; }
 
+/* Face letters that follow a dragged camera — the same idea as the
+   reconstruction workbench: turn it round and every face is still named. */
+.xp-cube3d { position: relative; }
+.xp-faces { position: absolute; inset: 0; pointer-events: none; z-index: 2; }
+.xp-faces[hidden] { display: none; }
+.xp-face {
+  position: absolute; transform: translate(-50%, -50%);
+  padding: 1px 7px; border-radius: 8px;
+  font-family: var(--font-mono); font-size: 1.1rem; font-weight: 800;
+  color: var(--accent-2); letter-spacing: .02em;
+  background: color-mix(in srgb, var(--bg) 72%, transparent);
+  text-shadow: 0 0 10px var(--bg), 0 0 4px var(--bg);
+}
+.xp-face.back { color: var(--text-faint); font-size: .86rem; opacity: .6; background: none; padding: 0; }
+
+/* ---------------- your own scramble, or one from a solve ---------------- */
+.xp-scr { flex: 1; min-width: 160px; }
+.xp-scr .xp-inp { height: 30px; font-size: .76rem; }
+.xp-pick { position: relative; flex: none; }
+.xp-pick .ghost-btn svg { width: 13px; height: 13px; }
+.xp-picklist {
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: 4;
+  width: min(360px, calc(100vw - 32px)); max-height: 46vh; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 8px; border-radius: 14px;
+  background: color-mix(in srgb, var(--surface) 97%, transparent);
+  border: 1px solid var(--border); box-shadow: var(--shadow);
+}
+.xp-picklist[hidden] { display: none; }
+.xp-pickrow {
+  display: flex; flex-direction: column; gap: 2px; align-items: flex-start;
+  padding: 7px 9px; border-radius: 9px; text-align: left; width: 100%;
+  border: 1px solid transparent;
+}
+.xp-pickrow:hover { background: color-mix(in srgb, var(--text) 8%, transparent); border-color: var(--border); }
+.xp-pickrow b { font-family: var(--font-mono); font-size: .8rem; font-weight: 600; color: var(--text); }
+.xp-pickrow span {
+  font-family: var(--font-mono); font-size: .62rem; color: var(--text-faint);
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
 .xp-net {
   display: grid;
   grid-template-columns: repeat(12, 1fr);

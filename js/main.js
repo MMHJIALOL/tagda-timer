@@ -337,7 +337,7 @@ async function openXp1() {
   try { m = await loadXp1(); }
   catch (err) { return lazyFailed('the Cross + 1 trainer', err); }
   timer.reset?.();
-  return m.openXp1({ timerScramble: () => app.scramble?.scramble || '' });
+  return m.openXp1({ timerScramble: () => app.scramble?.scramble || '', library: reconLibrary() });
 }
 
 /**
@@ -1036,6 +1036,8 @@ function wireTimer() {
 
   timer.addEventListener('state', (e) => {
     const st = e.detail.state;
+    // Starting the next attempt answers a still-open misfire prompt: keep it.
+    if (st !== 'idle' && st !== 'cooldown') pendingMisfire?.dismiss();
     /* The room learns that you are inspecting or solving, and never how far
        into it you are. A tick broadcast would be a live time by another name,
        which is the exact thing race mode exists not to leak. */
@@ -1652,6 +1654,8 @@ function renderPhaseBreakdown(phasesMs, timeMs) {
 /* =========================================================
    Recording a solve
    ========================================================= */
+let pendingMisfire = null;
+
 async function onSolveFinished(res) {
   resetBgColors();
   const main = $('#time-main');
@@ -1670,9 +1674,12 @@ async function onSolveFinished(res) {
 
   if (res.suspicious && app.settings.confirmShortSolves) {
     // A misfire is obvious the instant it happens — you felt the stack move.
-    // No answer means keep the solve, and the prompt gets out of the way fast.
-    const keep = await confirmToast(`${fmt(res.timeMs)} — misfire? Discard it?`, 'discard', { timeout: 1500 });
-    if (keep) { timer.reset(); nextScramble(); return; }
+    // No answer means keep the solve. It stays up long enough to read, and
+    // starting the next solve closes it early (see the timer 'state' listener).
+    pendingMisfire = confirmToast(`${fmt(res.timeMs)} — misfire? Discard it?`, 'discard', { timeout: 5000 });
+    const discard = await pendingMisfire;
+    pendingMisfire = null;
+    if (discard) { timer.reset(); nextScramble(); return; }
   }
 
   await recordSolve({
@@ -1693,6 +1700,8 @@ async function recordSolve({ timeMs, penalty = 'none', inspectionMs = 0, splits 
   const prevBest = bestSingle(app.solves);
   const prevAo5  = bestAvg(app.solves, 5).value;
   const prevAo12 = bestAvg(app.solves, 12).value;
+  const prevAo25 = bestAvg(app.solves, 25).value;
+  const prevAo100 = bestAvg(app.solves, 100).value;
 
   const race = raceCtl();
   const racing = !!(race?.inRoom && app.scramble?.race);
@@ -1769,16 +1778,21 @@ async function recordSolve({ timeMs, penalty = 'none', inspectionMs = 0, splits 
   const nowBest = bestSingle(app.solves);
   const nowAo5  = bestAvg(app.solves, 5).value;
   const nowAo12 = bestAvg(app.solves, 12).value;
+  const nowAo25 = bestAvg(app.solves, 25).value;
+  const nowAo100 = bestAvg(app.solves, 100).value;
+  const beat = (prev, now) => prev !== null && now !== null && now < prev;
 
-  let pbKind = null;
-  if (prevBest !== null && nowBest !== null && nowBest < prevBest && eff(solve) === nowBest) pbKind = 'single';
-  else if (prevAo5 !== null && nowAo5 !== null && nowAo5 < prevAo5) pbKind = 'ao5';
-  else if (prevAo12 !== null && nowAo12 !== null && nowAo12 < prevAo12) pbKind = 'ao12';
+  let pb = null;
+  if (beat(prevBest, nowBest) && eff(solve) === nowBest) pb = ['single', nowBest];
+  else if (beat(prevAo5, nowAo5)) pb = ['ao5', nowAo5];
+  else if (beat(prevAo12, nowAo12)) pb = ['ao12', nowAo12];
+  else if (beat(prevAo25, nowAo25)) pb = ['ao25', nowAo25];
+  else if (beat(prevAo100, nowAo100)) pb = ['ao100', nowAo100];
 
   showDelta(solve, prevBest);
   renderAll();
 
-  if (pbKind) celebratePB(pbKind);
+  if (pb) celebratePB(...pb);
   nextScramble();
 }
 
@@ -1820,7 +1834,7 @@ function showDelta(solve, prevBest) {
   void prevBest;
 }
 
-function celebratePB(kind) {
+function celebratePB(kind, value) {
   const c = themeColors();
   const intensity = kind === 'single' ? 1 : kind === 'ao5' ? 0.7 : 0.5;
   const motion = app.settings.motion;
@@ -1835,9 +1849,20 @@ function celebratePB(kind) {
     flash(c.gold);
   }
   if (app.settings.soundOnPB) chime();
-  const label = kind === 'single' ? 'New personal best!' : kind === 'ao5' ? 'Best ao5 of the session!' : 'Best ao12 of the session!';
-  toast(label, { kind: 'good', long: true });
+  const label = kind === 'single' ? 'New personal best!' : `Best ${kind} of the session!`;
+  toast(label, { kind: 'good', hold: true });
   const d = $('#timer-display');
+
+  // A csTimer-style ticker above the digits, gone with the toast.
+  d.querySelector('.pb-marquee')?.remove();
+  const ticker = document.createElement('div');
+  ticker.className = 'pb-marquee' + (motion === 'off' ? ' still' : '');
+  ticker.setAttribute('aria-hidden', 'true');
+  const line = document.createElement('span');
+  line.textContent = `best ${kind} · ${value === DNF ? 'DNF' : fmt(value)}`;
+  ticker.append(line);
+  d.append(ticker);
+  setTimeout(() => ticker.remove(), 5000);
   if (motion !== 'off') {
     d.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.09)' }, { transform: 'scale(1)' }],
       { duration: 640, easing: 'cubic-bezier(.34,1.56,.64,1)' });
