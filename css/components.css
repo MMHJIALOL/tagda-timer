@@ -704,9 +704,12 @@
 .group > h3::after { content: ''; flex: 1; height: 1px; background: var(--border); }
 
 .row {
-  display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 14px;
   min-height: 34px;
 }
+/* A control wider than what is left beside its label (four input chips, say)
+   drops onto its own line instead of crushing the label to one word a line. */
+.row > .lbl { flex-basis: 9rem; }
 /* :not(.switch) matters Ã¢â‚¬â€ a bare `.row > label` beats `.switch { flex: none }`
    on specificity and stretches the toggle into a slider-looking bar. */
 .row > label:not(.switch), .row > .lbl { font-size: .84rem; color: var(--text-dim); flex: 1; min-width: 0; }

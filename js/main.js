@@ -2910,8 +2910,10 @@ let vcube = null;
 const loadVcube = lazy(async () => {
   const { VirtualCube } = await import('./vcube.js');
   const view = new CubeView($('#vcube-holder'), null);
+  view.backView = 'none';     // csTimer shows the one cube, no floating rear view
   if (!await view.init()) throw new Error('twisty-player unavailable');
   view.setHints(false);
+  view.colors = app.settings.cubeColors;
   // The preview is static on purpose (tempo 0); this one has to show each turn.
   view.player.setAttribute('tempo-scale', '4');
   return new VirtualCube(view, timer);
@@ -3749,6 +3751,10 @@ function applyAll(changed) {
     timer.cfg.useInspection = !eventOf(app.settings.event).noInspection;
   }
   if (changed === 'hintFacelets') cube.setHints(app.settings.hintFacelets);
+  if (!changed || changed === 'cubeColors') {
+    cube.setColors(app.settings.cubeColors);
+    vcube?.view.setColors(app.settings.cubeColors);
+  }
   // Turning the cube over is a re-render of the same scramble, not a new one.
   if (changed === 'yellowTop' && app.scramble) showScramble(app.scramble, true);
   // A bigger preview can push a dragged widget off screen, so re-clamp it —
