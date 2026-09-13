@@ -337,7 +337,7 @@ async function openXp1() {
   try { m = await loadXp1(); }
   catch (err) { return lazyFailed('the Cross + 1 trainer', err); }
   timer.reset?.();
-  return m.openXp1({ timerScramble: () => app.scramble?.scramble || '' });
+  return m.openXp1({ timerScramble: () => app.scramble?.scramble || '', library: reconLibrary() });
 }
 
 /**

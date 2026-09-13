@@ -32,6 +32,7 @@ import {
 } from './cube3.js';
 import { suggestCrossPlusOne, crossRotation, reframeResult } from './solver.js';
 import { faceletsFor, SCHEME } from './cubenet.js';
+import { faceSpots } from './recon.js';
 import { ScrambleQueue } from './scramble.js';
 import { Timer } from './timer.js';
 import { KV } from './db.js';
@@ -123,6 +124,7 @@ let tmr = null;
 let queue = null;
 let onClose = null;
 let getTimerScramble = null;
+let library = [];       // the session's solves, to drill one of their scrambles
 
 const S = {
   settings: { ...DEFAULTS },
@@ -490,6 +492,8 @@ function render() {
 function renderTop() {
   ui.scrambleEcho.textContent = S.scramble || 'no scramble yet';
   ui.scrambleEcho.classList.toggle('empty', !S.scramble);
+  // Never rewrite the box under somebody who is still typing in it.
+  if (document.activeElement !== ui.scrambleBox) ui.scrambleBox.value = S.scramble;
   for (const b of ui.swatches.children) b.classList.toggle('on', b.dataset.face === S.settings.crossFace);
   ui.crossTag.textContent = crossName(S.settings.crossFace)
     + (S.settings.crossFace !== 'auto' && S.settings.orient === 'bottom' ? ' · on the bottom' : '');
@@ -522,7 +526,39 @@ async function mountPlayer() {
   player.setAttribute('visualization', '3D');
   player.setAttribute('tempo-scale', '2');
   ui.cube3d.append(player);
+  watchCamera();
   showCube();
+}
+
+/* ---------------- face letters ----------------
+   Drag the cube round and R is no longer on the right. Same answer as the
+   reconstruction workbench: the six letters follow the camera. The x/y/z
+   buttons already turn the cube itself, so only a drag can put them out of
+   step, and only the drag is tracked. */
+const HOME_VIEW = { latitude: 35, longitude: 30 };   // where cubing.js parks the camera
+const apart = (a, b) => Math.abs(((a - b) % 360 + 540) % 360 - 180);
+
+function paintFaces({ latitude, longitude }) {
+  const moved = Math.abs(latitude - HOME_VIEW.latitude) > 4 || apart(longitude, HOME_VIEW.longitude) > 4;
+  ui.faces.hidden = !moved;
+  if (!moved || !player) return;
+  const pb = player.getBoundingClientRect(), sb = ui.cube3d.getBoundingClientRect();
+  if (!pb.width || !sb.width) return;
+  const cx = pb.x - sb.x + pb.width / 2;
+  const cy = pb.y - sb.y + pb.height / 2;
+  const r = Math.min(pb.width, pb.height) * 0.52;
+  for (const spot of faceSpots(latitude, longitude)) {
+    const tag = ui.faceTags[spot.face];
+    tag.style.left = `${cx + spot.x * r}px`;
+    tag.style.top = `${cy + spot.y * r}px`;
+    tag.classList.toggle('back', !spot.front);
+  }
+}
+
+function watchCamera() {
+  const orbit = player?.experimentalModel?.twistySceneModel?.orbitCoordinates;
+  if (typeof orbit?.addFreshListener !== 'function') return;
+  orbit.addFreshListener((c) => { try { paintFaces(c); } catch { /* not laid out yet */ } });
 }
 
 /**
@@ -981,6 +1017,26 @@ function build() {
       dataset: { face: 'auto' }, text: 'auto', onclick: () => setSetting('crossFace', 'auto'),
     }));
 
+  /* Your own scramble. Typed or pasted; it lands when you press Enter or leave
+     the box, and a bad one puts the last good scramble back. */
+  ui.scrambleBox = el('input', {
+    class: 'xp-inp mono', spellcheck: 'false', autocomplete: 'off',
+    placeholder: 'paste or type your own scramble…', 'aria-label': 'Scramble to drill',
+  });
+  ui.scrambleBox.addEventListener('keydown', (e) => {
+    e.stopPropagation();
+    if (e.key === 'Enter') ui.scrambleBox.blur();
+  });
+  ui.scrambleBox.addEventListener('input', () => {
+    const pos = ui.scrambleBox.selectionStart;
+    const up = ui.scrambleBox.value.replace(/[a-z]/g, c => c.toUpperCase());
+    if (up !== ui.scrambleBox.value) { ui.scrambleBox.value = up; ui.scrambleBox.setSelectionRange(pos, pos); }
+  });
+  ui.scrambleBox.addEventListener('change', () => {
+    const text = ui.scrambleBox.value.trim();
+    if (!text || !setScramble(text)) ui.scrambleBox.value = S.scramble;
+  });
+
   const top = el('div', { class: 'xp-top' },
     el('button', {
       class: 'ghost-btn sm', onclick: () => close(),
@@ -988,7 +1044,13 @@ function build() {
     }),
     el('div', { class: 'xp-cross-pick' }, el('span', { text: 'cross' }), ui.swatches),
     ui.crossTag = el('span', { class: 'xp-cross-tag' }),
-    el('div', { class: 'xp-spacer' }),
+    el('div', { class: 'xp-scr' }, ui.scrambleBox),
+    ui.pick = el('div', { class: 'xp-pick' },
+      el('button', {
+        class: 'ghost-btn sm', onclick: togglePicker, title: 'Drill the scramble of a solve you already did',
+        html: 'from a solve <svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>',
+      }),
+      ui.pickList = el('div', { class: 'xp-picklist', hidden: true })),
     el('button', {
       class: 'ghost-btn sm', title: 'Copy the scramble',
       onclick: () => copy(S.scramble).then(ok => toast(ok ? 'Scramble copied' : 'Clipboard blocked', { kind: ok ? 'good' : 'bad' })),
@@ -1014,6 +1076,10 @@ function build() {
   ui.newBtn = el('button', { class: 'ghost-btn sm', text: 'new scramble  (N)', onclick: () => nextScramble() });
 
   ui.cube3d = el('div', { class: 'xp-cube3d' });
+  ui.faceTags = {};
+  ui.faces = el('div', { class: 'xp-faces', hidden: true, 'aria-hidden': 'true' },
+    ...['U', 'D', 'R', 'L', 'F', 'B'].map(f => (ui.faceTags[f] = el('span', { class: 'xp-face', text: f }))));
+  ui.cube3d.append(ui.faces);
 
   /* Whole-cube rotations. These are the answer to "the moves are for one grip
      and I hold it another way": every line, every slot name and every ergonomic
@@ -1105,8 +1171,32 @@ function build() {
   host.append(top, el('div', { class: 'xp-body' }, stage, side));
   host.addEventListener('click', (e) => {
     if (!ui.settingsPop.hidden && !ui.settingsWrap.contains(e.target)) ui.settingsPop.hidden = true;
+    if (!ui.pickList.hidden && !ui.pick.contains(e.target)) ui.pickList.hidden = true;
   });
   document.body.append(host);
+}
+
+/* ---------------- a scramble from one of your solves ----------------
+   The same list the reconstruction workbench offers: the session's solves,
+   newest first, each with its time. */
+function togglePicker(e) {
+  e?.stopPropagation();
+  const open = ui.pickList.hidden;
+  ui.pickList.hidden = !open;
+  if (!open) return;
+  ui.pickList.innerHTML = '';
+  if (!library.length) {
+    ui.pickList.append(el('div', { class: 'xp-empty', text: 'No solves in this session yet.' }));
+    return;
+  }
+  for (const item of library) {
+    ui.pickList.append(el('button', {
+      class: 'xp-pickrow',
+      onclick: () => { ui.pickList.hidden = true; setScramble(item.scramble); },
+    },
+      el('b', { text: item.label }),
+      el('span', { text: item.scramble })));
+  }
 }
 
 /* ---------------- settings sheet ---------------- */
@@ -1192,7 +1282,8 @@ function buildSettings() {
  *   scramble    a scramble to start on, if you have one to hand
  *   timerScramble  () => the scramble on the timer screen right now
  */
-export async function openXp1({ scramble = '', timerScramble = null, onExit = null } = {}) {
+export async function openXp1({ scramble = '', timerScramble = null, onExit = null, library: lib = [] } = {}) {
+  library = lib;
   if (!host) {
     loadCss();
     await loadSettings();
