@@ -1037,25 +1037,35 @@ function build() {
     if (!text || !setScramble(text)) ui.scrambleBox.value = S.scramble;
   });
 
+  /* Laid out the way the reconstruction workbench does it: the app's mark, the
+     way back, and the scramble as a wide bar of its own with copy inside it. */
   const top = el('div', { class: 'xp-top' },
+    el('span', { class: 'xp-brand' },
+      el('img', {
+        class: 'brand-mark', src: 'assets/logo-96.png', alt: '',
+        width: '96', height: '96', decoding: 'async',
+      }),
+      el('span', { class: 'brand-text', html: 'Tagda <b>Timer</b>' })),
     el('button', {
       class: 'ghost-btn sm', onclick: () => close(),
       html: '<svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg> back to timer',
     }),
-    el('div', { class: 'xp-cross-pick' }, el('span', { text: 'cross' }), ui.swatches),
-    ui.crossTag = el('span', { class: 'xp-cross-tag' }),
-    el('div', { class: 'xp-scr' }, ui.scrambleBox),
+    el('div', { class: 'xp-scr' },
+      el('span', { class: 'xp-scr-lbl', text: 'scramble' }),
+      ui.scrambleBox,
+      el('button', {
+        class: 'ghost-btn sm', title: 'Copy the scramble',
+        onclick: () => copy(S.scramble).then(ok => toast(ok ? 'Scramble copied' : 'Clipboard blocked', { kind: ok ? 'good' : 'bad' })),
+        html: '<svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/></svg>',
+      })),
     ui.pick = el('div', { class: 'xp-pick' },
       el('button', {
         class: 'ghost-btn sm', onclick: togglePicker, title: 'Drill the scramble of a solve you already did',
         html: 'from a solve <svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>',
       }),
       ui.pickList = el('div', { class: 'xp-picklist', hidden: true })),
-    el('button', {
-      class: 'ghost-btn sm', title: 'Copy the scramble',
-      onclick: () => copy(S.scramble).then(ok => toast(ok ? 'Scramble copied' : 'Clipboard blocked', { kind: ok ? 'good' : 'bad' })),
-      html: '<svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/></svg>',
-    }),
+    el('div', { class: 'xp-cross-pick' }, el('span', { text: 'cross' }), ui.swatches),
+    ui.crossTag = el('span', { class: 'xp-cross-tag' }),
     ui.settingsWrap = el('div', { class: 'xp-setwrap' },
       el('button', {
         class: 'ghost-btn sm', title: 'Trainer settings', onclick: toggleSettings,
