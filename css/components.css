@@ -1218,23 +1218,41 @@ input[type="range"]::-moz-range-thumb {
 /* ---- advanced disclosure ----
    Native <details>: the escape hatch for the handful of people past Spotify's
    user cap should cost the rest of them one line of text, not a section. */
-.adv { border-top: 1px solid var(--border); padding-top: 12px; }
+.adv {
+  border: 1px solid color-mix(in srgb, #1db954 35%, var(--border));
+  border-radius: var(--radius-sm);
+  background: linear-gradient(135deg, color-mix(in srgb, #1db954 12%, transparent), transparent 75%);
+}
 .adv > summary {
   cursor: pointer; list-style: none;
-  font-size: .78rem; color: var(--text-faint);
-  display: flex; align-items: center; gap: 7px;
-  padding: 4px 0;
+  display: flex; align-items: center; gap: 11px;
+  padding: 12px 14px;
 }
 .adv > summary::-webkit-details-marker { display: none; }
 .adv > summary::before {
   content: ''; width: 0; height: 0; flex: none;
-  border-left: 4px solid currentColor;
-  border-top: 3.5px solid transparent; border-bottom: 3.5px solid transparent;
+  border-left: 6px solid #1db954;
+  border-top: 5px solid transparent; border-bottom: 5px solid transparent;
   transition: transform var(--dur-fast) var(--ease);
 }
 .adv[open] > summary::before { transform: rotate(90deg); }
-.adv > summary:hover { color: var(--text-dim); }
-.adv-body { display: flex; flex-direction: column; gap: 12px; padding-top: 12px; }
+.adv > summary:hover { background: color-mix(in srgb, #1db954 7%, transparent); }
+.adv-title { font-size: .88rem; font-weight: 700; color: var(--text); }
+.adv-sub { font-size: .74rem; color: var(--text-faint); margin-top: 2px; }
+.adv-body { display: flex; flex-direction: column; gap: 12px; padding: 2px 14px 14px; }
+
+/* The one place anyone has to go. Spotify green, bold, so it cannot be missed. */
+.spot-dash {
+  color: #1db954; font-weight: 700; text-decoration: none;
+  background: color-mix(in srgb, #1db954 16%, transparent);
+  padding: 0 5px; border-radius: 4px; white-space: nowrap;
+}
+.spot-dash:hover { text-decoration: underline; }
+.btn.spot-go {
+  display: flex; justify-content: center; text-decoration: none;
+  background: #1db954; border-color: #1db954; color: #0b0b12; font-weight: 700;
+}
+.btn.spot-go:hover { background: #1ed760; box-shadow: 0 8px 24px -8px #1db954; }
 
 .setup-steps { display: flex; flex-direction: column; gap: 11px; }
 .setup-step { display: flex; gap: 11px; align-items: flex-start; }
