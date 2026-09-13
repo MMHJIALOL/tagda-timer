@@ -170,6 +170,16 @@ body.recon-open #bg-root { opacity: 0; }
   background: color-mix(in srgb, var(--text) 12%, transparent);
 }
 .rc-rot:focus-visible { outline: 2px solid var(--accent-2); outline-offset: 2px; }
+.rc-rot.on {
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+.rc-rot:disabled { opacity: .4; cursor: default; }
+
+/* Which F2L slot the suggestions are for. */
+.rc-slots { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.rc-slots[hidden] { display: none; }
 
 /* Where you are in the solve, as seven bars: filled is behind you, the bright
    one is the step the suggestions are for. */

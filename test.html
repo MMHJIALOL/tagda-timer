@@ -586,7 +586,7 @@ section('reconstruction');
       const gained = C.analyse(after.state, 'D').slots
         .filter(s => s.done && !wasDone.includes(s.label));
       if (gained.length < 1) { mislabelled.push(`${x.alg}: puts no pair in`); continue; }
-      const names = gained.map(g => [...g.label].map(fc => C.toUserFace(rf, fc)).join(''));
+      const names = gained.map(g => SV.slotLabel(g.label, rf));
       if (!names.some(n => x.label.startsWith(`${n} `))) {
         mislabelled.push(`${x.alg}: called "${x.label}", inserts ${names.join('/')}`);
       }
@@ -594,6 +594,23 @@ section('reconstruction');
   }
   check('every pair suggestion inserts, and names, the pair it claims',
     !mislabelled.length, mislabelled.slice(0, 3).join(' | ') || `${f2l.list.length} checked`);
+
+  /* Typing a move must not get it handed straight back: after a U, no line may
+     open on U — that is an undo, not a suggestion. And picking a slot means
+     every line is for that slot. */
+  if (atF2L) {
+    const typed = C.applyAlg(atF2L.pos.state, 'U', atF2L.pos.frame);
+    const ta = C.analyse(typed.state, 'D');
+    const after = SV.suggest(typed.state, typed.frame, ta, { limit: 30, lead: [typed.frame.U] });
+    const undos = after.list.filter(x => !/^[xyz]/.test(x.alg) && /^U/.test(x.alg));
+    check('a typed move is never suggested back as its own undo',
+      after.list.length > 0 && !undos.length, undos.map(x => x.alg).slice(0, 3).join(' | ') || `${after.list.length} checked`);
+
+    const want = ta.slots.find(s => !s.done);
+    const one = SV.suggest(typed.state, typed.frame, ta, { limit: 30, slot: want.label });
+    check('a picked slot only gets lines for that slot',
+      one.list.length > 0 && one.list.every(x => x.slot === want.label), `${one.list.length} for ${want.label}`);
+  }
 }
 
 /* ---------------- how moves group into steps ----------------
