@@ -172,6 +172,7 @@ export const DEFAULTS = {
   spotifyTint: 'accent',        // accent | background | both
   spotifyNowPlaying: false,     // print the track under the scramble
   showSpotifyPanel: true,       // the now-playing card in the sidebar
+  spotifyGradient: true,        // album colours drive the background (shader and gradient)
   featuredReel: FEATURED_REEL,  // an Instagram reel URL pinned in the About panel
 
   // race mode (see RACE.md)
@@ -356,6 +357,29 @@ export function setAlbumTint(colors, settings) {
 
 export const albumTint = () => _albumTint;
 
+/**
+ * Hand the background its colours: the shader's three, and in gradient mode the
+ * gradient itself. The album's, unless `spotifyGradient` is off — then the
+ * theme's own, read with the tint lifted for a moment so the rest of the
+ * interface can keep its album accent.
+ *
+ * Only the 'accent' tint builds a gradient: 'background' and 'both' already put
+ * the artwork itself there, and a gradient on top would paint over it.
+ */
+export function paintBackgroundColors(bg, s) {
+  const tint = _albumTint;
+  const useAlbum = !!tint && s.spotifyGradient !== false;
+  if (tint && !useAlbum) setAlbumTint(null, s);
+  const c = { ...themeColors() };
+  if (tint && !useAlbum) setAlbumTint(tint, s);
+
+  bg.setColors(c.bg2, c.accent, c.accent2);
+  if (s.bgMode !== 'gradient') return;
+  bg.setMedia(useAlbum && s.spotifyTint === 'accent'
+    ? `linear-gradient(135deg, ${c.bg2}, color-mix(in srgb, ${c.accent} 62%, ${c.bg2}) 55%, color-mix(in srgb, ${c.accent2} 62%, ${c.bg2}))`
+    : s.bgGradient);
+}
+
 /* The palette is read from CSS on every inspection frame — the shader tint and
    the ring both want it — and getComputedStyle() there is a forced style
    recalc sixty-plus times a second for nine values that only ever change when
@@ -400,16 +424,14 @@ export async function applyBackground(bg, s) {
   // applyContrast stamps data-bg-luma on <html>, which the stylesheet answers
   // with a different palette — so the cached one is stale by definition here.
   invalidateThemeColors();
-  const c = themeColors();
   bg.speed = s.bgSpeed;
   bg.amount = s.bgAmount;
-  bg.setColors(c.bg2, c.accent, c.accent2);
   bg.setShader(s.bgShader);
 
-  if (s.bgMode === 'shader') { bg.setMode('shader'); return; }
+  if (s.bgMode === 'shader') { bg.setMode('shader'); paintBackgroundColors(bg, s); return; }
 
   bg.setMode('media');
-  if (s.bgMode === 'gradient') bg.setMedia(s.bgGradient);
+  if (s.bgMode === 'gradient') paintBackgroundColors(bg, s);
   else if (s.bgMode === 'solid') bg.setMedia(s.bgSolid);
   else if (s.bgMode === 'image') {
     const blob = await Assets.get('bg-image');

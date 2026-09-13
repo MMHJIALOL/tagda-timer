@@ -17,7 +17,7 @@ import { flash, shockwave, confetti, chime, callout, beep } from './fx.js';
 import { mountMetro, metroExternal } from './metro.js';
 import { summarize, eff, DNF, bestSingle, bestAvg, trimmedIndices, byCase, sessionBests, rollingSeries, statWindow, STAT_LABELS } from './stats.js';
 import { renderMiniTrend } from './charts.js';
-import { DEFAULTS, loadSettings, saveSettings, applyTheme, applyBackground, themeColors, setAlbumTint } from './theme.js';
+import { DEFAULTS, loadSettings, saveSettings, applyTheme, applyBackground, themeColors, setAlbumTint, paintBackgroundColors } from './theme.js';
 import { loadLibraryPrefs } from './alglibrary.js';
 import { initTiles, applyTiles, measureLayout } from './tiles.js';
 import { SPOTIFY_CLIENT_ID, DEV_MODE_LIMIT, OWNER_NEEDS_PREMIUM } from './spotifyapp.js';
@@ -3310,8 +3310,7 @@ function queueTint(colors) {
 
 /** Push whatever the palette now resolves to into the shader. */
 function bgFromTheme() {
-  const c = themeColors();
-  bg.setColors(c.bg2, c.accent, c.accent2);
+  paintBackgroundColors(bg, app.settings);
 }
 
 /* ---------------- the now-playing panel ----------------
@@ -3714,7 +3713,8 @@ function applyAll(changed) {
   // or the gradient string did nothing at all until some unrelated setting
   // happened to trigger a re-apply.
   if (!changed || ['bgMode','bgShader','bgSpeed','bgAmount','theme','accent','accent2',
-                   'bgDim','bgSolid','bgGradient','autoContrast'].includes(changed)) {
+                   'bgDim','bgSolid','bgGradient','autoContrast',
+                   'spotifyGradient','spotifyTint'].includes(changed)) {
     applyBackground(bg, app.settings);
   }
   if (timer) {

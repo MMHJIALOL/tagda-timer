@@ -486,6 +486,9 @@ export function buildSpotify(app) {
             { value: 'background', label: 'Artwork' },
             { value: 'both', label: 'Both' },
           ], app.settings.spotifyTint, v => set('spotifyTint', v))),
+          row('Background gradient', toggle(app.settings.spotifyGradient !== false,
+            v => set('spotifyGradient', v)),
+            'album colours in the animated and gradient backgrounds'),
           row('Now playing panel', toggle(app.settings.showSpotifyPanel,
             v => { set('showSpotifyPanel', v); app.syncSpotifyPanel?.(); }),
             'the cover, track and controls in the sidebar'),
@@ -505,9 +508,18 @@ export function buildSpotify(app) {
          visitors, so it is no longer a corner case. It stays folded because the
          Premium requirement makes it a dead end for a lot of people, and the
          hero above now says so before anyone opens it. */
+      const DASHBOARD = 'https://developer.spotify.com/dashboard';
+      const dashLink = (text) => el('a', { class: 'spot-dash', href: DASHBOARD,
+        target: '_blank', rel: 'noopener noreferrer', text });
       const adv = el('details', { class: 'adv' },
-        el('summary', { text: 'Set up your own connection' }),
+        el('summary', {},
+          el('div', {},
+            el('div', { class: 'adv-title', text: 'Set up your own connection' }),
+            el('div', { class: 'adv-sub', text:
+              `Not one of the ${st.devModeLimit}? Make your own in about five minutes.` }))),
         el('div', { class: 'adv-body' },
+          el('a', { class: 'btn spot-go', href: DASHBOARD, target: '_blank',
+            rel: 'noopener noreferrer', text: 'Open the Spotify Developer Dashboard ↗' }),
           el('div', { class: 'hint-note', text:
             `Spotify only allows ${st.devModeLimit} people to use this site’s connection, and `
             + 'there is no way to raise that — Spotify stopped granting bigger limits to '
@@ -524,8 +536,8 @@ export function buildSpotify(app) {
             : null,
           el('div', { class: 'setup-steps' },
             step(1, 'Create an app',
-              'Go to developer.spotify.com/dashboard, sign in, and press Create app. '
-              + 'Give it any name you like and tick "Web API".'),
+              'Go to ', dashLink('developer.spotify.com/dashboard'),
+              ', sign in, and press Create app. Give it any name you like and tick "Web API".'),
             step(2, 'Add the redirect address',
               'In the app’s settings, paste the address below into "Redirect URIs" and save. '
               + 'It has to match exactly, character for character.'),
@@ -572,12 +584,12 @@ function ownAppRow(app, st, render) {
 }
 
 /** One numbered step in the setup list. */
-function step(n, title, detail) {
+function step(n, title, ...detail) {
   return el('div', { class: 'setup-step' },
     el('span', { class: 'ss-n', text: String(n) }),
     el('div', {},
       el('div', { class: 'ss-t', text: title }),
-      el('div', { class: 'ss-d', text: detail })));
+      el('div', { class: 'ss-d' }, ...detail)));
 }
 
 /* =========================================================
