@@ -60,6 +60,7 @@ const PLL_DESC = {
 export const SETS = {
   PLL: {
     id: 'PLL',
+    event: '333',
     label: 'PLL',
     title: 'Permutation of the last layer',
     cases: PLL,
@@ -68,44 +69,114 @@ export const SETS = {
        the consequence the detail view advertises. ZBLL and F2L have no trainer
        mode, and the page must not claim otherwise. */
     trained: true,
+    trainerMode: 'pll',
+    /* A permutation case has no fixed angle — see caseFacelets. */
+    angle: 'auf',
     caseLabel: (c) => `${c.name} perm`,
     describe: (c) => PLL_DESC[c.id] || c.group,
   },
   OLL: {
     id: 'OLL',
+    event: '333',
     label: 'OLL',
     title: 'Orientation of the last layer',
     cases: OLL,
     library: OLL_LIBRARY,
     trained: true,
+    trainerMode: 'oll',
+    done: 'oriented',
+    /* An OLL diagram is about which stickers face up, not which colours they
+       are — see drawCase in alglibrary-ui.js. */
+    picture: 'orientation',
     caseLabel: (c) => `OLL ${c.name}`,
     describe: (c) => (c.label ? c.label.toLowerCase() : c.group),
   },
 };
 
 /* ---------------------------------------------------------
-   The big sets, loaded only when asked for
+   The catalogue: which events have which sets, and where each one comes from
    --------------------------------------------------------- */
 
 /**
- * ZBLL and F2L are not statically imported, and that is not tidiness.
+ * Nothing but PLL and OLL is statically imported, and that is not tidiness.
  *
  * js/main.js imports this module on the timer's boot path, for
  * `loadLibraryPrefs()` and `preferredAlg()`. ZBLL alone is 472 cases — bigger
- * than everything else in the app's alg data combined — and F2L is another 622
- * algorithms. Importing them here would put all of it in front of the first
- * scramble of every session, to serve a page most sessions never open.
+ * than everything else in the app's alg data combined — F2L is another 622
+ * algorithms, and 2x2 adds a further 135 cases. Importing any of it here would
+ * put all of it in front of the first scramble of every session, to serve a
+ * page most sessions never open.
  *
- * They also differ from PLL/OLL in carrying their own case lists: neither set
- * exists in algs.js, because the trainer has no mode for either.
+ * Each lazy module exports a `SETS` object keyed by set id, so one module can
+ * carry several sets for an event without a loader entry each.
  */
 const LAZY = {
-  ZBLL: () => import('./alglibrary-zbll.js'),
-  F2L:  () => import('./alglibrary-f2l.js'),
+  ZBLL:   () => import('./alglibrary-zbll.js'),
+  F2L:    () => import('./alglibrary-f2l.js'),
+  OCLL:   () => import('./alglibrary-333.js'),
+  EOLL:   () => import('./alglibrary-333.js'),
+  CPLL:   () => import('./alglibrary-333.js'),
+  'EPLL': () => import('./alglibrary-333.js'),
+  '222-OLL': () => import('./alglibrary-222.js'),
+  '222-PBL': () => import('./alglibrary-222.js'),
+  '222-CLL': () => import('./alglibrary-222.js'),
+  '222-EG1': () => import('./alglibrary-222.js'),
+  '222-EG2': () => import('./alglibrary-222.js'),
 };
 
-/** Every set the library page offers a tab for, in tab order. */
-export const SET_IDS = ['PLL', 'OLL', 'ZBLL', 'F2L'];
+/**
+ * Every event the library knows about, in the timer's own event order, with
+ * the sets it can show.
+ *
+ * `pending` is the honest half of this table. An event listed there has real
+ * algorithm sets in the world and none in this app yet, and it says which and
+ * why rather than quietly not appearing — see §7: nothing is printed here that
+ * has not been executed against the case it is filed under, and for a puzzle
+ * this app cannot simulate there is no way to do that yet.
+ */
+export const ALG_EVENTS = [
+  { id: '333',   sets: ['F2L', 'OLL', 'PLL', 'OCLL', 'EOLL', 'CPLL', 'EPLL', 'ZBLL'] },
+  { id: '222',   sets: ['222-OLL', '222-PBL', '222-CLL', '222-EG1', '222-EG2'] },
+  { id: '444',   sets: [], pending: ['OLL parity', 'PLL parity'] },
+  { id: '555',   sets: [], pending: ['5x5 parity and last-two-edges'] },
+  { id: '666',   sets: [], pending: ['6x6 parity'] },
+  { id: '777',   sets: [], pending: ['7x7 parity'] },
+  { id: '333oh', sets: ['F2L', 'OLL', 'PLL', 'OCLL', 'EOLL', 'CPLL', 'EPLL', 'ZBLL'] },
+  { id: '333bf', sets: [], pending: ['3-style corner and edge commutators'] },
+  { id: '444bf', sets: [], pending: ['4x4 parity', 'wing 3-style'] },
+  { id: '555bf', sets: [], pending: ['5x5 parity', 'wing and midge 3-style'] },
+  { id: '333mbf', sets: [], pending: ['3-style corner and edge commutators'] },
+  { id: '333fm', sets: ['F2L', 'OLL', 'PLL', 'ZBLL'] },
+  { id: 'clock', sets: [], pending: ['clock tricks and pin sequences'] },
+  { id: 'minx',  sets: [], pending: ['2-look last layer', 'full last layer'] },
+  { id: 'pyram', sets: [], pending: ['L4E', 'one-flip', 'V-first'] },
+  { id: 'skewb', sets: [], pending: ["Sarah's beginner", "Sarah's advanced"] },
+  { id: 'sq1',   sets: [], pending: ['CSP', 'parity', 'EP + CP'] },
+  { id: 'fto',   sets: [], pending: ['last-layer sets'] },
+];
+
+/** Every set id the catalogue mentions, deduplicated. */
+export const SET_IDS = [...new Set(ALG_EVENTS.flatMap(e => e.sets))];
+
+/**
+ * What a set's tab says before its module has arrived.
+ *
+ * The tab row has to be complete the moment the page opens — a row that fills
+ * in as five dynamic imports land is a row you cannot click — and a set's own
+ * `label` lives inside the module that has not loaded yet. So the labels are
+ * here, next to the catalogue that names the sets, and `SETS[id].label` takes
+ * over the moment it exists.
+ */
+export const SET_LABELS = {
+  PLL: 'PLL', OLL: 'OLL', ZBLL: 'ZBLL', F2L: 'F2L',
+  OCLL: 'OCLL', EOLL: 'EO', CPLL: 'CP', EPLL: 'EP',
+  '222-OLL': 'OLL', '222-PBL': 'PBL', '222-CLL': 'CLL', '222-EG1': 'EG-1', '222-EG2': 'EG-2',
+};
+
+export const eventEntry = (eventId) => ALG_EVENTS.find(e => e.id === eventId) || null;
+
+/** The first event in catalogue order that actually has something to show. */
+export const firstEventWithSets = () => (ALG_EVENTS.find(e => e.sets.length) || ALG_EVENTS[0]).id;
 
 /**
  * Get a set, fetching its module the first time it is asked for.
@@ -116,8 +187,18 @@ export async function loadSet(id) {
   const load = LAZY[id];
   if (!load) return null;
   const mod = await load();
-  SETS[id] = mod.SET;
-  return SETS[id];
+  /* Older modules (ZBLL, F2L) export a single `SET`; the multi-set modules
+     export `SETS`. Both are folded into the same registry so nothing else has
+     to know which shape a module happens to use. */
+  if (mod.SETS) Object.assign(SETS, mod.SETS);
+  else if (mod.SET) SETS[mod.SET.id] = mod.SET;
+  return SETS[id] || null;
+}
+
+/** Load every set the catalogue lists. Only the verification harness wants this. */
+export async function loadAllSets() {
+  for (const id of SET_IDS) await loadSet(id);
+  return SETS;
 }
 
 /** Which set a case id belongs to. Case ids are unique across both sets. */
@@ -192,9 +273,57 @@ function isFirstTwoLayers(f) {
  * perfectly good community algs would be rejected for starting from a
  * different recognition angle.
  */
-/* What counts as having solved a case, per set. PLL and ZBLL finish the cube;
-   OLL only has to orient; F2L only has to fill the slot. */
-const DONE = { OLL: isOriented, F2L: isFirstTwoLayers };
+/**
+ * Last layer edges oriented — the first half of two-look OLL.
+ *
+ * Only the four edge stickers of the U face are asked about. Where the corners
+ * point is the second look's problem, and demanding anything of them here
+ * would reject every correct edge-orientation algorithm except the one the
+ * case was built from.
+ */
+function isEdgesOriented(f) {
+  if (!uniform(f.D)) return false;
+  if (!['R', 'F', 'L', 'B'].every(face => uniform(f[face].slice(1)))) return false;
+  return [[0, 1], [1, 0], [1, 2], [2, 1]].every(([r, c]) => f.U[r][c] === 'U');
+}
+
+/**
+ * Last layer corners permuted — the first half of two-look PLL.
+ *
+ * The corners have to be in the right places relative to each other, which is
+ * exactly "both corner stickers in the top row of every side face match that
+ * face". Edges are untouched by the question, so a correct corner-permutation
+ * algorithm that leaves them cycled still passes, as it must.
+ */
+function isCornersPermuted(f) {
+  if (!uniform(f.D)) return false;
+  if (!['R', 'F', 'L', 'B'].every(face => uniform(f[face].slice(1)))) return false;
+  if (!uniform(f.U)) return false;
+  return ['R', 'F', 'L', 'B'].every(face => f[face][0][0] === face && f[face][0][2] === face);
+}
+
+/** Every corner facing the right way, wherever it sits — 2x2 orientation. */
+const isAllOriented = (f) => uniform(f.U) && uniform(f.D);
+
+/* What counts as having solved a case. A set names one of these; a single case
+   inside a mixed set (two-look OLL holds both edge-orientation and
+   corner-orientation cases) may name its own. */
+const DONE = {
+  solved:   isSolved,
+  oriented: isOriented,
+  ftl:      isFirstTwoLayers,
+  eo:       isEdgesOriented,
+  cp:       isCornersPermuted,
+  oriented2: isAllOriented,
+};
+
+const doneFor = (setId, caseId) => {
+  const c = caseId ? caseOf(setId, caseId) : null;
+  return DONE[c?.done] || DONE[SETS[setId]?.done] || isSolved;
+};
+
+/** Cube size this set's algorithms are executed on. */
+const sizeOf = (setId) => SETS[setId]?.n || 3;
 
 /**
  * Has this state finished the job, by the standard of its own set?
@@ -203,7 +332,7 @@ const DONE = { OLL: isOriented, F2L: isFirstTwoLayers };
  * this feature actually promises: do the setup, do the algorithm printed under
  * the picture, and the case is gone.
  */
-export const isCaseSolved = (setId, facelets) => (DONE[setId] || isSolved)(facelets);
+export const isCaseSolved = (setId, facelets, caseId) => doneFor(setId, caseId)(facelets);
 
 /* F2L is the one set where the slot the alg is written for may not be the slot
    the case is drawn in — the same pair state occurs in all four, and
@@ -216,13 +345,14 @@ const F2L_ROTS = ['', 'y', "y'", 'y2'];
 export function verifyAlgForCase(setId, caseId, alg) {
   const pattern = casePattern(setId, caseId);
   if (!pattern || !parseAlg(alg)) return false;
-  const done = DONE[setId] || isSolved;
+  const done = doneFor(setId, caseId);
+  const n = sizeOf(setId);
   const rots = setId === 'F2L' ? F2L_ROTS : [''];
   for (const rot of rots) {
     for (const pre of AUFS) {
       for (const post of AUFS) {
         const seq = [pattern, pre, rot, alg, post].filter(Boolean).join(' ');
-        if (done(faceletsFor(seq, 3))) return true;
+        if (done(faceletsFor(seq, n))) return true;
       }
     }
   }
@@ -249,11 +379,12 @@ export function verifyAlgForCase(setId, caseId, alg) {
 export const caseFacelets = (setId, caseId) => {
   const pattern = casePattern(setId, caseId);
   if (!pattern) return null;
-  if (setId !== 'PLL') return faceletsFor(pattern, 3);
+  const n = sizeOf(setId);
+  if (SETS[setId]?.angle !== 'auf') return faceletsFor(pattern, n);
 
   let best = null, bestScore = -1;
   for (const auf of AUFS) {
-    const f = faceletsFor([pattern, auf].filter(Boolean).join(' '), 3);
+    const f = faceletsFor([pattern, auf].filter(Boolean).join(' '), n);
     let score = 0;
     for (const face of ['R', 'F', 'L', 'B']) {
       for (const s of f[face][0]) if (s === face) score++;

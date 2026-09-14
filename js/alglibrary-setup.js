@@ -32,7 +32,7 @@
 
 import { faceletsFor, parseAlg, stickerAt } from './cubenet.js';
 import { invert, tidy } from './util.js';
-import { caseFacelets, displayOrder, isCaseSolved } from './alglibrary.js';
+import { SETS, caseFacelets, displayOrder, isCaseSolved } from './alglibrary.js';
 
 const FACES = ['U', 'R', 'F', 'D', 'L', 'B'];
 const AUFS = ['', 'U', 'U2', "U'"];
@@ -204,6 +204,11 @@ const better = (a, b) => (!b ? a : !a ? b : score(a) <= score(b) ? a : b);
  * present only when one exists and lost on length.
  */
 export function setupFor(setId, caseId) {
+  /* Every simulator call below runs on a 3x3, and `signature` reads 3x3
+     facelets. A 2x2 or 4x4 case gets no setup line rather than a setup worked
+     out on the wrong puzzle — the same rule as everywhere else here: no
+     sequence is printed that has not been executed against the case. */
+  if ((SETS[setId]?.n || 3) !== 3) return null;
   const list = displayOrder(setId, caseId);
   if (!list.length) return null;
   const target = caseFacelets(setId, caseId);
@@ -245,12 +250,13 @@ export function setupFor(setId, caseId) {
 export function auditSetups(sets) {
   const bad = [];
   for (const set of sets) {
+    if ((set.n || 3) !== 3) continue;
     for (const c of set.cases) {
       const s = setupFor(set.id, c.id);
       if (!s) { bad.push({ set: set.id, caseId: c.id, why: 'no setup found' }); continue; }
       const alg = displayOrder(set.id, c.id)[0].alg;
       const solved = AUFS.some(pre => AUFS.some(post =>
-        isCaseSolved(set.id, faceletsFor([s.setup, pre, alg, post].filter(Boolean).join(' '), 3))));
+        isCaseSolved(set.id, faceletsFor([s.setup, pre, alg, post].filter(Boolean).join(' '), 3), c.id)));
       if (!solved) bad.push({ set: set.id, caseId: c.id, why: `setup "${s.setup}" is not solved by ${alg}` });
     }
   }

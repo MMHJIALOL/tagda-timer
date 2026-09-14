@@ -458,6 +458,12 @@ async function init() {
   app.session = app.sessions.find(s => s.id === app.settings.sessionId) || app.sessions[0];
   app.settings.sessionId = app.session.id;
   if (app.session.event) app.settings.event = app.session.event;
+
+  /* The algorithm library's "Train these cases" lands here. It is applied
+     before the timer and the scramble queue are built, so the first scramble
+     of the session is already the one you asked for rather than a 3x3 you have
+     to sit through. */
+  await applyTrainerHandoff();
   // A reload leaves the room behind, so it has to leave the room's session
   // behind too — see restoreFromRace.
   restoreFromRace();
@@ -3829,6 +3835,54 @@ function setMode(id) {
   app.scrambleHistory = [];
   refreshQueue(); nextScramble({ clear: true });
   updateLabels();
+}
+
+/**
+ * `algs.html?…` hands a trainer mode and a list of case ids over in the
+ * address bar: `index.html?train=pll&cases=T,Y,V`.
+ *
+ * Nothing here is a second way to configure the trainer. It writes the same
+ * three settings the mode picker and the case picker write — event, mode,
+ * allowedCases — and then gets out of the way, so a hand-off is
+ * indistinguishable from having set it up by hand. The address bar is cleared
+ * straight after for the same reason the race invite is: a reload should not
+ * silently re-apply a choice you have since changed.
+ */
+async function applyTrainerHandoff() {
+  const p = new URLSearchParams(location.search);
+  const modeId = p.get('train');
+  if (!modeId) return;
+  history.replaceState(null, '', location.pathname);
+
+  const mode = MODES[modeId];
+  const set = setFor(modeId);
+  if (!mode || !set) { toast('That trainer set is not one this timer has'); return; }
+
+  /* A mode belongs to its events; pick the first one it lists rather than
+     leaving the timer on an event where syncEventConfig would drop straight
+     back to a random-state scramble. */
+  const event = mode.events === '*' ? app.settings.event : mode.events[0];
+  if (EVENTS[event]) {
+    app.settings.event = event;
+    if (app.session && app.session.event !== event) {
+      app.session.event = event;
+      await Sessions.put(app.session);
+    }
+  }
+  app.settings.mode = modeId;
+
+  /* Case ids that this set does not have are dropped rather than trusted: the
+     link may be older than the set, and an allowedCases list with nothing
+     matching in it would filter every case out. */
+  const known = new Set(set.map(c => c.id));
+  const wanted = (p.get('cases') || '').split(',').map(s => s.trim()).filter(id => known.has(id));
+  if (wanted.length) app.settings.allowedCases[modeId] = wanted;
+  else delete app.settings.allowedCases[modeId];
+
+  persist();
+  toast(wanted.length
+    ? `${mode.name} — ${wanted.length} case${wanted.length === 1 ? '' : 's'} loaded`
+    : `${mode.name} — all ${set.length} cases`, { kind: 'good' });
 }
 
 app.setEvent = setEvent;

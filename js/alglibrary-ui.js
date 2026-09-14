@@ -16,9 +16,10 @@ import { loadSettings, saveSettings, applyTheme } from './theme.js';
 import { mountMetro } from './metro.js';
 import { toast } from './toast.js';
 import {
-  SETS, loadSet, caseOf, caseFacelets, displayOrder, loadLibraryPrefs,
+  SETS, ALG_EVENTS, SET_LABELS, loadSet, caseOf, caseFacelets, displayOrder, loadLibraryPrefs,
   saveOrder, resetOrder, hasCustomOrder, addCustom, removeCustom, moveCount,
 } from './alglibrary.js';
+import { EVENTS } from './events.js';
 import { setupFor } from './alglibrary-setup.js';
 
 /* ---------------------------------------------------------
@@ -71,16 +72,21 @@ function drawCase(canvas, setId, caseId) {
   ctx.scale(dpr, dpr);
   ctx.clearRect(0, 0, size, size);
 
-  if (setId === 'F2L') return drawF2L(ctx, f, size);
+  const set = SETS[setId] || {};
+  if (set.picture === 'f2l') return drawF2L(ctx, f, size);
 
-  const cell = size / 4.2;
+  /* The same drawing serves a 2x2 and a 3x3. Only the number of stickers
+     changes — the layout, the winding and the colour rules are the puzzle's
+     geometry, not its size, so nothing here is written twice. */
+  const n = set.n || 3;
+  const cell = size / (n + 1.2);
   const t = cell * 0.42, g = cell * 0.11;
-  const span = 3 * cell + 2 * (t + g);
+  const span = n * cell + 2 * (t + g);
   const ox = (size - span) / 2, oy = (size - span) / 2;
   const gx = ox + t + g, gy = oy + t + g;
 
-  const oll = setId === 'OLL';
-  const paint = (s) => (oll ? (s === 'U' ? LL_SCHEME.U : UNORIENTED) : LL_SCHEME[s] || UNORIENTED);
+  const orient = set.picture === 'orientation';
+  const paint = (s) => (orient ? (s === 'U' ? LL_SCHEME.U : UNORIENTED) : LL_SCHEME[s] || UNORIENTED);
   const box = (x, y, w, h, s) => {
     ctx.fillStyle = paint(s);
     ctx.beginPath();
@@ -90,8 +96,8 @@ function drawCase(canvas, setId, caseId) {
   };
 
   const pad = cell * 0.06;
-  for (let r = 0; r < 3; r++) {
-    for (let c = 0; c < 3; c++) {
+  for (let r = 0; r < n; r++) {
+    for (let c = 0; c < n; c++) {
       box(gx + c * cell + pad, gy + r * cell + pad, cell - 2 * pad, cell - 2 * pad, f.U[r][c]);
     }
   }
@@ -101,7 +107,7 @@ function drawCase(canvas, setId, caseId) {
      mirrored, which reads as "the diagrams are wrong", not as a bug. */
   const B = f.B[0].slice().reverse();
   const R = f.R[0].slice().reverse();
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < n; i++) {
     box(gx + i * cell + pad, oy,                  cell - 2 * pad, t, B[i]);
     box(gx + i * cell + pad, oy + span - t,       cell - 2 * pad, t, f.F[0][i]);
     box(ox,                  gy + i * cell + pad, t, cell - 2 * pad, f.L[0][i]);
@@ -295,7 +301,28 @@ function sortable(list, onDrop) {
    Grid
    --------------------------------------------------------- */
 
-const state = { set: 'PLL', q: '', group: null };
+const state = { event: '333', set: 'PLL', q: '', group: null };
+
+/* Where you are is in the address bar, so a set is a link you can send someone
+   and a reload puts you back where you were rather than on PLL. */
+function readUrl() {
+  const p = new URLSearchParams(location.search);
+  const ev = ALG_EVENTS.find(e => e.id === p.get('event'));
+  if (ev) state.event = ev.id;
+  const set = p.get('set');
+  if (set && eventSets(state.event).includes(set)) state.set = set;
+  else state.set = eventSets(state.event)[0] || null;
+}
+
+function writeUrl() {
+  const p = new URLSearchParams();
+  p.set('event', state.event);
+  if (state.set) p.set('set', state.set);
+  history.replaceState(null, '', `${location.pathname}?${p}`);
+}
+
+const eventSets = (id) => (ALG_EVENTS.find(e => e.id === id)?.sets) || [];
+const eventName = (id) => EVENTS[id]?.short || id;
 
 /* A search that matched every ZBLL case would try to paint 472 canvases. The
    cap is not about the DOM so much as the pictures: each one runs the cube
@@ -332,11 +359,14 @@ function renderGroups(set) {
 }
 
 function renderGrid() {
-  const set = SETS[state.set];
   const host = $('#alglib-grid');
   host.textContent = '';
   host.hidden = false;
   $('#alglib-detail').hidden = true;
+
+  const set = SETS[state.set];
+  renderTrainBar();
+  if (!set) { $('#alglib-groups').hidden = true; host.appendChild(pendingPanel()); return; }
   renderGroups(set);
 
   const q = state.q.trim().toLowerCase();
@@ -363,6 +393,28 @@ function renderGrid() {
       el('span', { class: 'case-desc', text: set.describe(c) }),
     );
     if (hasCustomOrder(c.id)) card.appendChild(el('span', { class: 'case-flag', text: 'your order' }));
+
+    /* The tick sits on the card rather than in a separate list of the same
+       cases in a different order, which is how you end up drilling four cases
+       you did not mean to pick. It is a button inside a button, so it has to
+       swallow the click that would otherwise open the case. */
+    if (set.trainerMode) {
+      const tick = el('span', {
+        class: `case-tick ${picked.has(c.id) ? 'on' : ''}`,
+        role: 'checkbox',
+        title: 'Include this case when you train',
+        'aria-checked': picked.has(c.id) ? 'true' : 'false',
+      });
+      tick.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        if (picked.has(c.id)) picked.delete(c.id); else picked.add(c.id);
+        tick.classList.toggle('on', picked.has(c.id));
+        tick.setAttribute('aria-checked', picked.has(c.id) ? 'true' : 'false');
+        renderTrainBar();
+      });
+      card.appendChild(tick);
+    }
+
     card.addEventListener('click', () => openCase(c.id));
     host.appendChild(card);
     requestAnimationFrame(() => drawCase(canvas, set.id, c.id));
@@ -370,6 +422,86 @@ function renderGrid() {
   if (all.length > shown.length) {
     host.appendChild(el('p', { class: 'alglib-empty',
       text: `Showing ${shown.length} of ${all.length} matches — narrow the search to see the rest.` }));
+  }
+}
+
+/* ---------------------------------------------------------
+   Events with no data yet
+   --------------------------------------------------------- */
+
+/**
+ * What an event says when this app has no algorithms for it.
+ *
+ * Deliberately a real answer rather than an empty grid. Every algorithm in
+ * this library has been executed against the case it is filed under, and for
+ * megaminx, pyraminx, skewb, square-1, clock and FTO there is no simulator
+ * here to execute it on — so the honest state is "not yet, and here is the
+ * thing that has to exist first", not a page of numbers nobody checked.
+ */
+function pendingPanel() {
+  const entry = ALG_EVENTS.find(e => e.id === state.event);
+  const wanted = entry?.pending || [];
+  return el('section', { class: 'alglib-pending' },
+    el('h2', { text: `No ${EVENTS[state.event]?.name || state.event} algorithms here yet` }),
+    wanted.length
+      ? el('p', {}, el('span', { text: 'Planned: ' }), el('b', { text: wanted.join(' · ') }))
+      : null,
+    el('p', { text:
+      'Nothing is listed on this page that has not been run against its own case on a ' +
+      'simulated puzzle. This app simulates NxN cubes, so 2x2, 3x3 and their sets can be ' +
+      'checked; it has no model of this puzzle yet, and an unchecked algorithm list would ' +
+      'teach someone the wrong thing rather than nothing.' }),
+    el('p', { class: 'sub', text:
+      'The timer still scrambles this event normally — this page is the only part that is waiting.' }),
+  );
+}
+
+/* ---------------------------------------------------------
+   Handing a set to the trainer
+   --------------------------------------------------------- */
+
+/* Which cases are ticked for a training run. Module-level rather than rebuilt
+   with the grid: searching or switching subset must not quietly forget the
+   four cases you already chose. Cleared when you change set, because a
+   selection of PLL cases means nothing in F2L. */
+const picked = new Set();
+
+/**
+ * "Train these cases" — the point of the whole page, in one button.
+ *
+ * The timer already knows how to drill part of a set: the case picker writes
+ * `settings.allowedCases[mode]` and the scramble queue reads it. What was
+ * missing was a way to say *which* cases from the place you can actually see
+ * them. So this hands the timer a mode and a list of case ids in the address
+ * bar and lets the machinery that already exists do the rest — there is no
+ * second definition anywhere of what a trainer scramble is.
+ */
+function renderTrainBar() {
+  const host = $('#alglib-train');
+  host.textContent = '';
+  const set = SETS[state.set];
+  if (!set || !set.trainerMode) { host.hidden = true; return; }
+  host.hidden = false;
+
+  const n = picked.size;
+  const btn = el('button', {
+    class: 'btn primary',
+    text: n ? `Train these ${n} ${n === 1 ? 'case' : 'cases'}` : `Train all ${set.cases.length} cases`,
+  });
+  btn.addEventListener('click', () => {
+    const p = new URLSearchParams({ train: set.trainerMode });
+    if (n) p.set('cases', [...picked].join(','));
+    location.href = `index.html?${p}`;
+  });
+
+  host.append(btn, el('span', { class: 'sub', text: n
+    ? 'the timer will only hand you these, timed, with a per-case average'
+    : 'or tick the corner of a card to drill only some of them' }));
+
+  if (n) {
+    const clear = el('button', { class: 'ghost-btn', text: 'clear' });
+    clear.addEventListener('click', () => { picked.clear(); renderGrid(); });
+    host.append(clear);
   }
 }
 
@@ -384,11 +516,21 @@ function openCase(caseId) {
   host.textContent = '';
   host.hidden = false;
   $('#alglib-grid').hidden = true;
+  $('#alglib-train').hidden = true;
   scrollTo({ top: 0 });
 
   const back = el('button', { class: 'btn back', html: '<span>All ' + set.label + ' cases</span>' });
   back.prepend(icon('M15 18l-6-6 6-6'));
   back.addEventListener('click', renderGrid);
+
+  /* Drilling the one case you are looking at is a different intent from
+     drilling a set, and wanting it while reading a case is the common one. */
+  const trainOne = set.trainerMode
+    ? el('button', { class: 'btn ghost small', text: 'Train only this case' })
+    : null;
+  trainOne?.addEventListener('click', () => {
+    location.href = `index.html?${new URLSearchParams({ train: set.trainerMode, cases: caseId })}`;
+  });
 
   const canvas = el('canvas', { class: 'case-pic big' });
   const setup = el('section', { class: 'setup-box' });
@@ -432,7 +574,10 @@ function openCase(caseId) {
   });
 
   host.append(back, head, list, addRow(set.id, caseId, rebuild));
-  if (hasCustomOrder(caseId)) host.appendChild(reset);
+  const actions = el('div', { class: 'case-actions' });
+  if (trainOne) actions.appendChild(trainOne);
+  if (hasCustomOrder(caseId)) actions.appendChild(reset);
+  if (actions.children.length) host.appendChild(actions);
   requestAnimationFrame(() => drawCase(canvas, set.id, caseId));
 }
 
@@ -565,6 +710,87 @@ function addRow(setId, caseId, rebuild) {
 }
 
 /* ---------------------------------------------------------
+   Navigation
+   --------------------------------------------------------- */
+
+/** The event row. Every event the timer has, whether or not it has algs yet. */
+function renderEvents() {
+  const host = $('#alglib-events');
+  host.textContent = '';
+  for (const e of ALG_EVENTS) {
+    const b = el('button', {
+      class: `event-chip ${e.id === state.event ? 'on' : ''} ${e.sets.length ? '' : 'empty'}`,
+      text: eventName(e.id),
+      title: e.sets.length ? `${e.sets.length} set${e.sets.length === 1 ? '' : 's'}` : 'no algorithms here yet',
+    });
+    b.addEventListener('click', () => selectEvent(e.id));
+    host.appendChild(b);
+  }
+}
+
+/** The set tabs for whichever event is showing. */
+function renderTabs() {
+  const host = $('#alglib-tabs');
+  host.textContent = '';
+  for (const id of eventSets(state.event)) {
+    const set = SETS[id];
+    const b = el('button', {
+      class: `seg-btn ${id === state.set ? 'on' : ''}`,
+      role: 'tab',
+      /* A set's own label lives in the module that has not loaded yet, so the
+         catalogue carries one too. The row is complete and clickable from the
+         first frame rather than filling itself in as imports land. */
+      text: set?.label || SET_LABELS[id] || id,
+    });
+    b.addEventListener('click', () => selectSet(id));
+    host.appendChild(b);
+  }
+}
+
+async function selectEvent(id) {
+  if (id === state.event) return;
+  state.event = id;
+  state.set = eventSets(id)[0] || null;
+  picked.clear();
+  state.q = '';
+  $('#alglib-q').value = '';
+  renderEvents();
+  renderTabs();
+  await showSet();
+}
+
+async function selectSet(id) {
+  if (id === state.set) return;
+  state.set = id;
+  picked.clear();
+  state.q = '';
+  $('#alglib-q').value = '';
+  renderTabs();
+  await showSet();
+}
+
+/**
+ * Load whichever set is selected and draw it.
+ *
+ * The guard at the end is not paranoia: every set past PLL and OLL arrives as
+ * a dynamic import, and clicking through three tabs faster than they load
+ * would otherwise render whichever one finished last.
+ */
+async function showSet() {
+  writeUrl();
+  const want = state.set;
+  const set = want ? await loadSet(want) : null;
+  if (state.set !== want) return;
+  renderTabs();
+  $('#alglib-sub').textContent = set
+    ? set.title
+    : 'Pick an event. Every case as a picture, with the alternates people actually use.';
+  state.group = set?.defaultGroup ?? null;
+  $('#alglib-q').parentElement.hidden = !set;
+  renderGrid();
+}
+
+/* ---------------------------------------------------------
    Boot
    --------------------------------------------------------- */
 
@@ -577,27 +803,10 @@ async function init() {
   mountMetro(settings, () => saveSettings(settings));
   await loadLibraryPrefs();
 
-  for (const btn of document.querySelectorAll('#alglib-tabs .seg-btn')) {
-    btn.addEventListener('click', async () => {
-      const id = btn.dataset.set;
-      for (const b of document.querySelectorAll('#alglib-tabs .seg-btn')) {
-        b.classList.toggle('on', b === btn);
-      }
-      /* ZBLL and F2L arrive as a dynamic import the first time their tab is
-         opened, so the timer never pays for them. Switching tabs mid-load
-         would otherwise render whichever set finished first. */
-      const set = await loadSet(id);
-      if (!btn.classList.contains('on')) return;
-      state.set = id;
-      state.group = set.defaultGroup ?? null;
-      state.q = '';
-      $('#alglib-q').value = '';
-      $('#alglib-sub').textContent = set.title;
-      renderGrid();
-    });
-  }
-  document.querySelector('#alglib-tabs .seg-btn').classList.add('on');
-  $('#alglib-sub').textContent = SETS.PLL.title;
+  readUrl();
+  renderEvents();
+  renderTabs();
+  await showSet();
 
   let t;
   $('#alglib-q').addEventListener('input', (ev) => {
@@ -606,7 +815,6 @@ async function init() {
     t = setTimeout(renderGrid, 90);
   });
 
-  renderGrid();
   addEventListener('resize', () => {
     for (const c of document.querySelectorAll('.case-card')) {
       drawCase(c.querySelector('canvas'), state.set, c.dataset.case);
