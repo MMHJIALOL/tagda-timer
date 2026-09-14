@@ -53,6 +53,17 @@ export const MODES = {
   // chosen is the right one here.
   'f2l':      { name: 'F2L',            kind: 'case',  set: 'F2L',    events: ['333','333oh'], desc: 'All 41 first-two-layers cases' },
 
+  /* 2x2. The scramble is built exactly the way a 3x3 case scramble is —
+     AUF + the inverse of the algorithm + AUF — so per-case statistics work
+     here for the same reason they work there. No `view`: a last-layer
+     stickering on a 2x2 would hide the bottom layer, and for EG and PBL the
+     bottom layer is half the case. */
+  '222oll':   { name: '2x2 OLL',        kind: 'case',  set: 'OLL222', events: ['222'], desc: 'Orient the top — first step of Ortega' },
+  '222pbl':   { name: '2x2 PBL',        kind: 'case',  set: 'PBL222', events: ['222'], desc: 'Permute both layers — last step of Ortega' },
+  '222cll':   { name: '2x2 CLL',        kind: 'case',  set: 'CLL222', events: ['222'], desc: 'Bottom done, top in one algorithm' },
+  '222eg1':   { name: '2x2 EG-1',       kind: 'case',  set: 'EG1222', events: ['222'], desc: 'Bottom with one adjacent swap' },
+  '222eg2':   { name: '2x2 EG-2',       kind: 'case',  set: 'EG2222', events: ['222'], desc: 'Bottom with a diagonal swap' },
+
   'll':       { name: 'Last layer',     kind: 'compose', events: ['333','333oh'], view: 'LL', desc: 'Random OLL + PLL together' },
   'cross':    { name: 'Cross solved',   kind: 'trigger', depth: [5, 7], events: ['333','333oh'], desc: 'Cross is done — practise F2L + LL' },
   'lastslot': { name: 'Last slot + LL', kind: 'trigger', depth: [3, 4],  events: ['333','333oh'], view: 'LL3', desc: 'Three pairs in, one to go' },
@@ -65,6 +76,7 @@ export const MODES = {
 
 export const MODE_ORDER = [
   'wca', 'f2l', 'pll', 'oll', 'zbll', 'oll2look', 'pll2look', 'ocll',
+  '222oll', '222pbl', '222cll', '222eg1', '222eg2',
   'll', 'cross', 'lastslot', '2gen', 'lse', 'roux', 'crossgoal',
 ];
 

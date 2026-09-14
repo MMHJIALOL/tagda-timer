@@ -10,6 +10,7 @@
 import { EVENTS, MODES } from './events.js';
 import { PLL, OLL, OLL_EO, OCLL, PLL_CP, PLL_EP, CROSS_SAFE_TRIGGERS, U_MOVES, POOLS, faceOf } from './algs.js';
 import { F2L } from './f2l.js';
+import { OLL_222, PBL_222, CLL_222, EG1_222, EG2_222 } from './algs2.js';
 import { ZBLL_SET } from './zbll.js';
 import { invert, tidy, pick } from './util.js';
 import { preferredAlg } from './alglibrary.js';
@@ -95,6 +96,13 @@ const SETS = {
   OCLL,
   ZBLL: ZBLL_SET,
   F2L,
+  /* 2x2. Small enough to sit beside the rest — 135 cases of short strings,
+     against the 472 ZBLL cases already here. */
+  OLL222: OLL_222,
+  PBL222: PBL_222,
+  CLL222: CLL_222,
+  EG1222: EG1_222,
+  EG2222: EG2_222,
 };
 
 export function setFor(modeId) {

@@ -30,6 +30,74 @@ body.alglib-page ::selection { background: color-mix(in srgb, var(--accent) 42%,
 .btn.ghost { background: transparent; }
 .btn.small { font-size: .74rem; padding: 6px 12px; }
 
+/* ---------------- event row ----------------
+   The first thing on the page, and deliberately quieter than the set tabs
+   below it: this picks a puzzle, which you do once a visit, while the tabs
+   under it are what you actually move between. An event with nothing in it
+   yet is still listed and still clickable — it says so when you open it,
+   which is a better answer than not being there. */
+#alglib-events {
+  max-width: 1180px; margin: 0 auto 4px;
+  display: flex; gap: 5px; flex-wrap: wrap;
+}
+.event-chip {
+  font: inherit; font-size: .72rem; font-weight: 600; letter-spacing: .01em;
+  cursor: pointer; padding: 5px 11px; border-radius: 99px;
+  border: 1px solid transparent;
+  background: color-mix(in srgb, var(--surface) 40%, transparent);
+  color: var(--text-dim);
+  transition: color var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+.event-chip:hover { color: var(--text); }
+.event-chip.empty { opacity: .48; }
+.event-chip.on {
+  color: var(--accent); opacity: 1;
+  border-color: color-mix(in srgb, var(--accent) 50%, transparent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+/* ---------------- train hand-off ----------------
+   Sits between the case list and the timer, so it reads as the thing the
+   grid is for rather than a toolbar bolted on top of it. */
+#alglib-train {
+  max-width: 1180px; margin: 0 auto 16px;
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+}
+#alglib-train .sub { color: var(--text-dim); font-size: .74rem; }
+
+/* The tick on a card. Small and in the corner until it is on, because on a
+   grid of 57 cards a checkbox per card competes with the pictures. */
+.case-tick {
+  position: absolute; top: 7px; left: 7px;
+  width: 15px; height: 15px; border-radius: 5px;
+  border: 1.5px solid var(--border);
+  background: color-mix(in srgb, var(--bg) 70%, transparent);
+  opacity: .5; cursor: pointer;
+  transition: opacity var(--dur) var(--ease), background var(--dur) var(--ease);
+}
+.case-card:hover .case-tick { opacity: 1; }
+.case-tick.on {
+  opacity: 1;
+  border-color: var(--accent);
+  background: var(--accent);
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--bg) 80%, transparent);
+}
+
+/* ---------------- an event with nothing in it yet ---------------- */
+.alglib-pending {
+  grid-column: 1 / -1;
+  max-width: 620px;
+  padding: 22px 24px;
+  border-radius: var(--radius-sm); border: 1px dashed var(--border);
+  background: color-mix(in srgb, var(--surface) 35%, transparent);
+}
+.alglib-pending h2 { font-size: 1.05rem; font-weight: 650; letter-spacing: -.01em; margin-bottom: 10px; }
+.alglib-pending p { font-size: .82rem; line-height: 1.55; color: var(--text-dim); margin-bottom: 8px; }
+.alglib-pending b { color: var(--text); font-weight: 600; }
+.alglib-pending .sub { font-size: .76rem; color: var(--text-faint); }
+
+.case-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+
 /* ---------------- tabs + search ---------------- */
 #alglib-bar {
   max-width: 1180px; margin: 0 auto 22px;
@@ -202,12 +270,25 @@ body.alglib-page ::selection { background: color-mix(in srgb, var(--accent) 42%,
 .alg-error { font-size: .74rem; color: var(--danger); }
 
 /* ---------------- footer ---------------- */
+#alglib-foot a { color: var(--accent); text-decoration: none; }
+#alglib-foot a:hover { text-decoration: underline; }
 #alglib-foot {
   max-width: 860px; margin: 46px auto 0;
+  display: flex; flex-direction: column; gap: 8px;
   font-size: .72rem; line-height: 1.6; color: var(--text-faint);
 }
 
 @media (max-width: 560px) {
   #alglib-grid { grid-template-columns: repeat(auto-fill, minmax(126px, 1fr)); }
   .case-pic { width: 78px; height: 78px; }
+  /* Eighteen events do not fit on a phone in one row and should not try: the
+     row scrolls sideways rather than becoming four rows of chips above the
+     thing you came here to look at. */
+  #alglib-events {
+    flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none;
+    margin-inline: calc(-1 * clamp(14px, 5vw, 56px));
+    padding-inline: clamp(14px, 5vw, 56px);
+  }
+  #alglib-events::-webkit-scrollbar { display: none; }
+  .event-chip { flex: none; }
 }

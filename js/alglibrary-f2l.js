@@ -778,6 +778,11 @@ export const F2L_LIBRARY = {
 
 export const SET = {
   id: 'F2L',
+  event: '333',
+  trained: true,
+  trainerMode: 'f2l',
+  done: 'ftl',
+  picture: 'f2l',
   label: 'F2L',
   title: 'Pairing a corner and edge into the front-right slot',
   cases: F2L_CASES,
@@ -788,3 +793,7 @@ export const SET = {
   caseLabel: (c) => 'F2L ' + c.name,
   describe: (c) => c.group.toLowerCase(),
 };
+
+/* One set per module here, exposed under the shape js/alglibrary.js expects
+   from every lazy module. */
+export const SETS = { F2L: SET };
