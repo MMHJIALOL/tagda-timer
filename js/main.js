@@ -1693,6 +1693,8 @@ async function recordSolve({ timeMs, penalty = 'none', inspectionMs = 0, splits 
   const prevBest = bestSingle(app.solves);
   const prevAo5  = bestAvg(app.solves, 5).value;
   const prevAo12 = bestAvg(app.solves, 12).value;
+  const prevAo25 = bestAvg(app.solves, 25).value;
+  const prevAo100 = bestAvg(app.solves, 100).value;
 
   const race = raceCtl();
   const racing = !!(race?.inRoom && app.scramble?.race);
@@ -1742,6 +1744,24 @@ async function recordSolve({ timeMs, penalty = 'none', inspectionMs = 0, splits 
   }
   if (phasesMs) renderPhaseBreakdown(phasesMs, timeMs);
   app.solves.push(solve);
+
+  // personal bests — judged and chimed before the writes and the re-render
+  // below, which are what the sound used to wait behind.
+  const nowBest = bestSingle(app.solves);
+  const nowAo5  = bestAvg(app.solves, 5).value;
+  const nowAo12 = bestAvg(app.solves, 12).value;
+  const nowAo25 = bestAvg(app.solves, 25).value;
+  const nowAo100 = bestAvg(app.solves, 100).value;
+  const beat = (prev, now) => prev !== null && now !== null && now < prev;
+
+  let pb = null;
+  if (beat(prevBest, nowBest) && eff(solve) === nowBest) pb = ['single', nowBest];
+  else if (beat(prevAo5, nowAo5)) pb = ['ao5', nowAo5];
+  else if (beat(prevAo12, nowAo12)) pb = ['ao12', nowAo12];
+  else if (beat(prevAo25, nowAo25)) pb = ['ao25', nowAo25];
+  else if (beat(prevAo100, nowAo100)) pb = ['ao100', nowAo100];
+  if (pb && app.settings.soundOnPB) chime();
+
   await Solves.put(solve);
   /* Submitted after the local write, never before: the solve is yours whatever
      the room makes of it, and a refused upload must not cost you the time. */
@@ -1765,20 +1785,12 @@ async function recordSolve({ timeMs, penalty = 'none', inspectionMs = 0, splits 
   // a solve cheap however far back you had scrolled to read old ones.
   resetHistoryWindow();
 
-  // personal bests
-  const nowBest = bestSingle(app.solves);
-  const nowAo5  = bestAvg(app.solves, 5).value;
-  const nowAo12 = bestAvg(app.solves, 12).value;
-
-  let pbKind = null;
-  if (prevBest !== null && nowBest !== null && nowBest < prevBest && eff(solve) === nowBest) pbKind = 'single';
-  else if (prevAo5 !== null && nowAo5 !== null && nowAo5 < prevAo5) pbKind = 'ao5';
-  else if (prevAo12 !== null && nowAo12 !== null && nowAo12 < prevAo12) pbKind = 'ao12';
-
   showDelta(solve, prevBest);
   renderAll();
 
-  if (pbKind) celebratePB(pbKind);
+  // The visuals start after the render, not before: a render landing on their
+  // first frames is the confetti hitch.
+  if (pb) celebratePB(...pb);
   nextScramble();
 }
 
@@ -1820,7 +1832,7 @@ function showDelta(solve, prevBest) {
   void prevBest;
 }
 
-function celebratePB(kind) {
+function celebratePB(kind, value) {
   const c = themeColors();
   const intensity = kind === 'single' ? 1 : kind === 'ao5' ? 0.7 : 0.5;
   const motion = app.settings.motion;
@@ -1834,10 +1846,20 @@ function celebratePB(kind) {
         power: 0.7 + intensity * 0.5 });
     flash(c.gold);
   }
-  if (app.settings.soundOnPB) chime();
-  const label = kind === 'single' ? 'New personal best!' : kind === 'ao5' ? 'Best ao5 of the session!' : 'Best ao12 of the session!';
-  toast(label, { kind: 'good', long: true });
+  const label = kind === 'single' ? 'New personal best!' : `Best ${kind} of the session!`;
+  toast(label, { kind: 'good', hold: true });
   const d = $('#timer-display');
+
+  // A csTimer-style ticker above the digits, gone with the toast.
+  d.querySelector('.pb-marquee')?.remove();
+  const ticker = document.createElement('div');
+  ticker.className = 'pb-marquee' + (motion === 'off' ? ' still' : '');
+  ticker.setAttribute('aria-hidden', 'true');
+  const line = document.createElement('span');
+  line.textContent = `best ${kind} · ${value === DNF ? 'DNF' : fmt(value)}`;
+  ticker.append(line);
+  d.append(ticker);
+  setTimeout(() => ticker.remove(), 5000);
   if (motion !== 'off') {
     d.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.09)' }, { transform: 'scale(1)' }],
       { duration: 640, easing: 'cubic-bezier(.34,1.56,.64,1)' });

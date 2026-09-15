@@ -244,10 +244,26 @@ export function metronome(bpm, onBeat = null) {
   } catch { /* audio unavailable */ }
 }
 
-/** Rising three-note chime for a personal best. */
+/* A context first made outside a user gesture starts suspended, and resuming it
+   is async — so the first PB chime of a session used to land late or not at all.
+   Made on the first key or tap instead, while the browser still allows it. */
+const warm = () => {
+  try { ac(); } catch { /* audio unavailable */ }
+  removeEventListener('keydown', warm, true);
+  removeEventListener('pointerdown', warm, true);
+};
+addEventListener('keydown', warm, true);
+addEventListener('pointerdown', warm, true);
+
+/** Rising four-note chime for a personal best. */
 export function chime() {
-  [523.25, 659.25, 783.99, 1046.5].forEach((f, i) =>
-    setTimeout(() => beep(f, 260, 'triangle', 0.13), i * 85));
+  // Booked on the audio clock, not setTimeout: the times list re-renders right
+  // after a solve, and timers stuck behind that were the lag you could hear.
+  try {
+    const c = ac();
+    [523.25, 659.25, 783.99, 1046.5].forEach((f, i) =>
+      tone(c, f, 260, 'triangle', 0.13, c.currentTime + i * 0.085));
+  } catch { /* audio unavailable */ }
 }
 
 /**

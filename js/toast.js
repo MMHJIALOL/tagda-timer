@@ -15,9 +15,10 @@ import { $, el } from './util.js';
  * stays undoable with Ctrl+Z long after the toast has gone.
  */
 const SHORT_MS = 1000;
-const LONG_MS = 1500;      // { long: true } — a moment more for a celebration
+const LONG_MS = 1500;      // { long: true } — a moment more
+const HOLD_MS = 5000;      // { hold: true } — a new best single or average, and nothing else
 
-export function toast(message, { action, onAction, kind = '', long = false } = {}) {
+export function toast(message, { action, onAction, kind = '', long = false, hold = false } = {}) {
   const host = $('#toasts');
   const node = el('div', { class: `toast ${kind}` }, el('span', { text: message }));
 
@@ -37,7 +38,7 @@ export function toast(message, { action, onAction, kind = '', long = false } = {
   }
 
   host.append(node);
-  timer = setTimeout(close, long ? LONG_MS : SHORT_MS);
+  timer = setTimeout(close, hold ? HOLD_MS : long ? LONG_MS : SHORT_MS);
   return close;
 }
 
