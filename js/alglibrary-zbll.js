@@ -3236,6 +3236,9 @@ export const ZBLL_LIBRARY = {
 
 export const SET = {
   id: 'ZBLL',
+  event: '333',
+  trained: true,
+  trainerMode: 'zbll',
   label: 'ZBLL',
   title: 'Last layer in one algorithm, edges already oriented',
   cases: ZBLL_CASES,
@@ -3248,3 +3251,7 @@ export const SET = {
   caseLabel: (c) => 'ZBLL ' + c.name,
   describe: (c) => c.subset + ' subset \u00b7 corner group ' + c.group,
 };
+
+/* One set per module here, exposed under the shape js/alglibrary.js expects
+   from every lazy module. */
+export const SETS = { ZBLL: SET };
