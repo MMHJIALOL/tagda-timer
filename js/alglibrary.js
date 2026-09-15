@@ -139,7 +139,7 @@ const MERGED = new Set(['F2L', '2LOLL', 'OLL', '2LPLL', 'PLL', 'ZBLL', '222-PBL'
  */
 export const ALG_EVENTS = [
   { id: '333', label: '3x3', groups: [
-    { label: 'CFOP', sets: ['F2L', '2LOLL', 'OLL', '2LPLL', 'PLL'] },
+    { label: 'CFOP', sets: ['PLL', '2LPLL', 'OLL', '2LOLL', 'F2L'] },
     { label: 'Advanced', sets: ['WV', 'COLL', 'OLLCP', 'ZBLL'] },
     { label: 'Roux', sets: ['CMLL2L', 'CMLL', 'LSEEO', 'LSEEOLR'] },
   ] },
