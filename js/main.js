@@ -1036,6 +1036,8 @@ function wireTimer() {
 
   timer.addEventListener('state', (e) => {
     const st = e.detail.state;
+    // Starting the next attempt answers a still-open misfire prompt: keep it.
+    if (st !== 'idle' && st !== 'cooldown') pendingMisfire?.dismiss();
     /* The room learns that you are inspecting or solving, and never how far
        into it you are. A tick broadcast would be a live time by another name,
        which is the exact thing race mode exists not to leak. */
@@ -1652,6 +1654,8 @@ function renderPhaseBreakdown(phasesMs, timeMs) {
 /* =========================================================
    Recording a solve
    ========================================================= */
+let pendingMisfire = null;
+
 async function onSolveFinished(res) {
   resetBgColors();
   const main = $('#time-main');
@@ -1670,9 +1674,12 @@ async function onSolveFinished(res) {
 
   if (res.suspicious && app.settings.confirmShortSolves) {
     // A misfire is obvious the instant it happens — you felt the stack move.
-    // No answer means keep the solve, and the prompt gets out of the way fast.
-    const keep = await confirmToast(`${fmt(res.timeMs)} — misfire? Discard it?`, 'discard', { timeout: 1500 });
-    if (keep) { timer.reset(); nextScramble(); return; }
+    // No answer means keep the solve. It stays up long enough to read, and
+    // starting the next solve closes it early (see the timer 'state' listener).
+    pendingMisfire = confirmToast(`${fmt(res.timeMs)} — misfire? Discard it?`, 'discard', { timeout: 5000 });
+    const discard = await pendingMisfire;
+    pendingMisfire = null;
+    if (discard) { timer.reset(); nextScramble(); return; }
   }
 
   await recordSolve({
@@ -2907,8 +2914,10 @@ let vcube = null;
 const loadVcube = lazy(async () => {
   const { VirtualCube } = await import('./vcube.js');
   const view = new CubeView($('#vcube-holder'), null);
+  view.backView = 'none';     // csTimer shows the one cube, no floating rear view
   if (!await view.init()) throw new Error('twisty-player unavailable');
   view.setHints(false);
+  view.colors = app.settings.cubeColors;
   // The preview is static on purpose (tempo 0); this one has to show each turn.
   view.player.setAttribute('tempo-scale', '4');
   return new VirtualCube(view, timer);
@@ -3746,6 +3755,10 @@ function applyAll(changed) {
     timer.cfg.useInspection = !eventOf(app.settings.event).noInspection;
   }
   if (changed === 'hintFacelets') cube.setHints(app.settings.hintFacelets);
+  if (!changed || changed === 'cubeColors') {
+    cube.setColors(app.settings.cubeColors);
+    vcube?.view.setColors(app.settings.cubeColors);
+  }
   // Turning the cube over is a re-render of the same scramble, not a new one.
   if (changed === 'yellowTop' && app.scramble) showScramble(app.scramble, true);
   // A bigger preview can push a dragged widget off screen, so re-clamp it —

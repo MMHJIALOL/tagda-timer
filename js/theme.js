@@ -164,6 +164,7 @@ export const DEFAULTS = {
   showHistory: true,
   cubeView: '3D',
   hintFacelets: true,
+  cubeColors: null,             // {U,L,F,R,B,D: '#rrggbb'} once edited; null = the stock colours
   yellowTop: true,              // trainer cases previewed with the cross on the bottom
   autoContrast: true,           // flip to dark text when the background is bright
 
