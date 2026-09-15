@@ -467,7 +467,7 @@
 }
 .hist-cols [data-sort]:hover { color: var(--text); }
 .hist-cols [data-sort].sorted { color: var(--accent); }
-.hist-cols [data-sort].sorted::after { content: ' Ã¢â€“Â²'; font-size: .8em; }
+.hist-cols [data-sort].sorted::after { content: ' \25B2'; font-size: .8em; }
 
 /* An average column heading: which average, and a pencil to change it. Right
    aligned as one unit so "ao12" still ends over its numbers with the pencil
