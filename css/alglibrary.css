@@ -11,284 +11,314 @@ body.alglib-page {
   overflow: auto;
   overscroll-behavior: auto;
   background:
-    radial-gradient(1200px 700px at 15% -10%, color-mix(in srgb, var(--accent) 13%, transparent), transparent 70%),
-    radial-gradient(900px 600px at 95% 8%, color-mix(in srgb, var(--accent-2) 9%, transparent), transparent 70%),
+    radial-gradient(1200px 700px at 15% -10%, color-mix(in srgb, var(--accent) 12%, transparent), transparent 70%),
+    radial-gradient(900px 600px at 95% 8%, color-mix(in srgb, var(--accent-2) 8%, transparent), transparent 70%),
     var(--bg);
-  padding: clamp(18px, 4vw, 46px) clamp(14px, 5vw, 56px) 80px;
+  padding: clamp(16px, 3.5vw, 40px) clamp(14px, 4vw, 48px) 72px;
 }
 body.alglib-page ::selection { background: color-mix(in srgb, var(--accent) 42%, transparent); }
 
+#alglib-top, #alglib-events, #alglib-tabs, #alglib-bar, #alglib-grid, #alglib-foot {
+  max-width: 1180px; margin-inline: auto;
+}
+
 /* ---------------- header ---------------- */
-#alglib-top { max-width: 1180px; margin: 0 auto 20px; }
-#alglib-top h1 {
-  font-size: clamp(1.5rem, 4vw, 2.2rem); font-weight: 700; letter-spacing: -.02em;
-  margin-top: 16px;
-}
-#alglib-top .sub { color: var(--text-dim); font-size: .86rem; margin-top: 4px; }
+#alglib-top { display: flex; align-items: center; gap: 16px; margin-bottom: 18px; }
+.alglib-title { min-width: 0; }
+#alglib-top h1 { font-size: clamp(1.4rem, 3.2vw, 1.9rem); font-weight: 700; letter-spacing: -.025em; line-height: 1.1; }
+#alglib-sub { color: var(--text-dim); font-size: .84rem; margin-top: 3px; min-height: 1.2em; }
 
-.btn.back { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px 6px 8px; font-size: .78rem; }
+.btn.back { display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px 7px 8px; font-size: .78rem; flex: none; }
 .btn.ghost { background: transparent; }
-.btn.small { font-size: .74rem; padding: 6px 12px; }
+.btn.small { font-size: .76rem; padding: 7px 12px; }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
 
-/* ---------------- event row ----------------
-   The first thing on the page, and deliberately quieter than the set tabs
-   below it: this picks a puzzle, which you do once a visit, while the tabs
-   under it are what you actually move between. An event with nothing in it
-   yet is still listed and still clickable — it says so when you open it,
-   which is a better answer than not being there. */
-#alglib-events {
-  max-width: 1180px; margin: 0 auto 4px;
-  display: flex; gap: 5px; flex-wrap: wrap;
-}
-.event-chip {
-  font: inherit; font-size: .72rem; font-weight: 600; letter-spacing: .01em;
-  cursor: pointer; padding: 5px 11px; border-radius: 99px;
-  border: 1px solid transparent;
-  background: color-mix(in srgb, var(--surface) 40%, transparent);
-  color: var(--text-dim);
-  transition: color var(--dur) var(--ease), border-color var(--dur) var(--ease);
-}
-.event-chip:hover { color: var(--text); }
-.event-chip.empty { opacity: .48; }
-.event-chip.on {
-  color: var(--accent); opacity: 1;
-  border-color: color-mix(in srgb, var(--accent) 50%, transparent);
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
-}
-
-/* ---------------- train hand-off ----------------
-   Sits between the case list and the timer, so it reads as the thing the
-   grid is for rather than a toolbar bolted on top of it. */
-#alglib-train {
-  max-width: 1180px; margin: 0 auto 16px;
-  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
-}
-#alglib-train .sub { color: var(--text-dim); font-size: .74rem; }
-
-/* The tick on a card. Small and in the corner until it is on, because on a
-   grid of 57 cards a checkbox per card competes with the pictures. */
-.case-tick {
-  position: absolute; top: 7px; left: 7px;
-  width: 15px; height: 15px; border-radius: 5px;
-  border: 1.5px solid var(--border);
-  background: color-mix(in srgb, var(--bg) 70%, transparent);
-  opacity: .5; cursor: pointer;
-  transition: opacity var(--dur) var(--ease), background var(--dur) var(--ease);
-}
-.case-card:hover .case-tick { opacity: 1; }
-.case-tick.on {
-  opacity: 1;
-  border-color: var(--accent);
-  background: var(--accent);
-  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--bg) 80%, transparent);
-}
-
-/* ---------------- an event with nothing in it yet ---------------- */
-.alglib-pending {
-  grid-column: 1 / -1;
-  max-width: 620px;
-  padding: 22px 24px;
-  border-radius: var(--radius-sm); border: 1px dashed var(--border);
-  background: color-mix(in srgb, var(--surface) 35%, transparent);
-}
-.alglib-pending h2 { font-size: 1.05rem; font-weight: 650; letter-spacing: -.01em; margin-bottom: 10px; }
-.alglib-pending p { font-size: .82rem; line-height: 1.55; color: var(--text-dim); margin-bottom: 8px; }
-.alglib-pending b { color: var(--text); font-weight: 600; }
-.alglib-pending .sub { font-size: .76rem; color: var(--text-faint); }
-
-.case-actions { display: flex; gap: 10px; flex-wrap: wrap; }
-
-/* ---------------- tabs + search ---------------- */
-#alglib-bar {
-  max-width: 1180px; margin: 0 auto 22px;
-  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
-  position: sticky; top: 0; z-index: 5;
-  padding: 10px 0;
-  background: linear-gradient(var(--bg) 62%, transparent);
-}
-#alglib-tabs { display: flex; gap: 6px; }
-#alglib-tabs .seg-btn.on {
-  color: var(--accent); border-color: color-mix(in srgb, var(--accent) 42%, transparent);
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
-}
-/* Second-level nav (ZBLL subsets, F2L pair states). Deliberately lighter than
-   the set tabs above it: this picks a slice of the set you are already in, and
-   reading as a second row of equals would make the page feel like eight tabs. */
-#alglib-groups {
-  max-width: 1180px; margin: -10px auto 20px;
-  display: flex; gap: 6px; flex-wrap: wrap;
-}
-.group-chip {
-  font: inherit; font-size: .78rem; cursor: pointer;
-  padding: 5px 12px; border-radius: 99px;
+/* ---------------- puzzle tabs ---------------- */
+#alglib-events { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+.event-tab {
+  font-size: .82rem; font-weight: 600; letter-spacing: -.005em;
+  padding: 7px 15px; border-radius: 999px;
   border: 1px solid var(--border);
-  background: color-mix(in srgb, var(--surface) 55%, transparent);
+  background: color-mix(in srgb, var(--surface) 60%, transparent);
   color: var(--text-dim);
+  transition: color var(--dur-fast), border-color var(--dur-fast), background var(--dur-fast);
 }
-.group-chip:hover { color: var(--text); }
-.group-chip.on {
-  color: var(--accent);
-  border-color: color-mix(in srgb, var(--accent) 42%, transparent);
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
+.event-tab:hover { color: var(--text); border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
+.event-tab.on { color: var(--bg); background: var(--accent); border-color: var(--accent); }
+.event-tab:focus-visible, .set-tab:focus-visible, .group-chip:focus-visible, .sel-btn:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px;
 }
+
+/* ---------------- set tabs, grouped by method ---------------- */
+#alglib-tabs {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 22px;
+  margin-bottom: 14px; padding-bottom: 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+}
+.tab-group { display: flex; align-items: center; gap: 2px; flex-wrap: wrap; }
+.tab-group-label {
+  font-size: .6rem; font-weight: 700; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--text-faint); margin-right: 6px;
+}
+.set-tab {
+  font-size: .82rem; font-weight: 550;
+  padding: 6px 11px; border-radius: 8px;
+  border: 1px solid transparent; color: var(--text-dim);
+  transition: color var(--dur-fast), background var(--dur-fast);
+}
+.set-tab:hover { color: var(--text); background: color-mix(in srgb, var(--surface) 80%, transparent); }
+.set-tab.on {
+  color: var(--accent); font-weight: 650;
+  background: color-mix(in srgb, var(--accent) 13%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+/* ---------------- sticky bar: search, subset, selection ---------------- */
+#alglib-bar {
+  position: sticky; top: 8px; z-index: 5;
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin-bottom: 16px; padding: 8px;
+  border-radius: 14px; border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg-2) 86%, transparent);
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  box-shadow: 0 12px 30px -22px rgba(0, 0, 0, .8);
+}
+#alglib-bar[hidden] { display: none; }
 
 .alglib-search {
-  display: flex; align-items: center; gap: 8px; flex: 1; min-width: 190px; max-width: 340px;
-  padding: 7px 12px; border-radius: 99px;
-  border: 1px solid var(--border); background: color-mix(in srgb, var(--surface) 60%, transparent);
+  display: flex; align-items: center; gap: 8px; flex: 1 1 180px; max-width: 280px;
+  padding: 7px 12px; border-radius: 10px;
+  border: 1px solid var(--border); background: color-mix(in srgb, var(--surface) 70%, transparent);
   color: var(--text-faint);
 }
-.alglib-search input { flex: 1; border: 0; outline: 0; background: none; font-size: .82rem; color: var(--text); }
+.alglib-search:focus-within { border-color: var(--accent); }
+.alglib-search svg { flex: none; }
+.alglib-search input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; font-size: .82rem; color: var(--text); }
 .alglib-search input::-webkit-search-cancel-button { filter: invert(.6); }
+
+#alglib-groups { display: flex; gap: 4px; flex-wrap: wrap; }
+#alglib-groups[hidden] { display: none; }
+.group-chip {
+  font-size: .76rem; padding: 6px 11px; border-radius: 8px;
+  border: 1px solid var(--border); color: var(--text-dim);
+  background: color-mix(in srgb, var(--surface) 55%, transparent);
+}
+.group-chip:hover { color: var(--text); }
+.group-chip.on { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 50%, transparent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.group-select {
+  font-size: .8rem; padding: 7px 30px 7px 11px; border-radius: 10px;
+  border: 1px solid var(--border); background-color: color-mix(in srgb, var(--surface) 70%, transparent);
+  color: var(--text); cursor: pointer;
+}
+
+#alglib-train { margin-left: auto; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.sel-count { font-size: .78rem; color: var(--text-dim); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.sel-count b { color: var(--text); font-weight: 700; }
+.sel-actions { display: flex; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.sel-btn { font-size: .76rem; padding: 6px 11px; color: var(--text-dim); }
+.sel-btn + .sel-btn { border-left: 1px solid var(--border); }
+.sel-btn:hover { color: var(--text); background: color-mix(in srgb, var(--surface) 80%, transparent); }
+.train-go { padding: 8px 16px; font-size: .82rem; font-weight: 650; white-space: nowrap; }
 
 /* ---------------- case grid ---------------- */
 #alglib-grid {
-  max-width: 1180px; margin: 0 auto;
-  display: grid; gap: 14px;
-  grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+  display: grid; gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(176px, 1fr));
 }
+#alglib-grid[hidden] { display: none; }
+
+/* A card is two buttons stacked: the picture selects, the algorithm strip
+   opens. Separate hit areas with a visible seam, so the one you meant is the
+   one you get. */
 .case-card {
   position: relative;
-  display: flex; flex-direction: column; align-items: center; gap: 4px;
-  padding: 16px 12px 14px; text-align: center;
-  border-radius: var(--radius-sm); border: 1px solid var(--border);
-  background: color-mix(in srgb, var(--surface) 55%, transparent);
-  color: var(--text);
-  transition: transform var(--dur) var(--ease), border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+  display: flex; flex-direction: column;
+  border-radius: 14px; border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface) 62%, transparent);
+  overflow: hidden;
+  user-select: none; -webkit-user-select: none;
+  transition: border-color var(--dur-fast), background var(--dur-fast), box-shadow var(--dur-fast);
 }
-.case-card:hover {
-  transform: translateY(-3px);
-  border-color: color-mix(in srgb, var(--accent) 46%, transparent);
-  box-shadow: 0 16px 34px -20px var(--accent);
+.case-card:hover { border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); }
+.case-card.on {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+  box-shadow: inset 0 0 0 1px var(--accent);
 }
-.case-pic { width: 96px; height: 96px; margin-bottom: 8px; }
-.case-pic.big { width: clamp(120px, 26vw, 168px); height: clamp(120px, 26vw, 168px); flex: none; }
-.case-name { font-size: .92rem; font-weight: 650; letter-spacing: -.01em; }
-/* The letter is metadata; this line is what the picture actually means. */
+
+.case-pick {
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  width: 100%; padding: 16px 12px 12px; text-align: center;
+}
+.case-pick:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; border-radius: 13px; }
+
+.case-check {
+  position: absolute; top: 10px; left: 10px;
+  width: 20px; height: 20px; border-radius: 6px;
+  border: 1.5px solid color-mix(in srgb, var(--text) 28%, transparent);
+  background: color-mix(in srgb, var(--bg) 55%, transparent);
+  display: grid; place-items: center;
+  transition: background var(--dur-fast), border-color var(--dur-fast);
+}
+.case-card:hover .case-check { border-color: var(--accent); }
+.case-card.on .case-check { background: var(--accent); border-color: var(--accent); }
+.case-card.on .case-check::after {
+  content: ''; width: 10px; height: 5px;
+  border-left: 2.2px solid var(--bg); border-bottom: 2.2px solid var(--bg);
+  transform: translateY(-1px) rotate(-45deg);
+}
+
+.case-art { width: 104px; height: 104px; margin: 2px 0 8px; display: block; flex: none; }
+.case-art.svg { display: flex; align-items: center; justify-content: center; }
+.case-art.svg svg { width: 100%; height: 100%; }
+.case-art.pyram { width: 118px; }
+.case-art.sq1 { width: 150px; height: 74px; gap: 4px; }
+.case-art.sq1 svg { width: 50%; height: auto; }
+.case-art.big { width: clamp(132px, 26vw, 176px); height: clamp(132px, 26vw, 176px); margin: 0; }
+.case-art.sq1.big { width: clamp(200px, 40vw, 280px); height: clamp(100px, 20vw, 140px); }
+
+.case-name { font-size: .9rem; font-weight: 650; letter-spacing: -.01em; line-height: 1.25; }
 .case-desc { font-size: .7rem; line-height: 1.35; color: var(--text-dim); }
-.case-flag {
-  position: absolute; top: 8px; right: 8px;
-  font-size: .56rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
-  color: var(--accent-2);
+
+.case-open {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%; padding: 9px 10px 9px 12px; text-align: left;
+  border-top: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg-2) 50%, transparent);
+  transition: background var(--dur-fast);
 }
-.alglib-empty { max-width: 1180px; margin: 0 auto; color: var(--text-dim); font-size: .86rem; }
+.case-open:hover { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.case-open:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.case-alg {
+  flex: 1; min-width: 0;
+  font-family: var(--font-mono); font-size: .68rem; color: var(--text-dim);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.case-more { font-size: .66rem; font-weight: 650; color: var(--accent); white-space: nowrap; }
+.case-open svg { flex: none; width: 14px; height: 14px; color: var(--accent); stroke-width: 2.4; }
+
+.case-flag {
+  position: absolute; top: 11px; right: 10px;
+  font-size: .54rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--accent-2); pointer-events: none;
+}
+.alglib-empty { grid-column: 1 / -1; color: var(--text-dim); font-size: .86rem; padding: 8px 2px; }
+/* Read out by screen readers, never seen. */
+.sr-status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
 /* ---------------- detail ---------------- */
-#alglib-detail { max-width: 860px; margin: 0 auto; display: flex; flex-direction: column; gap: 18px; align-items: flex-start; }
+#alglib-detail { max-width: 860px; margin: 0 auto; display: flex; flex-direction: column; gap: 18px; align-items: stretch; }
+#alglib-detail[hidden] { display: none; }
 #alglib-detail .btn.back { align-self: flex-start; }
-.case-head { display: flex; gap: 20px; align-items: center; flex-wrap: wrap; }
-.case-head h2 { font-size: 1.5rem; font-weight: 700; letter-spacing: -.02em; }
-.case-head .case-desc { font-size: .84rem; margin-top: 2px; }
-/* The name, what it is, and how to build it are one block beside the picture.
-   `min-width` is what makes it drop below the diagram rather than squeezing the
-   setup into a two-word-per-line column on a narrow screen. */
-.case-info { flex: 1; min-width: 270px; }
 
-/* ---------------- setup moves ----------------
-   Inside the heading block, under the case's name: it describes the case in
-   front of you, not one of the ways of solving it, and as its own band between
-   the picture and the list it looked attached to neither. Tinted rather than
-   bordered like an alg row, so it never reads as the first entry in a list you
-   can drag. */
+.case-head {
+  display: flex; gap: 22px; align-items: flex-start; flex-wrap: wrap;
+  padding: 18px; border-radius: 16px; border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface) 62%, transparent);
+}
+.case-head-art { display: grid; place-items: center; flex: none; }
+/* `min-width` drops the text below the picture on a narrow screen rather than
+   squeezing the setup into a column two words wide. */
+.case-info { flex: 1; min-width: 260px; display: flex; flex-direction: column; gap: 4px; }
+.case-kicker { font-size: .62rem; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--text-faint); }
+.case-head h2 { font-size: 1.5rem; font-weight: 700; letter-spacing: -.02em; line-height: 1.15; }
+.case-head .case-desc { font-size: .84rem; }
+.case-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+
 .setup-box {
-  width: 100%; display: flex; flex-direction: column; gap: 8px;
-  margin-top: 12px;
-  padding: 12px 14px; border-radius: var(--radius-sm);
+  display: flex; flex-direction: column; gap: 8px;
+  margin-top: 14px; padding: 12px 14px; border-radius: var(--radius-sm);
   border: 1px solid color-mix(in srgb, var(--accent-2) 30%, transparent);
   background: color-mix(in srgb, var(--accent-2) 8%, transparent);
 }
-/* `display: flex` above outranks the browser's own [hidden] rule, so a case
-   with no setup would otherwise leave an empty tinted box under the picture. */
+/* `display: flex` outranks the browser's own [hidden] rule. */
 .setup-box[hidden] { display: none; }
 .setup-head { display: flex; align-items: center; gap: 10px; }
-.setup-head h3 { font-size: .78rem; font-weight: 650; color: var(--text-dim); }
+.setup-head h3 { font-size: .74rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--text-dim); }
 .setup-count { font-size: .7rem; font-family: var(--font-mono); color: var(--text-faint); }
 .setup-copy { margin-left: auto; }
-.setup-moves {
-  font-family: var(--font-mono); font-size: .92rem; line-height: 1.5;
-  word-spacing: .18em; overflow-wrap: anywhere;
-  color: var(--accent-2);
-}
+.setup-moves { font-family: var(--font-mono); font-size: .92rem; line-height: 1.5; word-spacing: .18em; overflow-wrap: anywhere; color: var(--accent-2); }
 .setup-note { font-size: .72rem; line-height: 1.55; color: var(--text-dim); }
 
-.alg-list { width: 100%; display: flex; flex-direction: column; gap: 8px; }
+.alg-list-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-top: 4px; }
+.alg-list-head h3 { font-size: .95rem; font-weight: 650; }
+.alg-list-head .sub { font-size: .72rem; color: var(--text-faint); }
+.alg-list-head .btn { margin-left: auto; }
+.alg-list-head .btn[hidden] { display: none; }
+
+.alg-list { display: flex; flex-direction: column; gap: 8px; }
 .alg-list.dragging { cursor: grabbing; }
 .alg-row {
-  display: flex; align-items: flex-start; gap: 12px;
-  padding: 12px 14px; border-radius: var(--radius-sm);
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 14px; border-radius: 12px;
   border: 1px solid var(--border);
-  background: color-mix(in srgb, var(--surface) 55%, transparent);
+  background: color-mix(in srgb, var(--surface) 60%, transparent);
   transition: border-color var(--dur-fast), background var(--dur-fast);
 }
-.alg-row:first-child { border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
+.alg-row.first { border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
 .alg-row.dragging {
   position: relative; z-index: 3; cursor: grabbing;
-  border-color: var(--accent); background: var(--surface-2);
-  box-shadow: var(--shadow);
+  border-color: var(--accent); background: var(--surface-2); box-shadow: var(--shadow);
 }
-.alg-grip {
-  flex: none; margin-top: 2px; padding: 2px; cursor: grab;
-  color: var(--text-faint); touch-action: none;
-}
+.alg-grip { flex: none; padding: 4px 2px; cursor: grab; color: var(--text-faint); touch-action: none; }
 .alg-grip:hover { color: var(--text); }
-.alg-grip svg { stroke-width: 2.6; }
+.alg-grip svg { stroke-width: 2.8; }
 .alg-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
 .alg-moves {
-  font-family: var(--font-mono); font-size: .84rem; line-height: 1.45;
-  word-spacing: .18em; overflow-wrap: anywhere;
+  font-family: var(--font-mono); font-size: .9rem; line-height: 1.45;
+  word-spacing: .2em; overflow-wrap: anywhere; cursor: copy; color: var(--text);
 }
 .alg-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .alg-count { font-size: .7rem; color: var(--text-faint); font-family: var(--font-mono); }
-.alg-badge {
-  font-size: .58rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
-  padding: 2px 7px; border-radius: 99px;
-}
+.alg-badge { font-size: .56rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; padding: 2px 7px; border-radius: 99px; }
 .alg-badge.first { color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, transparent); }
 .alg-badge.yours { color: var(--accent-2); background: color-mix(in srgb, var(--accent-2) 15%, transparent); }
-.alg-notes { font-size: .74rem; line-height: 1.5; color: var(--text-dim); }
-.alg-del {
-  flex: none; width: 26px; height: 26px; border-radius: 8px;
-  color: var(--text-faint); font-size: 1.05rem; line-height: 1;
-}
+.alg-notes { font-size: .72rem; color: var(--text-dim); }
+.alg-del { flex: none; width: 28px; height: 28px; border-radius: 8px; color: var(--text-faint); font-size: 1.1rem; line-height: 1; }
 .alg-del:hover { color: var(--danger); background: color-mix(in srgb, var(--danger) 14%, transparent); }
 
-/* ---------------- add your own ---------------- */
 .alg-add {
-  width: 100%; padding: 14px; border-radius: var(--radius-sm);
-  border: 1px dashed var(--border);
+  padding: 14px; border-radius: 12px; border: 1px dashed var(--border);
   display: flex; flex-direction: column; gap: 10px;
 }
 .alg-add h3 { font-size: .78rem; font-weight: 650; color: var(--text-dim); }
 .alg-add-row { display: flex; gap: 8px; flex-wrap: wrap; }
 .alg-input {
   flex: 1; min-width: 200px;
-  padding: 9px 12px; border-radius: var(--radius-sm);
+  padding: 9px 12px; border-radius: 10px;
   border: 1px solid var(--border); background: color-mix(in srgb, var(--bg-2) 70%, transparent);
-  font-family: var(--font-mono); font-size: .8rem; outline: 0;
+  font-family: var(--font-mono); font-size: .82rem; outline: 0;
 }
 .alg-input:focus { border-color: var(--accent); }
 .alg-error { font-size: .74rem; color: var(--danger); }
+.alg-error[hidden] { display: none; }
 
 /* ---------------- footer ---------------- */
-#alglib-foot a { color: var(--accent); text-decoration: none; }
-#alglib-foot a:hover { text-decoration: underline; }
-#alglib-foot {
-  max-width: 860px; margin: 46px auto 0;
-  display: flex; flex-direction: column; gap: 8px;
-  font-size: .72rem; line-height: 1.6; color: var(--text-faint);
-}
+#alglib-foot { margin-top: 36px; font-size: .74rem; line-height: 1.6; color: var(--text-faint); text-align: center; }
+#alglib-foot b { color: var(--text-dim); font-weight: 650; }
 
-@media (max-width: 560px) {
-  #alglib-grid { grid-template-columns: repeat(auto-fill, minmax(126px, 1fr)); }
-  .case-pic { width: 78px; height: 78px; }
-  /* Eighteen events do not fit on a phone in one row and should not try: the
-     row scrolls sideways rather than becoming four rows of chips above the
-     thing you came here to look at. */
-  #alglib-events {
+/* ---------------- phones ---------------- */
+@media (max-width: 640px) {
+  #alglib-grid { grid-template-columns: repeat(auto-fill, minmax(146px, 1fr)); gap: 10px; }
+  .case-art { width: 84px; height: 84px; }
+  .case-art.pyram { width: 96px; }
+  .case-art.sq1 { width: 124px; height: 62px; }
+  .case-pick { padding: 14px 8px 10px; }
+
+  /* Seven puzzles and thirteen 3x3 sets do not fit a phone in one row and
+     should not try: both rows scroll sideways instead of becoming four rows of
+     buttons above the thing you came to look at. */
+  #alglib-events, #alglib-tabs {
     flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none;
-    margin-inline: calc(-1 * clamp(14px, 5vw, 56px));
-    padding-inline: clamp(14px, 5vw, 56px);
+    margin-inline: calc(-1 * clamp(14px, 4vw, 48px));
+    padding-inline: clamp(14px, 4vw, 48px);
   }
-  #alglib-events::-webkit-scrollbar { display: none; }
-  .event-chip { flex: none; }
+  #alglib-events::-webkit-scrollbar, #alglib-tabs::-webkit-scrollbar { display: none; }
+  .event-tab, .tab-group { flex: none; }
+  .tab-group { flex-wrap: nowrap; }
+
+  #alglib-bar { top: 4px; }
+  .alglib-search { max-width: none; flex-basis: 100%; }
+  #alglib-train { margin-left: 0; width: 100%; justify-content: space-between; }
+  .train-go { flex: 1 1 auto; }
 }

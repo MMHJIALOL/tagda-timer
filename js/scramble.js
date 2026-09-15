@@ -13,7 +13,7 @@ import { F2L } from './f2l.js';
 import { OLL_222, PBL_222, CLL_222, EG1_222, EG2_222 } from './algs2.js';
 import { ZBLL_SET } from './zbll.js';
 import { invert, tidy, pick } from './util.js';
-import { preferredAlg } from './alglibrary.js';
+import { preferredAlg, loadSet } from './alglibrary.js';
 
 // Local copy first (works offline — see tools/mirror_cubing.py), CDN as backup.
 const SOURCES = [
@@ -107,7 +107,78 @@ const SETS = {
 
 export function setFor(modeId) {
   const m = MODES[modeId];
-  return m && m.set ? SETS[m.set] : null;
+  return m && m.set ? SETS[m.set] || null : null;
+}
+
+/* Library sets the timer has fetched, by set id, and puzzles.js once a
+   pyraminx, skewb or square-1 set has needed it. */
+const LIBRARY = {};
+let PUZ = null;
+
+/**
+ * Make sure a mode's case list is here, fetching it from the algorithm library
+ * the first time. The sets above are always loaded; the library's COLL, CMLL,
+ * square-1 and the rest are not, because nobody should pay for 500 square-1
+ * cases to time a 3x3. Resolves to the case list, or null if it cannot be had.
+ */
+export async function loadSetFor(modeId) {
+  const name = MODES[modeId]?.set;
+  if (!name) return null;
+  if (SETS[name]) return SETS[name];
+  try {
+    const set = await loadSet(name);
+    if (!set) return null;
+    if (set.puzzle !== 'cube' && !PUZ) PUZ = await import('./puzzles.js');
+    LIBRARY[name] = set;
+    SETS[name] = set.cases;
+    return SETS[name];
+  } catch (err) {
+    console.warn('[scramble] could not load the case list for', modeId, err.message);
+    return null;
+  }
+}
+
+/* cubing.js reads a 4x4 in SiGN, where a slice letter or a lowercase face does
+   not mean what these algorithms mean by it. Spell those out as the layers they
+   actually turn, so the scramble and its preview agree with the simulator the
+   algorithms were checked on. */
+const BIG_SLICE = { M: ['2L', '2R'], E: ['2D', '2U'], S: ['2F', '2B'] };
+function forBigCube(seq) {
+  return seq.split(' ').filter(Boolean).flatMap(t => {
+    const m = /^([MESudfblr])(2?'?)$/.exec(t);
+    if (!m) return [t];
+    const [, letter, s] = m;
+    if (!BIG_SLICE[letter]) return [`${letter.toUpperCase()}w${s}`];
+    const back = s === "'" ? '' : s === '' ? "'" : s;
+    return [BIG_SLICE[letter][0] + s, BIG_SLICE[letter][1] + back];
+  }).join(' ');
+}
+
+/**
+ * A scramble for a library case: the set's own filler before it, the case's
+ * setup, the algorithm backwards, and the filler after — the same recipe as
+ * every other case scramble, with the set saying what "AUF" means on its puzzle.
+ *
+ * A skewb scramble is written in the notation of its algorithms, which
+ * cubing.js does not share, so it carries a `preview` for the cube on screen.
+ */
+function libraryScramble(set, c, alg) {
+  const fill = set.scramble || {};
+  const pre = Array.from({ length: fill.preRepeat || 1 }, () => pick(fill.pre || [''])).join(' ');
+  const post = pick(fill.post || ['']);
+  if (set.puzzle === 'cube') {
+    /* tidy() reads `R2'` as three quarter turns; it is the same half turn. */
+    const seq = tidy([pre, c.setup, invert(alg), post].filter(Boolean).join(' ').replace(/2'/g, '2'));
+    return { scramble: set.n === 4 ? forBigCube(seq) : seq };
+  }
+  const seq = PUZ.joinMoves(set.puzzle, [pre, c.setup, PUZ.invertMoves(set.puzzle, alg), post]);
+  return set.puzzle === 'skewb' ? { scramble: seq, preview: PUZ.skewbForCubing(seq) } : { scramble: seq };
+}
+
+/** What the preview should play for a scramble recorded in `modeId`, when that differs from the text. */
+export function previewOf(modeId, scramble) {
+  const set = LIBRARY[MODES[modeId]?.set];
+  return set?.puzzle === 'skewb' && PUZ ? PUZ.skewbForCubing(scramble) : null;
 }
 
 const auf = () => pick(U_MOVES);
@@ -127,6 +198,7 @@ function caseScramble(setName, allowed) {
   const pool = (allowed && allowed.length) ? set.filter(c => allowed.includes(c.id)) : set;
   const c = pick(pool.length ? pool : set);
   const alg = preferredAlg(c.id) || c.alg;
+  if (LIBRARY[setName]) return { ...libraryScramble(LIBRARY[setName], c, alg), caseId: c.id, caseName: c.name };
   const seq = tidy([auf(), invert(alg), auf()].filter(Boolean).join(' '));
   return { scramble: seq, caseId: c.id, caseName: c.label ? `${c.name} · ${c.label}` : c.name };
 }
@@ -187,7 +259,12 @@ function subgroupScramble(poolName, [lo, hi]) {
 export async function generate(eventId, modeId = 'wca', opts = {}) {
   const mode = MODES[modeId] || MODES.wca;
 
-  if (mode.kind === 'case')     return { ...caseScramble(mode.set, opts.allowedCases), official: false };
+  /* A case set that cannot be fetched falls through to a random-state
+     scramble for the event, rather than a case from some other puzzle's list —
+     and rather than the offline generator, which knows no square-1. */
+  if (mode.kind === 'case' && await loadSetFor(modeId)) {
+    return { ...caseScramble(mode.set, opts.allowedCases), official: false };
+  }
   if (mode.kind === 'compose')  return { ...composeLL(), official: false };
   if (mode.kind === 'trigger')  return { ...triggerScramble(mode.depth, mode.maxMoves), official: false };
   if (mode.kind === 'subgroup') return { ...subgroupScramble(mode.pool, mode.depth), official: false };

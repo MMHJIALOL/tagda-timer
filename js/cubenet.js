@@ -130,6 +130,15 @@ function applyMove(stickers, n, tok) {
 
   const face = WIDE[letter] || letter;
   const wide = !!w || !!WIDE[letter];
+  /* SiGN: a number on a plain face letter picks out one inner layer — `2R` is
+     the slice next to R, not two layers of it. With a `w`, or in lowercase,
+     the number counts layers from the face instead: `3Rw` is three. */
+  if (numStr && !wide) {
+    const depth = Math.min(+numStr, n);
+    turn(stickers, n, face, depth, amount);
+    if (depth > 1) turn(stickers, n, face, depth - 1, -amount);
+    return;
+  }
   const depth = numStr ? Math.min(+numStr, n) : (wide ? Math.min(2, n) : 1);
   turn(stickers, n, face, depth, amount);
 }
@@ -137,12 +146,19 @@ function applyMove(stickers, n, tok) {
 /**
  * Run a scramble and return `{ U: string[][], R: ... }` face colour grids.
  * Multi-blind scrambles ("1) ... 2) ...") use their first attempt.
+ *
+ * `grey`, if given, is a set of sticker keys like "U01" (face, row, column on
+ * the solved cube). Those physical stickers come out as 'X' wherever the
+ * scramble takes them — how a diagram says "this piece is not part of the
+ * case" without losing track of where it went.
  */
-export function faceletsFor(scramble, n = 3) {
+export function faceletsFor(scramble, n = 3, grey = null) {
   const stickers = [];
   for (const f of FACES) {
     for (let r = 0; r < n; r++) {
-      for (let c = 0; c < n; c++) stickers.push({ c: f, p: stickerPos(f, r, c, n) });
+      for (let c = 0; c < n; c++) {
+        stickers.push({ c: grey && grey.has(`${f}${r}${c}`) ? 'X' : f, p: stickerPos(f, r, c, n) });
+      }
     }
   }
   const clean = String(scramble || '').replace(/^\s*\d+\)\s*/gm, '').split('\n')[0];

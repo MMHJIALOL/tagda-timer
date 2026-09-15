@@ -9,7 +9,7 @@ await loadAllSets();
 let total = 0, cases = 0;
 for (const set of Object.values(SETS)) {
   cases += set.cases.length;
-  for (const c of set.cases) total += (set.library[c.id]?.alternates || []).length;
+  for (const c of set.cases) total += displayOrder(set.id, c.id).length;
 }
 
 const bad = auditLibrary();
@@ -40,7 +40,7 @@ for (const set of Object.values(SETS)) {
 }
 
 const badSetup = auditSetups(Object.values(SETS));
-const setupCases = Object.values(SETS).filter(s => (s.n || 3) === 3).reduce((n, s) => n + s.cases.length, 0);
+const setupCases = Object.values(SETS).filter(s => (s.n || 3) === 3 && (s.puzzle || 'cube') === 'cube').reduce((n, s) => n + s.cases.length, 0);
 console.log(badSetup.length
   ? `FAIL ${badSetup.length} setups`
   : `PASS all ${setupCases} 3x3 setups build their case and are solved by their algorithm`);

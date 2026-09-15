@@ -32,7 +32,7 @@
 
 import { faceletsFor, parseAlg, stickerAt } from './cubenet.js';
 import { invert, tidy } from './util.js';
-import { SETS, caseFacelets, displayOrder, isCaseSolved } from './alglibrary.js';
+import { SETS, caseFacelets, caseStateFacelets, displayOrder, verifyAlgForCase } from './alglibrary.js';
 
 const FACES = ['U', 'R', 'F', 'D', 'L', 'B'];
 const AUFS = ['', 'U', 'U2', "U'"];
@@ -89,6 +89,9 @@ const uniform = (grid) => grid.every(row => row.every(s => s === grid[0][0]));
  * layer sitting on top of an unsolved F2L, say.
  */
 function signature(f, setId) {
+  /* An imported set's picture is its facelets with the grey stickers greyed,
+     so the picture itself is the fingerprint. */
+  if (SETS[setId]?.greySet) return FACES.map(face => f[face].flat().join('')).join('');
   if (setId === 'F2L') return f2lSignature(f);
   if (!uniform(f.D)) return null;
   if (!['R', 'F', 'L', 'B'].every(face => uniform(f[face].slice(1)))) return null;
@@ -161,8 +164,10 @@ const awkwardness = (moves) => moves.reduce((n, m) => {
  * themselves: a leading U' that cancels against the alg's own first move comes
  * out one move shorter than the raw inverse.
  */
-function candidateFrom(alg, target, setId, want) {
-  const inv = invert(alg);
+function candidateFrom(alg, target, setId, want, caseSetup = '') {
+  /* A case with a setup of its own (EOLR) is solved *to* that setup, so it is
+     built by doing the setup and then the algorithm backwards. */
+  const inv = [caseSetup, invert(alg)].filter(Boolean).join(' ');
   const rot = alignment(faceletsFor(inv, 3), target);
   if (rot === null) return null;
 
@@ -173,12 +178,13 @@ function candidateFrom(alg, target, setId, want) {
   const tries = [];
   for (const pre of AUFS) {
     for (const post of AUFS) {
-      const moves = parseAlg(tidy([pre, inv, rot, post].filter(Boolean).join(' ')));
+      /* tidy() reads `R2'` as three quarter turns; it is the same half turn. */
+      const moves = parseAlg(tidy([pre, inv, rot, post].filter(Boolean).join(' ').replace(/2'/g, '2')));
       if (moves) tries.push({ setup: moves.join(' '), moves: moves.length, awkward: awkwardness(moves), from: alg });
     }
   }
   tries.sort((a, b) => a.moves - b.moves || a.awkward - b.awkward);
-  return tries.find(t => signature(faceletsFor(t.setup, 3), setId) === want) || null;
+  return tries.find(t => signature(caseStateFacelets(setId, t.setup), setId) === want) || null;
 }
 
 /* Comparing whole setups, awkwardness counts for something rather than only
@@ -208,19 +214,21 @@ export function setupFor(setId, caseId) {
      facelets. A 2x2 or 4x4 case gets no setup line rather than a setup worked
      out on the wrong puzzle — the same rule as everywhere else here: no
      sequence is printed that has not been executed against the case. */
-  if ((SETS[setId]?.n || 3) !== 3) return null;
+  const set = SETS[setId];
+  if (!set || (set.puzzle && set.puzzle !== 'cube') || (set.n || 3) !== 3) return null;
   const list = displayOrder(setId, caseId);
   if (!list.length) return null;
   const target = caseFacelets(setId, caseId);
   if (!target) return null;
   const want = signature(target, setId);
   if (want === null) return null;
+  const caseSetup = set.cases.find(c => c.id === caseId)?.setup || '';
 
-  const first = candidateFrom(list[0].alg, target, setId, want);
+  const first = candidateFrom(list[0].alg, target, setId, want, caseSetup);
 
   let distinct = null;
   for (const a of list.slice(1)) {
-    const cand = candidateFrom(a.alg, target, setId, want);
+    const cand = candidateFrom(a.alg, target, setId, want, caseSetup);
     /* Two alternates can invert to the same string once cancellations are
        taken out. If that string is the reversal, it is still the reversal. */
     if (!cand || (first && cand.setup === first.setup)) continue;
@@ -250,14 +258,16 @@ export function setupFor(setId, caseId) {
 export function auditSetups(sets) {
   const bad = [];
   for (const set of sets) {
-    if ((set.n || 3) !== 3) continue;
+    if ((set.puzzle && set.puzzle !== 'cube') || (set.n || 3) !== 3) continue;
     for (const c of set.cases) {
       const s = setupFor(set.id, c.id);
       if (!s) { bad.push({ set: set.id, caseId: c.id, why: 'no setup found' }); continue; }
       const alg = displayOrder(set.id, c.id)[0].alg;
-      const solved = AUFS.some(pre => AUFS.some(post =>
-        isCaseSolved(set.id, faceletsFor([s.setup, pre, alg, post].filter(Boolean).join(' '), 3), c.id)));
-      if (!solved) bad.push({ set: set.id, caseId: c.id, why: `setup "${s.setup}" is not solved by ${alg}` });
+      /* The same check every listed algorithm passes, started from the cube
+         the setup builds instead of from the case's own scramble. */
+      if (!verifyAlgForCase(set.id, c.id, alg, s.setup)) {
+        bad.push({ set: set.id, caseId: c.id, why: `setup "${s.setup}" is not solved by ${alg}` });
+      }
     }
   }
   return bad;

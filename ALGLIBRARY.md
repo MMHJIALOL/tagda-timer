@@ -688,32 +688,54 @@ tabs in the same row.
 
 ### 11.1 The catalogue
 
-`ALG_EVENTS` in `js/alglibrary.js` lists all 17 WCA events plus FTO, in the
-timer's own order, each with the set ids it can show. `SET_IDS` falls out of it,
-`SET_LABELS` gives each tab its text before its module has loaded, and `LAZY`
-says which module to import. Adding an event is one row; adding a set to an
-event is one id.
+`ALG_EVENTS` in `js/alglibrary.js` lists the events that have algorithm sets,
+in the timer's own order, each with its sets grouped by method (CFOP /
+Advanced / Roux on 3x3). `SET_IDS` falls out of it, `SET_LABELS` gives each tab
+its text before its module has loaded, and `MODULES` / `GENERATED` say where a
+set lives. Adding an event is one row; adding a set to an event is one id.
 
-An event with no sets yet is still listed, still clickable, and says what is
-missing and why when you open it (`pendingPanel()`). That is deliberate: a
-silent absence reads as a bug, and "megaminx last-layer sets need a megaminx
-simulator before anything can be checked" is a better answer than an empty
-grid.
+Only events with sets are listed. Blindfolded events are left out on purpose,
+and so is FMC — its algorithms are 3x3 algorithms, and a second copy of the 3x3
+tabs under another name is not a set of its own. OH shows OH CMLL, not the 3x3
+tabs again.
 
 ### 11.2 What ships now
 
 | Event | Sets |
 |---|---|
-| 3x3 (and OH, FMC) | F2L, OLL, PLL, OCLL, EO, CP, EP, ZBLL |
+| 3x3 | F2L, 2-Look OLL, OLL, 2-Look PLL, PLL · WV, COLL, OLLCP, ZBLL · 2-Look CMLL, CMLL, LSE EO, EOLR |
 | 2x2 | OLL, PBL, CLL, EG-1, EG-2 |
-| everything else | listed, with the sets that are planned |
+| 4x4 | PLL Parity |
+| OH | OH CMLL |
+| Pyraminx | Last Layer, L4E |
+| Skewb | Sarah's Intermediate, Sarah's Advanced |
+| Square-1 | Cube Shape, CSP, OBL, EO, CP, EP |
 
-OCLL, EO, CP and EP are not new data. The trainer has drilled them since long
-before this page existed (`OCLL`, `OLL_EO`, `PLL_CP`, `PLL_EP` in `js/algs.js`);
-they were reachable from the mode picker and nowhere else, so the only way to
-*look* at the seven corner cases was to start a timed session and wait. Their
-alternates are the OLL and PLL library's own, re-pointed at the same cases and
-re-verified like everything else.
+2-Look OLL and 2-Look PLL keep the trainer's own case ids (`OLL_EO` + `OCLL`,
+`PLL_CP` + `PLL_EP` in `js/algs.js`), so a hand-off lands on the modes that
+already drilled them. There are no separate EO / CP / EP tabs any more.
+
+### 11.2a Where the new sets come from
+
+`tools/import-cubingapp.mjs` reads cubingapp's open alg-set JSON and writes
+`js/algsets/<ID>.js` (new sets) and `js/algsets/more-<ID>.js` (more algorithms
+for sets the timer already had, matched to existing cases by executing them).
+Nothing is copied on trust:
+
+1. cubingapp's cube model is ported and cross-checked against `js/cubenet.js`
+   on random sequences of every move kind the data uses (wide, inner slice,
+   M/E/S, rotations) before any grey-sticker list is translated.
+2. Every algorithm is parsed strictly and run through `verifyAlgForCase`;
+   pyraminx, skewb and square-1 run on `js/puzzles.js`.
+3. Every case must sit where its set says it starts — a PLL case with a broken
+   F2L, an EP case with unsolved corners, is not that set's case.
+
+The import prints everything it dropped. What remains dropped was checked
+against every rotation, AUF, slice offset and layer alignment and still does
+not solve its case — errors in the source, not in the checker.
+
+Fixing `2R` in `js/cubenet.js` was part of this: a number on a plain face letter
+is the single inner layer in SiGN, and 4x4 parity algorithms depend on it.
 
 ### 11.3 Where the 2x2 algorithms come from
 
@@ -782,10 +804,11 @@ that and produced algorithms that were not 2x2 OLL algorithms at all.
 
 ### 11.5 Setup moves stay 3x3
 
-`alglibrary-setup.js` reads 3x3 facelets throughout. A 2x2 case shows no setup
-line rather than one worked out on the wrong puzzle — the same rule as
-everywhere else here: no sequence is printed that has not been executed against
-the case.
+`alglibrary-setup.js` reads 3x3 facelets throughout. A 2x2, 4x4, pyraminx,
+skewb or square-1 case shows no setup line rather than one worked out on the
+wrong puzzle — the same rule as everywhere else here: no sequence is printed
+that has not been executed against the case. Imported 3x3 sets compare setups
+by their grey-sticker picture.
 
 ### 11.6 "Train these cases"
 
@@ -796,19 +819,22 @@ same three settings the mode picker and the case picker already write —
 `event`, `mode`, `allowedCases[mode]`. The scramble queue then does what it has
 always done.
 
-- Tick the corner of any card to narrow the run; the button counts what you
-  picked. Untouched, it trains the whole set.
-- A case's detail view has **Train only this case**.
+- A card is two buttons: the picture selects the case, the algorithm strip
+  underneath opens it — separate targets, so selecting never opens a case.
+  Shift-click selects every case between the last one clicked and this one.
+  The bar counts what you picked; nothing picked trains the whole set.
+- A case's detail view has **Train this case**.
 - The address bar is cleared on arrival, for the same reason a race invite is:
   a reload must not silently re-apply a choice you have since changed.
 - Case ids the set does not have are dropped rather than trusted, so an old
   link cannot filter every case out and leave the trainer with nothing.
 
-Set → mode: PLL, OLL, OCLL, ZBLL and F2L each map to their own trainer mode; EO
-and CP/EP map to the two-look modes with only their own cases switched on; the
-five 2x2 sets have new modes (`222oll`, `222pbl`, `222cll`, `222eg1`, `222eg2`)
-which build a scramble exactly the way a 3x3 case scramble is built, so per-case
-statistics work there for the same reason they work here.
+Set → mode: every set names its `trainerMode`. The library-only sets (COLL,
+CMLL, square-1 and the rest) have modes in `js/events.js` whose case list is
+fetched on first use by `loadSetFor` in `js/scramble.js`. Their scramble is the
+source's filler, the case setup, the algorithm backwards and the filler after,
+with each puzzle's own "AUF". A skewb scramble is written in its algorithms'
+notation and carries a translated `preview` for cubing.js.
 
 ### 11.7 Startup cost
 

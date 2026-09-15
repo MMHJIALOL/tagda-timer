@@ -7,7 +7,7 @@ import { $, $$, el, uid, fmt, fmtLive, clamp, copy, download, toCSV, debounce,
 import { Solves, Sessions, KV, Assets, LetterPairs, importAll, onWrite } from './db.js';
 import { activeGearId, Gear, gearLabel } from './gear.js';
 import { EVENTS, EVENT_ORDER, MODES, modesForEvent, eventOf, modeOf, virtualSize } from './events.js';
-import { ScrambleQueue, setFor, cubingAvailable, generate } from './scramble.js';
+import { ScrambleQueue, setFor, loadSetFor, previewOf, cubingAvailable, generate } from './scramble.js';
 import { createLearn } from './learnmode.js';
 import { Timer, INSPECT_MS } from './timer.js';
 import { Background } from './bg.js';
@@ -464,6 +464,9 @@ async function init() {
      of the session is already the one you asked for rather than a 3x3 you have
      to sit through. */
   await applyTrainerHandoff();
+  /* A mode whose cases live in the algorithm library has to have them here
+     before learn mode and the case picker look for them. */
+  await loadSetFor(app.settings.mode);
   // A reload leaves the room behind, so it has to leave the room's session
   // behind too — see restoreFromRace.
   restoreFromRace();
@@ -926,7 +929,7 @@ function showScramble(s, silent = false) {
   const view = mode.view || app.settings.cubeView;
   cube.configure(ev.puzzle, view === 'LL3' ? '3D' : view);
   cube.setOrientation(previewOrientation(mode, ev));
-  cube.set(s.scramble);
+  cube.set(s.preview || s.scramble);
   resetVcube();
 
   if (s.official === false && mode.kind === 'wca' && !cubingAvailable()) {
@@ -2610,10 +2613,14 @@ app.solveMenu = solveMenu;
  * solve records this scramble, which is the whole point — "show it" without
  * arming it would just be a picture.
  */
-function repeatScramble(solve) {
+async function repeatScramble(solve) {
   if (!solve.scramble) { toast('That solve has no scramble saved'); return; }
   timer.reset();
-  showScramble({ scramble: solve.scramble, caseId: solve.caseId, caseName: solve.caseName });
+  /* A skewb trainer scramble is written in its algorithms' notation, and the
+     preview needs it translated — which needs that set's puzzle loaded. */
+  await loadSetFor(solve.mode);
+  const preview = previewOf(solve.mode, solve.scramble) || undefined;
+  showScramble({ scramble: solve.scramble, caseId: solve.caseId, caseName: solve.caseName, preview });
   toast(`Repeating solve #${app.solves.indexOf(solve) + 1}`, { kind: 'good' });
 }
 app.repeatScramble = repeatScramble;
@@ -3793,7 +3800,7 @@ app.refreshBackground = () => applyBackground(bg, app.settings);
 function syncEventConfig() {
   const ev = eventOf(app.settings.event);
   if (timer) timer.cfg.useInspection = !ev.noInspection;
-  // trainer modes only exist for 3x3 — fall back if the event changed
+  // a trainer mode belongs to its events — fall back if the event changed
   if (!modesForEvent(app.settings.event).includes(app.settings.mode)) app.settings.mode = 'wca';
   // Leaving a blind event puts the panel away; arriving at one opens it only
   // if the solver asked for that in settings. Never forced open either way.
@@ -3828,7 +3835,34 @@ async function setEvent(id) {
   renderAll();
 }
 
-function setMode(id) {
+/**
+ * The session a trainer mode's solves go in — "OLL", "Pyra L4E" — made the
+ * first time and reused after, so drilling OLL again lands back among your OLL
+ * times instead of in whatever session happened to be open. Race and virtual
+ * sessions are never picked up.
+ */
+async function trainingSession(modeId, event) {
+  const mode = MODES[modeId];
+  const short = eventOf(event).short;
+  const name = event === '333' || mode.name.startsWith(short) ? mode.name : `${short} ${mode.name}`;
+  let s = app.sessions.find(x => x.name === name && x.event === event && !x.race && !x.virtual);
+  if (!s) {
+    s = { id: uid(), name, event, createdAt: Date.now(), order: app.sessions.length };
+    await Sessions.put(s);
+    app.sessions.push(s);
+  }
+  return s;
+}
+
+let modeWanted = null;
+async function setMode(id) {
+  modeWanted = id;
+  await loadSetFor(id);
+  const trainer = MODES[id]?.kind === 'case' ? await trainingSession(id, app.settings.event) : null;
+  /* Two picks whose case lists load at different speeds: the last one clicked
+     wins, not the last one to arrive. */
+  if (modeWanted !== id) return;
+  if (trainer && trainer.id !== app.session.id) await app.switchSession(trainer.id);
   app.settings.mode = id;
   persist();
   timer.reset();
@@ -3855,7 +3889,7 @@ async function applyTrainerHandoff() {
   history.replaceState(null, '', location.pathname);
 
   const mode = MODES[modeId];
-  const set = setFor(modeId);
+  const set = await loadSetFor(modeId);
   if (!mode || !set) { toast('That trainer set is not one this timer has'); return; }
 
   /* A mode belongs to its events; pick the first one it lists rather than
@@ -3864,10 +3898,12 @@ async function applyTrainerHandoff() {
   const event = mode.events === '*' ? app.settings.event : mode.events[0];
   if (EVENTS[event]) {
     app.settings.event = event;
-    if (app.session && app.session.event !== event) {
-      app.session.event = event;
-      await Sessions.put(app.session);
-    }
+    /* Straight into this trainer's own session. This runs before the timer
+       and the solve list exist, so it only points at the session — boot loads
+       its solves next. */
+    const s = await trainingSession(modeId, event);
+    app.session = s;
+    app.settings.sessionId = s.id;
   }
   app.settings.mode = modeId;
 
