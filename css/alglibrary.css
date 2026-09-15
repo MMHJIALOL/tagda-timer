@@ -57,8 +57,9 @@ body.alglib-page ::selection { background: color-mix(in srgb, var(--accent) 42%,
 }
 .tab-group { display: flex; align-items: center; gap: 2px; flex-wrap: wrap; }
 .tab-group-label {
-  font-size: .6rem; font-weight: 700; letter-spacing: .14em; text-transform: uppercase;
-  color: var(--text-faint); margin-right: 6px;
+  font-size: .68rem; font-weight: 800; letter-spacing: .12em; text-transform: uppercase;
+  color: var(--accent); margin-right: 8px; padding: 3px 8px; border-radius: 6px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 .set-tab {
   font-size: .82rem; font-weight: 550;
