@@ -6,8 +6,8 @@
    whatever the device shares with.
    =========================================================== */
 
-import { el, download, fmt } from './util.js';
-import { eff, DNF } from './stats.js';
+import { el, download, fmtResult } from './util.js';
+import { eff, isMoveResult } from './stats.js';
 import { toast } from './toast.js';
 import {
   drawSolveCard, drawAverageCard, drawReconCard, canvasBlob, shareText, socialLinks,
@@ -166,7 +166,7 @@ const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(
 export async function shareSolve(solve, { index = null } = {}) {
   toast('Rendering card…');
   const canvas = await drawSolveCard(solve, { index });
-  const value = eff(solve) === DNF ? 'DNF' : fmt(eff(solve));
+  const value = fmtResult(eff(solve), isMoveResult(solve));
   present(canvas, {
     title: 'Share this solve',
     filename: `tagda-solve-${stamp(solve.createdAt)}.png`,

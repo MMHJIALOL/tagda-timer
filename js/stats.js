@@ -6,10 +6,23 @@
 
 export const DNF = Infinity;
 
-/** Effective (penalty-applied) time in ms. Infinity means DNF. */
+/** Does this solve's result count in moves rather than in milliseconds? */
+export const isMoveResult = (s) => Number.isFinite(s?.fmcMoves);
+
+/**
+ * Effective (penalty-applied) result. Infinity means DNF.
+ *
+ * Milliseconds for every event but Fewest Moves, where the result IS the move
+ * count (WCA E2d) and the time the attempt took is kept only for reference.
+ * Everything downstream — best, mean, mo3, the averages, the charts — is
+ * "smaller is better" arithmetic that does not care which unit it is in. What
+ * does care is anything that PRINTS the number, which is what fmtResult() in
+ * util.js is for.
+ */
 export function eff(solve) {
   if (!solve) return DNF;
   if (solve.penalty === 'DNF') return DNF;
+  if (isMoveResult(solve)) return solve.fmcMoves;
   return solve.timeMs + (solve.penalty === '+2' ? 2000 : 0);
 }
 
@@ -79,6 +92,26 @@ export function meanOf(effTimes) {
 export function currentAvg(solves, n) {
   if (solves.length < n) return null;
   return averageOfRange(solves.map(eff), solves.length - n, solves.length);
+}
+
+/**
+ * The best moN anywhere in the session.
+ *
+ * A mean of 3 is the round a Fewest Moves competitor actually sits (WCA
+ * 9b4a), so "the best three in a row I have had" is the number that means
+ * something there — and bestAvg cannot answer it, because a mean trims
+ * nothing and one DNF spoils the whole window (9f11).
+ */
+export function bestMean(solves, n) {
+  if (solves.length < n) return null;
+  const e = solves.map(eff);
+  let best = null;
+  for (let i = 0; i + n <= solves.length; i++) {
+    const m = meanOfRange(e, i, i + n);
+    if (m === null || m === DNF) continue;
+    if (best === null || m < best) best = m;
+  }
+  return best;
 }
 
 /** Current moN (mean of N). */
@@ -276,7 +309,7 @@ export function sessionBests(solves) {
     out['ao' + n] = solves.length >= n ? bestAvg(solves, n).value : null;
   }
   out.single = bestSingle(solves);
-  out.mo3 = solves.length >= 3 ? currentMean(solves, 3) : null;
+  out.mo3 = bestMean(solves, 3);
   return out;
 }
 

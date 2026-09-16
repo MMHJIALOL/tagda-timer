@@ -4,10 +4,10 @@
    Every control writes straight into app.settings and applies live.
    =========================================================== */
 
-import { $, el, fmt, fmtDate, download, parseScrambleList } from './util.js';
+import { $, el, fmt, fmtResult, fmtDate, download, parseScrambleList } from './util.js';
 import { PRESETS, TIMER_FONTS, exportTheme, importTheme } from './theme.js';
 import { SHADER_NAMES } from './bg.js';
-import { summarize, byCase, eff, DNF, bestAvg, statWindow, bldSummary } from './stats.js';
+import { summarize, byCase, eff, DNF, isMoveResult, bestAvg, statWindow, bldSummary } from './stats.js';
 import { renderTrend, renderHistogram, renderHeatmap, renderCaseBars } from './charts.js';
 import { MODES, EVENTS, EVENT_ORDER } from './events.js';
 import { setFor } from './scramble.js';
@@ -311,18 +311,23 @@ export function buildAppearance(app) {
 
 const NEWLINE = String.fromCharCode(10);
 
-const fmtStat = (v) => (v === null || v === undefined) ? '—' : v === DNF ? 'DNF' : fmt(v);
+/* A session scored in moves prints its numbers in moves. Asked of the solves
+   themselves rather than of the current event, because this drawer can be
+   opened on a session you are no longer sitting in. */
+const movesSession = (list) => (list || []).some(isMoveResult);
+const fmtStat = (v, moves = false) => fmtResult(v, moves);
 
 /** One solve's time, in parentheses when the average does not count it. */
 function timeCell(solve, trimmed) {
   const v = eff(solve);
-  const txt = v === DNF ? 'DNF' : fmt(v) + (solve.penalty === '+2' ? '+' : '');
+  const txt = v === DNF ? 'DNF' : fmtResult(v, isMoveResult(solve)) + (solve.penalty === '+2' ? '+' : '');
   return trimmed ? `(${txt})` : txt;
 }
 
 /** The shareable block. Deliberately plain text — it has to survive a paste. */
 function statText(w) {
-  const lines = [`${w.label}: ${fmtStat(w.value)}`, '', 'Time List:'];
+  const lines = [`${w.label}: ${fmtStat(w.value, movesSession(w.list))}`, '',
+               movesSession(w.list) ? 'Solutions:' : 'Time List:'];
   w.list.forEach((s, i) => {
     const scramble = (s.scramble || '').replace(/\s+/g, ' ').trim();
     lines.push(`${i + 1}. ${timeCell(s, w.trimmed.has(w.start + i))}   ${scramble}`);
@@ -350,7 +355,7 @@ export function buildStatDetail(app, kind) {
       el('div', { class: 'stat-detail-head' },
         el('div', {},
           el('div', { class: 'sd-label', text: w.label }),
-          el('div', { class: 'sd-value', text: fmtStat(w.value) })),
+          el('div', { class: 'sd-value', text: fmtStat(w.value, movesSession(w.list)) })),
         el('div', { class: 'sd-actions' },
           el('button', {
             class: 'btn primary', text: 'share card',
@@ -663,6 +668,16 @@ export function buildSettings(app) {
           'how many cases you have never seen may be introduced before you switch it off and on again'),
         row('Counts as slow', slider(S.learnSlowFactor, 1.1, 3, .1, v => set('learnSlowFactor', v), v => v.toFixed(1) + '×'),
           'a solve this much slower than your own average on the case holds it back instead of advancing it'),
+      ),
+
+      group('Fewest Moves',
+        row('Attempt length', chips([
+          { value: 60, label: '60 min' },
+          { value: 30, label: '30 min' },
+          { value: 10, label: '10 min' },
+          { value: 1, label: '1 min' },
+        ], S.fmcMinutes ?? 60, v => set('fmcMinutes', +v)),
+          '60 minutes is the WCA limit (E2b). The shorter ones are practice — the result is still judged the same way.'),
       ),
 
       group('Multi-blind',
@@ -1017,7 +1032,8 @@ export function buildStats(app) {
       el('span', { class: 'bs-v', text: v }),
       sub ? el('span', { class: 'bs-sub', text: sub }) : null);
 
-    const f = v => v === null ? '—' : v === DNF ? 'DNF' : fmt(v);
+    const moves = solves.some(isMoveResult);
+    const f = v => fmtResult(v, moves);
 
     body.append(
       group('Session',
@@ -1049,7 +1065,7 @@ export function buildStats(app) {
 
     const drawTrend = (list, markers) => {
       renderTrend(trendHost, list, (s, i) => {
-        hoverInfo.textContent = s ? `#${i + 1}  ${eff(s) === DNF ? 'DNF' : fmt(eff(s))}  ·  ${s.scramble.slice(0, 60)}` : '';
+        hoverInfo.textContent = s ? `#${i + 1}  ${fmtResult(eff(s), isMoveResult(s))}  ·  ${s.scramble.slice(0, 60)}` : '';
       }, { markers });
     };
 
@@ -1587,7 +1603,7 @@ export function buildHistory(app) {
       const cls = [s.penalty === 'DNF' ? 'dnf' : '', s.penalty === '+2' ? 'plus2' : '', v === best ? 'pb' : ''].join(' ');
       const r = el('div', { class: `st-row ${cls}` },
         el('span', { class: 'st-i', text: String(solves.length - i) }),
-        el('span', { class: 'st-t', text: v === DNF ? 'DNF' : fmt(v) + (s.penalty === '+2' ? '+' : '') }),
+        el('span', { class: 'st-t', text: v === DNF ? 'DNF' : fmtResult(v, isMoveResult(s)) + (s.penalty === '+2' ? '+' : '') }),
         el('span', { class: 'st-s', text: s.scramble.replace(/\n/g, ' | ') }),
         el('span', { class: 'st-d', text: fmtDate(s.createdAt) }),
       );
@@ -1600,7 +1616,7 @@ export function buildHistory(app) {
         el('div', { class: 'lbl' }, el('span', { text: `${solves.length} solves` }),
           el('span', { class: 'sub', text: 'click a row for penalties, comment, delete' })),
         el('button', { class: 'ghost-btn', text: 'copy all', onclick: () => app.copyToast(
-          app.solves.map((s, i) => `${i + 1}. ${eff(s) === DNF ? 'DNF' : fmt(eff(s))}   ${(s.scramble || '').replace(/\s+/g, ' ')}`).join(NEWLINE),
+          app.solves.map((s, i) => `${i + 1}. ${fmtResult(eff(s), isMoveResult(s))}   ${(s.scramble || '').replace(/\s+/g, ' ')}`).join(NEWLINE),
           'Session') }),
       ),
       table,

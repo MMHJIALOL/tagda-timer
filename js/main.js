@@ -2,7 +2,7 @@
    Tagda Timer — application wiring
    =========================================================== */
 
-import { $, $$, el, uid, fmt, fmtLive, clamp, copy, download, toCSV, debounce,
+import { $, $$, el, uid, fmt, fmtLive, fmtResult, clamp, copy, download, toCSV, debounce,
          parseTimeInput, parseScrambleList } from './util.js';
 import { Solves, Sessions, KV, Assets, LetterPairs, importAll, onWrite } from './db.js';
 import { activeGearId, Gear, gearLabel } from './gear.js';
@@ -14,7 +14,7 @@ import { Background } from './bg.js';
 import { CubeView } from './cube.js';
 import { makeDraggable } from './drag.js';
 import { flash, shockwave, confetti, chime, callout, beep } from './fx.js';
-import { summarize, eff, DNF, bestSingle, bestAvg, trimmedIndices, byCase, sessionBests, rollingSeries, statWindow, STAT_LABELS } from './stats.js';
+import { summarize, eff, DNF, isMoveResult, bestSingle, bestAvg, trimmedIndices, byCase, sessionBests, rollingSeries, statWindow, STAT_LABELS } from './stats.js';
 import { renderMiniTrend } from './charts.js';
 import { DEFAULTS, loadSettings, saveSettings, applyTheme, applyBackground, themeColors, setAlbumTint } from './theme.js';
 import { loadLibraryPrefs } from './alglibrary.js';
@@ -98,6 +98,25 @@ const loadRecon = lazy(() => import('./recon.js'), m => (_recon = m));
 
 let _xp1 = null;
 const loadXp1 = lazy(() => import('./xplus1.js'), m => (_xp1 = m));
+
+/* The Fewest Moves workspace. Only 333fm ever asks for it, and it drags in
+   the strict notation reader and the cube model with it. */
+let _fmc = null;
+const loadFmcModule = lazy(() => import('./fmcmode.js'), m => (_fmc = m));
+
+/** The live FMC controller, or null if the module has never been loaded. */
+const fmcCtl = () => (_fmc ? _fmc.getFmc(app, FMC_HOOKS) : null);
+/** Is an attempt running right now? Answerable before the module exists. */
+const fmcAttempting = () => movesMode() && !!fmcCtl()?.attempting;
+/** Is the event we are on scored in moves rather than in seconds? */
+const movesMode = () => !!eventOf(app.settings.event).fmc;
+/* Whether the numbers OVER this session are move counts. Not the same
+   question as the one above: switching a session's event leaves its solves
+   where they are, so a session full of Fewest Moves attempts looked at from
+   3x3 would otherwise print "0.03" for a 31-move solve. */
+const movesStats = () => movesMode() || app.solves.some(isMoveResult);
+/** One session-wide number, printed in the unit that session is scored in. */
+const fmtNow = (v) => fmtResult(v, movesStats());
 
 /* Race mode, and the transport under it, are the largest thing on this list
    and the one fewest sessions ever touch — nothing about it is fetched until
@@ -312,9 +331,9 @@ async function openRecon(opts) {
 /** The session's solves, as things the workbench can jump straight into. */
 function reconLibrary() {
   return app.solves.filter(s => s.scramble).slice(-60).reverse().map((s) => ({
-    label: `#${app.solves.indexOf(s) + 1} · ${eff(s) === DNF ? 'DNF' : fmt(eff(s))}`,
+    label: `#${app.solves.indexOf(s) + 1} · ${fmtResult(eff(s), isMoveResult(s))}`,
     scramble: s.scramble,
-    moves: s.recon || '',
+    moves: s.recon || s.fmcSolution || '',
     save: (moves) => { s.recon = moves; Solves.put(s).catch(() => {}); },
   }));
 }
@@ -325,8 +344,10 @@ function reconstructSolve(solve) {
   const n = app.solves.indexOf(solve) + 1;
   return openRecon({
     scramble: solve.scramble,
-    title: `#${n} · ${eff(solve) === DNF ? 'DNF' : fmt(eff(solve))}`,
-    moves: solve.recon || '',
+    title: `#${n} · ${fmtResult(eff(solve), isMoveResult(solve))}`,
+    // An FMC solve already has its solution written down — the workbench opens
+    // on that rather than on an empty box you would have to type it into again.
+    moves: solve.recon || solve.fmcSolution || '',
     onSave: (moves) => { solve.recon = moves; Solves.put(solve).catch(() => {}); },
     library: reconLibrary(),
   });
@@ -692,18 +713,26 @@ async function nextScramble({ clear = false } = {}) {
    actually looking at. Going through dailyCtl() would have made the guard
    depend on a lazily-loaded module being loaded, which is true in the app and
    is exactly the sort of thing that is quietly false somewhere else. */
+/* A running FMC attempt owns its scramble for the same reason: it was frozen
+   when the clock started, and the solution in the box is being judged against
+   that one. Stepping the scramble under it would leave the two disagreeing. */
+/** Why the scramble will not step. Two features hold it, for two reasons. */
+const spokenForWhy = () => (fmcAttempting()
+  ? 'Your attempt is on this scramble — submit or abandon it first'
+  : 'Today’s scramble is the only one in here');
+
 const scrambleIsSpokenFor = () =>
-  document.body.classList.contains('sotd') || !!dailyCtl()?.engaged;
+  document.body.classList.contains('sotd') || !!dailyCtl()?.engaged || fmcAttempting();
 
 function prevScramble() {
-  if (scrambleIsSpokenFor()) { toast('Today’s scramble is the only one in here'); return; }
+  if (scrambleIsSpokenFor()) { toast(spokenForWhy()); return; }
   if (app.historyPos <= 0) { toast('No earlier scramble'); return; }
   app.historyPos--;
   showScramble(app.scrambleHistory[app.historyPos]);
 }
 
 function forwardScramble() {
-  if (scrambleIsSpokenFor()) { toast('Today’s scramble is the only one in here'); return; }
+  if (scrambleIsSpokenFor()) { toast(spokenForWhy()); return; }
   if (app.historyPos >= app.scrambleHistory.length - 1) { nextScramble(); return; }
   app.historyPos++;
   showScramble(app.scrambleHistory[app.historyPos]);
@@ -1599,7 +1628,8 @@ async function onSolveFinished(res) {
  * in the database through exactly the same path as a spacebar one — there is
  * no second version of the PB logic to drift.
  */
-async function recordSolve({ timeMs, penalty = 'none', inspectionMs = 0, splits = null }) {
+async function recordSolve({ timeMs, penalty = 'none', inspectionMs = 0, splits = null,
+                             scramble = null, fmcMoves = null, fmcSolution = '', fmcNotes = '' }) {
   const prevBest = bestSingle(app.solves);
   const prevAo5  = bestAvg(app.solves, 5).value;
   const prevAo12 = bestAvg(app.solves, 12).value;
@@ -1629,7 +1659,10 @@ async function recordSolve({ timeMs, penalty = 'none', inspectionMs = 0, splits 
     sessionId: app.session.id,
     event: app.settings.event,
     mode: app.settings.mode,
-    scramble: app.scramble?.scramble || '',
+    /* Normally whatever is on screen. An FMC attempt hands its own over
+       instead: the scramble it froze an hour ago is the one the solution was
+       written for, whatever the board has moved on to since. */
+    scramble: scramble || app.scramble?.scramble || '',
     caseId: app.scramble?.caseId || null,
     caseName: app.scramble?.caseName || null,
     // Which cube it was done on, same shape as the case tag above. Null when
@@ -1644,6 +1677,13 @@ async function recordSolve({ timeMs, penalty = 'none', inspectionMs = 0, splits 
     // Tagged so a race time is always tellable from practice later, whichever
     // session it landed in.
     ...(racing ? { race: true, roomId: race.snap?.roomId || null } : {}),
+    /* Fewest Moves. `fmcMoves` is the result (WCA E2d) and what eff() reads;
+       `timeMs` above is how long the attempt took, kept for reference only. A
+       DNF carries the solution that failed, because looking at it afterwards
+       is most of how anyone gets better at this. */
+    ...(fmcMoves !== null ? { fmcMoves } : {}),
+    ...(fmcSolution ? { fmcSolution } : {}),
+    ...(fmcNotes ? { fmcNotes } : {}),
     ...(bld ? { bld } : {}),
     ...(phasesMs ? { phases: phasesMs } : {}),
   };
@@ -1712,7 +1752,10 @@ function syncTimerDisplay() {
   const last = sotdBlank ? null : app.solves.at(-1);
   const v = last ? eff(last) : null;
   $('#time-main').style.opacity = '';
-  $('#time-main').textContent = last ? (v === DNF ? 'DNF' : fmt(v)) : '0.00';
+  // Per solve, not per session: the digits are showing one result, and which
+  // unit it is in is a fact about that result rather than about the event
+  // the app happens to be set to now.
+  $('#time-main').textContent = last ? fmtResult(v, isMoveResult(last)) : (movesMode() ? '—' : '0.00');
   $('#time-penalty').textContent = last && last.penalty === '+2' ? '+2'
     : last && last.penalty === 'DNF' ? 'DNF' : '';
   $('#last-delta').hidden = true;
@@ -1726,7 +1769,7 @@ function showDelta(solve, prevBest) {
   const d = cur - prev;
   node.hidden = false;
   node.className = d <= 0 ? 'better' : 'worse';
-  node.textContent = `${d <= 0 ? '▼' : '▲'} ${fmt(Math.abs(d))} vs last`;
+  node.textContent = `${d <= 0 ? '▼' : '▲'} ${fmtResult(Math.abs(d), isMoveResult(solve))} vs last`;
   void prevBest;
 }
 
@@ -1777,7 +1820,7 @@ app.renderAll = renderAll;
 let lastStats = {};
 function renderStats() {
   const st = summarize(app.solves);
-  const f = v => v === null || v === undefined ? '—' : v === DNF ? 'DNF' : fmt(v);
+  const f = fmtNow;
   const map = { best: st.best, ao5: st.ao5, ao12: st.ao12, ao50: st.ao50, ao100: st.ao100, mean: st.mean, mo3: st.mo3 };
 
   for (const [k, v] of Object.entries(map)) {
@@ -1827,7 +1870,7 @@ function renderStats() {
   // Session bests are O(n x len) to compute, so only when they are on screen.
   if ($('#panel-stats')?.dataset.collapsed === 'false') {
     const b = sessionBests(app.solves);
-    for (const k of ['single', 'ao5', 'ao12', 'ao50', 'ao100']) {
+    for (const k of ['single', 'mo3', 'ao5', 'ao12', 'ao50', 'ao100']) {
       const node = $('#b-' + k);
       if (node) node.textContent = f(b[k]);
     }
@@ -1861,6 +1904,14 @@ let histSigs = [];
 const AVG_MIN = 3, AVG_MAX = 1000, AVG_COLS_MAX = 3;
 
 function avgCols() {
+  /* A Fewest Moves round is a mean of 3 (WCA 9b4a), so that is the column
+     worth having beside the attempts — and the only one. A rolling ao12 of
+     one-hour attempts is not a statistic anybody keeps, and three columns of
+     them invite reading the session as a speed session in the wrong unit.
+     An "average" of three trims nothing (trimCount is 0 below five), so the
+     ao3 the list already knows how to compute IS the mean of 3; only its
+     name has to change, which avgHeading() does. */
+  if (movesStats()) return [3];
   const raw = Array.isArray(app.settings?.histAvgCols) ? app.settings.histAvgCols : [5, 12];
   const out = [];
   for (const v of raw) {
@@ -1970,18 +2021,18 @@ function historyRowData(i) {
       s.phases?.length ? 'has-phases' : '',
     ].filter(Boolean).join(' '),
     idx: String(i + 1),
-    time: v === DNF ? 'DNF' : fmt(v) + (s.penalty === '+2' ? '+' : ''),
+    time: v === DNF ? 'DNF' : fmtResult(v, isMoveResult(s)) + (s.penalty === '+2' ? '+' : ''),
     // One entry per average column, in column order.
     avgs: series.map(({ n, values, best: bestAvgN }) => {
       const a = values[i];
       const isBest = a !== null && bestAvgN !== null && a === bestAvgN;
       return {
         n,
-        text: a === null ? '·' : fmt(a),
+        text: a === null ? '·' : fmtNow(a),
         has: a !== null,
         best: isBest,
         title: a === null ? `needs ${n} solves`
-          : `ao${n} after solve ${i + 1}${isBest ? ' — best of the session' : ''} — click for the ${n} solves`,
+          : `${movesStats() && n === 3 ? 'mo3' : 'ao' + n} after solve ${i + 1}${isBest ? ' — best of the session' : ''} — click for the ${n} solves`,
       };
     }),
   };
@@ -2121,7 +2172,9 @@ function renderHistory() {
     histIds = [];
     histSigs = [];
     list.innerHTML = '';
-    list.append(el('div', { class: 'hist-empty', text: 'No times yet — hold space and go.' }));
+    list.append(el('div', { class: 'hist-empty', text: movesMode()
+      ? 'No attempts yet — press Start attempt.'
+      : 'No times yet — hold space and go.' }));
     return;
   }
 
@@ -2281,9 +2334,12 @@ function applyHistGrid(count) {
 
 /** One average column heading: a sort button, and a pencil that changes it. */
 function avgHeading(n) {
+  // A three-solve "average" trims nothing, so in an event scored by mean of
+  // three it is the mo3 and is named as one.
+  const name = (movesStats() && n === 3) ? 'mo3' : `ao${n}`;
   const sort = el('button', {
     type: 'button', class: 'col-sort', 'data-sort': `avg${n}`,
-    title: `Sort by ao${n} — click again for solve order`, text: `ao${n}`,
+    title: `Sort by ${name} — click again for solve order`, text: name,
   });
   const edit = el('button', {
     type: 'button', class: 'col-edit', 'data-edit': String(n),
@@ -2446,11 +2502,21 @@ function solveMenu(solve, anchor) {
     syncTimerDisplay();
   };
   popover(anchor, [
-    { title: `#${app.solves.indexOf(solve) + 1} · ${eff(solve) === DNF ? 'DNF' : fmt(eff(solve))}` },
+    { title: `#${app.solves.indexOf(solve) + 1} · ${fmtResult(eff(solve), isMoveResult(solve))}` },
     { label: 'No penalty', on: solve.penalty === 'none', onSelect: () => setPenalty('none') },
     { label: '+2', badge: '2', on: solve.penalty === '+2', onSelect: () => setPenalty('+2') },
     { label: 'DNF', badge: 'D', on: solve.penalty === 'DNF', onSelect: () => setPenalty('DNF') },
     { sep: true },
+    /* A Fewest Moves result is a solution, not a time, so the solution is
+       the thing this menu is opened to look at — including on a DNF, where
+       it is the only way to find out what went wrong. */
+    ...(solve.fmcSolution ? [
+      { sep: true },
+      { title: solve.fmcNotes ? `Solution · ${solve.fmcNotes}` : 'Solution' },
+      { node: el('div', { class: 'pop-solution', text: solve.fmcSolution }) },
+      { label: 'Copy solution', onSelect: () => copyToast(solve.fmcSolution, 'Solution') },
+      { sep: true },
+    ] : []),
     { label: 'Copy scramble', badge: '', onSelect: () => copyToast(solve.scramble, 'Scramble') },
     { label: 'Share as a card', badge: 'S', onSelect: () => app.shareSolveCard(solve) },
     { label: solve.comment ? 'Edit comment' : 'Add comment', badge: 'C', onSelect: () => commentOn(solve) },
@@ -2728,7 +2794,11 @@ async function clearSession() {
  * the one place that has to know — and it is also what stops a second attempt
  * being timed against a scramble you have already sent a result for.
  */
-const timerInputLive = () => app.settings.inputMode === 'timer' && !raceCtl()?.locked() && !dailyCtl()?.locked();
+/* Fewest Moves has no spacebar timer at all: the result is a move count, and
+   a stray press that recorded a 0.4-second "solve" in the middle of an hour's
+   work would be the worst possible way to lose an attempt. */
+const timerInputLive = () => app.settings.inputMode === 'timer' && !movesMode()
+  && !raceCtl()?.locked() && !dailyCtl()?.locked();
 
 function applyInputMode() {
   const mode = app.settings.inputMode || 'timer';
@@ -3455,7 +3525,7 @@ app.shareAverageCard = async (kind) => {
      key on the card. */
   return m.shareAverage(list, {
     label: (STAT_LABELS[kind] || w.label || kind).toLowerCase(),
-    value: w.value === DNF ? 'DNF' : fmt(w.value),
+    value: fmtNow(w.value),
     trimmed: trimmed.size ? trimmed : null,
   });
 };
@@ -3550,9 +3620,50 @@ function applyAll(changed) {
 app.applyAll = () => applyAll();
 app.refreshBackground = () => applyBackground(bg, app.settings);
 
+/* =========================================================
+   Fewest Moves
+
+   The workspace does the attempt; everything it needs from the app it is
+   handed, so nothing in fmcmode.js knows about sessions, the database or
+   the preview. A finished attempt goes through recordSolve() like every
+   other result, which is what keeps personal bests, the times list and
+   cloud sync from needing a second version of themselves.
+   ========================================================= */
+const FMC_HOOKS = {
+  scramble: () => app.scramble?.scramble || '',
+  /* The preview is the one on the timer screen, driven with the scramble
+     plus however much of the solution has been typed. `null` puts the
+     scramble back on its own, which is what ending an attempt means. */
+  preview: (alg) => {
+    if (!app.scramble) return;
+    cube.set(alg === null ? app.scramble.scramble : alg);
+  },
+  record: async (res) => {
+    await recordSolve(res);
+    /* recordSolve leaves the digits to whoever called it — the spacebar
+       path writes them as the solve stops. Nothing writes them here, so
+       the result of the attempt you just submitted would sit off screen
+       while the times list showed it. */
+    syncTimerDisplay();
+  },
+};
+
+/** Show the workspace for 333fm, put it away for everything else. */
+async function syncFmc() {
+  const on = movesMode();
+  if (!on && !_fmc) { document.body.classList.remove('fmc', 'fmc-attempting'); return; }
+  try { await loadFmcModule(); }
+  catch (err) { return lazyFailed('the Fewest Moves workspace', err); }
+  await _fmc.getFmc(app, FMC_HOOKS).sync(on);
+  updateHint();
+}
+
 function syncEventConfig() {
   const ev = eventOf(app.settings.event);
   if (timer) timer.cfg.useInspection = !ev.noInspection;
+  // An hour-long attempt is not a solve the spacebar can start, so the timer
+  // is stood down entirely for this event — see timerInputLive().
+  syncFmc();
   // trainer modes only exist for 3x3 — fall back if the event changed
   if (!modesForEvent(app.settings.event).includes(app.settings.mode)) app.settings.mode = 'wca';
   // Leaving a blind event puts the panel away; arriving at one opens it only
@@ -3569,6 +3680,10 @@ async function setEvent(id) {
   app.session.event = id;
   await Sessions.put(app.session);
   syncEventConfig();
+  // The digits carry the last result of the session, and what that result
+  // MEANS has just changed — 28 moves where a time used to be, or a dash
+  // where a Fewest Moves session has nothing yet.
+  syncTimerDisplay();
   // Swap the preview puzzle straight away. A 4x4 random-state scramble takes a
   // few seconds, and leaving the old puzzle on screen until it lands looks broken.
   const ev = eventOf(id);
@@ -3605,8 +3720,18 @@ app.reload = async () => {
 app.allSolves = () => Solves.all();
 
 app.exportSessionCSV = () => {
-  const rows = [['#', 'time', 'penalty', 'scramble', 'case', 'comment', 'date']];
-  app.solves.forEach((s, i) => rows.push([
+  /* Fewest Moves gets two columns of its own rather than a "time" column
+     holding a move count: the seconds an attempt took are still worth having,
+     and 28 moves is not 28 seconds. */
+  const fmc = movesMode();
+  const rows = [fmc
+    ? ['#', 'moves', 'penalty', 'scramble', 'solution', 'notes', 'seconds', 'comment', 'date']
+    : ['#', 'time', 'penalty', 'scramble', 'case', 'comment', 'date']];
+  app.solves.forEach((s, i) => rows.push(fmc ? [
+    i + 1, Number.isFinite(s.fmcMoves) ? s.fmcMoves : '', s.penalty,
+    s.scramble.replace(/\n/g, ' '), s.fmcSolution || '', s.fmcNotes || '',
+    (s.timeMs / 1000).toFixed(1), s.comment || '', new Date(s.createdAt).toISOString(),
+  ] : [
     i + 1, (s.timeMs / 1000).toFixed(3), s.penalty, s.scramble.replace(/\n/g, ' '),
     s.caseName || '', s.comment || '', new Date(s.createdAt).toISOString(),
   ]));
@@ -3696,6 +3821,12 @@ app.importCsTimer = async (data, { onProgress } = {}) => {
         scramble: item[1] || '',
         timeMs: ms,
         penalty: pen === -1 ? 'DNF' : pen === 2000 ? '+2' : 'none',
+        /* csTimer keeps a Fewest Moves result in the same field as a time,
+           as moves x 1000 — a 28 is stored as 28000. Without this the import
+           lands a shelf of "28.00 second" solves in an event that has never
+           been scored in seconds. */
+        ...(event === '333fm' && pen !== -1 && isFinite(ms)
+          ? { fmcMoves: Math.round(ms / 1000) } : {}),
         comment: typeof item[2] === 'string' ? item[2] : '',
         caseId: null, caseName: null,
         createdAt: item[3] ? item[3] * 1000 : Date.now(),
@@ -4243,7 +4374,7 @@ function wireShortcuts() {
         /* Pasting your own scrambles in here is the same instruction as the
            arrow keys, one step further round: it replaces today's scramble
            with one of your choosing, on the one attempt that counts. */
-        if (scrambleIsSpokenFor()) { toast('Today’s scramble is the only one in here'); break; }
+        if (scrambleIsSpokenFor()) { toast(spokenForWhy()); break; }
         openPanel('Your scrambles', 'buildCustomScrambles', undefined, app);
         break;
       case 'ArrowLeft':  e.preventDefault(); prevScramble(); break;
