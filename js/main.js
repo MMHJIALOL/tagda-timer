@@ -6,7 +6,8 @@ import { $, $$, el, uid, fmt, fmtLive, fmtResult, clamp, copy, download, toCSV, 
          parseTimeInput, parseScrambleList } from './util.js';
 import { Solves, Sessions, KV, Assets, LetterPairs, importAll, onWrite } from './db.js';
 import { activeGearId, Gear, gearLabel } from './gear.js';
-import { EVENTS, EVENT_ORDER, MODES, modesForEvent, eventOf, modeOf, virtualSize } from './events.js';
+import { EVENTS, EVENT_ORDER, MODES, modesForEvent, eventOf, modeOf, virtualSize,
+         relayLabel } from './events.js';
 import { ScrambleQueue, setFor, loadSetFor, previewOf, cubingAvailable, generate } from './scramble.js';
 import { createLearn } from './learnmode.js';
 import { Timer, INSPECT_MS } from './timer.js';
@@ -383,11 +384,13 @@ function reconLibrary() {
 }
 
 /** Reconstruct a recorded solve, remembering the work on the solve itself. */
-function reconstructSolve(solve) {
-  if (!solve?.scramble) { toast('That solve has no scramble saved'); return; }
+function reconstructSolve(solve, scramble = null) {
+  // `scramble` overrides only for a relay leg — see solveMenu.
+  const use = scramble || solve?.scramble;
+  if (!use) { toast('That solve has no scramble saved'); return; }
   const n = app.solves.indexOf(solve) + 1;
   return openRecon({
-    scramble: solve.scramble,
+    scramble: use,
     title: `#${n} · ${fmtResult(eff(solve), isMoveResult(solve))}`,
     // An FMC solve already has its solution written down — the workbench opens
     // on that rather than on an empty box you would have to type it into again.
@@ -649,6 +652,127 @@ function bootAnimation() {
 }
 
 /* =========================================================
+   Relay
+
+   One attempt, several puzzles, one total. The list lives on the session
+   (`session.relay`), so switching sessions switches relays and two different
+   puzzle lists can never end up inside the same average.
+
+   The timing itself is the split primitive that already exists for BLD
+   memo/exec and multiphase: phaseSplits is set to one less than the number of
+   puzzles, and res.splits comes back cumulative. There is deliberately no
+   second split system in here.
+   ========================================================= */
+
+/** The active session's relay list, or null when it is not a relay session. */
+const relayList = () => {
+  const list = app.session?.relay;
+  return Array.isArray(list) && list.length ? list : null;
+};
+
+/** Are we on a relay right now? It takes both the event and a list. */
+const relayOn = () => !!eventOf(app.settings.event).relay && !!relayList();
+app.relayOn = relayOn;
+app.relayList = relayList;
+
+/* Which leg is shown, and what each finished leg took. Module state rather
+   than settings, and deliberately not persisted: a relay always opens on its
+   first puzzle with nothing solved yet. */
+let relayPos = 0;
+let relaySplits = [];
+/* The all-scrambles list, for printing or copying. Also not persisted — it is
+   a glance at the whole set, not a mode to be left in. */
+let relayAll = false;
+/* True while the first set of relay scrambles is still being made, so the
+   progress line knows it still owns the scramble box. */
+let relayWarming = false;
+/* The scramble object the chips currently describe — see showScramble. */
+let relayShown = null;
+
+/**
+ * How far through generating the first set we are.
+ *
+ * A 2-7 relay is six random-state searches back to back and the big cubes are
+ * seconds each, so the box would otherwise sit blank for ten seconds with no
+ * sign that anything was happening. Generation runs in cubing.js's worker, so
+ * none of this is on the timer's thread.
+ */
+function relayProgress(done, total) {
+  if (!relayWarming) return;
+  const node = $('#scramble-text');
+  if (node) node.textContent = `${done}/${total} scrambles ready…`;
+}
+
+/** Jump to one puzzle before the run — `>` / `<`, or a click on a chip. */
+function relayGoto(i) {
+  const parts = app.scramble?.parts;
+  if (!relayOn() || !parts?.length) return;
+  // Mid-run the splits decide which leg is live, never the keyboard.
+  if (timer.state !== 'idle' && timer.state !== 'cooldown') return;
+  const next = clamp(i, 0, parts.length - 1);
+  if (next === relayPos) return;
+  relayPos = next;
+  showScramble(app.scramble, true);
+}
+
+/**
+ * The rail of chips that stands in for the single scramble line.
+ *
+ * Five scrambles and five previews at once would not fit on any screen, so the
+ * rail is the whole of what stays visible about the other puzzles: which one
+ * is live, which are done, and what each of those took. It survives focus mode
+ * for exactly that reason — which puzzle you are on is the one thing you
+ * cannot work out from the clock.
+ */
+function renderRelayRail() {
+  const host = $('#relay-rail');
+  if (!host) return;
+  /* Drawn from the session's list rather than from the scramble, so the rail
+     is what fills the space while the first set is still generating. */
+  const list = relayOn() ? relayList() : null;
+  host.hidden = !list;
+  // Focus mode empties the scramble zone; `body.relay` is what lets the rail
+  // out of that, and nothing else in the zone with it.
+  document.body.classList.toggle('relay', !!list);
+  if (!list) { host.replaceChildren(); return; }
+
+  const track = el('div', { class: 'rr-track' });
+  list.forEach((id, i) => {
+    const done = Number.isFinite(relaySplits[i]);
+    const chip = el('button', {
+      class: `rr-chip${i === relayPos ? ' active' : ''}${done ? ' done' : ''}`,
+      type: 'button',
+      title: `${eventOf(id).name} · puzzle ${i + 1} of ${list.length}`,
+    }, el('b', { text: eventOf(id).short }),
+       done ? el('i', { text: fmt(relaySplits[i]) }) : null);
+    if (i === relayPos) chip.setAttribute('aria-current', 'step');
+    chip.addEventListener('click', () => relayGoto(i));
+    track.append(chip);
+  });
+
+  host.replaceChildren(
+    track,
+    el('span', { class: 'rr-count', text: `${relayPos + 1}/${list.length}` }),
+    /* Text only and no previews: this is the view you print or paste onto a
+       scoresheet, which is the one thing a one-at-a-time rail cannot do. */
+    el('button', {
+      class: `rr-all${relayAll ? ' on' : ''}`, type: 'button', text: 'all',
+      title: relayAll ? 'Back to one puzzle at a time' : 'Show every scramble as text',
+      onclick: () => { relayAll = !relayAll; if (app.scramble) showScramble(app.scramble, true); },
+    }),
+  );
+
+  /* On a narrow screen the rail scrolls sideways, and the chip that matters is
+     the live one. scrollIntoView would scroll the page with it, so the offset
+     is worked out against the track itself. */
+  const active = track.children[relayPos];
+  if (active) requestAnimationFrame(() => {
+    const to = active.offsetLeft - (track.clientWidth - active.offsetWidth) / 2;
+    track.scrollTo({ left: Math.max(0, to), behavior: 'auto' });
+  });
+}
+
+/* =========================================================
    Scramble
    ========================================================= */
 function refreshQueue() {
@@ -656,6 +780,8 @@ function refreshQueue() {
   queue.setContext(s.event, s.mode, {
     allowedCases: s.allowedCases[s.mode],
     multiCount: s.multiCount,
+    relay: relayList() || undefined,
+    onProgress: relayProgress,
   });
 }
 app.refreshQueue = () => { refreshQueue(); nextScramble(); };
@@ -691,7 +817,11 @@ async function nextScramble({ clear = false } = {}) {
   // the wrong one. Say what is happening instead.
   if (clear && !queue.ready) {
     const node = $('#scramble-text');
-    node.textContent = 'generating scramble…';
+    // A relay reports its progress leg by leg — see relayProgress.
+    relayWarming = relayOn();
+    node.textContent = relayWarming
+      ? `0/${relayList().length} scrambles ready…`
+      : 'generating scramble…';
     node.classList.remove('multiline', 'long');
     $('#case-label').hidden = true;
   }
@@ -820,6 +950,10 @@ function forwardScramble() {
 
 /** Next unused scramble from the pasted list, or null when it is spent. */
 function takeCustom() {
+  /* A relay is several scrambles behind one attempt; a pasted list is a queue
+     of single ones. There is no honest way to mix them, so while a relay is on
+     the list is simply not consulted. */
+  if (relayOn()) return null;
   const c = app.custom;
   if (!c.list.length || c.pos >= c.list.length) return null;
   const i = c.pos++;
@@ -941,14 +1075,35 @@ function showScramble(s, silent = false) {
     return;
   }
 
-  let text = s.scramble;
-  if (app.settings.event === 'minx' && !text.includes('\n')) {
+  /* A relay shows one puzzle in full detail at a time. The rail above carries
+     the rest; `relayAll` swaps the box for the plain numbered list of every
+     scramble, which is the print-and-copy view. */
+  const parts = relayOn() ? s.parts : null;
+  /* A different scramble object is a different attempt, so the times sitting
+     on the chips belong to the run that is over. Stepping with `>` and each
+     split both re-show the *same* object, which is what keeps the finished
+     legs on screen for the rest of the run. */
+  if (s !== relayShown) { relaySplits = []; relayPos = 0; relayShown = s; }
+  if (parts?.length) relayPos = clamp(relayPos, 0, parts.length - 1);
+  else relayPos = 0;
+  const leg = parts?.length ? parts[relayPos] : null;
+  relayWarming = false;
+  renderRelayRail();
+
+  // Which event's wrapping rules apply is the leg's, not the relay's.
+  const textEv = leg ? leg.event : app.settings.event;
+  const legEv = leg ? eventOf(leg.event) : ev;
+  const showAll = !!(leg && relayAll);
+
+  let text = showAll ? s.scramble : (leg ? leg.scramble : s.scramble);
+  if (textEv === 'minx' && !showAll && !text.includes('\n')) {
     const toks = text.split(/\s+/);
     const lines = [];
     for (let i = 0; i < toks.length; i += 11) lines.push(toks.slice(i, i + 11).join(' '));
     text = lines.join('\n');
   }
 
+  node.classList.toggle('relay-all', showAll);
   node.textContent = text;
   node.classList.toggle('multiline', text.includes('\n'));
   node.classList.toggle('long', text.length > 90);
@@ -981,9 +1136,13 @@ function showScramble(s, silent = false) {
 
   const mode = modeOf(app.settings.mode);
   const view = mode.view || app.settings.cubeView;
-  cube.configure(ev.puzzle, view === 'LL3' ? '3D' : view);
-  cube.setOrientation(previewOrientation(mode, ev));
-  cube.set(s.preview || s.scramble);
+  /* One preview, re-pointed. A relay must never mount a twisty-player per
+     puzzle: each one takes a WebGL context, a tab only gets a handful, and a
+     player that cannot get one paints a plain black square with no error.
+     Switching leg swaps the puzzle on the player that is already there. */
+  cube.configure(legEv.puzzle, view === 'LL3' ? '3D' : view);
+  cube.setOrientation(previewOrientation(mode, legEv));
+  cube.set(leg ? leg.scramble : (s.preview || s.scramble));
   resetVcube();
 
   if (s.official === false && mode.kind === 'wca' && !cubingAvailable()) {
@@ -1340,8 +1499,10 @@ const bldTraceable = () => TRACEABLE_EVENTS.has(app.settings.event);
 /** Is the memo/exec split armed for the event we are on? */
 const bldSplitOn = () => bldEvent() && !!app.settings.bld?.memoExecSplit;
 
-/** Is the generic N-phase split armed? Blind events keep the memo/exec split. */
-const multiphaseOn = () => !bldEvent() && Number(app.settings.multiphase) >= 2;
+/* Is the generic N-phase split armed? Blind events keep the memo/exec split,
+   and a relay already owns every press in the run — one per puzzle — so a
+   multiphase setting left on from 3x3 must not add more on top of them. */
+const multiphaseOn = () => !bldEvent() && !relayOn() && Number(app.settings.multiphase) >= 2;
 const phaseCount = () => Math.max(2, Math.min(6, Math.round(Number(app.settings.multiphase) || 0)));
 
 /* Expanded or not. Deliberately a module variable and not a setting: rule 1
@@ -1400,7 +1561,13 @@ function bldOf(sc) {
 app.bldChanged = () => { bldEpoch++; syncBldTimer(); renderBld(); };
 
 function syncBldTimer() {
-  if (timer) timer.cfg.phaseSplits = bldSplitOn() ? 1 : multiphaseOn() ? phaseCount() - 1 : 0;
+  if (!timer) return;
+  /* One press per puzzle boundary: five puzzles means four splits and a fifth
+     press that stops the clock. Same primitive as memo/exec and multiphase. */
+  timer.cfg.phaseSplits = bldSplitOn() ? 1
+    : relayOn() ? Math.max(0, relayList().length - 1)
+    : multiphaseOn() ? phaseCount() - 1
+    : 0;
 }
 
 /** Hides the whole multiphase zone on a blind event or with the setting off. */
@@ -1644,9 +1811,31 @@ function phaseReset() {
   if (r) { r.hidden = true; $('#phase-times').textContent = ''; }
   const live = $('#phase-live');
   if (live) { live.hidden = true; live.replaceChildren(); }
+  const now = $('#relay-now');
+  if (now) { now.hidden = true; now.textContent = ''; }
+}
+
+/** "on 4x4 · 3 of 5" — which puzzle the clock is counting, under the digits. */
+function relayNow() {
+  const now = $('#relay-now');
+  const list = relayList();
+  if (!now || !list) return;
+  now.hidden = false;
+  now.textContent = `on ${eventOf(list[relayPos])?.short} · ${relayPos + 1} of ${list.length}`;
 }
 
 function phaseStart() {
+  /* A relay always starts its run on the first puzzle, whichever one you were
+     looking at while scrambling. */
+  if (relayOn()) {
+    relayPos = 0;
+    relaySplits = [];
+    if (app.scramble) showScramble(app.scramble, true);
+    const live = $('#phase-live');
+    if (live) { live.replaceChildren(); live.hidden = false; }
+    relayNow();
+    return;
+  }
   if (bldSplitOn()) {
     $('#timer-display').classList.add('phase-memo');
     const r = $('#phase-readout');
@@ -1669,6 +1858,19 @@ function phaseLiveRow(ms, first) {
 }
 
 function phaseSplit({ atMs, phaseMs, index }) {
+  /* A split ends one puzzle and starts the next: the chip that just finished
+     takes its time, the next becomes active, and the scramble and the preview
+     follow it. showScramble is the one path that does all of that, so the
+     mid-run swap cannot drift from the one you get with `>`. */
+  if (relayOn()) {
+    relaySplits[index] = phaseMs;
+    relayPos = index + 1;
+    if (app.scramble) showScramble(app.scramble, true);
+    const live = $('#phase-live');
+    if (live) live.append(phaseLiveRow(phaseMs, index === 0));
+    relayNow();
+    return;
+  }
   if (bldSplitOn()) {
     const d = $('#timer-display');
     d.classList.remove('phase-memo');
@@ -1727,7 +1929,8 @@ async function onSolveFinished(res) {
 
   // The stopping press closes the last phase, which never gets a 'split' event
   // of its own — so its line is added here, once, from the finished result.
-  if (multiphaseOn() && res.splits?.length) {
+  // The last puzzle of a relay is closed by that same press, for the same reason.
+  if ((multiphaseOn() || relayOn()) && res.splits?.length) {
     const live = $('#phase-live');
     if (live) {
       const lastMs = Math.max(0, res.timeMs - res.splits[res.splits.length - 1]);
@@ -1787,6 +1990,21 @@ async function recordSolve({ timeMs, penalty = 'none', inspectionMs = 0, splits 
 
   const phasesMs = multiphaseOn() ? multiphaseSplitsOf(splits, timeMs) : null;
 
+  /* Every puzzle's own time, worked out from the same cumulative split list
+     multiphase uses — the gaps between splits, with the last one being
+     whatever is left of the total. They add up to timeMs exactly.
+       +2 and DNF stay attributes of the whole attempt, as they are in a WCA
+     relay; there is deliberately no per-puzzle penalty.
+       A typed time and a Stackmat time arrive with no splits at all, and an
+     attempt whose split count does not match the list is not a relay anyone
+     can read — either way the field is left off rather than written half-made. */
+  const relaySplitMs = relayOn() ? multiphaseSplitsOf(splits, timeMs) : null;
+  const relayParts = (relaySplitMs && app.scramble?.parts?.length === relaySplitMs.length)
+    ? app.scramble.parts.map((p, i) => ({
+        event: p.event, scramble: p.scramble, splitMs: relaySplitMs[i],
+      }))
+    : null;
+
   const solve = {
     id: uid(),
     sessionId: app.session.id,
@@ -1819,11 +2037,17 @@ async function recordSolve({ timeMs, penalty = 'none', inspectionMs = 0, splits 
     ...(fmcNotes ? { fmcNotes } : {}),
     ...(bld ? { bld } : {}),
     ...(phasesMs ? { phases: phasesMs } : {}),
+    ...(relayParts ? { relay: relayParts } : {}),
   };
   if (bld?.memoMs != null) {
     $('#phase-times').textContent = `memo ${fmt(bld.memoMs)} · exec ${fmt(bld.execMs)}`;
   }
   if (phasesMs) renderPhaseBreakdown(phasesMs, timeMs);
+  // The last chip has been waiting for the stopping press to give it a time.
+  if (relayParts) {
+    relaySplits = relayParts.map(p => p.splitMs);
+    renderRelayRail();
+  }
   app.solves.push(solve);
 
   // personal bests — judged and chimed before the writes and the re-render
@@ -2677,7 +2901,18 @@ function solveMenu(solve, anchor) {
     { label: 'Share as a card', badge: 'S', onSelect: () => app.shareSolveCard(solve) },
     { label: solve.comment ? 'Edit comment' : 'Add comment', badge: 'C', onSelect: () => commentOn(solve) },
     { label: 'Repeat this scramble', badge: 'R', onSelect: () => repeatScramble(solve) },
-    { label: solve.recon ? 'Open the reconstruction' : 'Reconstruct this solve', badge: 'Y', onSelect: () => reconstructSolve(solve) },
+    /* Reconstruction only understands a 3x3, so a relay offers its 3x3 legs
+       one by one and nothing else — a "reconstruct" that opened a 5x5
+       scramble in a 3x3 workbench would just be broken. */
+    ...(solve.relay?.length
+      ? solve.relay
+          .map((p, i) => ({ p, i }))
+          .filter(({ p }) => p.event === '333' || p.event === '333oh')
+          .map(({ p, i }) => ({
+            label: `Reconstruct puzzle ${i + 1} (${eventOf(p.event).short})`,
+            onSelect: () => reconstructSolve(solve, p.scramble),
+          }))
+      : [{ label: solve.recon ? 'Open the reconstruction' : 'Reconstruct this solve', badge: 'Y', onSelect: () => reconstructSolve(solve) }]),
     // Offered, never automatic: a DNF you already know the cause of does not
     // need a dialog thrown at it the moment you press D.
     ...(solve.penalty === 'DNF' && solve.bld?.edges ? [{
@@ -2692,6 +2927,19 @@ function solveMenu(solve, anchor) {
       { title: 'Phase breakdown' },
       { node: el('div', { class: 'phase-row pop-phases' }, ...solve.phases.map((ms, i) =>
           el('div', { class: 'phase-chip' }, el('b', { text: `P${i + 1}` }), el('i', { text: fmt(ms) })))) },
+    ] : []),
+    /* Expanding a relay solve: what each puzzle took, and the scramble it was
+       done on. The scrambles are here rather than one dialog away because the
+       joined copy above is the only other place they exist. */
+    ...(solve.relay?.length ? [
+      { sep: true },
+      { title: `Relay · ${solve.relay.map(p => eventOf(p.event).short).join(' · ')}` },
+      { node: el('div', { class: 'relay-legs' }, ...solve.relay.map((p, i) =>
+          el('div', { class: 'relay-leg' },
+            el('div', { class: 'rl-head' },
+              el('b', { text: `${i + 1}. ${eventOf(p.event).short}` }),
+              el('i', { text: fmt(p.splitMs) })),
+            el('div', { class: 'rl-scramble', text: p.scramble })))) },
     ] : []),
     { sep: true },
     { label: 'Delete solve', badge: 'Del', onSelect: () => deleteThrottled(solve) },
@@ -2711,7 +2959,15 @@ async function repeatScramble(solve) {
      preview needs it translated — which needs that set's puzzle loaded. */
   await loadSetFor(solve.mode);
   const preview = previewOf(solve.mode, solve.scramble) || undefined;
-  showScramble({ scramble: solve.scramble, caseId: solve.caseId, caseName: solve.caseName, preview });
+  showScramble({
+    scramble: solve.scramble, caseId: solve.caseId, caseName: solve.caseName, preview,
+    /* A relay solve stores one scramble per puzzle, so repeating it has to put
+       the legs back as legs — handing the joined text over as a single
+       scramble would leave the rail empty and the preview on the wrong puzzle. */
+    ...(solve.relay?.length
+      ? { parts: solve.relay.map(p => ({ event: p.event, scramble: p.scramble })) }
+      : {}),
+  });
   toast(`Repeating solve #${app.solves.indexOf(solve) + 1}`, { kind: 'good' });
 }
 app.repeatScramble = repeatScramble;
@@ -2793,6 +3049,12 @@ async function refreshCounts() {
 app.switchSession = async (id) => {
   const s = app.sessions.find(x => x.id === id);
   if (!s) return;
+  /* Whether the scramble on screen is about to become the wrong one. Read
+     before the switch, because after it app.settings.event is already the new
+     session's — and a relay set takes seconds to make, so leaving the previous
+     session's scramble sitting there invites you to solve it. */
+  const changedEvent = !!s.event && s.event !== app.settings.event;
+  const wasRelay = relayOn();
   app.session = s;
   app.settings.sessionId = id;
   if (s.event) { app.settings.event = s.event; syncEventConfig(); }
@@ -2801,7 +3063,9 @@ app.switchSession = async (id) => {
   resetHistoryWindow();          // a different session is a different list
   syncTimerDisplay();
   persist();
-  refreshQueue(); nextScramble();
+  // Two relay sessions are the same event and different puzzle lists, so the
+  // event alone does not settle whether the scramble has to be thrown away.
+  refreshQueue(); nextScramble({ clear: changedEvent || wasRelay || relayOn() });
   renderAll();
   toast(`Switched to ${s.name}`);
 };
@@ -2814,11 +3078,51 @@ app.newSession = async () => {
     event: app.settings.event,
     createdAt: Date.now(),
     order: app.sessions.length,
+    /* A new session started while a relay is on races the same list — "new
+       session" is for a fresh set of averages, not a different relay. */
+    ...(relayList() ? { relay: [...relayList()] } : {}),
   };
   await Sessions.put(s);
   app.sessions.push(s);
   await app.switchSession(s.id);
 };
+
+/**
+ * Put a relay on a session and go there.
+ *
+ * The list belongs to the session and nowhere else, which is what makes two
+ * relays impossible to average together. Editing one in place is only allowed
+ * while it has no solves — past that the times on record were done against a
+ * different set of puzzles, and quietly relabelling them would be a lie — so
+ * every other case gets a session of its own, named after the relay.
+ */
+app.startRelay = async (list, { reuse = false, name: given = '' } = {}) => {
+  const relay = [...list];
+  // A preset's own name ("2–5 relay") when the builder recognised one.
+  const name = given || relayLabel(relay);
+  let s = app.session;
+  if (reuse && eventOf(s.event).relay && !app.solves.length) {
+    s.relay = relay;
+    s.name = name;
+    await Sessions.put(s);
+  } else {
+    s = {
+      id: uid(), name, event: 'custom', relay,
+      createdAt: Date.now(), order: app.sessions.length,
+    };
+    await Sessions.put(s);
+    app.sessions.push(s);
+  }
+  app.settings.event = 'custom';
+  relayPos = 0; relaySplits = []; relayShown = null; relayAll = false;
+  app.scrambleHistory = [];
+  await app.switchSession(s.id);
+  updateLabels();
+  return s;
+};
+
+/** Can the session in front of you have its relay edited, or does it need a new one? */
+app.relayEditable = () => eventOf(app.session?.event).relay && !app.solves.length;
 
 app.saveSession = async (s) => { await Sessions.put(s); updateLabels(); };
 
@@ -3946,11 +4250,25 @@ function syncEventConfig() {
   syncPhaseZoneVisibility();
   if (!bldSplitOn() && !multiphaseOn()) phaseReset();
   renderBld();
+  // A relay always opens on its first puzzle, and the rail goes away entirely
+  // when the event that owns it does.
+  relayPos = 0;
+  relaySplits = [];
+  relayShown = null;
+  renderRelayRail();
   // The virtual cube comes and goes with the event: a 3x3 has one, a clock does not.
   applyInputView();
 }
 
+/** The relay builder — which puzzles, in which order. */
+const openRelayBuilder = () => openPanel('Relay', 'buildRelay', {}, app);
+app.openRelayBuilder = openRelayBuilder;
+
 async function setEvent(id) {
+  /* Relay is not an event you can simply switch to: it is a relay, and a
+     relay is a list of puzzles that has to exist before there is anything to
+     scramble. Picking it opens the builder instead. */
+  if (eventOf(id).relay && !relayList()) { openRelayBuilder(); return; }
   app.settings.event = id;
   // A virtual session belongs to one event: changing event moves you to that
   // event's virtual session rather than relabelling this one.
@@ -4082,9 +4400,16 @@ app.exportSessionCSV = () => {
      holding a move count: the seconds an attempt took are still worth having,
      and 28 moves is not 28 seconds. */
   const fmc = movesMode();
+  /* One extra column rather than one per puzzle: a relay list is up to ten
+     long, the column count would then change with the session, and a
+     spreadsheet splits "2x2 4.210 | 3x3 9.870" on the pipe in one step
+     anyway. Absent on every non-relay solve, and on every solve recorded
+     before relays existed. */
+  const hasRelay = app.solves.some(s => s.relay?.length);
   const rows = [fmc
     ? ['#', 'moves', 'penalty', 'scramble', 'solution', 'notes', 'seconds', 'comment', 'date']
-    : ['#', 'time', 'penalty', 'scramble', 'case', 'comment', 'date']];
+    : ['#', 'time', 'penalty', 'scramble', 'case', 'comment', 'date',
+       ...(hasRelay ? ['splits'] : [])]];
   app.solves.forEach((s, i) => rows.push(fmc ? [
     i + 1, Number.isFinite(s.fmcMoves) ? s.fmcMoves : '', s.penalty,
     s.scramble.replace(/\n/g, ' '), s.fmcSolution || '', s.fmcNotes || '',
@@ -4092,6 +4417,8 @@ app.exportSessionCSV = () => {
   ] : [
     i + 1, (s.timeMs / 1000).toFixed(3), s.penalty, s.scramble.replace(/\n/g, ' '),
     s.caseName || '', s.comment || '', new Date(s.createdAt).toISOString(),
+    ...(hasRelay ? [(s.relay || []).map(p =>
+      `${eventOf(p.event).short} ${(p.splitMs / 1000).toFixed(3)}`).join(' | ')] : []),
   ]));
   download(`${app.session.name.replace(/\W+/g, '-')}.csv`, toCSV(rows), 'text/csv');
   toast('CSV downloaded', { kind: 'good' });
@@ -4445,7 +4772,10 @@ function wireChrome() {
       label: EVENTS[id].name,
       badge: EVENTS[id].short,
       on: id === app.settings.event,
-      onSelect: () => setEvent(id),
+      /* Relay has no scramble of its own until you say which puzzles are in
+         it, so picking it opens the builder rather than switching to an event
+         with nothing to generate. */
+      onSelect: () => (EVENTS[id].relay ? openRelayBuilder() : setEvent(id)),
     })), { columns: 2, minWidth: 400 });
   });
 
@@ -4777,10 +5107,20 @@ function wireShortcuts() {
            arrow keys, one step further round: it replaces today's scramble
            with one of your choosing, on the one attempt that counts. */
         if (scrambleIsSpokenFor()) { toast(spokenForWhy()); break; }
+        // A relay needs one scramble per puzzle; a pasted list is a queue of
+        // single ones, so there is nothing sensible to do with it here.
+        if (relayOn()) { toast('Your own scrambles are not available on a relay'); break; }
         openPanel('Your scrambles', 'buildCustomScrambles', undefined, app);
         break;
       case 'ArrowLeft':  e.preventDefault(); prevScramble(); break;
       case 'ArrowRight': e.preventDefault(); forwardScramble(); break;
+
+      /* Shift+Comma and Shift+Period. `k` is already '<' or '>' rather than
+         ',' or '.', so these cannot fall through to the settings drawer or to
+         the virtual cube's letters — and isTyping() above keeps all of it off
+         while you are in a text field. */
+      case '<': e.preventDefault(); relayGoto(relayPos - 1); break;
+      case '>': e.preventDefault(); relayGoto(relayPos + 1); break;
 
       case 'e': case 'E': e.preventDefault(); $('#btn-event').click(); break;
       case 'm': case 'M': e.preventDefault(); $('#btn-mode').click(); break;
@@ -4838,7 +5178,10 @@ function openPaletteWithCommands() {
   openPalette(() => {
     const out = [];
     for (const id of EVENT_ORDER) {
-      out.push({ kind: 'event', label: EVENTS[id].name, keywords: EVENTS[id].short, run: () => setEvent(id) });
+      out.push({
+        kind: 'event', label: EVENTS[id].name, keywords: EVENTS[id].short,
+        run: () => (EVENTS[id].relay ? openRelayBuilder() : setEvent(id)),
+      });
     }
     for (const id of modesForEvent(app.settings.event)) {
       out.push({ kind: 'mode', label: MODES[id].name, keywords: MODES[id].desc, run: () => setMode(id) });

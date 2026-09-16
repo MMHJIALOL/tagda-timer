@@ -78,7 +78,9 @@ export const normaliseCode = (s) =>
 /** An event only counts as raceable if "one scramble, one time" describes it. */
 export function raceable(eventId) {
   const ev = eventOf(eventId);
-  return !ev.fmc && !ev.multi;
+  // A relay is several puzzles behind one time, so there is nothing for a
+  // room to agree on: one scramble is not what everyone would be solving.
+  return !ev.fmc && !ev.multi && !ev.relay;
 }
 
 /** Deterministic colour from a name, so everyone sees the same player the same. */

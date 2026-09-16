@@ -3319,3 +3319,167 @@ body.focus #dock-bottom, body.focus #tile-float-layer { opacity: 0; pointer-even
 .gear-log-add .inp { flex: 1; }
 .gear-log-row .sub { font-variant-numeric: tabular-nums; }
 .picker { display: flex; flex-direction: column; gap: 6px; min-width: 220px; }
+
+/* ===========================================================
+   CUSTOM RELAY
+
+   The rail stands in for the single scramble line: one chip per puzzle,
+   showing which is live, which are done and what each of those took. Only
+   ever one puzzle is shown in full below it, because five scrambles and five
+   previews at once fit on no screen -- and five 3D previews would exhaust the
+   tab's WebGL contexts and paint black squares besides.
+   =========================================================== */
+#relay-rail {
+  display: flex; align-items: center; gap: 8px;
+  width: min(1320px, 95%); max-width: 100%;
+  padding: 2px 10px;
+  box-sizing: border-box;
+}
+#relay-rail[hidden] { display: none; }
+/* The rail names every puzzle in the zone, so the generic heading above it is
+   a second label for the same thing and a line of height a megaminx leg needs. */
+body.relay .scramble-label { display: none; }
+
+/* The chips scroll sideways rather than wrapping: a relay of ten would
+   otherwise push the scramble and the preview down the page, and the rail is
+   meant to cost one line however long the list is. */
+.rr-track {
+  display: flex; align-items: center; gap: 6px;
+  flex: 1 1 auto; min-width: 0;
+  overflow-x: auto; scrollbar-width: none;
+  padding: 3px 2px;
+}
+.rr-track::-webkit-scrollbar { display: none; }
+
+.rr-chip {
+  flex: 0 0 auto;
+  display: inline-flex; align-items: baseline; gap: 6px;
+  padding: 4px 10px; border-radius: 999px; cursor: pointer;
+  font-family: var(--font-ui); font-size: .7rem; font-weight: 700;
+  letter-spacing: .06em;
+  color: var(--text-faint);
+  background: color-mix(in srgb, var(--text) 5%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  transition: color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease),
+              border-color var(--dur-fast) var(--ease);
+}
+.rr-chip:hover { color: var(--text); }
+.rr-chip i {
+  font-style: normal; font-family: var(--font-mono);
+  font-size: .68rem; font-variant-numeric: tabular-nums; opacity: .9;
+}
+/* Done: it has a time, and the time is the point of the chip from here on. */
+.rr-chip.done { color: var(--text-dim); }
+.rr-chip.done i { color: var(--accent-2); }
+.rr-chip.active {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 48%, transparent);
+}
+
+.rr-count {
+  flex: 0 0 auto;
+  font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+  font-size: .68rem; font-weight: 700; letter-spacing: .04em;
+  color: var(--text-faint);
+}
+.rr-all {
+  flex: 0 0 auto;
+  padding: 3px 6px; border-radius: 6px;
+  font-family: var(--font-ui); font-size: .66rem; font-weight: 700;
+  letter-spacing: .1em; text-transform: uppercase;
+  color: var(--text-faint);
+  transition: color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+}
+.rr-all:hover { color: var(--text); background: color-mix(in srgb, var(--text) 8%, transparent); }
+.rr-all.on { color: var(--accent-2); }
+
+/* Every scramble at once: a list to read or print, never notation to solve at
+   a glance, so it is set small, flush left and without the word spacing that
+   holds moves apart on the single-puzzle line. */
+.scramble.relay-all {
+  font-size: calc(clamp(.72rem, 1.1vw, .86rem) * var(--scramble-scale));
+  text-align: left; line-height: 1.75; word-spacing: .2em;
+  /* Four big-cube scrambles are taller than a phone can spare above the
+     clock, so the list scrolls inside its own box instead of pushing the
+     timer into it. */
+  max-height: min(34vh, 320px); overflow-y: auto; overscroll-behavior: contain;
+}
+
+/* Which puzzle the clock is counting, under the digits. */
+#relay-now {
+  margin-top: 6px;
+  font-family: var(--font-ui); font-size: .66rem; font-weight: 700;
+  letter-spacing: .14em; text-transform: uppercase;
+  color: var(--accent);
+}
+#relay-now[hidden] { display: none; }
+
+/* A finished relay solve, expanded out of the times list: what each puzzle
+   took and the scramble it was done on. */
+.relay-legs { display: flex; flex-direction: column; gap: 7px; max-width: 320px; }
+.relay-leg { display: flex; flex-direction: column; gap: 2px; }
+.rl-head {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+  font-size: .7rem; font-weight: 700; letter-spacing: .06em;
+  color: var(--text-dim);
+}
+.rl-head i {
+  font-style: normal; font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums; color: var(--accent-2);
+}
+.rl-scramble {
+  font-family: var(--font-mono); font-size: .64rem; line-height: 1.5;
+  color: var(--text-faint); word-break: break-word;
+}
+
+@media (max-width: 760px) {
+  #relay-rail { width: 100%; padding: 2px 4px; gap: 6px; }
+  .rr-chip { font-size: .66rem; padding: 3px 8px; }
+}
+
+/* ---------------- relay builder (drawer) ---------------- */
+.relay-list { display: flex; flex-direction: column; gap: 5px; margin-bottom: 10px; }
+.relay-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 8px; border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  border: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+}
+.relay-row .rr-n {
+  width: 18px; flex: 0 0 auto; text-align: center;
+  font-family: var(--font-mono); font-size: .72rem; color: var(--text-faint);
+}
+.relay-row .rr-name { flex: 1 1 auto; min-width: 0; font-size: .82rem; font-weight: 600; }
+.relay-row .ghost-btn[disabled] { opacity: .3; pointer-events: none; }
+
+.relay-add { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.relay-add .inp { flex: 1 1 140px; min-width: 0; }
+.relay-step {
+  display: inline-flex; align-items: center; gap: 2px;
+  border-radius: 999px; padding: 2px;
+  background: var(--surface-2);
+  border: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+}
+.relay-step .rr-count-val {
+  min-width: 20px; text-align: center;
+  font-family: var(--font-mono); font-size: .78rem; font-weight: 700;
+}
+
+.relay-foot { margin-top: 14px; }
+.relay-preview {
+  font-family: var(--font-mono); font-size: .8rem; font-weight: 600;
+  color: var(--accent-2); margin-bottom: 8px; text-align: center;
+}
+.relay-actions { display: flex; flex-direction: column; gap: 6px; }
+
+/* Share of the total, one segment per puzzle, in solving order. A bar rather
+   than a chart for the same reason the memo/exec one is: it is a single
+   division, and the only comparison that matters is inside one relay. */
+.relay-bar {
+  display: flex; height: 9px; border-radius: 999px; overflow: hidden;
+  margin: 10px 0 4px; background: var(--surface-2);
+}
+.relay-bar-seg { display: block; min-width: 2px; }
+.relay-bar-seg:nth-child(odd)  { background: var(--accent); }
+.relay-bar-seg:nth-child(even) { background: var(--accent-2); }

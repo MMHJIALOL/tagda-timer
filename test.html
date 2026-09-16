@@ -2349,6 +2349,111 @@ section('gear — filtering solves and placing markers');
     Gear.markersFor(S1, []).length === 0 && Gear.markersFor(S1, null).length === 0);
 }
 
+/* ---------------- custom relay ----------------
+   One attempt, several puzzles, one total. What can quietly go wrong: the
+   split arithmetic (parts must add up to the total exactly), the scrambles
+   (one per puzzle, each of the right type), and the backup round-trip.
+   ---------------------------------------------------------------- */
+section('custom relay');
+{
+  const Ev = await import('./js/events.js');
+
+  check('Relay is in the picker, last, and flagged as a relay',
+    Ev.EVENT_ORDER.at(-1) === 'custom' && Ev.EVENTS.custom.relay === true);
+  check('Relay still answers .puzzle, so no preview caller breaks',
+    Ev.eventOf('custom').puzzle === '3x3x3');
+  check('a relay only offers random-state, no trainer modes',
+    JSON.stringify(Ev.modesForEvent('custom')) === '["wca"]', Ev.modesForEvent('custom').join(','));
+  const legs = Ev.relayLegEvents();
+  check('relay legs exclude BLD, FMC, multi-blind and Relay itself',
+    !legs.some(id => ['333bf', '444bf', '555bf', '333fm', '333mbf', 'custom'].includes(id)), legs.join(' '));
+
+  /* Same arithmetic as main.js's multiphaseSplitsOf, which the relay reuses:
+     cumulative presses plus the total, one delta per puzzle. */
+  const splitsOf = (splits, timeMs) => {
+    const out = []; let prev = 0;
+    for (const s of splits) { out.push(Math.max(0, Math.round(s - prev))); prev = s; }
+    out.push(Math.max(0, Math.round(timeMs - prev)));
+    return out;
+  };
+  {
+    const total = 4210 + 9870 + 21300 + 40620;
+    const parts = splitsOf([4210, 14080, 35380], total);
+    check('a relay split gives one time per puzzle, as the gaps between presses',
+      JSON.stringify(parts) === JSON.stringify([4210, 9870, 21300, 40620]), parts.join(' '));
+    check('per-puzzle times add up to the total exactly',
+      parts.reduce((a, b) => a + b, 0) === total);
+    const ragged = splitsOf([4217, 14091, 35388], 76003);
+    check('ragged real-world splits still add up to the total',
+      ragged.reduce((a, b) => a + b, 0) === 76003, ragged.join(' + '));
+    check('one puzzle is no splits and just the total',
+      JSON.stringify(splitsOf([], 9870)) === '[9870]');
+  }
+  {
+    const list = ['222', '333', '333', 'pyram'];
+    const s = await G.generate('custom', 'wca', { relay: list });
+    check('a relay generates one part per puzzle, tagged in order',
+      JSON.stringify(s.parts?.map(p => p.event)) === JSON.stringify(list),
+      s.parts?.map(p => p.event).join(' '));
+    // TNoodle's 2x2 scrambles are short and face-turn only; a 3x3 one is 16+.
+    const two = s.parts[0].scramble.trim().split(/\s+/);
+    check('the 2x2 leg is scrambled as a 2x2',
+      two.length <= 11 && two.every(m => /^[RLUDFB][2']?$/.test(m)), s.parts[0].scramble);
+    check('the pyraminx leg is scrambled as a pyraminx',
+      s.parts[3].scramble.split(/\s+/).every(m => /^[RLUBrlub]'?$/.test(m)), s.parts[3].scramble);
+    const n3 = s.parts[1].scramble.trim().split(/\s+/).length;
+    check('the 3x3 legs are full-length 3x3 scrambles', n3 >= 16 && n3 <= 21, `${n3} moves`);
+    check('the joined scramble is numbered, one puzzle per line',
+      s.scramble.split('\n').length === list.length &&
+      s.scramble.split('\n').every((ln, i) => ln.startsWith(`${i + 1}) `)));
+    const empty = await G.generate('custom', 'wca', { relay: [] });
+    check('an empty relay list generates nothing rather than guessing',
+      empty.scramble === '' && empty.parts.length === 0);
+  }
+  {
+    const DB = await import('./js/db.js');
+    const sid = 'test-relay-' + Math.random().toString(36).slice(2, 8);
+    const session = { id: sid, name: '2x2 · 3x3', event: 'custom', relay: ['222', '333'], createdAt: Date.now(), order: 99 };
+    const solve = {
+      id: sid + '-s1', sessionId: sid, event: 'custom', mode: 'wca',
+      scramble: "1) R U' F2\n2) D2 F2 U'", timeMs: 14080, penalty: 'none',
+      inspectionMs: 0, comment: '', createdAt: Date.now(),
+      relay: [{ event: '222', scramble: "R U' F2", splitMs: 4210 },
+              { event: '333', scramble: "D2 F2 U'", splitMs: 9870 }],
+    };
+    await DB.Sessions.put(session);
+    await DB.Solves.put(solve);
+    const backup = JSON.parse(JSON.stringify(await DB.exportAll()));
+    check('a backup carries the session relay list and every solve part',
+      JSON.stringify(backup.sessions.find(s => s.id === sid)?.relay) === JSON.stringify(session.relay) &&
+      JSON.stringify(backup.solves.find(s => s.id === solve.id)?.relay) === JSON.stringify(solve.relay));
+    await DB.Solves.del(solve.id);
+    await DB.Sessions.del(sid);
+    await DB.importAll(backup, { merge: true });
+    const back = await DB.Sessions.get(sid);
+    const backSolve = await DB.Solves.get(solve.id);
+    check('restore brings back the relay list and every part intact',
+      JSON.stringify(back?.relay) === JSON.stringify(session.relay) &&
+      JSON.stringify(backSolve?.relay) === JSON.stringify(solve.relay));
+    await DB.Solves.del(solve.id);
+    await DB.Sessions.del(sid);
+  }
+  {
+    const mk = (a, b, penalty = 'none') => ({ timeMs: a + b, penalty,
+      relay: [{ event: '222', scramble: 'x', splitMs: a }, { event: '333', scramble: 'y', splitMs: b }] });
+    const rs = St.relaySummary([mk(4000, 10000), mk(6000, 12000)]);
+    check('per-puzzle means and bests are taken by position',
+      rs.legs[0].mean === 5000 && rs.legs[1].mean === 11000 && rs.legs[0].best === 4000);
+    check('per-puzzle shares add to one',
+      Math.abs(rs.legs.reduce((a, l) => a + l.share, 0) - 1) < 1e-9);
+    const odd = { timeMs: 3000, penalty: 'none', relay: [{ event: '444', scramble: 'z', splitMs: 3000 }] };
+    check('a differently shaped relay is not averaged with this one',
+      St.relaySummary([mk(4000, 10000), mk(6000, 12000), odd]).count === 1);
+    check('DNFs and non-relay solves give no breakdown',
+      St.relaySummary([mk(4000, 10000, 'DNF')]) === null && St.relaySummary([{ timeMs: 1, penalty: 'none' }]) === null);
+  }
+}
+
 section('virtual cube');
 {
   const V = await import('./js/vcube.js');

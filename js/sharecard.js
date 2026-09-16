@@ -241,7 +241,12 @@ export async function drawSolveCard(solve, { index = null } = {}) {
   await fontsReady();
   const c = themeColors();
   const logo = await logoImage();
-  const H = 1350;
+
+  /* A relay reads like an average card: one row per puzzle with its split and
+     scramble. No cube preview — a net for one leg of five says nothing. */
+  const relay = Array.isArray(solve.relay) && solve.relay.length ? solve.relay : null;
+  const rowH = relay && relay.length > 8 ? 74 : 92;
+  const H = relay ? Math.max(1080, 470 + relay.length * rowH + (solve.comment ? 280 : 190)) : 1350;
   const cv = document.createElement('canvas');
   cv.width = W; cv.height = H;
   const ctx = cv.getContext('2d');
@@ -255,21 +260,28 @@ export async function drawSolveCard(solve, { index = null } = {}) {
   // number on it goes somewhere this app's conventions are not known.
   const moves = isMoveResult(solve);
   const value = fmtResult(eff(solve), moves) + (moves && eff(solve) !== DNF ? ' moves' : '');
-  const bits = [ev.name];
+  const bits = [relay ? `Relay · ${relay.length} puzzles` : ev.name];
   if (mode && mode.kind !== 'wca') bits.push(mode.name);
   bits.push(fmtDate(solve.createdAt));
   if (solve.penalty === '+2') bits.push('+2 penalty');
 
-  let y = paintHero(ctx, c, 250, solve.caseName || 'single', value, bits.join('  ·  '));
+  let y = paintHero(ctx, c, 250, solve.caseName || (relay ? 'total' : 'single'), value, bits.join('  ·  '));
 
-  const n = cubeSizeFor(solve.event);
-  const netH = n ? 300 : 0;
-  y = paintScramble(ctx, c, y + 46, (solve.scramble || '—').replace(/\n/g, ' '), { maxLines: n ? 3 : 9 });
-
-  if (n) {
-    const top = y + 44;
-    drawNet(ctx, faceletsFor(solve.scramble, n), n, 74, top, W - 148, netH);
-    y = top + netH;
+  if (relay) {
+    y = paintRows(ctx, c, y + 56, relay.map(p => ({
+      tag: eventOf(p.event).short,
+      time: Number.isFinite(p.splitMs) ? fmt(p.splitMs) : '—',
+      scramble: p.scramble,
+    })), { rowH, tagW: 110 });
+  } else {
+    const n = cubeSizeFor(solve.event);
+    const netH = n ? 300 : 0;
+    y = paintScramble(ctx, c, y + 46, (solve.scramble || '—').replace(/\n/g, ' '), { maxLines: n ? 3 : 9 });
+    if (n) {
+      const top = y + 44;
+      drawNet(ctx, faceletsFor(solve.scramble, n), n, 74, top, W - 148, netH);
+      y = top + netH;
+    }
   }
 
   if (solve.comment) {
@@ -281,6 +293,44 @@ export async function drawSolveCard(solve, { index = null } = {}) {
 
   paintFooter(ctx, H, c);
   return cv;
+}
+
+/** Striped table rows: a small tag, a time, and a one-line scramble. Returns the y it ends at. */
+function paintRows(ctx, c, y, rows, { rowH = 92, tagW = 54 } = {}) {
+  ctx.textBaseline = 'middle';
+  const timeW = 210;
+  const scrX = 74 + tagW + timeW;
+  const scrMax = W - 74 - scrX - 22;
+
+  rows.forEach((r, i) => {
+    const cy = y + rowH / 2;
+    if (i % 2 === 0) {
+      ctx.fillStyle = hex(c.text, 0.04);
+      rr(ctx, 74, y, W - 148, rowH - 8, 18);
+      ctx.fill();
+    }
+
+    ctx.textAlign = 'left';
+    ctx.fillStyle = hex(c.text, 0.34);
+    ctx.font = `600 24px ${MONO}`;
+    ctx.fillText(r.tag, 74 + 22, cy);
+
+    ctx.fillStyle = r.dim ? hex(c.text, 0.42) : c.text;
+    ctx.font = `${r.dim ? 600 : 800} ${rowH > 80 ? 40 : 34}px ${MONO}`;
+    ctx.fillText(r.time, 74 + tagW + 12, cy);
+
+    const raw = (r.scramble || '—').replace(/\n/g, ' ');
+    const fitted = fitOrClip(ctx, raw, scrMax, MONO, 500, rowH > 80 ? 22 : 19, 14);
+    ctx.fillStyle = hex(c.text, 0.5);
+    ctx.font = `500 ${fitted.size}px ${MONO}`;
+    ctx.fillText(fitted.text, scrX, cy);
+
+    y += rowH;
+  });
+
+  ctx.textBaseline = 'alphabetic';
+  ctx.textAlign = 'left';
+  return y;
 }
 
 /* ---------------------------------------------------------
@@ -453,47 +503,15 @@ export async function drawAverageCard(solves, { label = 'average of 5', value = 
   const y0 = paintHero(ctx, c, 250, label, value,
     `${solves.length} solves  ·  ${fmtDate(solves.at(-1).createdAt)}`);
 
-  let y = y0 + 56;
-  ctx.textBaseline = 'middle';
-  const numW = 54;
-  const timeW = 210;
-  const scrX = 74 + numW + timeW;
-  const scrMax = W - 74 - scrX - 22;
-
-  solves.forEach((s, i) => {
-    const cy = y + rowH / 2;
-    const isTrim = !!trimmed?.has(i);
+  // Trimmed solves are parenthesised, exactly as results are written up —
+  // the number is there, it just did not count.
+  paintRows(ctx, c, y0 + 56, solves.map((s, i) => {
     const v = eff(s);
     const t = v === DNF ? 'DNF' : fmtResult(v, isMoveResult(s)) + (s.penalty === '+2' ? '+' : '');
+    const dim = !!trimmed?.has(i);
+    return { tag: String(i + 1).padStart(2, '0'), time: dim ? `(${t})` : t, dim, scramble: s.scramble };
+  }), { rowH });
 
-    if (i % 2 === 0) {
-      ctx.fillStyle = hex(c.text, 0.04);
-      rr(ctx, 74, y, W - 148, rowH - 8, 18);
-      ctx.fill();
-    }
-
-    ctx.textAlign = 'left';
-    ctx.fillStyle = hex(c.text, 0.34);
-    ctx.font = `600 24px ${MONO}`;
-    ctx.fillText(String(i + 1).padStart(2, '0'), 74 + 22, cy);
-
-    // Trimmed solves are parenthesised, exactly as results are written up —
-    // the number is there, it just did not count.
-    ctx.fillStyle = isTrim ? hex(c.text, 0.42) : c.text;
-    ctx.font = `${isTrim ? 600 : 800} ${rowH > 80 ? 40 : 34}px ${MONO}`;
-    ctx.fillText(isTrim ? `(${t})` : t, 74 + numW + 12, cy);
-
-    const raw = (s.scramble || '—').replace(/\n/g, ' ');
-    const fitted = fitOrClip(ctx, raw, scrMax, MONO, 500, rowH > 80 ? 22 : 19, 14);
-    ctx.fillStyle = hex(c.text, 0.5);
-    ctx.font = `500 ${fitted.size}px ${MONO}`;
-    ctx.fillText(fitted.text, scrX, cy);
-
-    y += rowH;
-  });
-
-  ctx.textBaseline = 'alphabetic';
-  ctx.textAlign = 'left';
   paintFooter(ctx, H, c);
   return cv;
 }

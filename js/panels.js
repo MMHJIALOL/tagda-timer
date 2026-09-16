@@ -7,9 +7,9 @@
 import { $, el, fmt, fmtResult, fmtDate, download, parseScrambleList } from './util.js';
 import { PRESETS, TIMER_FONTS, exportTheme, importTheme } from './theme.js';
 import { SHADER_NAMES } from './bg.js';
-import { summarize, byCase, eff, DNF, isMoveResult, bestAvg, statWindow, bldSummary } from './stats.js';
+import { summarize, byCase, eff, DNF, isMoveResult, bestAvg, statWindow, bldSummary, relaySummary } from './stats.js';
 import { renderTrend, renderHistogram, renderHeatmap, renderCaseBars } from './charts.js';
-import { MODES, EVENTS, EVENT_ORDER, virtualSize } from './events.js';
+import { MODES, EVENTS, EVENT_ORDER, eventOf, virtualSize, relayLegEvents, relayLabel, RELAY_MAX } from './events.js';
 import { setFor } from './scramble.js';
 import { toast, confirmToast } from './toast.js';
 import { exportAll, Assets, Solves, LetterPairs } from './db.js';
@@ -1189,6 +1189,34 @@ export function buildStats(app) {
           'but that is a reference point, not a target — the number worth watching is your own drift.' })));
     }
 
+    /* Per-puzzle breakdown for a relay session. The main figures above are the
+       totals, as they are for every other event — this is the layer underneath
+       them: where the time actually went, and which puzzle is worth an hour of
+       practice. By position rather than by event, because a relay can hold the
+       same puzzle twice and the second one is not the first. */
+    const rs = relaySummary(solves);
+    if (rs) {
+      const pct = (v) => Math.round(v * 100);
+      const bar = el('div', { class: 'relay-bar' }, ...rs.legs.map(l =>
+        el('span', {
+          class: 'relay-bar-seg',
+          style: { width: pct(l.share) + '%' },
+          title: `${eventOf(l.event).short} · ${pct(l.share)}% of the relay`,
+        })));
+
+      body.append(el('div', { class: 'chart-card' },
+        el('h4', { text: `Per puzzle — ${rs.count} relay${rs.count === 1 ? '' : 's'}` }),
+        el('div', { class: 'big-stats' }, ...rs.legs.map((l, i) =>
+          cell(`${i + 1}. ${eventOf(l.event).short}`, fmt(l.mean),
+            `best ${fmt(l.best)} · ${pct(l.share)}%`))),
+        bar,
+        el('div', { class: 'bs-sub', text: 'share of the total, in solving order' }),
+        el('div', { class: 'hint-note', text:
+          'Averages and personal bests above are the totals, exactly as they are for any ' +
+          'other event. These are the splits underneath them — the puzzle taking the ' +
+          'biggest share is where a relay is usually won or lost.' })));
+    }
+
     if (cases.length) {
       const caseHost = el('div');
       body.append(el('div', { class: 'chart-card' },
@@ -1911,6 +1939,11 @@ export const SHORTCUTS = [
     ['←  →', 'previous / next scramble'],
     ['X', 'enter your own scrambles'],
   ]],
+  // Only on a relay; on any other event these do nothing.
+  ['Relay', [
+    ['<  >', 'previous / next puzzle'],
+    ['Space', 'start, split to the next puzzle, stop'],
+  ]],
   ['Go to', [
     ['E', 'event picker'],
     ['M', 'mode + trainer picker'],
@@ -2067,6 +2100,156 @@ export function buildAbout(app) {
 /* =========================================================
    SESSION MANAGER
    ========================================================= */
+/* =========================================================
+   CUSTOM RELAY BUILDER
+
+   Which puzzles, in which order. The list is the whole definition of the
+   event, and it lives on the session — so building one either re-points the
+   session you are on (only while it has no solves) or makes a new one named
+   after the relay. Times from two different puzzle lists must never end up
+   inside the same average, and that rule is enforced here rather than being
+   left to the solver to remember.
+   ========================================================= */
+
+/* The shapes people actually relay. `2-4` reads better than "2x2, 3x3, 4x4"
+   on a button and is the name every competition uses for it. */
+const RELAY_PRESETS = [
+  { label: '2–4 relay', list: ['222', '333', '444'] },
+  { label: '2–5 relay', list: ['222', '333', '444', '555'] },
+  { label: '2–7 relay', list: ['222', '333', '444', '555', '666', '777'] },
+  { label: '2×3x3',     list: ['333', '333'] },
+  { label: '5×2x2',     list: ['222', '222', '222', '222', '222'] },
+];
+
+export function buildRelay(app) {
+  return (body) => {
+    // Seeded from the session you are on, so opening the builder on a relay is
+    // an edit rather than a blank page.
+    let list = [...(app.relayList() || [])];
+
+    const host = el('div');
+    const foot = el('div', { class: 'relay-foot' });
+
+    const render = () => {
+      const full = list.length >= RELAY_MAX;
+
+      /* One row per puzzle, in solving order. Up/down rather than drag: the
+         list is at most ten long, two buttons work on a phone, and a drag
+         handle here would be the only one in the app. */
+      const rows = list.map((id, i) => el('div', { class: 'relay-row' },
+        el('span', { class: 'rr-n', text: String(i + 1) }),
+        el('span', { class: 'rr-name', text: eventOf(id).name }),
+        el('button', {
+          class: 'ghost-btn sm icon', text: '↑', title: 'Move earlier',
+          disabled: i === 0,
+          onclick: () => { [list[i - 1], list[i]] = [list[i], list[i - 1]]; render(); },
+        }),
+        el('button', {
+          class: 'ghost-btn sm icon', text: '↓', title: 'Move later',
+          disabled: i === list.length - 1,
+          onclick: () => { [list[i + 1], list[i]] = [list[i], list[i + 1]]; render(); },
+        }),
+        el('button', {
+          class: 'ghost-btn sm icon danger', text: '×', title: 'Remove',
+          onclick: () => { list.splice(i, 1); render(); },
+        }),
+      ));
+
+      /* Add: which puzzle, and how many of it. The stepper is what makes
+         "five 2x2s" one action instead of five. */
+      let count = 1;
+      const countOut = el('span', { class: 'rr-count-val', text: '1' });
+      const step = (d) => {
+        count = Math.max(1, Math.min(5, count + d));
+        countOut.textContent = String(count);
+      };
+      /* Only events that are one ordinary scramble solved once. Blind, FMC and
+         multi-blind all mean something else by "one attempt", so a relay
+         containing them would not have a total worth reading. Trainer modes
+         are excluded by the same rule — a relay is always random-state. */
+      const pick = select(
+        relayLegEvents().map(id => ({ value: id, label: EVENTS[id].name })),
+        list.at(-1) || '333',
+        () => {},
+      );
+
+      const adder = el('div', { class: 'relay-add' },
+        pick,
+        el('div', { class: 'relay-step' },
+          el('button', { class: 'ghost-btn sm icon', text: '−', onclick: () => step(-1) }),
+          countOut,
+          el('button', { class: 'ghost-btn sm icon', text: '+', onclick: () => step(1) }),
+        ),
+        el('button', {
+          class: 'btn sm', text: 'Add', disabled: full,
+          onclick: () => {
+            const room = RELAY_MAX - list.length;
+            if (room <= 0) { toast(`A relay holds at most ${RELAY_MAX} puzzles`, { kind: 'bad' }); return; }
+            const add = Math.min(count, room);
+            for (let i = 0; i < add; i++) list.push(pick.value);
+            if (add < count) toast(`Room for ${add} more — a relay holds at most ${RELAY_MAX}`);
+            render();
+          },
+        }),
+      );
+
+      host.replaceChildren(
+        group('Presets',
+          el('div', { class: 'chips' }, ...RELAY_PRESETS.map(p =>
+            el('button', {
+              class: 'chip', text: p.label,
+              onclick: () => { list = [...p.list]; render(); },
+            }))),
+        ),
+        group(`The relay — ${list.length}/${RELAY_MAX} puzzles`,
+          rows.length
+            ? el('div', { class: 'relay-list' }, ...rows)
+            : el('div', { class: 'hint-note', text: 'Nothing in it yet. Take a preset, or add puzzles below.' }),
+          adder,
+        ),
+      );
+      renderFoot();
+    };
+
+    const renderFoot = () => {
+      const empty = !list.length;
+      /* Editing in place is only offered while the session has no solves. Past
+         that, the times already recorded were done against a different set of
+         puzzles, and quietly relabelling the session would make the average a
+         lie — so the only way on is a session of its own. */
+      const canEdit = app.relayEditable();
+      // Named after the preset when the list still is one, however it got there.
+      const name = RELAY_PRESETS.find(p => p.list.join() === list.join())?.label || '';
+      foot.replaceChildren(
+        el('div', { class: 'relay-preview', text: empty ? '' : relayLabel(list) }),
+        el('div', { class: 'relay-actions' },
+          canEdit ? el('button', {
+            class: 'btn full', text: 'Use it in this session', disabled: empty,
+            onclick: async () => { await app.startRelay(list, { reuse: true, name }); closeDrawer(); },
+          }) : null,
+          el('button', {
+            class: 'btn primary full', disabled: empty,
+            text: canEdit ? 'New session with this relay' : `New session · ${name || relayLabel(list) || 'relay'}`,
+            onclick: async () => { await app.startRelay(list, { name }); closeDrawer(); },
+          }),
+        ),
+        el('div', { class: 'hint-note', text:
+          'One attempt runs through every puzzle in order. Space starts it, each press after ' +
+          'that records a split and moves on, and the last press stops the clock — the result ' +
+          'is the total, with every puzzle stored too. Inspection, if it is on, happens once ' +
+          'before the first puzzle. Before the run, > and < step through the puzzles so you ' +
+          'can scramble each one against its own preview.' }),
+        app.relayEditable() ? null : el('div', { class: 'hint-note', text:
+          'This session already has solves, so its relay is fixed: times done on different ' +
+          'puzzle lists must never average together.' }),
+      );
+    };
+
+    body.append(host, foot);
+    render();
+  };
+}
+
 export function buildSessions(app) {
   return (body) => {
     const list = el('div', { class: 'solve-table' });

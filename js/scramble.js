@@ -280,6 +280,33 @@ export async function generate(eventId, modeId = 'wca', opts = {}) {
     return { scramble: parts.map((p, i) => `${i + 1}) ${p}`).join('\n'), parts, official: !!gen };
   }
 
+  /* A relay: one scramble per puzzle in the session's list, generated in order.
+     `scramble` is the numbered join of all of them, exactly as multi-blind
+     writes its own, so every existing reader of solve.scramble -- CSV, the
+     csTimer-style export, the history, the share text -- keeps working without
+     knowing relays exist. `parts` is what the relay UI and the solve record
+     read instead.
+
+     Big-cube random-state generation is seconds per puzzle, so onProgress
+     reports each leg as it lands: the queue is what keeps this off the timer's
+     path, and that progress line is what the first fill shows instead of an
+     empty box. */
+  if (ev.relay) {
+    const list = (opts.relay || []).filter(id => EVENTS[id]);
+    if (!list.length) return { scramble: '', parts: [], official: false };
+    const parts = [];
+    for (const id of list) {
+      parts.push({ event: id, scramble: await one(gen, id) });
+      opts.onProgress?.(parts.length, list.length);
+    }
+    return {
+      scramble: parts.map((part, i) => `${i + 1}) ${part.scramble}`).join('\n'),
+      parts,
+      official: !!gen,
+    };
+  }
+
+
   return { scramble: await one(gen, eventId), official: !!gen };
 }
 
@@ -310,7 +337,10 @@ export class ScrambleQueue {
 
   /** Switch event/mode. Drops the old queue and starts warming the new one. */
   setContext(eventId, modeId, opts = {}) {
-    const key = `${eventId}|${modeId}|${JSON.stringify(opts.allowedCases || '')}|${opts.multiCount || ''}`;
+    /* The relay list is part of the context: two relay sessions are the same
+       event and the same mode, and a queue warmed for a 2-4 relay must never
+       hand its scramble set to a session racing five 2x2s. */
+    const key = `${eventId}|${modeId}|${JSON.stringify(opts.allowedCases || '')}|${opts.multiCount || ''}|${(opts.relay || []).join(',')}`;
     if (key === this.key) return;
     this.key = key;
     this.eventId = eventId;

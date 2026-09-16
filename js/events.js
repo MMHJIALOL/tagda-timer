@@ -23,12 +23,20 @@ export const EVENTS = {
   '333mbf': { name: '3x3 Multi-Blind',    short: 'MBLD',   puzzle: '3x3x3',   noInspection: true, hideDuringSolve: true, multi: true, wrap: true },
   // Unofficial, but cubing.js ships a random-state FTO scrambler and puzzle.
   'fto':    { name: 'FTO',                short: 'FTO',    puzzle: 'fto',     wrap: true },
+  /* A relay is several puzzles inside one attempt, so it has no single puzzle
+     of its own. `puzzle` is still here and still 3x3x3: every caller of
+     eventOf(id).puzzle has to get something loadable back, and the relay code
+     points the preview at the active leg's own puzzle before anything is
+     drawn. The list itself lives on the session (`session.relay`), not here —
+     two relay sessions are two different lists of the same event. */
+  'custom': { name: 'Relay',              short: 'Relay',  puzzle: '3x3x3',   relay: true, noInspection: false },
 };
 
 export const EVENT_ORDER = [
   '333', '222', '444', '555', '666', '777',
   '333bf', '333fm', '333oh', 'clock', 'minx',
   'pyram', 'skewb', 'sq1', '444bf', '555bf', '333mbf', 'fto',
+  'custom',
 ];
 
 /**
@@ -116,6 +124,26 @@ export function modesForEvent(eventId) {
 
 /** Cube size when the virtual cube can do this event (2x2 to 7x7), else 0. */
 export const virtualSize = id => (/^([2-7])\1\1$/.test(id) ? +id[0] : 0);
+
+/**
+ * Events a relay leg may be built from.
+ *
+ * A leg has to be one ordinary scramble solved once: blindfolded events, FMC
+ * and multi-blind all mean something else by "one attempt", and folding any of
+ * them into a relay would make the total meaningless. The relay event itself is
+ * excluded for the obvious reason.
+ */
+export const relayLegEvents = () =>
+  EVENT_ORDER.filter(id => {
+    const ev = EVENTS[id];
+    return !ev.relay && !ev.fmc && !ev.multi && !ev.noInspection;
+  });
+
+/** How many puzzles one relay may hold. */
+export const RELAY_MAX = 10;
+
+/** `2x2 · 3x3 · 4x4` — a relay list written out for a label. */
+export const relayLabel = (list = []) => list.map(id => eventOf(id).short).join(' · ');
 
 export const eventOf  = id => EVENTS[id] || EVENTS['333'];
 export const modeOf   = id => MODES[id]  || MODES['wca'];

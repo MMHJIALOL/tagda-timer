@@ -412,6 +412,49 @@ export function bldSummary(solves) {
   return { count: list.length, memo, exec, ratio: mean(ratios), ratios, drift, window: w };
 }
 
+/**
+ * Per-puzzle numbers across a relay session.
+ *
+ * Deliberately by position rather than by event: a relay can hold the same
+ * puzzle twice (2x3x3, five 2x2s) and the second one is not the first — it is
+ * solved tired, or warm, and folding them together would hide exactly that.
+ *
+ * Only solves whose relay has the same shape as the session's newest one are
+ * counted. A session is supposed to hold one relay, but an imported backup or
+ * a synced device can put a differently-shaped solve in front of you, and
+ * averaging position 3 of a four-puzzle relay with position 3 of a seven-puzzle
+ * one would mean nothing. DNFs are left out for the same reason they are left
+ * out of a best single: the attempt produced no time.
+ */
+export function relaySummary(solves) {
+  const list = (solves || []).filter(s =>
+    Array.isArray(s?.relay) && s.relay.length && s.penalty !== 'DNF' &&
+    s.relay.every(p => Number.isFinite(p?.splitMs)));
+  if (!list.length) return null;
+
+  const shape = list.at(-1).relay.map(p => p.event);
+  const same = list.filter(s =>
+    s.relay.length === shape.length && s.relay.every((p, i) => p.event === shape[i]));
+  if (!same.length) return null;
+
+  const total = same.reduce((sum, s) => sum + s.relay.reduce((a, p) => a + p.splitMs, 0), 0);
+  const legs = shape.map((event, i) => {
+    const times = same.map(s => s.relay[i].splitMs);
+    const sum = times.reduce((a, b) => a + b, 0);
+    return {
+      event,
+      index: i,
+      mean: sum / times.length,
+      best: Math.min(...times),
+      worst: Math.max(...times),
+      /* Share of the whole relay, taken across every solve at once rather than
+         averaged per solve, so one disastrous 5x5 cannot own the percentage. */
+      share: total ? sum / total : 0,
+    };
+  });
+  return { count: same.length, legs, shape };
+}
+
 export const STAT_LABELS = {
   best: 'Best single', mean: 'Session mean',
   ao5: 'Average of 5', ao12: 'Average of 12',
