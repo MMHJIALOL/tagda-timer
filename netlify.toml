@@ -28,6 +28,13 @@
   [headers.values]
     Cache-Control = "public, max-age=0, must-revalidate"
 
+# The service worker is the one file that must never be served from cache: a
+# stale copy keeps serving the old app's cache rules to a returning visitor.
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "no-cache"
+
 [[headers]]
   for = "/index.html"
   [headers.values]

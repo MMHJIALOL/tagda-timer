@@ -491,6 +491,12 @@ async function init() {
   syncSpotifyPanel();
   startAlbumTheming().catch(err => console.warn('[spotify] not started', err));
 
+  // Offline: the page itself is the only thing that ever needed the network,
+  // so a worker that keeps a copy of it is the whole feature. Registered last
+  // and never awaited — a browser that refuses it (private mode, an insecure
+  // origin, a policy) still gets exactly the app it got before.
+  registerServiceWorker();
+
   // Cloud sync, if this browser was ever signed in. Same shape as the line
   // above: a visitor who has never signed in never downloads any of it.
   startCloudSync().catch(err => console.warn('[sync] not started', err));
@@ -525,6 +531,25 @@ async function init() {
     history.replaceState(null, '', location.pathname);
     app.joinRace(invited);
   }
+}
+
+/**
+ * Also hands the worker the list of what this load actually fetched. The very
+ * first visit is the one that installs it, so every module, stylesheet and
+ * font of that load went out before the worker existed to see them — this is
+ * what puts them in the cache without keeping a hand-written list of the
+ * boot graph in sw.js for someone to forget to update.
+ */
+function registerServiceWorker() {
+  if (!('serviceWorker' in navigator)) return;
+  navigator.serviceWorker.register('/sw.js').then(async () => {
+    const reg = await navigator.serviceWorker.ready;
+    // After load, so the late arrivals — the cube module, the shader, the
+    // fonts — are in the list too, not just what the parser asked for.
+    if (document.readyState !== 'complete') await new Promise(r => addEventListener('load', r, { once: true }));
+    const urls = performance.getEntriesByType('resource').map(e => e.name);
+    reg.active?.postMessage({ type: 'cache', urls: [location.href, ...urls] });
+  }).catch(err => console.warn('[sw] not registered', err));
 }
 
 /** Animations are only safe to run when the document timeline is actually moving. */

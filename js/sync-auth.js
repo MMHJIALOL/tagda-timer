@@ -95,6 +95,12 @@ async function ensureSdk() {
     _sdk = { appMod, authMod, auth };
     return _sdk;
   })();
+  /* Cleared on failure, so the next caller actually retries. Held onto, a
+     rejected promise is permanent: a tab opened with no network fetched
+     gstatic once, failed, and then answered every later ensureSdk() — including
+     the one the 'online' retry in sync.js makes — with that same old
+     rejection, so sync could never start again without a reload. */
+  _initPromise.catch(() => { _initPromise = null; });
   return _initPromise;
 }
 
