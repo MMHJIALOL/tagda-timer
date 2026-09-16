@@ -4,12 +4,12 @@
    Every control writes straight into app.settings and applies live.
    =========================================================== */
 
-import { $, el, fmt, fmtDate, download, parseScrambleList } from './util.js';
+import { $, el, fmt, fmtResult, fmtDate, download, parseScrambleList } from './util.js';
 import { PRESETS, TIMER_FONTS, exportTheme, importTheme } from './theme.js';
 import { SHADER_NAMES } from './bg.js';
-import { summarize, byCase, eff, DNF, bestAvg, statWindow, bldSummary, relaySummary } from './stats.js';
+import { summarize, byCase, eff, DNF, isMoveResult, bestAvg, statWindow, bldSummary, relaySummary } from './stats.js';
 import { renderTrend, renderHistogram, renderHeatmap, renderCaseBars } from './charts.js';
-import { MODES, EVENTS, EVENT_ORDER, eventOf, relayLegEvents, relayLabel, RELAY_MAX } from './events.js';
+import { MODES, EVENTS, EVENT_ORDER, eventOf, virtualSize, relayLegEvents, relayLabel, RELAY_MAX } from './events.js';
 import { setFor } from './scramble.js';
 import { toast, confirmToast } from './toast.js';
 import { exportAll, Assets, Solves, LetterPairs } from './db.js';
@@ -17,9 +17,9 @@ import { Gear, GearLog, LOG_KINDS, newGear, newLogEntry, gearLabel,
          loadSeeds, filterByCube, markersFor, activeGearId, setActiveGearId } from './gear.js';
 import { buildAccountRow } from './sync-ui.js';
 import { DEFAULT_SPEFFZ_MAP, DEFAULT_BLD, CORNER_STICKER_KEYS, EDGE_STICKER_KEYS,
-         frontsFor, cornerStickerName, edgeStickerName, pieceAtFacelet, faceletsOfPiece,
+         frontsFor, faceLabel, pieceAtFacelet, faceletsOfPiece,
          pieceName, samePiece, diagnose } from './bldtrace.js';
-import { CORNER_NAMES, EDGE_NAMES, FACES } from './cube3.js';
+import { FACES } from './cube3.js';
 
 /* ---------------- drawer shell ---------------- */
 
@@ -311,18 +311,23 @@ export function buildAppearance(app) {
 
 const NEWLINE = String.fromCharCode(10);
 
-const fmtStat = (v) => (v === null || v === undefined) ? '—' : v === DNF ? 'DNF' : fmt(v);
+/* A session scored in moves prints its numbers in moves. Asked of the solves
+   themselves rather than of the current event, because this drawer can be
+   opened on a session you are no longer sitting in. */
+const movesSession = (list) => (list || []).some(isMoveResult);
+const fmtStat = (v, moves = false) => fmtResult(v, moves);
 
 /** One solve's time, in parentheses when the average does not count it. */
 function timeCell(solve, trimmed) {
   const v = eff(solve);
-  const txt = v === DNF ? 'DNF' : fmt(v) + (solve.penalty === '+2' ? '+' : '');
+  const txt = v === DNF ? 'DNF' : fmtResult(v, isMoveResult(solve)) + (solve.penalty === '+2' ? '+' : '');
   return trimmed ? `(${txt})` : txt;
 }
 
 /** The shareable block. Deliberately plain text — it has to survive a paste. */
 function statText(w) {
-  const lines = [`${w.label}: ${fmtStat(w.value)}`, '', 'Time List:'];
+  const lines = [`${w.label}: ${fmtStat(w.value, movesSession(w.list))}`, '',
+               movesSession(w.list) ? 'Solutions:' : 'Time List:'];
   w.list.forEach((s, i) => {
     const scramble = (s.scramble || '').replace(/\s+/g, ' ').trim();
     lines.push(`${i + 1}. ${timeCell(s, w.trimmed.has(w.start + i))}   ${scramble}`);
@@ -350,7 +355,7 @@ export function buildStatDetail(app, kind) {
       el('div', { class: 'stat-detail-head' },
         el('div', {},
           el('div', { class: 'sd-label', text: w.label }),
-          el('div', { class: 'sd-value', text: fmtStat(w.value) })),
+          el('div', { class: 'sd-value', text: fmtStat(w.value, movesSession(w.list)) })),
         el('div', { class: 'sd-actions' },
           el('button', {
             class: 'btn primary', text: 'share card',
@@ -486,6 +491,9 @@ export function buildSpotify(app) {
             { value: 'background', label: 'Artwork' },
             { value: 'both', label: 'Both' },
           ], app.settings.spotifyTint, v => set('spotifyTint', v))),
+          row('Background gradient', toggle(app.settings.spotifyGradient !== false,
+            v => set('spotifyGradient', v)),
+            'album colours in the animated and gradient backgrounds'),
           row('Now playing panel', toggle(app.settings.showSpotifyPanel,
             v => { set('showSpotifyPanel', v); app.syncSpotifyPanel?.(); }),
             'the cover, track and controls in the sidebar'),
@@ -505,9 +513,18 @@ export function buildSpotify(app) {
          visitors, so it is no longer a corner case. It stays folded because the
          Premium requirement makes it a dead end for a lot of people, and the
          hero above now says so before anyone opens it. */
+      const DASHBOARD = 'https://developer.spotify.com/dashboard';
+      const dashLink = (text) => el('a', { class: 'spot-dash', href: DASHBOARD,
+        target: '_blank', rel: 'noopener noreferrer', text });
       const adv = el('details', { class: 'adv' },
-        el('summary', { text: 'Set up your own connection' }),
+        el('summary', {},
+          el('div', {},
+            el('div', { class: 'adv-title', text: 'Set up your own connection' }),
+            el('div', { class: 'adv-sub', text:
+              `Not one of the ${st.devModeLimit}? Make your own in about five minutes.` }))),
         el('div', { class: 'adv-body' },
+          el('a', { class: 'btn spot-go', href: DASHBOARD, target: '_blank',
+            rel: 'noopener noreferrer', text: 'Open the Spotify Developer Dashboard ↗' }),
           el('div', { class: 'hint-note', text:
             `Spotify only allows ${st.devModeLimit} people to use this site’s connection, and `
             + 'there is no way to raise that — Spotify stopped granting bigger limits to '
@@ -524,8 +541,8 @@ export function buildSpotify(app) {
             : null,
           el('div', { class: 'setup-steps' },
             step(1, 'Create an app',
-              'Go to developer.spotify.com/dashboard, sign in, and press Create app. '
-              + 'Give it any name you like and tick "Web API".'),
+              'Go to ', dashLink('developer.spotify.com/dashboard'),
+              ', sign in, and press Create app. Give it any name you like and tick "Web API".'),
             step(2, 'Add the redirect address',
               'In the app’s settings, paste the address below into "Redirect URIs" and save. '
               + 'It has to match exactly, character for character.'),
@@ -572,12 +589,12 @@ function ownAppRow(app, st, render) {
 }
 
 /** One numbered step in the setup list. */
-function step(n, title, detail) {
+function step(n, title, ...detail) {
   return el('div', { class: 'setup-step' },
     el('span', { class: 'ss-n', text: String(n) }),
     el('div', {},
       el('div', { class: 'ss-t', text: title }),
-      el('div', { class: 'ss-d', text: detail })));
+      el('div', { class: 'ss-d' }, ...detail)));
 }
 
 /* =========================================================
@@ -602,12 +619,25 @@ export function buildSettings(app) {
           { value: 'timer', label: 'Keyboard' },
           { value: 'manual', label: 'Type them' },
           { value: 'stackmat', label: 'Stackmat (aux)' },
+          { value: 'virtual', label: 'Virtual cube' },
         ], S.inputMode || 'timer', (v) => {
           set('inputMode', v);
           // The note under this row is different for every mode, so redraw.
           openDrawer('Settings', buildSettings(app));
         }),
-          'the spacebar, a time you type in, or a Stackmat plugged into the mic socket'),
+          'the spacebar, a time you type in, a Stackmat, or a cube you turn with the keyboard'),
+        S.inputMode === 'virtual'
+          ? el('div', { class: 'hint-note', html:
+              'Turn the cube with csTimer&rsquo;s keys: <b>I K</b> R, <b>D E</b> L, <b>J F</b> U, ' +
+              '<b>S L</b> D, <b>H G</b> F, <b>W O</b> B, <b>U M</b> r, <b>V R</b> l, <b>5 X</b> M, ' +
+              '<b>T B</b> x, <b>; A</b> y, <b>P Q</b> z (full list under <b>?</b>). The first turn starts ' +
+              'the clock and a solved cube stops it; <b>Space</b> starts inspection, <b>Esc</b> resets. ' +
+              'While it is on, those letters are turns, not shortcuts &mdash; the rest are in ' +
+              '<b>Ctrl+K</b>. For 2x2 to 7x7 only' +
+              (virtualSize(S.event) ? '' : ' &mdash; this event stays on the spacebar') +
+              ', and its solves go in a &ldquo;Virtual&rdquo; session per event so they never mix ' +
+              'with your real averages.' })
+          : null,
         S.inputMode === 'manual'
           ? el('div', { class: 'hint-note', html:
               'Type the time under the clock and press <b>Enter</b>. It understands ' +
@@ -644,6 +674,11 @@ export function buildSettings(app) {
         row('Start with the mouse', toggle(S.mouseTimer, v => set('mouseTimer', v)), 'click the screen to start and stop — touch always works'),
         row('Confirm misfires', toggle(S.confirmShortSolves, v => set('confirmShortSolves', v)), 'ask before recording a sub-0.5s solve'),
         row('Sound on PB', toggle(S.soundOnPB, v => set('soundOnPB', v))),
+        row('Metronome', toggle(S.metronome, v => set('metronome', v)),
+          'a click on the beat while the timer runs — one move per beat to practise a smooth cross and F2L'),
+        row('Metronome speed', slider(S.metronomeBpm, 30, 240, 5, v => set('metronomeBpm', v), v => v + ' bpm')),
+        row('Metronome window', toggle(S.metroOpen, v => set('metroOpen', v)),
+          'a floating beat meter with its own start/stop and bpm — it keeps ticking with the timer idle, for drilling an algorithm to a beat. Drag it anywhere; same speed as the setting above.'),
         row('Multiphase splits', chips([
           { value: 0, label: 'Off' },
           { value: 2, label: '2' },
@@ -663,6 +698,16 @@ export function buildSettings(app) {
           'how many cases you have never seen may be introduced before you switch it off and on again'),
         row('Counts as slow', slider(S.learnSlowFactor, 1.1, 3, .1, v => set('learnSlowFactor', v), v => v.toFixed(1) + '×'),
           'a solve this much slower than your own average on the case holds it back instead of advancing it'),
+      ),
+
+      group('Fewest Moves',
+        row('Attempt length', chips([
+          { value: 60, label: '60 min' },
+          { value: 30, label: '30 min' },
+          { value: 10, label: '10 min' },
+          { value: 1, label: '1 min' },
+        ], S.fmcMinutes ?? 60, v => set('fmcMinutes', +v)),
+          '60 minutes is the WCA limit (E2b). The shorter ones are practice — the result is still judged the same way.'),
       ),
 
       group('Multi-blind',
@@ -1017,7 +1062,8 @@ export function buildStats(app) {
       el('span', { class: 'bs-v', text: v }),
       sub ? el('span', { class: 'bs-sub', text: sub }) : null);
 
-    const f = v => v === null ? '—' : v === DNF ? 'DNF' : fmt(v);
+    const moves = solves.some(isMoveResult);
+    const f = v => fmtResult(v, moves);
 
     body.append(
       group('Session',
@@ -1049,7 +1095,7 @@ export function buildStats(app) {
 
     const drawTrend = (list, markers) => {
       renderTrend(trendHost, list, (s, i) => {
-        hoverInfo.textContent = s ? `#${i + 1}  ${eff(s) === DNF ? 'DNF' : fmt(eff(s))}  ·  ${s.scramble.slice(0, 60)}` : '';
+        hoverInfo.textContent = s ? `#${i + 1}  ${fmtResult(eff(s), isMoveResult(s))}  ·  ${s.scramble.slice(0, 60)}` : '';
       }, { markers });
     };
 
@@ -1190,9 +1236,13 @@ export function buildStats(app) {
    replace.
    ========================================================= */
 
-/** Every sticker of a piece type, as face-first names — a buffer is a sticker. */
-const CORNER_STICKERS = CORNER_NAMES.flatMap((_, i) => [0, 1, 2].map(j => cornerStickerName(i, j)));
-const EDGE_STICKERS   = EDGE_NAMES.flatMap((_, i) => [0, 1].map(j => edgeStickerName(i, j)));
+/* Every sticker of a piece type, as face-first names — a buffer is a sticker.
+   These are the scheme's own keys rather than names spun out of CORNER_NAMES:
+   a corner sticker has two spellings ("UFR" and "URF" are one sticker), and
+   the letter map is keyed by only one of them, so generating the other set
+   left half the corner list lettered "?" and the saved buffer unselectable. */
+const CORNER_STICKERS = CORNER_STICKER_KEYS;
+const EDGE_STICKERS   = EDGE_STICKER_KEYS;
 
 export function buildBlindsolving(app) {
   return (body) => {
@@ -1206,6 +1256,16 @@ export function buildBlindsolving(app) {
     const redraw = () => openDrawer('Blindsolving', buildBlindsolving(app));
 
     const lettersOf = () => ({ ...DEFAULT_SPEFFZ_MAP, ...(bld().letters || {}) });
+
+    /* A buffer is picked as a sticker, because which sticker it is decides
+       the orientation of every shot — but nobody thinks of theirs as "UR",
+       they think of it as "B". So the list says both, in letter order. */
+    const bufferOptions = (stickers) => {
+      const letters = lettersOf();
+      return stickers
+        .map(v => ({ value: v, label: `${letters[v] || '?'} · ${v}`, key: letters[v] || 'ZZ' }))
+        .sort((a, b) => a.key.localeCompare(b.key) || a.value.localeCompare(b.value));
+    };
 
     /* The scheme editor. Corners and edges each carry their own A-X, so
        duplicates are only duplicates within one of the two halves. */
@@ -1251,23 +1311,27 @@ export function buildBlindsolving(app) {
         'tracer — change a buffer and every breakdown from the next scramble on is re-read against it.' }),
 
       group('Buffers',
-        row('Edge buffer', select(EDGE_STICKERS.map(v => ({ value: v, label: v })), bld().edgeBuffer,
+        row('Edge buffer', select(bufferOptions(EDGE_STICKERS), bld().edgeBuffer,
           v => set({ edgeBuffer: v })), 'the sticker you shoot from, not just the piece'),
-        row('Corner buffer', select(CORNER_STICKERS.map(v => ({ value: v, label: v })), bld().cornerBuffer,
+        row('Corner buffer', select(bufferOptions(CORNER_STICKERS), bld().cornerBuffer,
           v => set({ cornerBuffer: v }))),
       ),
 
       group('Orientation',
-        row('Up face', select(FACES.map(f => ({ value: f, label: f })), up, (v) => {
+        row('Up face', select(FACES.map(f => ({ value: f, label: faceLabel(f) })), up, (v) => {
           const fronts = frontsFor(v);
           set({ orientation: { up: v, front: fronts.includes(front) ? front : fronts[0] } });
           redraw();
         }), 'which face was up when you assigned the letters'),
-        row('Front face', select(frontsFor(up).map(f => ({ value: f, label: f })), front,
+        row('Front face', select(frontsFor(up).map(f => ({ value: f, label: faceLabel(f) })), front,
           v => set({ orientation: { up, front: v } }))),
+        row('Turn it back before memo', toggle(bld().reorient !== false, v => set({ reorient: v })),
+          'on: the faces above always mean the same colours. off: you memo the cube exactly as the '
+          + 'scramble hands it to you, wide moves and all'),
         el('div', { class: 'hint-note', text:
-          'The default is the WCA one — white on top, green on front. A scramble is always applied ' +
-          'in that orientation, so this says how you hold the cube afterwards, not how it was scrambled.' }),
+          'The default is the WCA one — white on top, green on front. A WCA blind scramble ends in '
+          + 'wide moves, so the cube arrives turned; leave the switch on and the tracer turns it back '
+          + 'the way you do, rather than renaming every letter.' }),
       ),
 
       group('Letter scheme',
@@ -1615,7 +1679,7 @@ export function buildHistory(app) {
       const cls = [s.penalty === 'DNF' ? 'dnf' : '', s.penalty === '+2' ? 'plus2' : '', v === best ? 'pb' : ''].join(' ');
       const r = el('div', { class: `st-row ${cls}` },
         el('span', { class: 'st-i', text: String(solves.length - i) }),
-        el('span', { class: 'st-t', text: v === DNF ? 'DNF' : fmt(v) + (s.penalty === '+2' ? '+' : '') }),
+        el('span', { class: 'st-t', text: v === DNF ? 'DNF' : fmtResult(v, isMoveResult(s)) + (s.penalty === '+2' ? '+' : '') }),
         el('span', { class: 'st-s', text: s.scramble.replace(/\n/g, ' | ') }),
         el('span', { class: 'st-d', text: fmtDate(s.createdAt) }),
       );
@@ -1628,7 +1692,7 @@ export function buildHistory(app) {
         el('div', { class: 'lbl' }, el('span', { text: `${solves.length} solves` }),
           el('span', { class: 'sub', text: 'click a row for penalties, comment, delete' })),
         el('button', { class: 'ghost-btn', text: 'copy all', onclick: () => app.copyToast(
-          app.solves.map((s, i) => `${i + 1}. ${eff(s) === DNF ? 'DNF' : fmt(eff(s))}   ${(s.scramble || '').replace(/\s+/g, ' ')}`).join(NEWLINE),
+          app.solves.map((s, i) => `${i + 1}. ${fmtResult(eff(s), isMoveResult(s))}   ${(s.scramble || '').replace(/\s+/g, ' ')}`).join(NEWLINE),
           'Session') }),
       ),
       table,
@@ -1904,6 +1968,15 @@ export const SHORTCUTS = [
   ['Careful', [
     ['Ctrl + Shift + Del', 'clear the whole session'],
   ]],
+  // Only while Settings > Timing input is "Virtual cube"; these letters then
+  // turn the cube instead of doing what the lists above say.
+  ['Virtual cube', [
+    ['I  K', "R  /  R'"], ['D  E', "L  /  L'"], ['J  F', "U  /  U'"], ['S  L', "D  /  D'"],
+    ['H  G', "F  /  F'"], ['W  O', "B  /  B'"], ['U  M', "r  /  r'"], ['V  R', "l  /  l'"],
+    [',  C', "u  /  u'"], ['Z  /', "d  /  d'"], ['5  6  X  .', "M  /  M'"],
+    ['T  Y  B  N', "x  /  x'"], [';  A', "y  /  y'"], ['P  Q', "z  /  z'"],
+    ['Space', 'inspection'], ['Esc', 'reset the cube'],
+  ]],
 ];
 
 export function buildShortcuts() {
@@ -1930,12 +2003,22 @@ export function buildShortcuts() {
    ABOUT
    ========================================================= */
 
-const IG_HANDLE = 'cubingngagng';
+export const IG_HANDLE = 'cubingngagng';
 const IG_PROFILE = `https://instagram.com/${IG_HANDLE}`;
 const IG_REELS = `https://instagram.com/${IG_HANDLE}/reels/`;
-const GH_HANDLE = 'MMHJIALOL';
-const GH_PROFILE = `https://github.com/${GH_HANDLE}`;
-const AVATAR = 'assets/ishaan.jpg';
+export const GH_HANDLE = 'MMHJIALOL';
+export const GH_PROFILE = `https://github.com/${GH_HANDLE}`;
+export const IG_PROFILE_URL = IG_PROFILE;
+export const AVATAR = 'assets/ishaan.jpg';
+
+/** The raceName that marks a leaderboard/room row as the site owner's — see ownercard.js. */
+export const OWNER_NAME = 'cubingngagng';
+
+export const OWNER_BIO =
+  'Speedcuber, and the person who built this timer. I post solves, reconstructions and ' +
+  'cubing bits on Instagram — come say hello. Tagda Timer is the timer I wanted for my own ' +
+  'practice: WCA-legal random-state scrambles, everything stored on your own machine by ' +
+  'default, with an optional account if you want your solves synced across devices.';
 
 export function buildAbout(app) {
   return (body) => {
@@ -1978,11 +2061,7 @@ export function buildAbout(app) {
           el('div', {},
             el('div', { class: 'about-name', text: 'Ishaan' }),
             el('div', { class: 'about-handle', text: '@' + IG_HANDLE }))),
-        el('div', { class: 'about-bio', text:
-          'Speedcuber, and the person who built this timer. I post solves, reconstructions and ' +
-          'cubing bits on Instagram — come say hello. Tagda Timer is the timer I wanted for my own ' +
-          'practice: WCA-legal random-state scrambles, everything stored on your own machine, no ' +
-          'account and no server.' }),
+        el('div', { class: 'about-bio', text: OWNER_BIO }),
       ),
 
       group('Find me',
@@ -2418,7 +2497,14 @@ export function buildDaily(app) {
           ? el('div', { class: 'hint-note', text: 'You have already submitted today’s attempt for this event.' })
           : el('button', {
               class: 'btn primary full', text: 'Open the Scramble of the Day',
-              onclick: () => { closeDrawer(); $('#btn-daily').click(); },
+              onclick: async () => {
+                /* The window solves in the timer's event (see Daily#engage), so
+                   opening it on the event picked here means moving the timer
+                   there too — otherwise the window would follow the timer
+                   straight back to whatever it was on. */
+                if (app.settings.event !== ctl.eventId) await app.setEvent(ctl.eventId);
+                closeDrawer(); $('#btn-daily').click();
+              },
             }),
         row('Event', select(options, ctl.eventId, (v) => { ctl.setEvent(v); render(); })),
       ));

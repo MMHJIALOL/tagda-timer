@@ -195,24 +195,75 @@ function ac() {
   return audioCtx;
 }
 
+function tone(c, freq, ms, type, gain, t, attack = 0.012) {
+  const osc = c.createOscillator();
+  const g = c.createGain();
+  osc.type = type; osc.frequency.value = freq;
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(gain, t + attack);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + ms / 1000);
+  osc.connect(g); g.connect(c.destination);
+  osc.start(t); osc.stop(t + ms / 1000 + 0.02);
+}
+
 export function beep(freq = 880, ms = 130, type = 'sine', gain = 0.16) {
+  try { const c = ac(); tone(c, freq, ms, type, gain, c.currentTime); }
+  catch { /* audio unavailable */ }
+}
+
+/**
+ * Metronome click at `bpm`; 0 stops it.
+ *
+ * Clicks are booked on the audio clock a little ahead of time rather than fired
+ * from setInterval, so a heavy frame (the 3D cube, a stats redraw) cannot push a
+ * beat late — the interval only has to wake often enough to book the next one.
+ */
+let metro = null;
+export function metronome(bpm, onBeat = null) {
+  clearInterval(metro); metro = null;
+  if (!bpm) return;
   try {
     const c = ac();
-    const osc = c.createOscillator();
-    const g = c.createGain();
-    osc.type = type; osc.frequency.value = freq;
-    g.gain.setValueAtTime(0, c.currentTime);
-    g.gain.linearRampToValueAtTime(gain, c.currentTime + 0.012);
-    g.gain.exponentialRampToValueAtTime(0.0001, c.currentTime + ms / 1000);
-    osc.connect(g); g.connect(c.destination);
-    osc.start(); osc.stop(c.currentTime + ms / 1000 + 0.02);
+    const gap = 60 / bpm;
+    let next = c.currentTime;
+    let beat = 0;
+    const book = () => {
+      // A throttled background tab wakes late: skip the missed beats, never burst them.
+      if (next < c.currentTime) next = c.currentTime;
+      while (next < c.currentTime + 0.1) {
+        tone(c, 1600, 35, 'square', 0.1, next, 0.003);
+        // The visual beat is booked off the same audio time as the click, so the
+        // meter cannot drift away from what you hear even when a frame is late.
+        if (onBeat) setTimeout(onBeat, Math.max(0, (next - c.currentTime) * 1000), beat);
+        beat++;
+        next += gap;
+      }
+    };
+    book();
+    metro = setInterval(book, 25);
   } catch { /* audio unavailable */ }
 }
 
-/** Rising three-note chime for a personal best. */
+/* A context first made outside a user gesture starts suspended, and resuming it
+   is async — so the first PB chime of a session used to land late or not at all.
+   Made on the first key or tap instead, while the browser still allows it. */
+const warm = () => {
+  try { ac(); } catch { /* audio unavailable */ }
+  removeEventListener('keydown', warm, true);
+  removeEventListener('pointerdown', warm, true);
+};
+addEventListener('keydown', warm, true);
+addEventListener('pointerdown', warm, true);
+
+/** Rising four-note chime for a personal best. */
 export function chime() {
-  [523.25, 659.25, 783.99, 1046.5].forEach((f, i) =>
-    setTimeout(() => beep(f, 260, 'triangle', 0.13), i * 85));
+  // Booked on the audio clock, not setTimeout: the times list re-renders right
+  // after a solve, and timers stuck behind that were the lag you could hear.
+  try {
+    const c = ac();
+    [523.25, 659.25, 783.99, 1046.5].forEach((f, i) =>
+      tone(c, f, 260, 'triangle', 0.13, c.currentTime + i * 0.085));
+  } catch { /* audio unavailable */ }
 }
 
 /**

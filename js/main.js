@@ -2,27 +2,29 @@
    Tagda Timer — application wiring
    =========================================================== */
 
-import { $, $$, el, uid, fmt, fmtLive, clamp, copy, download, toCSV, debounce,
+import { $, $$, el, uid, fmt, fmtLive, fmtResult, clamp, copy, download, toCSV, debounce,
          parseTimeInput, parseScrambleList } from './util.js';
 import { Solves, Sessions, KV, Assets, LetterPairs, importAll, onWrite } from './db.js';
 import { activeGearId, Gear, gearLabel } from './gear.js';
-import { EVENTS, EVENT_ORDER, MODES, modesForEvent, eventOf, modeOf,
+import { EVENTS, EVENT_ORDER, MODES, modesForEvent, eventOf, modeOf, virtualSize,
          relayLabel } from './events.js';
-import { ScrambleQueue, setFor, cubingAvailable, generate } from './scramble.js';
+import { ScrambleQueue, setFor, loadSetFor, previewOf, cubingAvailable, generate } from './scramble.js';
 import { createLearn } from './learnmode.js';
 import { Timer, INSPECT_MS } from './timer.js';
 import { Background } from './bg.js';
 import { CubeView } from './cube.js';
 import { makeDraggable } from './drag.js';
 import { flash, shockwave, confetti, chime, callout, beep } from './fx.js';
-import { summarize, eff, DNF, bestSingle, bestAvg, trimmedIndices, byCase, sessionBests, rollingSeries, statWindow, STAT_LABELS } from './stats.js';
+import { mountMetro, metroExternal } from './metro.js';
+import { summarize, eff, DNF, isMoveResult, bestSingle, bestAvg, trimmedIndices, byCase, sessionBests, rollingSeries, statWindow, STAT_LABELS } from './stats.js';
 import { renderMiniTrend } from './charts.js';
-import { DEFAULTS, loadSettings, saveSettings, applyTheme, applyBackground, themeColors, setAlbumTint } from './theme.js';
+import { DEFAULTS, loadSettings, saveSettings, applyTheme, applyBackground, themeColors, setAlbumTint, paintBackgroundColors } from './theme.js';
 import { loadLibraryPrefs } from './alglibrary.js';
 import { initTiles, applyTiles, measureLayout } from './tiles.js';
 import { SPOTIFY_CLIENT_ID, DEV_MODE_LIMIT, OWNER_NEEDS_PREMIUM } from './spotifyapp.js';
 import { popover, closePopover, popoverOpen } from './popover.js';
-import { trace, traceRecord, BLD_EVENTS, TRACEABLE_EVENTS } from './bldtrace.js';
+import { trace, traceRecord, BLD_EVENTS, TRACEABLE_EVENTS, DEFAULT_SPEFFZ_MAP,
+         FACE_COLOURS } from './bldtrace.js';
 import { toast, confirmToast } from './toast.js';
 // The pure day math only — see js/dayid.js. Imported eagerly on purpose:
 // the top bar needs today's date on first paint, and this file has no
@@ -99,6 +101,25 @@ const loadRecon = lazy(() => import('./recon.js'), m => (_recon = m));
 
 let _xp1 = null;
 const loadXp1 = lazy(() => import('./xplus1.js'), m => (_xp1 = m));
+
+/* The Fewest Moves workspace. Only 333fm ever asks for it, and it drags in
+   the strict notation reader and the cube model with it. */
+let _fmc = null;
+const loadFmcModule = lazy(() => import('./fmcmode.js'), m => (_fmc = m));
+
+/** The live FMC controller, or null if the module has never been loaded. */
+const fmcCtl = () => (_fmc ? _fmc.getFmc(app, FMC_HOOKS) : null);
+/** Is an attempt running right now? Answerable before the module exists. */
+const fmcAttempting = () => movesMode() && !!fmcCtl()?.attempting;
+/** Is the event we are on scored in moves rather than in seconds? */
+const movesMode = () => !!eventOf(app.settings.event).fmc;
+/* Whether the numbers OVER this session are move counts. Not the same
+   question as the one above: switching a session's event leaves its solves
+   where they are, so a session full of Fewest Moves attempts looked at from
+   3x3 would otherwise print "0.03" for a 31-move solve. */
+const movesStats = () => movesMode() || app.solves.some(isMoveResult);
+/** One session-wide number, printed in the unit that session is scored in. */
+const fmtNow = (v) => fmtResult(v, movesStats());
 
 /* Race mode, and the transport under it, are the largest thing on this list
    and the one fewest sessions ever touch — nothing about it is fetched until
@@ -185,7 +206,18 @@ const refit = () => {
   requestAnimationFrame(() => fitScrambleToLine($('#scramble-text')));
 };
 
+/* One at a time. The chip, the palette and the panel's button all land here,
+   and it awaits a connect, a database read and a three-second title card — a
+   second press inside that gap played a second intro over the first. */
+let _sotdOpening = false;
+
 async function openSotd() {
+  if (_sotdOpening || _sotdUi?.sotdOpen()) return;
+  _sotdOpening = true;
+  try { await enterSotd(); } finally { _sotdOpening = false; }
+}
+
+async function enterSotd() {
   let mod, ui;
   try {
     [mod, ui] = await Promise.all([loadDaily(), loadSotdUi()]);
@@ -203,11 +235,10 @@ async function openSotd() {
     toast('Sign in with the account icon to take part in today’s scramble', { long: true });
   }
 
-  /* engage(), not attempt(). The window arms itself the moment today's
-     scramble exists and holds the timer shut until then — checking once here
-     was the bug that made the whole window behave like an ordinary timer when
-     the scramble happened to be a beat late, which is the usual case. */
-  ctl.engage();
+  /* Pointed at the timer's event before anything is asked about it — the
+     own-result check below is a check of one event. engage() does the same,
+     and by then this has made it a no-op. */
+  ctl.setEvent(app.settings.event);
 
   /* Whatever drawer was open stays open behind the window otherwise — the
      window subtracts the chrome it knows about by class, and the drawer is
@@ -215,6 +246,38 @@ async function openSotd() {
      strip down the side of a mode that is supposed to have nothing in it but
      the scramble and the timer. */
   closeDrawer();
+
+  /* The title card, for as long as today is still ahead of you. Once
+     the day's scramble is submitted the trophy has been earned and the
+     ceremony is just a delay in front of the board, so it stops — until
+     tomorrow, when `sotdDoneToday()` turns over on its own.
+
+     Asked of the database first, not only of the note: the note is written
+     when a result lands in THIS browser, so on a fresh one it says nothing
+     and the intro played for an account that had already submitted. Bounded,
+     so a slow read costs a moment and never the window.
+
+     It goes here rather than on the button so that a deployment with no
+     leaderboard, or a connect that fails, never spends three seconds of
+     somebody's time on the way to an error. Awaited, so the window
+     opens into a clean frame. */
+  await ctl.ownResultKnown(1500);
+  if (!ctl.submittedToday && !sotdDoneToday()) {
+    // A title card that fails to load is not a reason to lose the window.
+    try { await (await import('./sotd-intro.js')).playSotdIntro(); }
+    catch (err) { console.warn('[sotd] intro failed', err); }
+  }
+
+  /* engage(), not attempt(). The window arms itself the moment today's
+     scramble exists and holds the timer shut until then — checking once here
+     was the bug that made the whole window behave like an ordinary timer when
+     the scramble happened to be a beat late, which is the usual case.
+
+     After the intro rather than before it, and immediately before the window
+     that disengages it on exit: nothing between the two can now throw and
+     leave the timer engaged with no window around it, which only a reload
+     could undo. */
+  ctl.engage();
 
   ui.openSotd(app, ctl, {
     onExit: () => {
@@ -294,7 +357,7 @@ async function openXp1() {
   try { m = await loadXp1(); }
   catch (err) { return lazyFailed('the Cross + 1 trainer', err); }
   timer.reset?.();
-  return m.openXp1({ timerScramble: () => app.scramble?.scramble || '' });
+  return m.openXp1({ timerScramble: () => app.scramble?.scramble || '', library: reconLibrary() });
 }
 
 /**
@@ -313,9 +376,9 @@ async function openRecon(opts) {
 /** The session's solves, as things the workbench can jump straight into. */
 function reconLibrary() {
   return app.solves.filter(s => s.scramble).slice(-60).reverse().map((s) => ({
-    label: `#${app.solves.indexOf(s) + 1} · ${eff(s) === DNF ? 'DNF' : fmt(eff(s))}`,
+    label: `#${app.solves.indexOf(s) + 1} · ${fmtResult(eff(s), isMoveResult(s))}`,
     scramble: s.scramble,
-    moves: s.recon || '',
+    moves: s.recon || s.fmcSolution || '',
     save: (moves) => { s.recon = moves; Solves.put(s).catch(() => {}); },
   }));
 }
@@ -328,8 +391,10 @@ function reconstructSolve(solve, scramble = null) {
   const n = app.solves.indexOf(solve) + 1;
   return openRecon({
     scramble: use,
-    title: `#${n} · ${eff(solve) === DNF ? 'DNF' : fmt(eff(solve))}`,
-    moves: solve.recon || '',
+    title: `#${n} · ${fmtResult(eff(solve), isMoveResult(solve))}`,
+    // An FMC solve already has its solution written down — the workbench opens
+    // on that rather than on an empty box you would have to type it into again.
+    moves: solve.recon || solve.fmcSolution || '',
     onSave: (moves) => { solve.recon = moves; Solves.put(solve).catch(() => {}); },
     library: reconLibrary(),
   });
@@ -417,6 +482,15 @@ async function init() {
   app.session = app.sessions.find(s => s.id === app.settings.sessionId) || app.sessions[0];
   app.settings.sessionId = app.session.id;
   if (app.session.event) app.settings.event = app.session.event;
+
+  /* The algorithm library's "Train these cases" lands here. It is applied
+     before the timer and the scramble queue are built, so the first scramble
+     of the session is already the one you asked for rather than a 3x3 you have
+     to sit through. */
+  await applyTrainerHandoff();
+  /* A mode whose cases live in the algorithm library has to have them here
+     before learn mode and the case picker look for them. */
+  await loadSetFor(app.settings.mode);
   // A reload leaves the room behind, so it has to leave the room's session
   // behind too — see restoreFromRace.
   restoreFromRace();
@@ -494,6 +568,12 @@ async function init() {
   syncSpotifyPanel();
   startAlbumTheming().catch(err => console.warn('[spotify] not started', err));
 
+  // Offline: the page itself is the only thing that ever needed the network,
+  // so a worker that keeps a copy of it is the whole feature. Registered last
+  // and never awaited — a browser that refuses it (private mode, an insecure
+  // origin, a policy) still gets exactly the app it got before.
+  registerServiceWorker();
+
   // Cloud sync, if this browser was ever signed in. Same shape as the line
   // above: a visitor who has never signed in never downloads any of it.
   startCloudSync().catch(err => console.warn('[sync] not started', err));
@@ -528,6 +608,25 @@ async function init() {
     history.replaceState(null, '', location.pathname);
     app.joinRace(invited);
   }
+}
+
+/**
+ * Also hands the worker the list of what this load actually fetched. The very
+ * first visit is the one that installs it, so every module, stylesheet and
+ * font of that load went out before the worker existed to see them — this is
+ * what puts them in the cache without keeping a hand-written list of the
+ * boot graph in sw.js for someone to forget to update.
+ */
+function registerServiceWorker() {
+  if (!('serviceWorker' in navigator)) return;
+  navigator.serviceWorker.register('/sw.js').then(async () => {
+    const reg = await navigator.serviceWorker.ready;
+    // After load, so the late arrivals — the cube module, the shader, the
+    // fonts — are in the list too, not just what the parser asked for.
+    if (document.readyState !== 'complete') await new Promise(r => addEventListener('load', r, { once: true }));
+    const urls = performance.getEntriesByType('resource').map(e => e.name);
+    reg.active?.postMessage({ type: 'cache', urls: [location.href, ...urls] });
+  }).catch(err => console.warn('[sw] not registered', err));
 }
 
 /** Animations are only safe to run when the document timeline is actually moving. */
@@ -822,18 +921,26 @@ async function nextScramble({ clear = false } = {}) {
    actually looking at. Going through dailyCtl() would have made the guard
    depend on a lazily-loaded module being loaded, which is true in the app and
    is exactly the sort of thing that is quietly false somewhere else. */
+/* A running FMC attempt owns its scramble for the same reason: it was frozen
+   when the clock started, and the solution in the box is being judged against
+   that one. Stepping the scramble under it would leave the two disagreeing. */
+/** Why the scramble will not step. Two features hold it, for two reasons. */
+const spokenForWhy = () => (fmcAttempting()
+  ? 'Your attempt is on this scramble — submit or abandon it first'
+  : 'Today’s scramble is the only one in here');
+
 const scrambleIsSpokenFor = () =>
-  document.body.classList.contains('sotd') || !!dailyCtl()?.engaged;
+  document.body.classList.contains('sotd') || !!dailyCtl()?.engaged || fmcAttempting();
 
 function prevScramble() {
-  if (scrambleIsSpokenFor()) { toast('Today’s scramble is the only one in here'); return; }
+  if (scrambleIsSpokenFor()) { toast(spokenForWhy()); return; }
   if (app.historyPos <= 0) { toast('No earlier scramble'); return; }
   app.historyPos--;
   showScramble(app.scrambleHistory[app.historyPos]);
 }
 
 function forwardScramble() {
-  if (scrambleIsSpokenFor()) { toast('Today’s scramble is the only one in here'); return; }
+  if (scrambleIsSpokenFor()) { toast(spokenForWhy()); return; }
   if (app.historyPos >= app.scrambleHistory.length - 1) { nextScramble(); return; }
   app.historyPos++;
   showScramble(app.scrambleHistory[app.historyPos]);
@@ -964,6 +1071,7 @@ function showScramble(s, silent = false) {
     const holdView = holdMode.view || app.settings.cubeView;
     cube.configure(ev.puzzle, holdView === 'LL3' ? '3D' : holdView);
     cube.set('');
+    resetVcube();
     return;
   }
 
@@ -1034,7 +1142,8 @@ function showScramble(s, silent = false) {
      Switching leg swaps the puzzle on the player that is already there. */
   cube.configure(legEv.puzzle, view === 'LL3' ? '3D' : view);
   cube.setOrientation(previewOrientation(mode, legEv));
-  cube.set(leg ? leg.scramble : s.scramble);
+  cube.set(leg ? leg.scramble : (s.preview || s.scramble));
+  resetVcube();
 
   if (s.official === false && mode.kind === 'wca' && !cubingAvailable()) {
     node.title = 'Offline fallback scramble — not competition legal';
@@ -1149,6 +1258,8 @@ function wireTimer() {
 
   timer.addEventListener('state', (e) => {
     const st = e.detail.state;
+    // Starting the next attempt answers a still-open misfire prompt: keep it.
+    if (st !== 'idle' && st !== 'cooldown') pendingMisfire?.dismiss();
     /* The room learns that you are inspecting or solving, and never how far
        into it you are. A tick broadcast would be a live time by another name,
        which is the exact thing race mode exists not to leak. */
@@ -1174,6 +1285,7 @@ function wireTimer() {
     document.body.classList.toggle('holding', st === 'holding');
     document.body.classList.toggle('armed', st === 'ready');
     updateHoldBar(st);
+    metroExternal(st === 'running' && app.settings.metronome ? app.settings.metronomeBpm : 0);
 
     if (st === 'running') {
       phaseStart();
@@ -1410,13 +1522,29 @@ function wireBld() {
      boxes directly rather than hoping a resize lands at the right moment. */
   if (typeof ResizeObserver === 'function') {
     const ro = new ResizeObserver(debounce(() => bldFit(), 60));
-    for (const id of ['app', 'bld-zone']) {
+    // The panel is positioned out of the flow, so its own growth no longer
+    // shows up as the zone changing size — watch the panel itself as well.
+    for (const id of ['app', 'bld-zone', 'bld-panel']) {
       const node = document.getElementById(id);
       if (node) ro.observe(node);
     }
   }
   $('#btn-bld-settings')?.addEventListener('click', () =>
     openPanel('Blindsolving', 'buildBlindsolving', {}, app));
+  /* Two ways past the setup card, and both of them end the asking: opening
+     the drawer is itself an answer, since whatever is in there when it closes
+     is what the solver has chosen. */
+  $('#btn-bld-setup')?.addEventListener('click', () => {
+    bldConfigured();
+    openPanel('Blindsolving', 'buildBlindsolving', {}, app);
+  });
+  $('#btn-bld-setup-ok')?.addEventListener('click', () => bldConfigured());
+}
+
+/** The solver has answered the setup card — never ask again, trace from now on. */
+function bldConfigured() {
+  app.setSetting('bld', { ...app.settings.bld, configured: true });
+  app.bldChanged?.();
 }
 
 /** The trace for a scramble, computed on first reveal and then kept on it. */
@@ -1467,7 +1595,10 @@ function wirePhaseZone() {
   });
 }
 
-function renderBld() { renderBldInner(); bldFit(); }
+/* The cube preview parks in a corner the open panel can reach into, and only
+   measureLayout() knows how to move it, so a breakdown that appears or goes
+   away is a layout change like any other. */
+function renderBld() { renderBldInner(); bldFit(); app.refreshLayout?.(); }
 
 function renderBldInner() {
   const zone = $('#bld-zone');
@@ -1484,10 +1615,12 @@ function renderBldInner() {
 
   const rows = [$('#bld-edges').closest('.bld-row'), $('#bld-corners').closest('.bld-row')];
   const note = $('#bld-note');
+  const setup = $('#bld-setup');
   const show = (on) => rows.forEach(r => { if (r) r.hidden = !on; });
 
   if (!bldTraceable()) {
     show(false);
+    setup.hidden = true;
     $('#bld-parity').hidden = true;
     note.hidden = false;
     // Two different reasons, and saying the wrong one is worse than saying
@@ -1500,6 +1633,26 @@ function renderBldInner() {
         + 'wing and centre cycles would be worse than saying so.';
     return;
   }
+
+  /* Rule 2 taken to its end: if the buffers and the hold are settings, then
+     the defaults are a guess, and a guessed letter is indistinguishable from
+     a real one on screen. Ask once, then never again. */
+  if (!app.settings.bld?.configured) {
+    show(false);
+    setup.hidden = false;
+    $('#bld-parity').hidden = true;
+    note.hidden = true;
+    const b = app.settings.bld || {};
+    const letters = { ...DEFAULT_SPEFFZ_MAP, ...(b.letters || {}) };
+    const name = (st) => `${letters[st] || '?'} (${st})`;
+    const colour = (f) => `${FACE_COLOURS[f] || '?'} (${f})`;
+    $('#bld-setup-now').textContent =
+      `${name(b.edgeBuffer || 'UF')} / ${name(b.cornerBuffer || 'UFR')}, `
+      + `${colour(b.orientation?.up || 'U')} on top with ${colour(b.orientation?.front || 'F')} in front, `
+      + `${b.scheme === 'custom' ? 'your own letters' : 'Speffz'}`;
+    return;
+  }
+  setup.hidden = true;
 
   const t = bldOf(app.scramble);
   show(true);
@@ -1560,7 +1713,9 @@ function bldFitOnce() {
   const vh = innerHeight || document.documentElement.clientHeight;
   if (!vh) return;                    // measured before the window has a size
   const coreBox = core.getBoundingClientRect(), digitsBox = digits.getBoundingClientRect();
-  const over = zone.getBoundingClientRect().bottom + 18 - digitsBox.top;
+  // The panel, not the zone: the panel hangs out of the flow under the bar, so
+  // the zone's own box stops at the button and says nothing about the overlap.
+  const over = panel.getBoundingClientRect().bottom + 18 - digitsBox.top;
 
   /* How far down there is to go. Below the desktop breakpoint the rails stack
      under the timer rather than sitting beside it — and already overlap it
@@ -1764,6 +1919,8 @@ function renderPhaseBreakdown(phasesMs, timeMs) {
 /* =========================================================
    Recording a solve
    ========================================================= */
+let pendingMisfire = null;
+
 async function onSolveFinished(res) {
   resetBgColors();
   const main = $('#time-main');
@@ -1783,9 +1940,12 @@ async function onSolveFinished(res) {
 
   if (res.suspicious && app.settings.confirmShortSolves) {
     // A misfire is obvious the instant it happens — you felt the stack move.
-    // No answer means keep the solve, and the prompt gets out of the way fast.
-    const keep = await confirmToast(`${fmt(res.timeMs)} — misfire? Discard it?`, 'discard', { timeout: 1500 });
-    if (keep) { timer.reset(); nextScramble(); return; }
+    // No answer means keep the solve. It stays up long enough to read, and
+    // starting the next solve closes it early (see the timer 'state' listener).
+    pendingMisfire = confirmToast(`${fmt(res.timeMs)} — misfire? Discard it?`, 'discard', { timeout: 5000 });
+    const discard = await pendingMisfire;
+    pendingMisfire = null;
+    if (discard) { timer.reset(); nextScramble(); return; }
   }
 
   await recordSolve({
@@ -1802,10 +1962,13 @@ async function onSolveFinished(res) {
  * in the database through exactly the same path as a spacebar one — there is
  * no second version of the PB logic to drift.
  */
-async function recordSolve({ timeMs, penalty = 'none', inspectionMs = 0, splits = null }) {
+async function recordSolve({ timeMs, penalty = 'none', inspectionMs = 0, splits = null,
+                             scramble = null, fmcMoves = null, fmcSolution = '', fmcNotes = '' }) {
   const prevBest = bestSingle(app.solves);
   const prevAo5  = bestAvg(app.solves, 5).value;
   const prevAo12 = bestAvg(app.solves, 12).value;
+  const prevAo25 = bestAvg(app.solves, 25).value;
+  const prevAo100 = bestAvg(app.solves, 100).value;
 
   const race = raceCtl();
   const racing = !!(race?.inRoom && app.scramble?.race);
@@ -1847,7 +2010,10 @@ async function recordSolve({ timeMs, penalty = 'none', inspectionMs = 0, splits 
     sessionId: app.session.id,
     event: app.settings.event,
     mode: app.settings.mode,
-    scramble: app.scramble?.scramble || '',
+    /* Normally whatever is on screen. An FMC attempt hands its own over
+       instead: the scramble it froze an hour ago is the one the solution was
+       written for, whatever the board has moved on to since. */
+    scramble: scramble || app.scramble?.scramble || '',
     caseId: app.scramble?.caseId || null,
     caseName: app.scramble?.caseName || null,
     // Which cube it was done on, same shape as the case tag above. Null when
@@ -1862,6 +2028,13 @@ async function recordSolve({ timeMs, penalty = 'none', inspectionMs = 0, splits 
     // Tagged so a race time is always tellable from practice later, whichever
     // session it landed in.
     ...(racing ? { race: true, roomId: race.snap?.roomId || null } : {}),
+    /* Fewest Moves. `fmcMoves` is the result (WCA E2d) and what eff() reads;
+       `timeMs` above is how long the attempt took, kept for reference only. A
+       DNF carries the solution that failed, because looking at it afterwards
+       is most of how anyone gets better at this. */
+    ...(fmcMoves !== null ? { fmcMoves } : {}),
+    ...(fmcSolution ? { fmcSolution } : {}),
+    ...(fmcNotes ? { fmcNotes } : {}),
     ...(bld ? { bld } : {}),
     ...(phasesMs ? { phases: phasesMs } : {}),
     ...(relayParts ? { relay: relayParts } : {}),
@@ -1876,6 +2049,24 @@ async function recordSolve({ timeMs, penalty = 'none', inspectionMs = 0, splits 
     renderRelayRail();
   }
   app.solves.push(solve);
+
+  // personal bests — judged and chimed before the writes and the re-render
+  // below, which are what the sound used to wait behind.
+  const nowBest = bestSingle(app.solves);
+  const nowAo5  = bestAvg(app.solves, 5).value;
+  const nowAo12 = bestAvg(app.solves, 12).value;
+  const nowAo25 = bestAvg(app.solves, 25).value;
+  const nowAo100 = bestAvg(app.solves, 100).value;
+  const beat = (prev, now) => prev !== null && now !== null && now < prev;
+
+  let pb = null;
+  if (beat(prevBest, nowBest) && eff(solve) === nowBest) pb = ['single', nowBest];
+  else if (beat(prevAo5, nowAo5)) pb = ['ao5', nowAo5];
+  else if (beat(prevAo12, nowAo12)) pb = ['ao12', nowAo12];
+  else if (beat(prevAo25, nowAo25)) pb = ['ao25', nowAo25];
+  else if (beat(prevAo100, nowAo100)) pb = ['ao100', nowAo100];
+  if (pb && app.settings.soundOnPB) chime();
+
   await Solves.put(solve);
   /* Submitted after the local write, never before: the solve is yours whatever
      the room makes of it, and a refused upload must not cost you the time. */
@@ -1899,20 +2090,12 @@ async function recordSolve({ timeMs, penalty = 'none', inspectionMs = 0, splits 
   // a solve cheap however far back you had scrolled to read old ones.
   resetHistoryWindow();
 
-  // personal bests
-  const nowBest = bestSingle(app.solves);
-  const nowAo5  = bestAvg(app.solves, 5).value;
-  const nowAo12 = bestAvg(app.solves, 12).value;
-
-  let pbKind = null;
-  if (prevBest !== null && nowBest !== null && nowBest < prevBest && eff(solve) === nowBest) pbKind = 'single';
-  else if (prevAo5 !== null && nowAo5 !== null && nowAo5 < prevAo5) pbKind = 'ao5';
-  else if (prevAo12 !== null && nowAo12 !== null && nowAo12 < prevAo12) pbKind = 'ao12';
-
   showDelta(solve, prevBest);
   renderAll();
 
-  if (pbKind) celebratePB(pbKind);
+  // The visuals start after the render, not before: a render landing on their
+  // first frames is the confetti hitch.
+  if (pb) celebratePB(...pb);
   nextScramble();
 }
 
@@ -1936,7 +2119,10 @@ function syncTimerDisplay() {
   const last = sotdBlank ? null : app.solves.at(-1);
   const v = last ? eff(last) : null;
   $('#time-main').style.opacity = '';
-  $('#time-main').textContent = last ? (v === DNF ? 'DNF' : fmt(v)) : '0.00';
+  // Per solve, not per session: the digits are showing one result, and which
+  // unit it is in is a fact about that result rather than about the event
+  // the app happens to be set to now.
+  $('#time-main').textContent = last ? fmtResult(v, isMoveResult(last)) : (movesMode() ? '—' : '0.00');
   $('#time-penalty').textContent = last && last.penalty === '+2' ? '+2'
     : last && last.penalty === 'DNF' ? 'DNF' : '';
   $('#last-delta').hidden = true;
@@ -1950,11 +2136,11 @@ function showDelta(solve, prevBest) {
   const d = cur - prev;
   node.hidden = false;
   node.className = d <= 0 ? 'better' : 'worse';
-  node.textContent = `${d <= 0 ? '▼' : '▲'} ${fmt(Math.abs(d))} vs last`;
+  node.textContent = `${d <= 0 ? '▼' : '▲'} ${fmtResult(Math.abs(d), isMoveResult(solve))} vs last`;
   void prevBest;
 }
 
-function celebratePB(kind) {
+function celebratePB(kind, value) {
   const c = themeColors();
   const intensity = kind === 'single' ? 1 : kind === 'ao5' ? 0.7 : 0.5;
   const motion = app.settings.motion;
@@ -1968,10 +2154,20 @@ function celebratePB(kind) {
         power: 0.7 + intensity * 0.5 });
     flash(c.gold);
   }
-  if (app.settings.soundOnPB) chime();
-  const label = kind === 'single' ? 'New personal best!' : kind === 'ao5' ? 'Best ao5 of the session!' : 'Best ao12 of the session!';
-  toast(label, { kind: 'good', long: true });
+  const label = kind === 'single' ? 'New personal best!' : `Best ${kind} of the session!`;
+  toast(label, { kind: 'good', hold: true });
   const d = $('#timer-display');
+
+  // A csTimer-style ticker above the digits, gone with the toast.
+  d.querySelector('.pb-marquee')?.remove();
+  const ticker = document.createElement('div');
+  ticker.className = 'pb-marquee' + (motion === 'off' ? ' still' : '');
+  ticker.setAttribute('aria-hidden', 'true');
+  const line = document.createElement('span');
+  line.textContent = `best ${kind} · ${value === DNF ? 'DNF' : fmt(value)}`;
+  ticker.append(line);
+  d.append(ticker);
+  setTimeout(() => ticker.remove(), 5000);
   if (motion !== 'off') {
     d.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.09)' }, { transform: 'scale(1)' }],
       { duration: 640, easing: 'cubic-bezier(.34,1.56,.64,1)' });
@@ -2001,7 +2197,7 @@ app.renderAll = renderAll;
 let lastStats = {};
 function renderStats() {
   const st = summarize(app.solves);
-  const f = v => v === null || v === undefined ? '—' : v === DNF ? 'DNF' : fmt(v);
+  const f = fmtNow;
   const map = { best: st.best, ao5: st.ao5, ao12: st.ao12, ao50: st.ao50, ao100: st.ao100, mean: st.mean, mo3: st.mo3 };
 
   for (const [k, v] of Object.entries(map)) {
@@ -2051,7 +2247,7 @@ function renderStats() {
   // Session bests are O(n x len) to compute, so only when they are on screen.
   if ($('#panel-stats')?.dataset.collapsed === 'false') {
     const b = sessionBests(app.solves);
-    for (const k of ['single', 'ao5', 'ao12', 'ao50', 'ao100']) {
+    for (const k of ['single', 'mo3', 'ao5', 'ao12', 'ao50', 'ao100']) {
       const node = $('#b-' + k);
       if (node) node.textContent = f(b[k]);
     }
@@ -2085,6 +2281,14 @@ let histSigs = [];
 const AVG_MIN = 3, AVG_MAX = 1000, AVG_COLS_MAX = 3;
 
 function avgCols() {
+  /* A Fewest Moves round is a mean of 3 (WCA 9b4a), so that is the column
+     worth having beside the attempts — and the only one. A rolling ao12 of
+     one-hour attempts is not a statistic anybody keeps, and three columns of
+     them invite reading the session as a speed session in the wrong unit.
+     An "average" of three trims nothing (trimCount is 0 below five), so the
+     ao3 the list already knows how to compute IS the mean of 3; only its
+     name has to change, which avgHeading() does. */
+  if (movesStats()) return [3];
   const raw = Array.isArray(app.settings?.histAvgCols) ? app.settings.histAvgCols : [5, 12];
   const out = [];
   for (const v of raw) {
@@ -2194,18 +2398,18 @@ function historyRowData(i) {
       s.phases?.length ? 'has-phases' : '',
     ].filter(Boolean).join(' '),
     idx: String(i + 1),
-    time: v === DNF ? 'DNF' : fmt(v) + (s.penalty === '+2' ? '+' : ''),
+    time: v === DNF ? 'DNF' : fmtResult(v, isMoveResult(s)) + (s.penalty === '+2' ? '+' : ''),
     // One entry per average column, in column order.
     avgs: series.map(({ n, values, best: bestAvgN }) => {
       const a = values[i];
       const isBest = a !== null && bestAvgN !== null && a === bestAvgN;
       return {
         n,
-        text: a === null ? '·' : fmt(a),
+        text: a === null ? '·' : fmtNow(a),
         has: a !== null,
         best: isBest,
         title: a === null ? `needs ${n} solves`
-          : `ao${n} after solve ${i + 1}${isBest ? ' — best of the session' : ''} — click for the ${n} solves`,
+          : `${movesStats() && n === 3 ? 'mo3' : 'ao' + n} after solve ${i + 1}${isBest ? ' — best of the session' : ''} — click for the ${n} solves`,
       };
     }),
   };
@@ -2345,7 +2549,9 @@ function renderHistory() {
     histIds = [];
     histSigs = [];
     list.innerHTML = '';
-    list.append(el('div', { class: 'hist-empty', text: 'No times yet — hold space and go.' }));
+    list.append(el('div', { class: 'hist-empty', text: movesMode()
+      ? 'No attempts yet — press Start attempt.'
+      : 'No times yet — hold space and go.' }));
     return;
   }
 
@@ -2505,9 +2711,12 @@ function applyHistGrid(count) {
 
 /** One average column heading: a sort button, and a pencil that changes it. */
 function avgHeading(n) {
+  // A three-solve "average" trims nothing, so in an event scored by mean of
+  // three it is the mo3 and is named as one.
+  const name = (movesStats() && n === 3) ? 'mo3' : `ao${n}`;
   const sort = el('button', {
     type: 'button', class: 'col-sort', 'data-sort': `avg${n}`,
-    title: `Sort by ao${n} — click again for solve order`, text: `ao${n}`,
+    title: `Sort by ${name} — click again for solve order`, text: name,
   });
   const edit = el('button', {
     type: 'button', class: 'col-edit', 'data-edit': String(n),
@@ -2635,6 +2844,9 @@ COARSE.addEventListener('change', () => updateHint());
 function updateHint() {
   const node = $('#timer-hint');
   if (!node) return;
+  // renderAll calls this after every solve, so the virtual cube's hint has to
+  // live here too or the first solve replaces it with a spacebar one.
+  if (virtualLive()) { node.innerHTML = VIRTUAL_HINT; return; }
   // On a touch screen there is no spacebar, so naming one is worse than saying
   // nothing. Same two states, described with the input the device actually has.
   if (COARSE.matches) {
@@ -2670,11 +2882,21 @@ function solveMenu(solve, anchor) {
     syncTimerDisplay();
   };
   popover(anchor, [
-    { title: `#${app.solves.indexOf(solve) + 1} · ${eff(solve) === DNF ? 'DNF' : fmt(eff(solve))}` },
+    { title: `#${app.solves.indexOf(solve) + 1} · ${fmtResult(eff(solve), isMoveResult(solve))}` },
     { label: 'No penalty', on: solve.penalty === 'none', onSelect: () => setPenalty('none') },
     { label: '+2', badge: '2', on: solve.penalty === '+2', onSelect: () => setPenalty('+2') },
     { label: 'DNF', badge: 'D', on: solve.penalty === 'DNF', onSelect: () => setPenalty('DNF') },
     { sep: true },
+    /* A Fewest Moves result is a solution, not a time, so the solution is
+       the thing this menu is opened to look at — including on a DNF, where
+       it is the only way to find out what went wrong. */
+    ...(solve.fmcSolution ? [
+      { sep: true },
+      { title: solve.fmcNotes ? `Solution · ${solve.fmcNotes}` : 'Solution' },
+      { node: el('div', { class: 'pop-solution', text: solve.fmcSolution }) },
+      { label: 'Copy solution', onSelect: () => copyToast(solve.fmcSolution, 'Solution') },
+      { sep: true },
+    ] : []),
     { label: 'Copy scramble', badge: '', onSelect: () => copyToast(solve.scramble, 'Scramble') },
     { label: 'Share as a card', badge: 'S', onSelect: () => app.shareSolveCard(solve) },
     { label: solve.comment ? 'Edit comment' : 'Add comment', badge: 'C', onSelect: () => commentOn(solve) },
@@ -2730,11 +2952,15 @@ app.solveMenu = solveMenu;
  * solve records this scramble, which is the whole point — "show it" without
  * arming it would just be a picture.
  */
-function repeatScramble(solve) {
+async function repeatScramble(solve) {
   if (!solve.scramble) { toast('That solve has no scramble saved'); return; }
   timer.reset();
+  /* A skewb trainer scramble is written in its algorithms' notation, and the
+     preview needs it translated — which needs that set's puzzle loaded. */
+  await loadSetFor(solve.mode);
+  const preview = previewOf(solve.mode, solve.scramble) || undefined;
   showScramble({
-    scramble: solve.scramble, caseId: solve.caseId, caseName: solve.caseName,
+    scramble: solve.scramble, caseId: solve.caseId, caseName: solve.caseName, preview,
     /* A relay solve stores one scramble per puzzle, so repeating it has to put
        the legs back as legs — handing the joined text over as a single
        scramble would leave the rail empty and the preview on the wrong puzzle. */
@@ -3031,19 +3257,47 @@ async function clearSession() {
  * opening. Both the keyboard and the pointer path go through here, so it is
  * the one place that has to know — and it is also what stops a second attempt
  * being timed against a scramble you have already sent a result for.
+ *
+ * Fewest Moves has no spacebar timer at all: the result is a move count, and
+ * a stray press that recorded a 0.4-second "solve" in the middle of an hour's
+ * work would be the worst possible way to lose an attempt.
  */
-const timerInputLive = () => app.settings.inputMode === 'timer' && !raceCtl()?.locked() && !dailyCtl()?.locked();
+const timerInputLive = () => inputMode() === 'timer' && !movesMode()
+  && !raceCtl()?.locked() && !dailyCtl()?.locked();
 
-function applyInputMode() {
-  const mode = app.settings.inputMode || 'timer';
+/* The virtual cube is only a cube for 2x2 to 7x7. Chosen on any other event it
+   falls back to the spacebar, rather than leaving that event with no way to time. */
+function inputMode() {
+  const m = app.settings.inputMode || 'timer';
+  return m === 'virtual' && !virtualSize(app.settings.event) ? 'timer' : m;
+}
+const virtualLive = () => inputMode() === 'virtual';
+
+const VIRTUAL_HINT = 'turn to start &middot; <kbd>space</kbd> inspection &middot; <kbd>esc</kbd> reset';
+
+/** What the timer area shows for the input in use. Also runs on every event change. */
+function applyInputView() {
+  const mode = inputMode();
+  document.body.dataset.input = mode;
   const form = $('#manual-entry');
   const bar = $('#stackmat-bar');
-  document.body.dataset.input = mode;
-
   if (form) form.hidden = mode !== 'manual';
   if (bar) bar.hidden = mode !== 'stackmat';
   const hint = $('#timer-hint');
-  if (hint) hint.hidden = mode !== 'timer';
+  if (hint) hint.hidden = mode !== 'timer' && mode !== 'virtual';
+  updateHint();
+  $('#vcube-wrap').hidden = mode !== 'virtual';
+  if (mode === 'virtual') {
+    loadVcube().then(resetVcube).catch((err) => {
+      console.warn('[vcube] could not start', err);
+      toast('The virtual cube could not load', { kind: 'bad' });
+    });
+  }
+}
+
+function applyInputMode(changed) {
+  const mode = inputMode();
+  applyInputView();
 
   // Anything half-armed on the old source has to go, or a stale hold survives
   // the switch and starts a solve nobody asked for.
@@ -3054,8 +3308,88 @@ function applyInputMode() {
 
   if (mode === 'manual') setTimeout(() => $('#manual-input')?.focus(), 0);
   else $('#manual-input')?.blur();
+
+  if (changed && app.settings.inputMode === 'virtual' && mode !== 'virtual') {
+    toast(`The virtual cube is 2x2 to 7x7 — ${eventOf(app.settings.event).short} stays on the spacebar`, { long: true });
+  }
+  syncVirtualSession().then((moved) => {
+    if (!moved) return;
+    renderAll();
+    if (changed) toast(virtualLive() ? `Virtual solves go in ${app.session.name}` : `Back to ${app.session.name}`);
+  }).catch(err => console.warn('[vcube] session switch failed', err));
 }
 app.applyInputMode = applyInputMode;
+
+/* ---------------- virtual cube ----------------
+   Loaded the first time it is switched on: a second twisty-player and the
+   sticker simulator are nothing anyone on the spacebar needs. */
+let vcube = null;
+const loadVcube = lazy(async () => {
+  const { VirtualCube } = await import('./vcube.js');
+  const view = new CubeView($('#vcube-holder'), null);
+  view.backView = 'none';     // csTimer shows the one cube, no floating rear view
+  if (!await view.init()) throw new Error('twisty-player unavailable');
+  view.setHints(false);
+  view.colors = app.settings.cubeColors;
+  // The preview is static on purpose (tempo 0); this one has to show each turn.
+  view.player.setAttribute('tempo-scale', '4');
+  return new VirtualCube(view, timer);
+}, v => (vcube = v));
+
+/** Put the scramble on screen onto the virtual cube. */
+function resetVcube() {
+  if (!vcube || !virtualLive()) return;
+  const ev = eventOf(app.settings.event);
+  const s = app.scramble;
+  vcube.reset({
+    puzzle: ev.puzzle,
+    n: virtualSize(app.settings.event),
+    orientation: previewOrientation(modeOf(app.settings.mode), ev),
+    scramble: s && !s.hold ? s.scramble : '',
+  });
+}
+
+/**
+ * Virtual solves live in a session of their own, one per event.
+ *
+ * A keyboard cube is a different skill at a different pace, and its times folded
+ * into a real session would drag every average in it down. Same idea as a
+ * race's session; the triggers are the input switch and the event picker.
+ */
+function sessionFor(eventId, virtual) {
+  const mine = app.sessions.filter(s => s.event === eventId && !!s.virtual === virtual && !s.race);
+  const back = !virtual && mine.find(s => s.id === app.settings.virtualReturnSession);
+  if (back || mine[0]) return back || mine[0];
+  const short = eventOf(eventId).short;
+  const s = {
+    id: uid(), event: eventId, createdAt: Date.now(), order: app.sessions.length,
+    name: virtual ? `Virtual · ${short}` : `${short} · 1`,
+    ...(virtual ? { virtual: true } : {}),
+  };
+  app.sessions.push(s);
+  Sessions.put(s).catch(err => console.warn('[vcube] session not saved', err));
+  return s;
+}
+
+/** Move into the kind of session the input calls for. True if it moved. */
+async function syncVirtualSession() {
+  if (!app.session) return false;
+  const want = virtualLive();
+  const ev = app.settings.event;
+  if (want ? (app.session.virtual && app.session.event === ev) : !app.session.virtual) return false;
+  if (!app.session.virtual) app.settings.virtualReturnSession = app.session.id;
+  // Assigned before the first await, so a race or daily attempt that switches
+  // session straight after this remembers the right one to come back to.
+  const s = sessionFor(ev, want);
+  app.session = s;
+  app.settings.sessionId = s.id;
+  persist();
+  app.solves = await Solves.bySession(s.id);
+  lastStats = {};
+  resetHistoryWindow();
+  syncTimerDisplay();
+  return true;
+}
 
 /* ---------------- typed times ---------------- */
 function wireManualEntry() {
@@ -3420,8 +3754,7 @@ function queueTint(colors) {
 
 /** Push whatever the palette now resolves to into the shader. */
 function bgFromTheme() {
-  const c = themeColors();
-  bg.setColors(c.bg2, c.accent, c.accent2);
+  paintBackgroundColors(bg, app.settings);
 }
 
 /* ---------------- the now-playing panel ----------------
@@ -3759,7 +4092,7 @@ app.shareAverageCard = async (kind) => {
      key on the card. */
   return m.shareAverage(list, {
     label: (STAT_LABELS[kind] || w.label || kind).toLowerCase(),
-    value: w.value === DNF ? 'DNF' : fmt(w.value),
+    value: fmtNow(w.value),
     trimmed: trimmed.size ? trimmed : null,
   });
 };
@@ -3803,6 +4136,7 @@ app.resetSettings = () => {
   // corner, and the rails reserve room in the wrong place.
   cubeDrag?.apply();
   app.applyMascot?.();
+  app.applyMetro?.();
   renderStats();
   measureLayout();
   toast('Settings back to their defaults', { kind: 'good' });
@@ -3823,7 +4157,8 @@ function applyAll(changed) {
   // or the gradient string did nothing at all until some unrelated setting
   // happened to trigger a re-apply.
   if (!changed || ['bgMode','bgShader','bgSpeed','bgAmount','theme','accent','accent2',
-                   'bgDim','bgSolid','bgGradient','autoContrast'].includes(changed)) {
+                   'bgDim','bgSolid','bgGradient','autoContrast',
+                   'spotifyGradient','spotifyTint'].includes(changed)) {
     applyBackground(bg, app.settings);
   }
   if (timer) {
@@ -3833,6 +4168,10 @@ function applyAll(changed) {
     timer.cfg.useInspection = !eventOf(app.settings.event).noInspection;
   }
   if (changed === 'hintFacelets') cube.setHints(app.settings.hintFacelets);
+  if (!changed || changed === 'cubeColors') {
+    cube.setColors(app.settings.cubeColors);
+    vcube?.view.setColors(app.settings.cubeColors);
+  }
   // Turning the cube over is a re-render of the same scramble, not a new one.
   if (changed === 'yellowTop' && app.scramble) showScramble(app.scramble, true);
   // A bigger preview can push a dragged widget off screen, so re-clamp it —
@@ -3847,17 +4186,62 @@ function applyAll(changed) {
     remeasureHistory();
   }
   if (changed === 'cubeView') { updateLabels(); if (app.scramble) showScramble(app.scramble, true); }
-  if (!changed || changed === 'inputMode') applyInputMode();
+  if (!changed || changed === 'inputMode') applyInputMode(changed);
   if (!changed || changed === 'bld') { bldEpoch++; syncBldTimer(); renderBld(); }
   if (!changed || changed === 'multiphase') { syncBldTimer(); syncPhaseZoneVisibility(); phaseReset(); }
+  // The window shows the same bpm the settings slider writes, so a change in
+  // either place has to reach the other one.
+  if (!changed || changed === 'metroOpen' || changed === 'metronomeBpm') app.applyMetro?.();
+  if (changed === 'metronome') metroExternal(0);   // switched off mid-solve
 }
 app.applyAll = () => applyAll();
 app.refreshBackground = () => applyBackground(bg, app.settings);
 
+/* =========================================================
+   Fewest Moves
+
+   The workspace does the attempt; everything it needs from the app it is
+   handed, so nothing in fmcmode.js knows about sessions, the database or
+   the preview. A finished attempt goes through recordSolve() like every
+   other result, which is what keeps personal bests, the times list and
+   cloud sync from needing a second version of themselves.
+   ========================================================= */
+const FMC_HOOKS = {
+  scramble: () => app.scramble?.scramble || '',
+  /* The preview is the one on the timer screen, driven with the scramble
+     plus however much of the solution has been typed. `null` puts the
+     scramble back on its own, which is what ending an attempt means. */
+  preview: (alg) => {
+    if (!app.scramble) return;
+    cube.set(alg === null ? app.scramble.scramble : alg);
+  },
+  record: async (res) => {
+    await recordSolve(res);
+    /* recordSolve leaves the digits to whoever called it — the spacebar
+       path writes them as the solve stops. Nothing writes them here, so
+       the result of the attempt you just submitted would sit off screen
+       while the times list showed it. */
+    syncTimerDisplay();
+  },
+};
+
+/** Show the workspace for 333fm, put it away for everything else. */
+async function syncFmc() {
+  const on = movesMode();
+  if (!on && !_fmc) { document.body.classList.remove('fmc', 'fmc-attempting'); return; }
+  try { await loadFmcModule(); }
+  catch (err) { return lazyFailed('the Fewest Moves workspace', err); }
+  await _fmc.getFmc(app, FMC_HOOKS).sync(on);
+  updateHint();
+}
+
 function syncEventConfig() {
   const ev = eventOf(app.settings.event);
   if (timer) timer.cfg.useInspection = !ev.noInspection;
-  // trainer modes only exist for 3x3 — fall back if the event changed
+  // An hour-long attempt is not a solve the spacebar can start, so the timer
+  // is stood down entirely for this event — see timerInputLive().
+  syncFmc();
+  // a trainer mode belongs to its events — fall back if the event changed
   if (!modesForEvent(app.settings.event).includes(app.settings.mode)) app.settings.mode = 'wca';
   // Leaving a blind event puts the panel away; arriving at one opens it only
   // if the solver asked for that in settings. Never forced open either way.
@@ -3872,6 +4256,8 @@ function syncEventConfig() {
   relaySplits = [];
   relayShown = null;
   renderRelayRail();
+  // The virtual cube comes and goes with the event: a 3x3 has one, a clock does not.
+  applyInputView();
 }
 
 /** The relay builder — which puzzles, in which order. */
@@ -3884,9 +4270,17 @@ async function setEvent(id) {
      scramble. Picking it opens the builder instead. */
   if (eventOf(id).relay && !relayList()) { openRelayBuilder(); return; }
   app.settings.event = id;
-  app.session.event = id;
-  await Sessions.put(app.session);
+  // A virtual session belongs to one event: changing event moves you to that
+  // event's virtual session rather than relabelling this one.
+  if (!await syncVirtualSession()) {
+    app.session.event = id;
+    await Sessions.put(app.session);
+  }
   syncEventConfig();
+  // The digits carry the last result of the session, and what that result
+  // MEANS has just changed — 28 moves where a time used to be, or a dash
+  // where a Fewest Moves session has nothing yet.
+  syncTimerDisplay();
   // Swap the preview puzzle straight away. A 4x4 random-state scramble takes a
   // few seconds, and leaving the old puzzle on screen until it lands looks broken.
   const ev = eventOf(id);
@@ -3894,17 +4288,96 @@ async function setEvent(id) {
   timer.reset();
   persist();
   app.scrambleHistory = [];
+  // Inside the window the day's scramble follows the timer — see Daily#engage.
+  if (dailyCtl()?.engaged) dailyCtl().setEvent(id);
   refreshQueue(); nextScramble({ clear: true });
   renderAll();
 }
 
-function setMode(id) {
+/**
+ * The session a trainer mode's solves go in — "OLL", "Pyra L4E" — made the
+ * first time and reused after, so drilling OLL again lands back among your OLL
+ * times instead of in whatever session happened to be open. Race and virtual
+ * sessions are never picked up.
+ */
+async function trainingSession(modeId, event) {
+  const mode = MODES[modeId];
+  const short = eventOf(event).short;
+  const name = event === '333' || mode.name.startsWith(short) ? mode.name : `${short} ${mode.name}`;
+  let s = app.sessions.find(x => x.name === name && x.event === event && !x.race && !x.virtual);
+  if (!s) {
+    s = { id: uid(), name, event, createdAt: Date.now(), order: app.sessions.length };
+    await Sessions.put(s);
+    app.sessions.push(s);
+  }
+  return s;
+}
+
+let modeWanted = null;
+async function setMode(id) {
+  modeWanted = id;
+  await loadSetFor(id);
+  const trainer = MODES[id]?.kind === 'case' ? await trainingSession(id, app.settings.event) : null;
+  /* Two picks whose case lists load at different speeds: the last one clicked
+     wins, not the last one to arrive. */
+  if (modeWanted !== id) return;
+  if (trainer && trainer.id !== app.session.id) await app.switchSession(trainer.id);
   app.settings.mode = id;
   persist();
   timer.reset();
   app.scrambleHistory = [];
   refreshQueue(); nextScramble({ clear: true });
   updateLabels();
+}
+
+/**
+ * `algs.html?…` hands a trainer mode and a list of case ids over in the
+ * address bar: `index.html?train=pll&cases=T,Y,V`.
+ *
+ * Nothing here is a second way to configure the trainer. It writes the same
+ * three settings the mode picker and the case picker write — event, mode,
+ * allowedCases — and then gets out of the way, so a hand-off is
+ * indistinguishable from having set it up by hand. The address bar is cleared
+ * straight after for the same reason the race invite is: a reload should not
+ * silently re-apply a choice you have since changed.
+ */
+async function applyTrainerHandoff() {
+  const p = new URLSearchParams(location.search);
+  const modeId = p.get('train');
+  if (!modeId) return;
+  history.replaceState(null, '', location.pathname);
+
+  const mode = MODES[modeId];
+  const set = await loadSetFor(modeId);
+  if (!mode || !set) { toast('That trainer set is not one this timer has'); return; }
+
+  /* A mode belongs to its events; pick the first one it lists rather than
+     leaving the timer on an event where syncEventConfig would drop straight
+     back to a random-state scramble. */
+  const event = mode.events === '*' ? app.settings.event : mode.events[0];
+  if (EVENTS[event]) {
+    app.settings.event = event;
+    /* Straight into this trainer's own session. This runs before the timer
+       and the solve list exist, so it only points at the session — boot loads
+       its solves next. */
+    const s = await trainingSession(modeId, event);
+    app.session = s;
+    app.settings.sessionId = s.id;
+  }
+  app.settings.mode = modeId;
+
+  /* Case ids that this set does not have are dropped rather than trusted: the
+     link may be older than the set, and an allowedCases list with nothing
+     matching in it would filter every case out. */
+  const known = new Set(set.map(c => c.id));
+  const wanted = (p.get('cases') || '').split(',').map(s => s.trim()).filter(id => known.has(id));
+  if (wanted.length) app.settings.allowedCases[modeId] = wanted;
+  else delete app.settings.allowedCases[modeId];
+
+  persist();
+  toast(wanted.length
+    ? `${mode.name} — ${wanted.length} case${wanted.length === 1 ? '' : 's'} loaded`
+    : `${mode.name} — all ${set.length} cases`, { kind: 'good' });
 }
 
 app.setEvent = setEvent;
@@ -3923,15 +4396,25 @@ app.reload = async () => {
 app.allSolves = () => Solves.all();
 
 app.exportSessionCSV = () => {
+  /* Fewest Moves gets two columns of its own rather than a "time" column
+     holding a move count: the seconds an attempt took are still worth having,
+     and 28 moves is not 28 seconds. */
+  const fmc = movesMode();
   /* One extra column rather than one per puzzle: a relay list is up to ten
      long, the column count would then change with the session, and a
      spreadsheet splits "2x2 4.210 | 3x3 9.870" on the pipe in one step
      anyway. Absent on every non-relay solve, and on every solve recorded
      before relays existed. */
   const hasRelay = app.solves.some(s => s.relay?.length);
-  const rows = [['#', 'time', 'penalty', 'scramble', 'case', 'comment', 'date',
-                 ...(hasRelay ? ['splits'] : [])]];
-  app.solves.forEach((s, i) => rows.push([
+  const rows = [fmc
+    ? ['#', 'moves', 'penalty', 'scramble', 'solution', 'notes', 'seconds', 'comment', 'date']
+    : ['#', 'time', 'penalty', 'scramble', 'case', 'comment', 'date',
+       ...(hasRelay ? ['splits'] : [])]];
+  app.solves.forEach((s, i) => rows.push(fmc ? [
+    i + 1, Number.isFinite(s.fmcMoves) ? s.fmcMoves : '', s.penalty,
+    s.scramble.replace(/\n/g, ' '), s.fmcSolution || '', s.fmcNotes || '',
+    (s.timeMs / 1000).toFixed(1), s.comment || '', new Date(s.createdAt).toISOString(),
+  ] : [
     i + 1, (s.timeMs / 1000).toFixed(3), s.penalty, s.scramble.replace(/\n/g, ' '),
     s.caseName || '', s.comment || '', new Date(s.createdAt).toISOString(),
     ...(hasRelay ? [(s.relay || []).map(p =>
@@ -3963,7 +4446,7 @@ function eventFromScrType(scrType = '', name = '') {
     ['222', '222'], ['444', '444'], ['555', '555'], ['666', '666'], ['777', '777'],
     ['clk', 'clock'], ['clock', 'clock'], ['mgm', 'minx'], ['minx', 'minx'],
     ['pyr', 'pyram'], ['pyram', 'pyram'], ['skb', 'skewb'], ['skewb', 'skewb'],
-    ['sq1', 'sq1'], ['sqr', 'sq1'], ['333', '333'],
+    ['sq1', 'sq1'], ['sqr', 'sq1'], ['fto', 'fto'], ['333', '333'],
   ];
   for (const [key, ev] of table) if (probe.includes(key)) return ev;
   return '333';
@@ -4023,6 +4506,12 @@ app.importCsTimer = async (data, { onProgress } = {}) => {
         scramble: item[1] || '',
         timeMs: ms,
         penalty: pen === -1 ? 'DNF' : pen === 2000 ? '+2' : 'none',
+        /* csTimer keeps a Fewest Moves result in the same field as a time,
+           as moves x 1000 — a 28 is stored as 28000. Without this the import
+           lands a shelf of "28.00 second" solves in an event that has never
+           been scored in seconds. */
+        ...(event === '333fm' && pen !== -1 && isFinite(ms)
+          ? { fmcMoves: Math.round(ms / 1000) } : {}),
         comment: typeof item[2] === 'string' ? item[2] : '',
         caseId: null, caseName: null,
         createdAt: item[3] ? item[3] * 1000 : Date.now(),
@@ -4090,6 +4579,44 @@ function wireInput() {
   // and must be swallowed too, or it lands on whatever the key normally does.
   const stopKeys = new Set();
 
+  /* The virtual cube owns the letter block while it is on screen: a key csTimer
+     turns a face with is a turn here, and never also a shortcut. Modifier
+     chords, Shift (so ? still opens this list) and the unmapped keys — digits,
+     Delete, the arrows — go on to the shortcut handler as usual. */
+  let vSpace = false;
+  document.addEventListener('keydown', (e) => {
+    if (!vcube || !virtualLive() || isTyping() || modalOpen()) return;
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.code === 'Escape') {
+      // Nothing to reset, or a solve already recorded: Esc means what it always did.
+      if (!vcube.armed || (timer.state === 'idle' && !vcube.moved)) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      const was = timer.state;
+      timer.reset();
+      if (was !== 'idle') timer.emit('cancel');
+      vcube.restart();
+      return;
+    }
+    if (e.code === 'Space') {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      if (e.repeat || timer.state !== 'idle' || !timer.inspectionEnabled || !vcube.armed) return;
+      vSpace = true;
+      timer.down();                        // -> inspecting; the first turn starts the solve
+      return;
+    }
+    if (e.shiftKey || !vcube.key(e.code, e.repeat)) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+  }, true);
+  document.addEventListener('keyup', (e) => {
+    if (e.code !== 'Space' || !vSpace) return;
+    vSpace = false;
+    e.preventDefault();
+    timer.up();
+  }, true);
+
   /**
    * Both listeners run in the CAPTURE phase, before anything else on the
    * document, and stop the event dead when it was the key that ended a solve.
@@ -4116,6 +4643,9 @@ function wireInput() {
       return;
     }
     if (isTyping() || e.metaKey || e.ctrlKey || e.altKey) return;
+    // The metronome window's own buttons keep the spacebar: pressing Start with
+    // the keyboard must not also start a solve.
+    if (e.target?.closest?.('#metro')) return;
     if (e.code !== 'Space') return;
     e.preventDefault();
     if (modalOpen()) return;
@@ -4442,6 +4972,9 @@ function wireChrome() {
   $('#btn-reset-orbit').addEventListener('click', (e) => { e.stopPropagation(); app.resetCubeOrbit(); });
 
   wireMascot();
+  // Same window as the algorithm library's, built by the same module.
+  const metro = mountMetro(app.settings, persist);
+  app.applyMetro = metro.apply;
 }
 
 /* =========================================================
@@ -4573,7 +5106,7 @@ function wireShortcuts() {
         /* Pasting your own scrambles in here is the same instruction as the
            arrow keys, one step further round: it replaces today's scramble
            with one of your choosing, on the one attempt that counts. */
-        if (scrambleIsSpokenFor()) { toast('Today’s scramble is the only one in here'); break; }
+        if (scrambleIsSpokenFor()) { toast(spokenForWhy()); break; }
         // A relay needs one scramble per puzzle; a pasted list is a queue of
         // single ones, so there is nothing sensible to do with it here.
         if (relayOn()) { toast('Your own scrambles are not available on a relay'); break; }

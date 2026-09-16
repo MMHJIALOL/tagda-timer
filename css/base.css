@@ -494,6 +494,29 @@ body.zen #learn-bar { display: none; }
   }
 }
 
+/* ---------------- virtual cube ----------------
+   csTimer's arrangement: the cube sits dead centre of the screen and the clock
+   is parked against the right edge of the centre column, out of its way. */
+#vcube-wrap { width: min(56vh, 46%); aspect-ratio: 1; flex: none; }
+#vcube-holder, #vcube-holder twisty-player { width: 100%; height: 100%; }
+body[data-input="virtual"] #panel-cube { display: none; }
+body[data-input="virtual"] #timer-display { font-size: min(var(--timer-size), 5.5vw); }
+@media (min-width: 861px) {
+  body[data-input="virtual"] #vcube-wrap {
+    position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  }
+  body[data-input="virtual"] #timer-core {
+    position: absolute; left: auto; right: 0; top: 50%; transform: translateY(-50%);
+    align-items: flex-end; max-width: 27%;
+  }
+  body[data-input="virtual"] #timer-hint { text-align: right; text-wrap: balance; }
+}
+@media (max-width: 860px) {
+  #vcube-wrap { width: min(80vw, 40vh); }
+  body[data-input="virtual"] #timer-core,
+  body[data-input="virtual"] #inspect-readout { position: relative; left: auto; top: auto; transform: none; }
+}
+
 #timer-display {
   position: relative;
   font-family: var(--font-timer);
@@ -925,3 +948,106 @@ body.sotd #sotd-board:not([hidden]) { display: block; }
 body.holding #inspect-num { color: var(--t-holding); text-shadow: 0 0 40px color-mix(in srgb, var(--t-holding) 45%, transparent); }
 body.armed   #inspect-num { color: var(--t-ready);   text-shadow: 0 0 44px color-mix(in srgb, var(--t-ready) 55%, transparent); }
 body.armed   #inspect-hint::after { content: ' — release'; color: var(--t-ready); }
+
+/* =================== FEWEST MOVES ===================
+   An hour and a written solution, where the hold-to-start timer normally is.
+   Everything the timer would otherwise offer is taken away rather than left
+   sitting there inert: there is no spacebar start, no inspection, no pace
+   ghost and no running ao5 in an event whose round is three attempts long. */
+body.fmc #timer-hint,
+body.fmc #hold-bar,
+body.fmc #pace-ghost,
+body.fmc #timer-avgs,
+body.fmc #manual-entry,
+body.fmc #stackmat-bar { display: none !important; }
+
+/* The averages an FMC session is actually scored on are the single and the
+   mean of 3 (WCA 9b4a). A rolling ao12 of move counts is not a statistic
+   anybody keeps, and a column of them invites reading the session as a speed
+   session that happens to be printed in the wrong unit. */
+body.fmc .stat[data-k="ao5"],
+body.fmc .stat[data-k="ao12"],
+body.fmc .stat[data-k="ao50"],
+body.fmc .stat[data-k="ao100"],
+body.fmc .bst[data-b="ao5"],
+body.fmc .bst[data-b="ao12"],
+body.fmc .bst[data-b="ao50"],
+body.fmc .bst[data-b="ao100"],
+body.fmc .stats-peek span:has(#peek-ao5),
+body.fmc .stats-peek span:has(#peek-ao12),
+body.fmc .stats-peek span:has(#peek-ao50) { display: none; }
+
+.fmc-zone {
+  width: min(680px, 92vw);
+  display: flex; flex-direction: column; align-items: stretch; gap: 10px;
+  user-select: text;
+}
+
+.fmc-idle { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.fmc-start {
+  font: 600 1.05rem/1 var(--font-ui, inherit);
+  padding: 14px 28px; border-radius: 14px; cursor: pointer;
+  color: var(--bg); background: var(--accent); border: 0;
+  box-shadow: 0 10px 30px color-mix(in srgb, var(--accent) 35%, transparent);
+  transition: transform 120ms var(--ease-back), filter 120ms linear;
+}
+.fmc-start:hover { transform: translateY(-1px); filter: brightness(1.06); }
+.fmc-start:active { transform: translateY(1px); }
+.fmc-hint { margin: 0; font-size: .82rem; color: var(--text-faint); text-align: center; }
+
+.fmc-live { display: flex; flex-direction: column; gap: 8px; }
+.fmc-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.fmc-acts { display: flex; gap: 8px; align-items: center; }
+/* Submit is the whole point of the screen, and inherited .ghost-btn styling
+   put it on screen as 11px of faint grey beside a 34px clock — there, and
+   invisible. It is the primary action here and is dressed as one; Abandon
+   stays quiet, but quiet still has to be readable. */
+.fmc-acts #fmc-submit {
+  font-size: .92rem; font-weight: 700; padding: 8px 18px; border-radius: 10px;
+  color: var(--bg); background: var(--accent); border-color: transparent;
+}
+.fmc-acts #fmc-submit:hover { filter: brightness(1.07); }
+.fmc-acts #fmc-abandon {
+  font-size: .82rem; padding: 8px 14px; border-radius: 10px;
+  color: var(--text-dim);
+}
+.fmc-acts #fmc-abandon:hover { color: var(--danger); border-color: var(--danger); }
+.fmc-clock {
+  font-family: var(--font-timer); font-variant-numeric: tabular-nums;
+  font-size: 2.1rem; font-weight: 700; line-height: 1;
+  color: var(--t-idle);
+}
+.fmc-clock.warn   { color: var(--warn); }
+.fmc-clock.danger { color: var(--danger); }
+
+.fmc-box {
+  width: 100%; resize: vertical; min-height: 64px;
+  font: 500 1rem/1.5 var(--font-mono, ui-monospace, monospace);
+  letter-spacing: .04em;
+  padding: 10px 12px; border-radius: 12px;
+  color: var(--text); background: color-mix(in srgb, var(--surface) 82%, transparent);
+  border: 1px solid var(--border);
+}
+.fmc-box:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.fmc-notes { min-height: 46px; font-size: .88rem; letter-spacing: 0; opacity: .9; }
+
+.fmc-readout {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px;
+  font-size: .85rem; min-height: 1.4em;
+}
+.fmc-count { font-weight: 700; font-variant-numeric: tabular-nums; }
+.fmc-etm { color: var(--text-faint); font-variant-numeric: tabular-nums; }
+.fmc-etm.near { color: var(--warn); }
+.fmc-etm.over { color: var(--danger); font-weight: 700; }
+.fmc-state.good { color: var(--ok); }
+.fmc-state.bad  { color: var(--danger); }
+.fmc-why { flex: 1 1 100%; color: var(--text-faint); font-size: .8rem; }
+.fmc-why.bad  { color: var(--danger); }
+.fmc-why.warn { color: var(--warn); }
+
+/* The solution as it is read back in the times list's menu. */
+.pop-solution {
+  max-width: 320px; padding: 4px 10px 8px;
+  font: 500 .82rem/1.45 var(--font-mono, ui-monospace, monospace);
+  color: var(--text-faint); white-space: pre-wrap; word-break: break-word;
+}

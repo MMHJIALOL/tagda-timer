@@ -66,10 +66,19 @@ export const DEFAULT_BLD = {
   edgeBuffer: 'UF',
   cornerBuffer: 'UFR',
   orientation: { up: 'U', front: 'F' },
+  /* Turn the cube back to your own colours before memo — what most solvers
+     do, and the reason a scramble's trailing wide moves must not rename
+     every letter. Off means you memo the cube exactly as it was handed to
+     you, whichever colour ends up on top. */
+  reorient: true,
   scheme: 'speffz',
   letters: { ...DEFAULT_SPEFFZ_MAP },
   showBreakdownByDefault: false,
   memoExecSplit: true,
+  /* Buffers and hold are personal enough that guessing them silently is
+     worse than asking once. The breakdown offers the setup instead of a
+     trace until this is true. */
+  configured: false,
 };
 
 /** Events where the blindfolded workflow applies at all. */
@@ -123,6 +132,12 @@ const neg = (v) => [-v[0], -v[1], -v[2]];
 const faceOfVec = (v) => FACES.find(f => VEC[f].every((x, i) => x === v[i]));
 
 export const IDENTITY_MAP = { U: 'U', D: 'D', L: 'L', R: 'R', F: 'F', B: 'B' };
+
+/* The standard colour scheme, and the reason face letters are worth
+   translating at all: nobody holds "U on top", they hold white on top. Only
+   ever a label — nothing in the trace reads a colour. */
+export const FACE_COLOURS = { U: 'white', D: 'yellow', F: 'green', B: 'blue', R: 'red', L: 'orange' };
+export const faceLabel = (f) => `${f} — ${FACE_COLOURS[f] || '?'}`;
 
 /**
  * Which physical face each face of the letter scheme refers to.
@@ -264,7 +279,10 @@ export function trace(scramble, bld = DEFAULT_BLD) {
   if (!applied) return null;
 
   const rho = faceMap(bld.orientation?.up || 'U', bld.orientation?.front || 'F');
-  const frame = applied.frame;
+  /* `applied.frame` is how the scramble's own rotations left the cube. A
+     solver who turns it back to white-on-top first never sees that, so it is
+     only consulted when they said they memo it as handed. */
+  const frame = bld.reorient === false ? applied.frame : IDENTITY_MAP;
   /** A face of the solver's letter scheme, as a face of the state array. */
   const physical = (f) => frame[rho[f]] || f;
   const toPhysical = (name) => [...String(name)].map(physical).join('');

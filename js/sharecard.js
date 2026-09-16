@@ -10,8 +10,8 @@
    is full of translucency that reads as mud once it is a flat PNG.
    =========================================================== */
 
-import { fmt, fmtDate } from './util.js';
-import { eff, DNF } from './stats.js';
+import { fmt, fmtResult, fmtDate } from './util.js';
+import { eff, DNF, isMoveResult } from './stats.js';
 import { faceletsFor, drawNet, cubeSizeFor } from './cubenet.js';
 import { themeColors } from './theme.js';
 import { eventOf, modeOf } from './events.js';
@@ -256,7 +256,10 @@ export async function drawSolveCard(solve, { index = null } = {}) {
   paintBackground(ctx, H, c);
   paintHeader(ctx, c, logo, index ? `SOLVE #${index}` : ev.short);
 
-  const value = eff(solve) === DNF ? 'DNF' : fmt(eff(solve));
+  // A Fewest Moves card says 28, and says what 28 is — a card with a bare
+  // number on it goes somewhere this app's conventions are not known.
+  const moves = isMoveResult(solve);
+  const value = fmtResult(eff(solve), moves) + (moves && eff(solve) !== DNF ? ' moves' : '');
   const bits = [relay ? `Relay · ${relay.length} puzzles` : ev.name];
   if (mode && mode.kind !== 'wca') bits.push(mode.name);
   bits.push(fmtDate(solve.createdAt));
@@ -504,7 +507,7 @@ export async function drawAverageCard(solves, { label = 'average of 5', value = 
   // the number is there, it just did not count.
   paintRows(ctx, c, y0 + 56, solves.map((s, i) => {
     const v = eff(s);
-    const t = v === DNF ? 'DNF' : fmt(v) + (s.penalty === '+2' ? '+' : '');
+    const t = v === DNF ? 'DNF' : fmtResult(v, isMoveResult(s)) + (s.penalty === '+2' ? '+' : '');
     const dim = !!trimmed?.has(i);
     return { tag: String(i + 1).padStart(2, '0'), time: dim ? `(${t})` : t, dim, scramble: s.scramble };
   }), { rowH });

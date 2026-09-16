@@ -3,8 +3,16 @@
    No chart library: full control over theming and animation.
    =========================================================== */
 
-import { eff, DNF, rollingSeries } from './stats.js';
-import { fmt, dayKey } from './util.js';
+import { eff, DNF, isMoveResult, rollingSeries } from './stats.js';
+import { fmt, fmtResult, dayKey } from './util.js';
+
+/* An axis over a Fewest Moves session is labelled in moves. The question is
+   asked of the solves being drawn rather than of the current event, because a
+   chart can be opened on a session that is not the one you are sitting in. */
+const axisFmt = (solves) => {
+  const moves = (solves || []).some(isMoveResult);
+  return (v) => fmtResult(moves ? Math.round(v) : v, moves);
+};
 
 const NS = 'http://www.w3.org/2000/svg';
 const svgEl = (tag, attrs = {}) => {
@@ -132,6 +140,7 @@ export function renderTrend(host, solves, onHover, { markers = [] } = {}) {
   if (solves.length < 2) { host.append(hint('Not enough solves yet')); return; }
 
   const vals = solves.map(eff);
+  const label = axisFmt(solves);
   const finite = vals.filter(v => v !== DNF);
   const min = Math.min(...finite), max = Math.max(...finite);
   const pad = (max - min) * 0.12 || 500;
@@ -145,7 +154,7 @@ export function renderTrend(host, solves, onHover, { markers = [] } = {}) {
     const yy = y(v);
     svg.append(svgEl('line', { class: 'axis-line', x1: L, x2: W - R, y1: yy, y2: yy, opacity: .45 }));
     const t = svgEl('text', { class: 'axis-txt', x: L - 6, y: yy + 3, 'text-anchor': 'end' });
-    t.textContent = fmt(v); svg.append(t);
+    t.textContent = label(v); svg.append(t);
   }
 
   const defs = svgEl('defs');
@@ -232,6 +241,7 @@ export function renderTrend(host, solves, onHover, { markers = [] } = {}) {
 export function renderHistogram(host, solves) {
   host.innerHTML = '';
   const vals = solves.map(eff).filter(v => v !== DNF);
+  const label = axisFmt(solves);
   if (vals.length < 4) { host.append(hint('Not enough solves yet')); return; }
   const W = 660, H = 150, L = 8, R = 8, T = 8, B = 20;
   const svg = svgEl('svg', { viewBox: `0 0 ${W} ${H}` });
@@ -266,14 +276,14 @@ export function renderHistogram(host, solves) {
 
   for (const [v, anchor] of [[min, 'start'], [max, 'end']]) {
     const t = svgEl('text', { class: 'axis-txt', x: v === min ? L : W - R, y: H - 5, 'text-anchor': anchor });
-    t.textContent = fmt(v); svg.append(t);
+    t.textContent = label(v); svg.append(t);
   }
   host.append(svg);
   // The tallest bar is the only number worth stating outright; the rest are
   // read by comparison, and a label on every bar is noise.
   host.append(legend([
     { color: 'var(--accent)', label: `${bins} bins · busiest ${peak} solve${peak === 1 ? '' : 's'}` },
-    { color: 'var(--accent-2)', label: `mean ${fmt(mean)}`, dash: 'dashed' },
+    { color: 'var(--accent-2)', label: `mean ${label(mean)}`, dash: 'dashed' },
   ]));
 }
 

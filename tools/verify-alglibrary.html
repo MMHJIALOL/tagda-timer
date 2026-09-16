@@ -11,6 +11,11 @@
       python serve.py --no-browser
       open http://127.0.0.1:5173/tools/verify-alglibrary.html
 
+  There is a Node runner for the same check now, which is the one to reach for
+  in a terminal:
+
+      node tools/verify-alglibrary.mjs
+
   Prints a pass/fail summary and the failing entries only — nothing else, so a
   clean run is one line.
 -->
@@ -27,13 +32,13 @@
 <ul id="bad"></ul>
 
 <script type="module">
-import { SETS, SET_IDS, loadSet, auditLibrary, verifyAlgForCase } from '../js/alglibrary.js';
+import { SETS, loadAllSets, auditLibrary, verifyAlgForCase } from '../js/alglibrary.js';
 import { auditSetups } from '../js/alglibrary-setup.js';
 
-/* ZBLL and F2L are dynamic imports, so they are absent from SETS until asked
-   for. Without this the harness would report a clean run purely by never
-   having looked at two thirds of the algorithms in the app. */
-for (const id of SET_IDS) await loadSet(id);
+/* Every set past PLL and OLL is a dynamic import, so they are absent from SETS
+   until asked for. Without this the harness would report a clean run purely by
+   never having looked at most of the algorithms in the app. */
+await loadAllSets();
 
 const bad = auditLibrary();
 let total = 0;
@@ -54,9 +59,12 @@ for (const set of Object.values(SETS)) {
    do the first algorithm listed under the picture, and the case is gone. A
    setup that merely looks plausible is the one thing worse than no setup —
    it wastes a practice session and blames the solver. */
-const setups = auditSetups(SET_IDS.map(id => SETS[id]));
+const setups = auditSetups(Object.values(SETS));
 let cases = 0;
-for (const set of Object.values(SETS)) cases += set.cases.length;
+/* Setups are a 3x3 feature — alglibrary-setup.js reads 3x3 facelets — so the
+   denominator counts the cases that were actually asked for one. Counting all
+   742 would report a pass over 135 cases nothing looked at. */
+for (const set of Object.values(SETS)) if ((set.n || 3) === 3) cases += set.cases.length;
 
 const ok = !bad.length && !defaults.length && !setups.length;
 document.getElementById('out').innerHTML =

@@ -401,6 +401,102 @@ const A = await import('./js/algs.js');
       || `${Z.ZBLL_SET.length + P.F2L.length} algs`);
 }
 
+/* ---------------- fewest moves ----------------
+
+   Everything here is WCA Article E, and the two numbers it asks for are not
+   the same number: the result is counted in OBTM (rotations free, E2d) and
+   the 80-move ceiling is counted in ETM (rotations included, E2d1).
+   ---------------------------------------------------- */
+section('fewest moves');
+{
+  const FM = await import('./js/fmc.js');
+  const scr = "R' U' F U F2 D B2 U' R2 F2 D' L2 U' F2 R' B D2 L D' B' L2 R' U' F";
+  const inverse = (alg) => alg.trim().split(/\s+/).reverse()
+    .map(t => t.endsWith('2') ? t : t.endsWith("'") ? t.slice(0, -1) : t + "'").join(' ');
+
+  const undo = inverse(scr);
+  const back = FM.validateFmc(scr, undo);
+  check('a scramble undone by its own inverse is solved', back.ok && back.solved,
+    `${back.moves} moves`);
+
+  /* A solution may finish with the cube held any way up — a rotation moves no
+     pieces, so "solved" has to be asked of the colours rather than of a strict
+     match against the solved state. */
+  const rotated = FM.validateFmc(scr, undo + " y2 x'");
+  check('a solution that ends in a rotation is still solved', rotated.solved);
+  check('and the rotations cost it nothing (OBTM, E2d)',
+    rotated.moves === back.moves, `${back.moves} -> ${rotated.moves} moves`);
+  check('but they do count towards the 80-move limit (ETM, E2d1)',
+    rotated.etm === back.etm + 2, `${back.etm} -> ${rotated.etm} ETM`);
+
+  const c = FM.countMoves("Rw2 x U' y2 R");
+  check('a wide turn is one move and a rotation is none',
+    c.obtm === 3 && c.etm === 5, `OBTM ${c.obtm}, ETM ${c.etm}`);
+
+  const bad = (sol) => FM.validateFmc(scr, sol).error;
+  check('a slice move is refused, and named',
+    /^M2 /.test(bad('R U M2')?.message || ''), bad('R U M2')?.message);
+  check('brackets are refused — a bracket is not a move you turned',
+    /brackets/.test(bad('(R U) F')?.message || ''), bad('(R U) F')?.message);
+  check('a lowercase wide turn is read as the wide turn it spells (E2c6)',
+    FM.countMoves('rw2 uW').obtm === 2 && !FM.countMoves('rw2 uW').error);
+
+  /* The one place the WCA disagrees with every other cubing program on this
+     machine: E2c6+ says a bare `r` is `R`, NOT `Rw`. Counted the WCA's way,
+     and said out loud, because a solution that silently means something else
+     is how you lose an attempt to notation rather than to cubing. */
+  const lower = FM.validateFmc(scr, 'r U');
+  check('a bare lowercase face letter is R, not Rw — and says so (E2c6+)',
+    !lower.error && lower.moves === 2 && /counts as R\b/.test(lower.warnings[0] || ''),
+    lower.warnings[0] || 'no warning');
+
+  check('a turn that is not in WCA 12a is refused',
+    !!bad('R3 U') && !!bad('4Rw'), bad('R3 U')?.message);
+
+  const long = FM.validateFmc(scr, Array.from({ length: 81 }, () => 'R').join(' '));
+  check('81 moves is a DNF, and the message says which metric',
+    !long.ok && /Execution Turn Metric/.test(long.error.message), long.error.message);
+  check('80 moves is not',
+    !FM.validateFmc(scr, Array.from({ length: 80 }, () => 'R').join(' ')).error);
+
+  const wrong = FM.validateFmc(scr, "R U R' U'");
+  check('a legal solution that does not solve the cube is not a result',
+    !wrong.ok && !wrong.solved && !wrong.error, `${wrong.moves} moves, solved ${wrong.solved}`);
+  check('an empty solution is not a result either',
+    !FM.validateFmc(scr, '').ok && FM.validateFmc(scr, '   ').moves === 0);
+
+  /* A whole solve, written the way somebody actually writes one down:
+     rotations in the middle of it, and forty-one moves that are not the
+     scramble backwards. Produced by this app's own solver and re-judged here
+     by the module the workspace uses. */
+  const real = "y' F D' R' D2 R D' U2 F2 R2 F2 R2 y' D R' U2 R D' F R' U' R F' y2 "
+             + "R' F' U' F U' R U y' R' U' D R' U R D' U2 R2 U R' U' R'";
+  const v = FM.validateFmc(scr, real);
+  check('a real solution checks out, and is scored in OBTM',
+    v.ok && v.moves === 41 && v.etm === 45, `${v.moves} moves, ${v.etm} ETM`);
+
+  check('the limits are the ones Article E sets',
+    FM.TIME_LIMIT_MS === 3600000 && FM.MAX_ETM === 80);
+
+  /* And the result lands in the statistics as a move count rather than as a
+     third of a second — the whole reason eff() had to learn a second unit. */
+  const St2 = await import('./js/stats.js');
+  const U2 = await import('./js/util.js');
+  const fm = (n) => ({ timeMs: 1800000, penalty: 'none', fmcMoves: n });
+  check('a Fewest Moves result is its move count, not its duration',
+    St2.eff(fm(28)) === 28 && St2.eff({ ...fm(28), penalty: 'DNF' }) === St2.DNF);
+  check('an ordinary solve is untouched by that',
+    St2.eff({ timeMs: 10000, penalty: '+2' }) === 12000);
+  check('a mean of three move counts reads the way the WCA prints one',
+    U2.fmtResult(St2.meanOf([28, 27, 27].map(n => St2.eff(fm(n)))), true) === '27.33',
+    U2.fmtResult(St2.meanOf([28, 27, 27]), true));
+  check('and a single reads as a whole number of moves',
+    U2.fmtResult(28, true) === '28' && U2.fmtResult(Infinity, true) === 'DNF');
+  check('the best mo3 is the best three in a row, and one DNF spoils its window',
+    St2.bestMean([fm(30), fm(29), fm(28), { ...fm(1), penalty: 'DNF' }], 3) === 29,
+    String(St2.bestMean([fm(30), fm(29), fm(28), { ...fm(1), penalty: 'DNF' }], 3)));
+}
+
 /* ---------------- generated scrambles ---------------- */
 section('generated scrambles');
 const G = await import('./js/scramble.js');
@@ -456,6 +552,20 @@ const EXPECT = {
   '333': [16, 21], '222': [9, 11], '555': [55, 65],
   'pyram': [10, 15], 'skewb': [9, 13], '444': [40, 50],
 };
+{
+  /* An FMC scramble is an ordinary random-state 3x3 scramble wrapped in
+     `R' U' F` at both ends, which is what makes it impossible to tell where
+     the scramble starts and so impossible to work the solution out from it
+     (E2e). cubing.js already does this for the 333fm event id, so there is
+     nothing for the app to add — this is the check that says so. */
+  const s = await G.generate('333fm', 'wca');
+  const toks = s.scramble.trim().split(/\s+/);
+  check('a 333fm scramble is padded with the R U F block at both ends',
+    s.official && toks.slice(0, 3).join(' ') === "R' U' F"
+    && toks.slice(-3).join(' ') === "R' U' F",
+    s.scramble);
+}
+
 for (const [ev, [lo, hi]] of Object.entries(EXPECT)) {
   const s = await G.generate(ev, 'wca');
   const len = s.scramble.trim().split(/\s+/).length;
@@ -586,7 +696,7 @@ section('reconstruction');
       const gained = C.analyse(after.state, 'D').slots
         .filter(s => s.done && !wasDone.includes(s.label));
       if (gained.length < 1) { mislabelled.push(`${x.alg}: puts no pair in`); continue; }
-      const names = gained.map(g => [...g.label].map(fc => C.toUserFace(rf, fc)).join(''));
+      const names = gained.map(g => SV.slotLabel(g.label, rf));
       if (!names.some(n => x.label.startsWith(`${n} `))) {
         mislabelled.push(`${x.alg}: called "${x.label}", inserts ${names.join('/')}`);
       }
@@ -594,6 +704,23 @@ section('reconstruction');
   }
   check('every pair suggestion inserts, and names, the pair it claims',
     !mislabelled.length, mislabelled.slice(0, 3).join(' | ') || `${f2l.list.length} checked`);
+
+  /* Typing a move must not get it handed straight back: after a U, no line may
+     open on U — that is an undo, not a suggestion. And picking a slot means
+     every line is for that slot. */
+  if (atF2L) {
+    const typed = C.applyAlg(atF2L.pos.state, 'U', atF2L.pos.frame);
+    const ta = C.analyse(typed.state, 'D');
+    const after = SV.suggest(typed.state, typed.frame, ta, { limit: 30, lead: [typed.frame.U] });
+    const undos = after.list.filter(x => !/^[xyz]/.test(x.alg) && /^U/.test(x.alg));
+    check('a typed move is never suggested back as its own undo',
+      after.list.length > 0 && !undos.length, undos.map(x => x.alg).slice(0, 3).join(' | ') || `${after.list.length} checked`);
+
+    const want = ta.slots.find(s => !s.done);
+    const one = SV.suggest(typed.state, typed.frame, ta, { limit: 30, slot: want.label });
+    check('a picked slot only gets lines for that slot',
+      one.list.length > 0 && one.list.every(x => x.slot === want.label), `${one.list.length} for ${want.label}`);
+  }
 }
 
 /* ---------------- how moves group into steps ----------------
@@ -787,6 +914,22 @@ await new Promise((resolve) => {
       !/palette|drawer|scrim|boot-error/.test(cid), 'topmost: ' + cid);
 
     check('the app booted', w.__tdtBooted === true);
+
+    /* Opened, the metronome window must actually render a box rather than a
+       zero-height stack of controls.
+
+       Not asserted here: whether it starts closed. This iframe inherits the
+       browser's saved settings, so somebody who left the window on would see a
+       failure that is not one. */
+    const metro = d.querySelector('#metro');
+    const metroWasHidden = metro.hidden;
+    metro.hidden = false;
+    const mBox = metro.getBoundingClientRect();
+    const dots = metro.querySelectorAll('#metro-beats i').length;
+    check('the metronome window renders when it is opened',
+      mBox.width > 120 && mBox.height > 80 && dots === 4,
+      `${Math.round(mBox.width)}x${Math.round(mBox.height)}, ${dots} beats`);
+    metro.hidden = metroWasHidden;
 
     // Regression guard: an animation keyframe starting at opacity 0 left the
     // scramble invisible whenever the timeline was paused.
@@ -1497,17 +1640,32 @@ section('blindfolded tracing');
   check('a different buffer still traces to a memo that solves the cube', badBuf === 0,
     badBuf ? `${badBuf} failed` : 'DF / DFL buffers');
 
+  /* The buffer dropdown offers these exact strings, and a buffer the letter
+     map cannot spell is a buffer whose letter reads "?" — which is how a
+     corner list generated from the other spelling of each sticker got away
+     with never selecting the saved buffer. */
+  check('every buffer the settings can offer has a letter in the scheme',
+    [...B.CORNER_STICKER_KEYS, ...B.EDGE_STICKER_KEYS].every(k => B.DEFAULT_SPEFFZ_MAP[k])
+    && B.DEFAULT_SPEFFZ_MAP[B.DEFAULT_BLD.edgeBuffer] && B.DEFAULT_SPEFFZ_MAP[B.DEFAULT_BLD.cornerBuffer]);
+
   /* --- a scramble that ends in a rotation ---
-     WCA 3BLD scrambles do, and the cube you are handed is the rotated one,
-     so the letters must change with it while the memo still works. */
+     WCA 3BLD scrambles end in wide moves, so the cube is handed to you turned.
+     A solver who turns it back to their own colours before memo must get the
+     same letters either way; one who memos it as handed must not. */
   const base = "R U R' F' U2 L' B L B2 U' R2 D2 F2 U2 F2";
   const rotated = base + " x2 y'";
   const a = B.trace(base, speffz);
   const b = B.trace(rotated, speffz);
+  const asHanded = { ...speffz, reorient: false };
+  const c = B.trace(rotated, asHanded);
   check('a trailing rotation still yields a memo that solves the cube', replay(rotated, speffz).ok);
-  check('a trailing rotation changes the letters — the cube is handed to you turned',
-    a.edges.targets.map(x => x.letter).join('') !== b.edges.targets.map(x => x.letter).join(''),
+  check('turning the cube back before memo keeps the letters the rotation would have moved',
+    a.edges.targets.map(x => x.letter).join('') === b.edges.targets.map(x => x.letter).join(''),
     `${a.edges.targets.map(x => x.letter).join('')} vs ${b.edges.targets.map(x => x.letter).join('')}`);
+  check('memoing the cube as handed instead reads the rotation into the letters',
+    b.edges.targets.map(x => x.letter).join('') !== c.edges.targets.map(x => x.letter).join(''),
+    `${b.edges.targets.map(x => x.letter).join('')} vs ${c.edges.targets.map(x => x.letter).join('')}`);
+  check('memoing the cube as handed still solves it', replay(rotated, asHanded).ok);
   check('a trailing rotation does not change how many targets there are',
     a.edges.targets.length === b.edges.targets.length
     && a.corners.targets.length === b.corners.targets.length);
@@ -1797,6 +1955,202 @@ section('scramble of the day — the one-line note');
   await cleared.setNote('');
   check('an emptied note deletes the one that was there',
     cleared.net.sent[0] === '' && cleared.myNote === '');
+}
+
+/* -------------------------------------------------------------------
+   Scramble of the Day — state races
+
+   Each check below is a bug report reproduced against a stub transport, so
+   the ordering that caused it is pinned down rather than left to network luck.
+   ------------------------------------------------------------------- */
+section('scramble of the day — state races');
+{
+  const { Daily } = await import('./js/daily.js');
+  const { DailyTransport, sotdDoneOn, clearSotdDone } = await import('./js/daily-net.js');
+  const tick = () => new Promise(r => setTimeout(r, 0));
+  const DAY = '2026-09-08';
+  const today = (patch = {}) => ({
+    event: '333', dayId: DAY, uid: 'u1', signedIn: true,
+    scramble: "R U R' U'", scrambleLoaded: true, progress: {}, results: {}, ...patch,
+  });
+  /** A controller whose every scramble request is logged, the way the window would draw it. */
+  const make = (net, settings = {}) => {
+    const shown = [];
+    const ctl = new Daily({
+      settings: { event: '333', inputMode: 'timer', ...settings }, solves: [],
+      nextScramble: () => { shown.push(ctl.takeScramble()); },
+    });
+    ctl.net = { unlockResults() {}, setProgress: () => Promise.resolve(), watch() {}, ...net };
+    ctl._retry = (fn) => fn();   // one try each; the backoff is not what is under test
+    return { ctl, shown };
+  };
+
+  /* The flash. The first snapshot a transport emits is the server-clock offset,
+     before watch() has chosen a day or an event. Asking "have I submitted?" then
+     can only come back "no" — and that "no" was being trusted, so when today's
+     scramble landed a beat later the window armed on it and drew it, and then
+     the real answer arrived and swapped it for "come back after the reset". */
+  {
+    const { ctl, shown } = make({
+      hasOwnResult: () => Promise.resolve(ctl.snap?.event ? true : false),
+    });
+    ctl.engage();
+    ctl._onDay({ ...today(), event: null, dayId: null, scramble: null, scrambleLoaded: false });
+    await tick();
+    ctl._onDay(today());
+    await tick(); await tick();
+    check('an answer about no day and no event is not taken as "not played today"',
+      !shown.some(s => s?.scramble), `shown ${JSON.stringify(shown.map(s => s?.scramble || s?.hold))}`);
+    check('…and the account that already played ends on the done line, never armed',
+      !ctl.attempting && ctl.submittedToday && /already done/.test(shown.at(-1)?.hold || ''));
+  }
+
+  /* The missing scramble. The attempt was only ever armed from _onDay, so when
+     the own-result check was the LAST thing to answer — the ordinary case on a
+     quiet day — the window sat on its placeholder until some unrelated
+     snapshot happened to arrive. */
+  {
+    let answer;
+    const { ctl, shown } = make({ hasOwnResult: () => new Promise(r => { answer = r; }) });
+    ctl.engaged = true;
+    ctl._onDay(today());
+    answer(false);
+    await tick(); await tick();
+    check('once the check says today is still open, the window arms without waiting for another snapshot',
+      ctl.attempting && shown.at(-1)?.scramble === "R U R' U'",
+      `attempting=${ctl.attempting} last=${JSON.stringify(shown.at(-1))}`);
+  }
+
+  /* Redundant reads. Every snapshot — anybody's progress, the offset, the
+     results listener — fired a fresh database read of the same row. */
+  {
+    let reads = 0;
+    const { ctl } = make({ hasOwnResult: () => { reads++; return Promise.resolve(false); } });
+    for (let i = 0; i < 5; i++) ctl._onDay(today({ progress: { ['x' + i]: {} } }));
+    await tick(); await tick();
+    ctl._onDay(today());
+    check('the own-result row is read once per account, day and event — not once per snapshot',
+      reads === 1, `${reads} read(s)`);
+  }
+
+  /* A read that could not be made is not an answer. */
+  {
+    const t = new DailyTransport();
+    t.snap = { event: '333', uid: 'u1' };
+    const unwatched = await t.hasOwnResult();
+    t._dayKey = '1757269800000';
+    t._sdk = { ref: (db, p) => p, get: () => Promise.reject(new Error('offline')) };
+    const failed = await t.hasOwnResult();
+    check('the transport says "unknown", not "no", when it cannot ask or the read fails',
+      unwatched === null && failed === null, `unwatched=${unwatched} failed=${failed}`);
+
+    /* …but a refusal is an answer. `results` is readable only once your own row
+       exists, so for somebody who has not played yet the read is refused — and
+       calling that "unknown" would leave every new player on "Checking…". */
+    t._sdk.get = () => Promise.reject(Object.assign(new Error('permission_denied at /daily'), { code: 'PERMISSION_DENIED' }));
+    const denied = await t.hasOwnResult();
+    check('a read the rules refuse means "not played yet", not "unknown"',
+      denied === false, `denied=${denied}`);
+  }
+
+  /* The save failure. setProgress('done') was awaited before the result and
+     its failure threw straight past the submit, so a flaky progress write cost
+     the time itself — while the window had already said "attempt submitted". */
+  {
+    const sent = [];
+    const { ctl } = make({
+      hasOwnResult: () => Promise.resolve(false),
+      setProgress: (p) => p.status === 'done' ? Promise.reject(new Error('progress refused')) : Promise.resolve(),
+      submitResult: (r) => { sent.push(r); return Promise.resolve(); },
+    });
+    ctl.snap = today();
+    ctl.attempting = true;
+    await ctl.onSolveRecorded({ scramble: "R U R' U'", timeMs: 9000, penalty: 'none' }).catch(() => {});
+    check('a refused progress write does not stop the result being submitted',
+      sent.length === 1 && sent[0].timeMs === 9000, `${sent.length} result write(s)`);
+  }
+
+  /* …and the result goes where the solve was, even if the transport has
+     moved to another event while the progress write was in flight. */
+  {
+    const net = {
+      cur: '333',
+      target() { return { event: this.cur }; },
+      hasOwnResult: () => Promise.resolve(false),
+      setProgress(p, at) { if (p.status === 'done') this.cur = '444'; return Promise.resolve(); },
+      submitResult(r, at) { this.sentTo = (at || this.target()).event; return Promise.resolve(); },
+    };
+    const { ctl } = make(net);
+    ctl.snap = today();
+    ctl.attempting = true;
+    await ctl.onSolveRecorded({ scramble: "R U R' U'", timeMs: 9000, penalty: 'none' }).catch(() => {});
+    check('a result is written to the event it was solved in, not wherever the board has moved since',
+      ctl.net.sentTo === '333', `sent to ${ctl.net.sentTo}`);
+
+    const paths = [];
+    const t = new DailyTransport();
+    t.snap = { event: '444', uid: 'u1' };
+    t._dayKey = '1';
+    t._sdk = { ref: (db, p) => p, set: (p) => { paths.push(p); return Promise.resolve(); },
+      update: (p) => { paths.push(p); return Promise.resolve(); }, serverTimestamp: () => 0 };
+    const at = t.target?.();
+    t._dayKey = '2'; t.snap.event = '333';
+    try { await t.setProgress({ status: 'done' }, at); await t.submitResult({ timeMs: 1 }, at); } catch {}
+    check('the transport writes to the day and event it was handed, not the one it is watching now',
+      paths.length === 2 && paths.every(p => p.startsWith('daily/1/444/')), paths.join(' ') || 'no writes');
+  }
+
+  /* The done note retires the chip and skips the intro. It was written before
+     the result was, so a result that never landed still read as a finished day. */
+  {
+    clearSotdDone();
+    const { ctl } = make({
+      hasOwnResult: () => Promise.resolve(false),
+      submitResult: () => Promise.reject(new Error('refused')),
+    });
+    ctl.snap = today();
+    ctl.attempting = true;
+    await ctl.onSolveRecorded({ scramble: "R U R' U'", timeMs: 9000, penalty: 'none' }).catch(() => {});
+    check('a result that was never accepted does not mark the day as done',
+      !sotdDoneOn(DAY), `note ${sotdDoneOn(DAY)}`);
+    clearSotdDone();
+  }
+
+  /* The intro. Whether to play it was read off that note before the database
+     had answered, so on a fresh browser — or after the note was cleared — the
+     title card played for an account that had already submitted. The window
+     has to be able to wait for the real answer, briefly. */
+  {
+    let answer;
+    const { ctl } = make({ hasOwnResult: () => new Promise(r => { answer = r; }) });
+    ctl._onDay(today());
+    const known = ctl.ownResultKnown?.(2000);
+    const started = Date.now();
+    setTimeout(() => answer(true), 30);
+    await known;
+    check('the window can wait for the own-result answer before deciding on the intro',
+      !!known && ctl.submittedToday && Date.now() - started < 1500,
+      `waited ${Date.now() - started}ms, submittedToday=${ctl.submittedToday}`);
+    clearSotdDone();
+  }
+
+  /* The event bleed. The controller is a singleton and took its event from the
+     timer once, when it was built. Do 4x4's scramble of the day, go back to
+     3x3, open the window again — and it was still on 4x4, handing a 4x4
+     scramble to a 3x3 timer and a 3x3 session until the page was reloaded. */
+  {
+    const watched = [];
+    const { ctl } = make({ hasOwnResult: () => Promise.resolve(false), watch: (e) => watched.push(e) },
+      { event: '444' });
+    ctl.snap = today({ event: '444' });
+    ctl.engage();
+    ctl.disengage();
+    ctl.app.settings.event = '333';
+    ctl.engage();
+    check('entering the window follows the timer’s current event, not the one the controller was built on',
+      ctl.eventId === '333' && watched.at(-1) === '333', `eventId=${ctl.eventId} watched=${watched.join(',')}`);
+    ctl.disengage();
+  }
 }
 
 section('scramble of the day — whose avatar URL is safe to fetch');
@@ -2098,6 +2452,25 @@ section('custom relay');
     check('DNFs and non-relay solves give no breakdown',
       St.relaySummary([mk(4000, 10000, 'DNF')]) === null && St.relaySummary([{ timeMs: 1, penalty: 'none' }]) === null);
   }
+}
+
+section('virtual cube');
+{
+  const V = await import('./js/vcube.js');
+  const N = await import('./js/cubenet.js');
+  const same = (a, b, n) => JSON.stringify(N.faceletsFor(a, n)) === JSON.stringify(N.faceletsFor(b, n));
+  check('I is R, K is R\'', V.movesFor('KeyI', 3)[0] === 'R' && V.movesFor('KeyK', 3)[0] === "R'");
+  check('a key off the map is not a turn', V.movesFor('Digit2', 3) === null && V.movesFor('Backspace', 3) === null);
+  check('a solved cube is solved', V.isSolved('', 3) && V.isSolved("R R'", 4));
+  check('rotations never unsolve it', V.isSolved('x y2 z\'', 5));
+  check('a scramble is not solved', !V.isSolved("R U R' U'", 3));
+  check('six sexy moves come back solved', V.isSolved(Array(6).fill("R U R' U'").join(' '), 3));
+  check('a 4x4 scramble and its inverse come back solved',
+    V.isSolved("Rw U2 3Fw' L D Rw' Uw F2 F2 Uw' Rw D' L' 3Fw U2 Rw'", 4));
+  check('M on a big cube is every inner layer', same(V.movesFor('Digit5', 5).join(' '), 'M', 5)
+    && same(V.movesFor('KeyX', 4).join(' '), "M'", 4));
+  check('a wide turn on a 2x2 is a rotation', V.movesFor('KeyU', 2)[0] === 'x' && same('x', 'Rw', 2));
+  check('M does nothing on a 2x2', V.movesFor('Digit5', 2).length === 0);
 }
 
 document.getElementById('summary').textContent =

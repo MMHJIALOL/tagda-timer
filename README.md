@@ -49,6 +49,9 @@ itself (that no overlay is stuck on screen).
   is already made before you finish the current solve.
 - cubing.js is **vendored into `vendor/`**, so the timer works with no internet at all.
   Re-mirror it any time with `python tools/mirror_cubing.py`.
+- **Fewest Moves scrambles are FMC scrambles.** cubing.js already wraps the `333fm`
+  scramble in `R' U' F` at both ends, which is what makes it impossible to tell where
+  the scramble begins and so impossible to derive a solution from it (WCA E2e).
 - **Your own scrambles.** Paste a list — a competition round, a set of cases, ten
   thousand lines — and the generator steps aside: every *next* hands you the following
   line, in order, and each solve is recorded against the scramble it was actually done
@@ -193,6 +196,32 @@ amount of animation or lag can change a recorded time. The inspection penalty is
 from a fresh clock reading at the instant the timer starts, not from the last animation
 frame.
 
+### Fewest Moves
+Picking 333fm replaces the hold-to-start timer with an attempt. **Start attempt** freezes
+the scramble and starts a 60-minute countdown (WCA E2b), computed from a timestamp rather
+than counted in frames — and kept in IndexedDB, so a reload or a crash forty minutes in
+picks the attempt back up with the right time left. There are calls at five minutes and
+one minute, the same tone inspection uses.
+
+You get a solution box and a scratch-notes box. Under the solution, live: the move count
+in OBTM, the ETM count against the 80-move ceiling (amber near it, red over it — the two
+metrics are different numbers, and the one that is capped is not the one that is scored),
+the first illegal token named and explained, and whether the cube is actually solved. The
+cube preview shows the scramble with whatever you have typed applied, so an unfinished
+solution is a picture of how far you have got. Any final orientation counts.
+
+**Submit** early is allowed; **Abandon** asks first and records a DNF; running out of time
+submits a solution that works and records a DNF for one that does not. The move count, the
+solution and the notes are all stored on the solve, so the history shows what you wrote —
+including on a DNF, which is the one you want to look at — and *Reconstruct this solve*
+opens the workbench on the solution you already wrote down.
+
+Notation is WCA 12a, strictly: outer faces, `Rw`-style outer blocks and `x y z` rotations.
+`M`, `E` and `S` are refused, wrong capitalisation is read as the right capitalisation, and
+a bare `r` counts as `R` and not `Rw` — which is what E2c6+ says and the opposite of what
+most cubing software does, so the app says so out loud rather than silently scoring
+something you did not mean.
+
 ### The times list
 The strip in the sidebar scrolls all the way back to the first solve of the
 session, a page at a time as you reach the bottom, ending on a `start of the
@@ -275,6 +304,15 @@ WCA-correct averages — trim the best and worst, DNFs count as worst, and two D
 a window make the whole average a DNF. Current and best ao5 / ao12 / ao50 / ao100, mo3,
 mean, median, standard deviation, and a consistency score.
 
+**Fewest Moves is scored in moves, not seconds.** A 333fm result is its move count in
+Outer Block Turn Metric, and it travels through the same statistics as every other
+event — so the single, the mean and the mean of 3 are all counted in moves, the times
+list reads `28` rather than `0.03`, and the charts are labelled in moves. The round a
+competitor actually sits is a mean of 3 (WCA 9b4a), so that and the best single are what
+the panel shows for this event; the rolling ao5/ao12/ao50/ao100 are put away, because a
+rolling average of twelve one-hour attempts is not a statistic anyone keeps. One DNF
+makes a mean of 3 a DNF (9f11), which the ordinary mean arithmetic already gets right.
+
 Five charts, all hand-drawn SVG: a trend line with rolling ao5/ao12 and your PB, a
 distribution histogram, a practice heatmap with streaks, a consistency dial, and a
 per-case ranking for trainer sessions.
@@ -331,7 +369,8 @@ tension changed, magnets, cleaned, broke.
 - Deleting a cube leaves its solves alone. They really were done on it.
 
 ### Your data
-Everything lives in your browser's IndexedDB. No account, no server, nothing uploaded.
+Everything lives in your browser's IndexedDB, and stays there unless you sign in —
+sign in and the same records are mirrored to your account and merged across devices.
 
 - Full JSON backup and restore.
 - Per-session CSV export.
@@ -341,6 +380,23 @@ Everything lives in your browser's IndexedDB. No account, no server, nothing upl
   session comes across with its name, times, scrambles, comments and penalties, and the
   event is read from the session's scramble type. Tested at ~12,000 solves across 23
   sessions in under five seconds.
+
+### Offline
+A service worker (`sw.js`, registered from `js/main.js`) keeps a copy of the app,
+so the site opens with no connection at all. Solves and settings were already
+IndexedDB and scrambles are generated locally, so once the page is up nothing
+about timing needs the network.
+
+Works offline: the timer, every trainer, statistics, the reconstructor, themes,
+gear, import and export.
+
+Needs a connection: race rooms, Scramble of the Day, signing in, and Spotify.
+
+Signed in and offline, solves are saved locally and uploaded on their own the
+moment the connection comes back — no reload. Only the page document, the
+scripts, styles and fonts are ever cached; database and sign-in traffic is
+always live. App files are network-first, so a deploy is picked up on the next
+load rather than being pinned to whatever the cache happens to hold.
 
 ---
 
@@ -474,8 +530,15 @@ modules over `file://`, and the page says so if you try.
 
 ## Not in this version
 
-Accounts and cloud sync, Bluetooth smart cubes, and Bluetooth smart timers. FMC
-currently records a time rather than running the full 60-minute solution editor.
+Bluetooth smart cubes and Bluetooth smart timers.
+
+Fewest Moves has no NISS helper, insertion finder or skeleton tools — it gives you the
+clock, the box, the move count and an honest verdict, and the thinking is yours. It also
+takes a deliberately stricter line than a judge on brackets: `(R U)` is refused by name
+rather than read as `R U`, because in a typed box a bracket means NISS or an insertion,
+and the moves inside one are not the moves that were performed in the order they were
+performed. FMC is excluded from race rooms and the Scramble of the Day, and it has no
+Stackmat or typed-result input.
 
 The reconstructor suggests and animates, but it cannot know what you actually turned —
 without a smart cube it removes the typing, not the recall. It reads CFOP; Roux, ZZ and

@@ -27,6 +27,7 @@ import {
   CLOCK_SLACK_MS, CLOCK_SLACK_RATIO,
   CHAT_MAX_LEN, CHAT_COOLDOWN_MS, RACE_EMOJI,
 } from './raceapp.js';
+import { isOwnerName, openOwnerCard } from './ownercard.js';
 
 /**
  * How long a settled leaderboard stays up before the next scramble.
@@ -1386,10 +1387,16 @@ export class Race extends EventTarget {
         class: 'race-board-row',
         dataset: { me: String(uid === this.uid), gone: String(!present.has(uid)) },
       });
+      const boardOwner = isOwnerName(s.name);
+      const boardName = el('span', {
+        class: `race-board-name${boardOwner ? ' owner-shine' : ''}`, text: s.name || 'Cuber',
+        title: boardOwner ? `${s.name} — that’s the site owner, click for the card`
+          : present.has(uid) ? s.name : `${s.name || 'Cuber'} — no longer in the room`,
+      });
+      if (boardOwner) boardName.addEventListener('click', (e) => { e.stopPropagation(); openOwnerCard(boardName); });
       line.append(
         el('span', { class: 'race-board-rank', text: String(i + 1) }),
-        el('span', { class: 'race-board-name', text: s.name || 'Cuber',
-          title: present.has(uid) ? s.name : `${s.name || 'Cuber'} — no longer in the room` }),
+        boardName,
         el('span', { class: 'race-board-best', text: s.best != null && isFinite(s.best) ? fmt(s.best) : '—' }),
         el('span', { class: 'race-board-wins', text: `${s.wins}/${s.played}`,
           title: `${s.wins} won of ${s.played} round${s.played === 1 ? '' : 's'}` }),
@@ -1430,11 +1437,15 @@ export class Race extends EventTarget {
        A rail is about 200px wide, and "host" and "you" as two text chips left
        roughly five pixels for the name — which is every room's creator, so the
        common case was a row you could not read. The ring costs no width. */
-    node.append(el('span', {
-      class: `race-av${isHost ? ' host' : ''}`,
+    const owner = isOwnerName(player.name);
+    const av = el('span', {
+      class: `race-av${isHost ? ' host' : ''}${owner ? ' owner' : ''}`,
       text: initialsOf(player.name),
-      title: isHost ? `${player.name} — publishes each round’s scramble` : player.name,
-    }));
+      title: owner ? `${player.name} — that’s the site owner, click for the card`
+        : isHost ? `${player.name} — publishes each round’s scramble` : player.name,
+    });
+    if (owner) av.addEventListener('click', (e) => { e.stopPropagation(); openOwnerCard(av); });
+    node.append(av);
 
     /* No "you" chip. The row already carries an accent background and border
        for data-me, which reads faster than a word does, and the chip was
@@ -1446,8 +1457,10 @@ export class Race extends EventTarget {
        name track too narrow to hold a wins badge as well — it was being
        clipped to an unreadable stub. Splitting it by phase means each piece
        gets the room when it is the thing you are actually reading. */
+    const nameB = el('b', { class: owner ? 'owner-shine' : '', text: player.name || 'Cuber' });
+    if (owner) nameB.addEventListener('click', (e) => { e.stopPropagation(); openOwnerCard(nameB); });
     const name = el('span', { class: 'race-name' },
-      el('b', { text: player.name || 'Cuber' }),
+      nameB,
       !this.revealed && standing?.wins
         ? el('i', { class: 'race-wins', text: `${standing.wins}W`, title: `${standing.wins} round${standing.wins === 1 ? '' : 's'} won` })
         : null,
