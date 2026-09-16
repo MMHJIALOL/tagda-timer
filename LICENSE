@@ -1,0 +1,36 @@
+Copyright (c) 2026 Ishaan Singhal (GitHub: MMHJIALOL). All rights reserved.
+
+This repository and the Tagda Timer website (https://tagdatimer.vercel.app)
+are proprietary. The source is published so it can be read. It is not open
+source.
+
+You MAY:
+  - view the source code on GitHub;
+  - use the Tagda Timer website at https://tagdatimer.vercel.app;
+  - open issues and submit pull requests to this repository. By submitting a
+    pull request you agree that your contribution may be used under these
+    terms.
+
+You MAY NOT, without prior written permission from the copyright holder:
+  - copy, reproduce, or redistribute the code, design, or assets, in whole or
+    in part;
+  - modify the code or create derivative works, including rebranded versions;
+  - host, deploy, or publish this software or any part of it on any domain,
+    service, or app store;
+  - use the code, design, or assets in any commercial or non-commercial
+    product.
+
+Forking on GitHub is allowed only as far as GitHub's Terms of Service require,
+and only to prepare pull requests to this repository.
+
+Third-party code keeps its own license and is not covered by this notice:
+  - vendor/cubing/ (cubing.js) is under the license stated in its files;
+  - parts of js/puzzles.js are ported from cubingapp under the MIT License, as
+    noted at the top of that file.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED. IN NO EVENT SHALL THE COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM,
+DAMAGES, OR OTHER LIABILITY ARISING FROM THE SOFTWARE OR ITS USE.
+
+For permission requests, contact the copyright holder through GitHub
+(https://github.com/MMHJIALOL).
