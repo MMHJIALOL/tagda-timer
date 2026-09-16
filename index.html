@@ -29,11 +29,11 @@
      perfect in incognito, which is a miserable thing to debug.
      /js/ is `must-revalidate` and does not depend on this, but keep the number
      in step anyway rather than leaving two answers to the same question. -->
-<link rel="modulepreload" href="js/main.js?v=55">
-<link rel="stylesheet" href="css/fonts.css?v=55">
-<link rel="stylesheet" href="css/tokens.css?v=55">
-<link rel="stylesheet" href="css/base.css?v=55">
-<link rel="stylesheet" href="css/components.css?v=55">
+<link rel="modulepreload" href="js/main.js?v=56">
+<link rel="stylesheet" href="css/fonts.css?v=56">
+<link rel="stylesheet" href="css/tokens.css?v=56">
+<link rel="stylesheet" href="css/base.css?v=56">
+<link rel="stylesheet" href="css/components.css?v=56">
 <link rel="icon" href="assets/favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="assets/logo-192.png">
 <link rel="apple-touch-icon" href="assets/logo-180.png">
@@ -255,6 +255,12 @@
   <!-- ---------- SCRAMBLE ---------- -->
   <section id="scramble-zone" class="fade-layer">
     <div class="scramble-label">Scramble</div>
+    <!-- The relay rail: one chip per puzzle in a Custom relay, standing where
+         the single scramble line normally starts. Only ever filled on a relay
+         session, and the one part of this zone that survives focus mode -- see
+         body.relay in base.css -- because which puzzle you are on is the one
+         thing the clock cannot tell you. -->
+    <div id="relay-rail" hidden></div>
     <div id="scramble-wrap">
       <div id="scramble-text" class="scramble" tabindex="-1">Warming up scrambler&hellip;</div>
       <div id="scramble-tools">
@@ -454,6 +460,11 @@
              Timer > Multiphase splits is on; the memo/exec readout above owns
              blind events instead. -->
         <div id="phase-live" hidden></div>
+
+        <!-- Which puzzle of a Custom relay the clock is currently counting.
+             Sits with the live split list for the same reason it exists: the
+             total on the digits says nothing about where in the run you are. -->
+        <div id="relay-now" hidden></div>
 
         <div id="pace-ghost" hidden>
           <div id="pace-fill"></div>
@@ -686,7 +697,7 @@
   </div>
 </div>
 
-<script type="module" src="js/main.js?v=55"></script>
+<script type="module" src="js/main.js?v=56"></script>
 <script>
 (function () {
   var isFile = location.protocol === 'file:';

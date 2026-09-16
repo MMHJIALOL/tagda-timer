@@ -81,7 +81,8 @@ const PUBLISH_TIMEOUT_MS = 15000;
 /** An event only counts as a daily challenge if "one scramble, one time" describes it. */
 export function dailyEligible(eventId) {
   const ev = eventOf(eventId);
-  return !ev.fmc && !ev.multi;
+  // Same reason as race mode: a relay is not one scramble and one time.
+  return !ev.fmc && !ev.multi && !ev.relay;
 }
 
 export class Daily extends EventTarget {

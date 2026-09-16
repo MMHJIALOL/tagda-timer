@@ -122,6 +122,35 @@ neutral to amber to red, and the digits breathe faster as time runs out.
 
 Inspection is turned off automatically for the blindfolded events and FMC.
 
+### Custom relay
+Pick **Custom** in the event menu to time several puzzles as one attempt — a 2–5 relay,
+two 3x3s, five 2x2s, anything up to ten puzzles. The relay builder has presets (2–4,
+2–5, 2–7, 2×3x3, 5×2x2), an event picker with a 1–5 count, and up/down buttons to
+reorder. Only ordinary single-scramble events can go in: no blindfolded, FMC or
+multi-blind, and scrambles are always random-state.
+
+- **One attempt, one timer run.** Space starts it, every press in the middle records a
+  split and moves to the next puzzle, and the last press stops the clock. The result is
+  the total; each puzzle's own time is stored with the solve. +2 and DNF apply to the
+  whole attempt, as in a WCA relay.
+- **One puzzle on screen at a time.** A rail of chips replaces the single scramble line —
+  upcoming, active, or done with its split. The scramble box and the one 3D preview show
+  only the active puzzle. Before the run, **<** / **>** or a click on a chip steps
+  through them so you can scramble each against its own preview. **all** swaps the box
+  for a plain numbered list of every scramble, for printing or copying.
+- **During the run** the rail stays visible even in focus mode, and the time on each
+  puzzle stacks up beside the clock with "on 4x4 · 3 of 5" underneath.
+- **Inspection**, if on, happens once before the first puzzle.
+- **The relay belongs to its session.** Building one makes a session named after it;
+  switching sessions switches relays, so two different puzzle lists never share an
+  average. A session's relay can be edited only while it has no solves.
+- Main stats and charts use the total. **Statistics** adds a per-puzzle card: mean and
+  best split for each position and its share of the total. A solve's menu lists every
+  split with its scramble, **Reconstruct** is offered for the 3x3 legs, the share card
+  prints a split line under the total, and CSV export gains a `splits` column.
+- Relays are not available in race rooms, Scramble of the Day, or with your own pasted
+  scrambles.
+
 ### Blindfolded
 
 On 3BLD a **Show breakdown** button appears under the scramble. It stays collapsed until
@@ -329,6 +358,7 @@ Everything lives in your browser's IndexedDB. No account, no server, nothing upl
 | **← →** | previous / next scramble |
 | **Ctrl + C** | copy the scramble |
 | **X** | enter your own scrambles |
+| **<** / **>** | previous / next puzzle in a Custom relay |
 | **E** / **M** / **S** | event · mode · session |
 | **A** / **H** | statistics · all solves |
 | **T** / **,** | appearance · settings |

@@ -177,6 +177,22 @@ body.focus #creator-chip {
 body.focus #bg-veil { opacity: calc(var(--bg-dim) + .34); }
 body.focus #bg-shader, body.focus #bg-media { filter: blur(calc(var(--bg-blur) + 5px)) saturate(.25); }
 body.focus #app { grid-template-rows: 0 0 1fr; }
+
+/* A relay is the one case where the scramble zone keeps its row in focus mode.
+   Everything in it still goes — the notation, the tools, the preview — but the
+   rail stays, because which of five puzzles you are on cannot be read off the
+   clock, and getting it wrong costs the whole attempt. The zone itself is
+   un-faded rather than the rail, since a child cannot undo its parent's
+   opacity. */
+body.focus.relay #app { grid-template-rows: 0 auto 1fr; }
+body.focus.relay #scramble-zone {
+  opacity: 1; filter: none; transform: none; pointer-events: none;
+}
+body.focus.relay #scramble-zone > *:not(#relay-rail) {
+  opacity: 0;
+  filter: blur(9px);
+  transition: opacity 220ms var(--ease), filter 220ms var(--ease);
+}
 /* the timer digits sit behind the inspection countdown, so hide them there */
 body.inspecting #timer-display { opacity: 0; }
 

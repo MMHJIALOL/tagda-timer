@@ -257,15 +257,38 @@ export async function drawSolveCard(solve, { index = null } = {}) {
   bits.push(fmtDate(solve.createdAt));
   if (solve.penalty === '+2') bits.push('+2 penalty');
 
-  let y = paintHero(ctx, c, 250, solve.caseName || 'single', value, bits.join('  ·  '));
+  /* A relay's headline is the total, because that is the result. What it was
+     made of goes underneath as one line — the card is a poster, and five
+     scrambles with five nets would make it a document. */
+  const relay = Array.isArray(solve.relay) && solve.relay.length ? solve.relay : null;
+  if (relay) bits[0] = `Relay · ${relay.map(p => eventOf(p.event).short).join(' · ')}`;
 
-  const n = cubeSizeFor(solve.event);
+  let y = paintHero(ctx, c, 250, solve.caseName || (relay ? 'total' : 'single'), value, bits.join('  ·  '));
+
+  if (relay) {
+    ctx.fillStyle = hex(c.text, 0.72);
+    ctx.font = `600 30px ${MONO}`;
+    ctx.textAlign = 'center';
+    const line = relay.map(p => `${eventOf(p.event).short} ${fmt(p.splitMs)}`).join('   ·   ');
+    // Two lines at most: ten puzzles do not fit across one.
+    const rows = wrap(ctx, line, W - 148).slice(0, 2);
+    rows.forEach((ln, i) => ctx.fillText(ln, W / 2, y + 44 + i * 40));
+    ctx.textAlign = 'left';
+    y += 14 + rows.length * 40;
+  }
+
+  /* Only a 3x3 leg gets a net. cubeSizeFor('custom') is 0, so a relay would
+     otherwise draw none at all — and a net is only worth reading for the 3x3
+     anyway, which is the one puzzle whose scramble people actually check. */
+  const relay333 = relay?.find(p => p.event === '333' || p.event === '333oh') || null;
+  const netScramble = relay ? relay333?.scramble : solve.scramble;
+  const n = relay ? (relay333 ? 3 : 0) : cubeSizeFor(solve.event);
   const netH = n ? 300 : 0;
   y = paintScramble(ctx, c, y + 46, (solve.scramble || '—').replace(/\n/g, ' '), { maxLines: n ? 3 : 9 });
 
   if (n) {
     const top = y + 44;
-    drawNet(ctx, faceletsFor(solve.scramble, n), n, 74, top, W - 148, netH);
+    drawNet(ctx, faceletsFor(netScramble, n), n, 74, top, W - 148, netH);
     y = top + netH;
   }
 
