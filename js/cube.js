@@ -31,8 +31,13 @@ async function loadTwisty() {
   return false;
 }
 
-/** Colour scheme is applied through twisty's experimental sticker colours. */
-const DEFAULT_SCHEME = { U: '#ffffff', D: '#ffe100', F: '#00b04a', B: '#0051ba', R: '#ec0000', L: '#ff8b00' };
+/* The sticker colours twisty draws the 3x3 with. "Default" means exactly these,
+   so a custom colour overrides a face and nothing else. */
+const FACES = ['U', 'L', 'F', 'R', 'B', 'D'];
+const CUBE3D_COLORS = { U: 0xffffff, L: 0xff9900, F: 0x00ff00, R: 0xff0000, B: 0x2266ff, D: 0xffff00 };
+let painted = false;          // the shared materials have been touched at least once
+export const DEFAULT_CUBE_COLORS = Object.fromEntries(
+  FACES.map(f => [f, '#' + CUBE3D_COLORS[f].toString(16).padStart(6, '0')]));
 
 export class CubeView {
   constructor(host, fallbackEl) {
@@ -41,7 +46,8 @@ export class CubeView {
     this.player = null;
     this.puzzle = '3x3x3';
     this.visualization = '3D';
-    this.scheme = { ...DEFAULT_SCHEME };
+    this.colors = null;         // custom sticker colours, null = twisty's own
+    this.backView = 'top-right'; // the little rear view beside the 3D cube
     this.pending = null;
     this.ready = false;
     this.orbit = null;          // set before init() to restore a saved angle
@@ -65,7 +71,7 @@ export class CubeView {
     this.player.setAttribute('control-panel', 'none');
     this.player.setAttribute('background', 'none');
     this.player.setAttribute('hint-facelets', 'floating');
-    this.player.setAttribute('back-view', 'top-right');
+    this.player.setAttribute('back-view', this.backView);
     this.player.setAttribute('visualization', '3D');
     this.player.setAttribute('tempo-scale', '0');
     if (this.orbit) this.setOrbit(this.orbit);
@@ -108,11 +114,11 @@ export class CubeView {
     this.setView(view);
   }
 
-  /** Only 3x3 has a last-layer view, and only cubes have a usable flat net. */
+  /** Only 3x3 has a last-layer view; cubes and FTO have a usable flat net. */
   supports(view) {
     const cube = /^([234567])x\1x\1$/.test(this.puzzle);
     if (view === 'LL' || view === 'LL3') return this.puzzle === '3x3x3';
-    if (view === '2D') return cube;
+    if (view === '2D') return cube || this.puzzle === 'fto';
     return true;
   }
 
@@ -126,7 +132,7 @@ export class CubeView {
               : '3D';
     try { this.player.setAttribute('visualization', vis); }
     catch { this.player.setAttribute('visualization', '3D'); }
-    this.player.setAttribute('back-view', use === '3D' ? 'top-right' : 'none');
+    this.player.setAttribute('back-view', use === '3D' ? this.backView : 'none');
   }
 
   /**
@@ -158,13 +164,18 @@ export class CubeView {
     // Multi-blind hands over several numbered scrambles; preview the first.
     const only = (scramble || '').replace(/^\s*\d+\)\s*/gm, '').split('\n')[0].trim();
     const clean = this.orientation ? `${this.orientation} ${only}`.trim() : only;
-    if (clean === this.applied) return;
+    // `force` also throws away any turns added on top — the virtual cube's reset.
+    if (clean === this.applied && !opts.force) return;
 
     const apply = () => {
       try {
         this.player.setAttribute('experimental-setup-alg', clean);
         this.player.setAttribute('alg', '');
         this.applied = clean;
+        this.paintColors();
+        // A player made during boot holds the new state but draws nothing until
+        // it is asked for a frame; an added turn asks, a bare setup alg does not.
+        if (opts.force) this.player.jumpToEnd?.();
         return true;
       } catch (err) {
         console.warn('[cube] could not render scramble for', this.puzzle, err);
@@ -180,11 +191,45 @@ export class CubeView {
       .catch(() => {});
   }
 
-  setScheme(scheme) {
-    this.scheme = { ...this.scheme, ...scheme };
-    if (!this.player) return;
-    try { this.player.style.setProperty('--cube-U', this.scheme.U); }
-    catch { /* ignore */ }
+  /** Animate one turn on top of what is shown. Only the virtual cube does this. */
+  addMove(tok) {
+    try { this.player?.experimentalAddMove(tok); }
+    catch (err) { console.warn('[cube] turn rejected', tok, err); }
+  }
+
+  /** Custom sticker colours ({U: '#rrggbb', ...}), or null for twisty's own. */
+  setColors(colors) {
+    this.colors = colors || null;
+    this.paintColors();
+  }
+
+  /*
+   * twisty-player has no colour attribute and a closed shadow root, but it does
+   * hand over its three.js puzzle object. The 3x3 draws each face with one
+   * material, shared by every player on the page, so recolouring is a matter
+   * of finding those six materials (by their stock colour, the first time)
+   * and setting them the same way twisty built them.
+   */
+  async paintColors() {
+    const p = this.player;
+    // Never customised: leave twisty's own materials alone entirely.
+    if (!p || !(this.colors || painted) || this.puzzle !== '3x3x3' || this.visualization !== '3D') return;
+    painted = true;
+    const obj = await p.experimentalCurrentThreeJSPuzzleObject().catch(() => null);
+    if (!obj || p !== this.player) return;
+    obj.traverse((m) => {
+      const mat = m.material;
+      if (!mat?.color || mat.vertexColors) return;
+      const ud = mat.userData;
+      if (!('face' in ud)) {
+        const hex = mat.color.getHex();
+        ud.face = FACES.find(f => mat.color.clone().setHex(CUBE3D_COLORS[f]).convertLinearToSRGB().getHex() === hex) ?? null;
+      }
+      if (!ud.face) return;
+      const want = this.colors?.[ud.face];
+      mat.color.setHex(want ? parseInt(want.slice(1), 16) : CUBE3D_COLORS[ud.face]).convertLinearToSRGB();
+    });
+    for (const v of await p.experimentalCurrentVantages()) v.scheduleRender?.();
   }
 
   setHints(on) {
@@ -224,5 +269,9 @@ export class CubeView {
     for (const a of ['camera-latitude', 'camera-longitude', 'camera-distance']) {
       this.player.removeAttribute(a);
     }
+    // Removing the attributes alone leaves the camera where the last drag put
+    // it; only an 'auto' request sends it back to the puzzle's default.
+    try { this.player.experimentalModel.twistySceneModel.orbitCoordinatesRequest.set('auto'); }
+    catch { /* older builds */ }
   }
 }

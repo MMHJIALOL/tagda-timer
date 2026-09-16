@@ -394,12 +394,20 @@ function detachListeners() {
  * user has seen it. If there's no ambiguity, merges silently and returns null.
  */
 export async function mergeOnSignIn(user) {
-  const [localSolves, localSessions] = await Promise.all([Solves.all(), Sessions.all()]);
   const { db, ref, get } = _sdk;
   const [cloudSolvesSnap, cloudSessionsSnap] = await Promise.all([
     get(ref(db, userPath('solves'))),
     get(ref(db, userPath('sessions'))),
   ]);
+  /* Read after the cloud, never before it. These two reads are what the union
+     is built from, and the gap between them and the write listeners start()
+     attaches is a window where a solve belongs to neither: not in the snapshot
+     that gets uploaded, not yet watched by the push path. Offline that gap is
+     as long as the connection is down — a tab opened with no network sat on an
+     unresolved get() for minutes, and every solve recorded meanwhile was left
+     behind. Taken here, the snapshot is whatever the device has the instant
+     the account answers, which closes it to the usual millisecond. */
+  const [localSolves, localSessions] = await Promise.all([Solves.all(), Sessions.all()]);
   const allCloudSolves = cloudSolvesSnap.exists() ? Object.values(cloudSolvesSnap.val()) : [];
   const allCloudSessions = cloudSessionsSnap.exists() ? Object.values(cloudSessionsSnap.val()) : [];
 
@@ -507,21 +515,49 @@ function stop() {
  */
 let _generation = 0;
 
+/**
+ * Starting sync needs the network — the SDK comes from gstatic and
+ * mergeOnSignIn() reads the account — so a tab opened offline cannot do it.
+ * Both halves therefore retry on the next 'online' event rather than giving
+ * up for the life of the page: without that, solves recorded in a tab that
+ * booted offline sat in IndexedDB until the next reload, even once the
+ * connection was back. Once start() has run the existing write queue takes
+ * over and this is never needed again.
+ */
+function retryWhenOnline(run) {
+  window.addEventListener('online', run, { once: true });
+}
+
 /** Call once at boot. Resolves the Firebase SDK lazily — only signing in (or already being signed in) pulls it in. */
 export async function initSync({ onMergeNeeded } = {}) {
-  await onAuthChange(async (user) => {
+  const handleUser = async (user) => {
     const gen = ++_generation;
     stop();
     if (!user) return;
-    _uid = user.uid;
-    _sdk = await getDatabaseHandle();
-    if (gen !== _generation) return;
-    const mergeInfo = await mergeOnSignIn(user);
-    if (gen !== _generation) return;
-    if (mergeInfo && onMergeNeeded) {
-      await onMergeNeeded(mergeInfo);
+    try {
+      _uid = user.uid;
+      _sdk = await getDatabaseHandle();
       if (gen !== _generation) return;
+      const mergeInfo = await mergeOnSignIn(user);
+      if (gen !== _generation) return;
+      if (mergeInfo && onMergeNeeded) {
+        await onMergeNeeded(mergeInfo);
+        if (gen !== _generation) return;
+      }
+      await start();
+    } catch (err) {
+      // A newer sign-in already owns the engine — its own failure will do the
+      // retrying, and a second retry here would fight it.
+      if (gen !== _generation) return;
+      console.warn('[sync] could not start, will retry when back online', err?.code || err);
+      retryWhenOnline(() => { if (gen === _generation) handleUser(user); });
     }
-    await start();
-  });
+  };
+  try {
+    await onAuthChange(handleUser);
+  } catch (err) {
+    // The SDK itself never loaded, so there is no auth listener at all yet.
+    retryWhenOnline(() => initSync({ onMergeNeeded }).catch(() => {}));
+    throw err;
+  }
 }

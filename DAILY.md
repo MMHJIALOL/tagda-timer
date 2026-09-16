@@ -204,6 +204,15 @@ of today's scramble. Two consequences worth knowing:
   checked once on the way in and never again, so the usual case was a window that never armed:
   the generator kept supplying ordinary practice scrambles, every solve was an ordinary solve,
   nothing was submitted, and the board therefore never unlocked either.
+- **The window solves in the timer's event.** The solve underneath it is recorded against the
+  timer's event and session, so entering the window points the controller at that event, and
+  the panel's "Open" button moves the timer to the event picked there. The controller used to
+  take its event once, when it was first built — do 4x4's scramble of the day, go back to 3x3,
+  and the window stayed on 4x4 until a reload.
+- **Nothing is armed on an answer that was never given.** Whether today is already spent is
+  asked once per account, day and event, and "could not ask" (nothing watched yet, a failed
+  read) is kept apart from "no". Treating the first as the second armed a fresh attempt on the
+  day's scramble for a moment before the real answer took it back.
 - **The timer is held shut whenever there is nothing official to solve** — no scramble yet, not
   signed in, or today's attempt already spent — and a message stands where the notation goes.
   `Daily#locked()` used to return `attempting`, the exact inverse of the same method in

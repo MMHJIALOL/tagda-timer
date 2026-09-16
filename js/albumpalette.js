@@ -75,9 +75,18 @@ const ARC = 360 / BUCKETS;
    exactly the thing worth borrowing, so the old thresholds (which threw away
    anything under 14% saturation or over 93% lightness) were discarding the
    subject of half the covers people actually own. */
-const MIN_SAT = 0.07;
+/* Chroma (max - min channel), not HSL saturation. HSL saturation explodes near
+   black and white — rgb(20,26,20) is "11% saturated" — so JPEG noise in a
+   black-and-white photo used to vote as green or blue and a monochrome sleeve
+   (GNX) came back tinted. Chroma is small there, and large for any colour a
+   person would actually name. */
+const MIN_CHROMA = 0.1;
 const MIN_LIGHT = 0.07;
 const MAX_LIGHT = 0.96;
+/** Below this share of coloured pixels the sleeve is treated as black and white. */
+const MONO_SHARE = 0.06;
+/** A second hue has to carry this much of the first one's weight to count. */
+const SECOND_SHARE = 0.15;
 
 /**
  * Two colours from an image element, or null when there is genuinely no hue in
@@ -113,14 +122,20 @@ export function paletteFrom(img, { dark = true } = {}) {
   const satSum = new Float64Array(BUCKETS);
   const lightSum = new Float64Array(BUCKETS);
   const count = new Float64Array(BUCKETS);
-  let coloured = 0, total = 0, greySum = 0;
+  let coloured = 0, total = 0, greySum = 0, neutral = 0, neutralSum = 0;
 
   for (let i = 0; i < data.length; i += 4) {
     if (data[i + 3] < 8) continue;
     total++;
-    const [h, sat, l] = rgbToHsl(data[i], data[i + 1], data[i + 2]);
+    const r = data[i], g = data[i + 1], bl = data[i + 2];
+    const chroma = (Math.max(r, g, bl) - Math.min(r, g, bl)) / 255;
+    const [h, sat, l] = rgbToHsl(r, g, bl);
     greySum += l;
-    if (sat < MIN_SAT || l < MIN_LIGHT || l > MAX_LIGHT) continue;
+    if (chroma < MIN_CHROMA || l < MIN_LIGHT || l > MAX_LIGHT) {
+      neutral++;
+      neutralSum += l;
+      continue;
+    }
     coloured++;
 
     /* Area first, saturation second. What a cover "looks like" is mostly a
@@ -144,7 +159,7 @@ export function paletteFrom(img, { dark = true } = {}) {
      has no hue to lend, and the honest answer is the greys it is actually made
      of, keyed to how light or dark the sleeve is. */
   if (!total) return null;
-  if (coloured / total < 0.04) return monoPalette(greySum / total, dark);
+  if (coloured / total < MONO_SHARE) return monoPalette(greySum / total, dark);
 
   /* Blur the histogram before looking for peaks. A real-world colour is never
      one bucket wide — skin runs roughly 20-40 degrees — so a broad, shallow
@@ -177,21 +192,36 @@ export function paletteFrom(img, { dark = true } = {}) {
     if (secondIdx === -1 || smooth[i] > smooth[secondIdx]) secondIdx = i;
   }
   const runnerUp = secondIdx >= 0 ? readBucket(secondIdx) : null;
-  /* 3% of the weight is a low bar on purpose. A logo, a sticker, a strip of
-     sky — a small but genuinely different colour in the artwork beats a
-     complement computed from the first one, because it is actually *there*.
-     Below this the image really is monochromatic and a derived complement is
-     the honest answer. */
-  const secondary = (runnerUp && runnerUp.score > primary.score * 0.03)
-    ? runnerUp
-    : { h: primary.h + 150, s: primary.s, l: primary.l };
+
+  /* Never invent a hue. This used to fall back to the complement of the first
+     colour, which is how a red-and-white sleeve (The Strokes) came out red and
+     green, and brat's lime came out lime and blue. What else is on a cover
+     with one hue is almost always its black or white — the lettering — so use
+     that, and failing even that, a lighter or darker shade of the one hue. */
+  let accent2;
+  if (runnerUp && runnerUp.score > primary.score * SECOND_SHARE) {
+    accent2 = clampToBand(runnerUp.h, runnerUp.s, runnerUp.l, dark);
+  } else if (neutral / total > 0.12) {
+    accent2 = hslToHex(0, 0, monoLight(neutralSum / neutral, dark));
+  } else {
+    accent2 = hslToHex(primary.h, Math.min(0.9, Math.max(0.35, primary.s)), dark ? 0.82 : 0.22);
+  }
 
   return {
     accent:  clampToBand(primary.h, primary.s, primary.l, dark),
-    accent2: clampToBand(secondary.h, secondary.s, secondary.l, dark),
+    accent2,
     bg2:     hslToHex(primary.h, Math.min(0.4, primary.s), dark ? 0.12 : 0.91),
   };
 }
+
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+
+/* A grey that keeps the sleeve's own sense of light or dark, pushed away from
+   the page rather than towards it: a black cover on a black page still needs
+   an accent you can see. */
+const monoLight = (meanLight, dark) => dark
+  ? clamp(0.62 + meanLight * 0.22, 0.62, 0.86)
+  : clamp(0.34 - meanLight * 0.16, 0.16, 0.34);
 
 /**
  * The palette of a sleeve that has no hue.
@@ -203,11 +233,7 @@ export function paletteFrom(img, { dark = true } = {}) {
  * for a monochrome cover is exactly the guess this module refuses to make.
  */
 function monoPalette(meanLight, dark) {
-  const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
-  // Push away from the page rather than towards the sleeve's own lightness:
-  // a black cover on a black page still needs an accent you can see.
-  const l1 = dark ? clamp(0.62 + meanLight * 0.22, 0.62, 0.86)
-                  : clamp(0.34 - meanLight * 0.16, 0.16, 0.34);
+  const l1 = monoLight(meanLight, dark);
   const l2 = dark ? l1 - 0.2 : l1 + 0.2;
   return {
     accent:  hslToHex(0, 0, l1),
@@ -227,7 +253,6 @@ function monoPalette(meanLight, dark) {
  * as vivid; they just both stay legible against the page.
  */
 function clampToBand(h, s, l, dark) {
-  const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
   return hslToHex(
     h,
     clamp(s, 0.42, 0.9),

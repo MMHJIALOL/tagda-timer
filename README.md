@@ -340,7 +340,8 @@ tension changed, magnets, cleaned, broke.
 - Deleting a cube leaves its solves alone. They really were done on it.
 
 ### Your data
-Everything lives in your browser's IndexedDB. No account, no server, nothing uploaded.
+Everything lives in your browser's IndexedDB, and stays there unless you sign in —
+sign in and the same records are mirrored to your account and merged across devices.
 
 - Full JSON backup and restore.
 - Per-session CSV export.
@@ -350,6 +351,23 @@ Everything lives in your browser's IndexedDB. No account, no server, nothing upl
   session comes across with its name, times, scrambles, comments and penalties, and the
   event is read from the session's scramble type. Tested at ~12,000 solves across 23
   sessions in under five seconds.
+
+### Offline
+A service worker (`sw.js`, registered from `js/main.js`) keeps a copy of the app,
+so the site opens with no connection at all. Solves and settings were already
+IndexedDB and scrambles are generated locally, so once the page is up nothing
+about timing needs the network.
+
+Works offline: the timer, every trainer, statistics, the reconstructor, themes,
+gear, import and export.
+
+Needs a connection: race rooms, Scramble of the Day, signing in, and Spotify.
+
+Signed in and offline, solves are saved locally and uploaded on their own the
+moment the connection comes back — no reload. Only the page document, the
+scripts, styles and fonts are ever cached; database and sign-in traffic is
+always live. App files are network-first, so a deploy is picked up on the next
+load rather than being pinned to whatever the cache happens to hold.
 
 ---
 
@@ -482,7 +500,7 @@ modules over `file://`, and the page says so if you try.
 
 ## Not in this version
 
-Accounts and cloud sync, Bluetooth smart cubes, and Bluetooth smart timers.
+Bluetooth smart cubes and Bluetooth smart timers.
 
 Fewest Moves has no NISS helper, insertion finder or skeleton tools — it gives you the
 clock, the box, the move count and an honest verdict, and the thinking is yours. It also

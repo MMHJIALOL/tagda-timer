@@ -322,7 +322,10 @@ function placePreview() {
      moves to the opposite corner (see components.css), and treating it as one
      meant the left-hand corner always looked occupied and the preview never
      moved anywhere. */
-  const boxes = ['panel-times', 'panel-stats', 'panel-spotify', 'panel-race']
+  /* The open blindfolded breakdown counts too. It hangs out of the flow under
+     the scramble, so on a phone it reaches straight into the band the preview
+     parks in and nothing else would move either of them apart. */
+  const boxes = ['panel-times', 'panel-stats', 'panel-spotify', 'panel-race', 'bld-panel']
     .map(id => document.getElementById(id))
     .filter(n => n && !n.hidden && getComputedStyle(n).display !== 'none' && n.dataset.dock !== 'bottom')
     .map(n => n.getBoundingClientRect())

@@ -478,6 +478,29 @@ body.zen #learn-bar { display: none; }
   }
 }
 
+/* ---------------- virtual cube ----------------
+   csTimer's arrangement: the cube sits dead centre of the screen and the clock
+   is parked against the right edge of the centre column, out of its way. */
+#vcube-wrap { width: min(56vh, 46%); aspect-ratio: 1; flex: none; }
+#vcube-holder, #vcube-holder twisty-player { width: 100%; height: 100%; }
+body[data-input="virtual"] #panel-cube { display: none; }
+body[data-input="virtual"] #timer-display { font-size: min(var(--timer-size), 5.5vw); }
+@media (min-width: 861px) {
+  body[data-input="virtual"] #vcube-wrap {
+    position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  }
+  body[data-input="virtual"] #timer-core {
+    position: absolute; left: auto; right: 0; top: 50%; transform: translateY(-50%);
+    align-items: flex-end; max-width: 27%;
+  }
+  body[data-input="virtual"] #timer-hint { text-align: right; text-wrap: balance; }
+}
+@media (max-width: 860px) {
+  #vcube-wrap { width: min(80vw, 40vh); }
+  body[data-input="virtual"] #timer-core,
+  body[data-input="virtual"] #inspect-readout { position: relative; left: auto; top: auto; transform: none; }
+}
+
 #timer-display {
   position: relative;
   font-family: var(--font-timer);

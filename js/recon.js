@@ -14,7 +14,7 @@
 
 import { el, copy } from './util.js';
 import { SOLVED, applyAlg, analyse, parse, canonical, IDENTITY_FRAME } from './cube3.js';
-import { suggest } from './solver.js';
+import { suggest, slotLabel } from './solver.js';
 import { toast } from './toast.js';
 
 /* twisty-player, loaded the same way the scramble preview loads it. */
@@ -69,6 +69,7 @@ const S = {
   replay: false,
   thinking: false,
   hint: null,               // suggestion currently being previewed
+  slot: null,               // F2L slot picked by hand, as the solver names it
 };
 
 const PHASE_LABEL = { cross: 'Cross', f2l: 'F2L', oll: 'OLL', pll: 'PLL', done: 'Solved' };
@@ -234,6 +235,7 @@ function holdHover(e) {
 /** Pick the cross colour by hand. Everything downstream is asked about it. */
 function setCross(face) {
   S.crossPref = face;
+  S.slot = null;
   lastBest = null;
   commit();
 }
@@ -449,9 +451,61 @@ function playStep(i, only = null) {
 
 
 
+/**
+ * The last one or two face turns made, as the solver names the faces.
+ *
+ * The search is told not to open on them. Without this the shortest way on
+ * from a move you typed was nearly always to take it back — type R and the top
+ * suggestion began R' — which is an undo button, not a suggestion. Trailing
+ * rotations are looked through, since they turn no layer.
+ */
+function leadFaces() {
+  const toks = allMoves().split(/\s+/).filter(Boolean);
+  while (toks.length && /^[xyz]/i.test(toks.at(-1))) toks.pop();
+  const lead = [];
+  for (let i = toks.length - 1; i >= 0 && lead.length < 2; i--) {
+    if (!/^[URFDLB]['2]?$/.test(toks[i])) break;
+    lead.push(toks[i][0]);
+  }
+  if (!lead.length) return [];
+  // A face turn does not change the frame, so the frame after them is the
+  // frame they were made in.
+  const at = applyAlg(SOLVED, [S.scramble, ...toks].filter(Boolean).join(' '), IDENTITY_FRAME);
+  return at ? lead.map(f => at.frame[f]) : [];
+}
+
+const SLOT_ORDER = ['FR', 'FL', 'BL', 'BR', 'UR', 'UL', 'DL', 'DR', 'UF', 'UB', 'DB', 'DF'];
+
+/** "any" plus the four pairs, named the way you are holding the cube. */
+function renderSlots(a) {
+  ui.slots.innerHTML = '';
+  ui.slots.hidden = a.phase !== 'f2l';
+  if (ui.slots.hidden) return;
+  // A picked pair that has gone in has done its job.
+  if (S.slot && a.slots.find(s => s.label === S.slot)?.done) S.slot = null;
+  const frame = currentFrame();
+  const pick = (label) => { S.slot = label; lastBest = null; renderSuggestions(look()); };
+  ui.slots.append(
+    el('span', { class: 'rc-rots-lbl', text: 'slot' }),
+    el('button', {
+      class: 'rc-rot' + (S.slot ? '' : ' on'), text: 'any',
+      title: 'The easiest pair, wherever it is', onclick: () => pick(null),
+    }));
+  const rows = a.slots.map(s => ({ ...s, name: slotLabel(s.label, frame) }))
+    .sort((x, y) => SLOT_ORDER.indexOf(x.name) - SLOT_ORDER.indexOf(y.name));
+  for (const s of rows) {
+    ui.slots.append(el('button', {
+      class: 'rc-rot' + (S.slot === s.label ? ' on' : ''), text: s.name,
+      title: s.done ? `The ${s.name} pair is already in` : `Only suggest lines for the ${s.name} pair`,
+      disabled: s.done || null, onclick: () => pick(s.label),
+    }));
+  }
+}
+
 function renderSuggestions(a) {
   ui.sugList.innerHTML = '';
   ui.phaseTag.textContent = PHASE_LABEL[a.phase];
+  renderSlots(a);
 
   if (a.phase === 'done') {
     ui.dist.className = 'rc-dist';
@@ -467,7 +521,10 @@ function renderSuggestions(a) {
 
   // The ticket drops any result a newer click has already outrun.
   const ticket = ++pending;
-  askSolver(currentState(), currentFrame(), a, { limit: 20, crossName: crossLabel(a) })
+  askSolver(currentState(), currentFrame(), a, {
+    limit: 20, crossName: crossLabel(a), lead: leadFaces(),
+    slot: a.phase === 'f2l' ? S.slot : null,
+  })
     .then((res) => { if (ticket === pending) paintSuggestions(res, a); })
     .catch((err) => {
       console.warn('[recon] solver', err);
@@ -532,11 +589,15 @@ function askSolver(state, frame, analysis, opts) {
 }
 
 let lastBest = null;
+let lastPhase = null;
 
 function paintSuggestions(res, a) {
   ui.sugList.innerHTML = '';
-  const worse = lastBest !== null && res.best > lastBest;
+  // Only comparable inside one phase: finishing the cross is not "costing" the
+  // F2L moves that follow it.
+  const worse = lastBest !== null && lastPhase === a.phase && res.best > lastBest;
   lastBest = res.best;
+  lastPhase = a.phase;
 
   ui.dist.className = 'rc-dist' + (worse ? ' worse' : '') + (res.zb ? ' zb' : '');
   ui.dist.innerHTML = '';
@@ -545,7 +606,7 @@ function paintSuggestions(res, a) {
       el('span', { class: 'lbl', text: 'nothing found within reach — type a move and carry on' }));
   } else {
     const what = a.phase === 'cross' ? `to finish the ${crossLabel(a)}`
-      : a.phase === 'f2l' ? 'to insert the easiest pair'
+      : a.phase === 'f2l' ? (S.slot ? `to insert the ${slotLabel(S.slot, currentFrame())} pair` : 'to insert the easiest pair')
       : a.phase === 'oll' ? 'to orient the last layer'
       : 'to finish the solve';
     /* The edges are already up, so this OLL does not need a PLL after it.
@@ -579,7 +640,7 @@ function paintSuggestions(res, a) {
   }
   ui.sugMore.textContent = res.partial
     ? `${res.list.length} shown — the search stopped early on this one`
-    : `${res.list.length} shown · sorted by moves, then by how they turn`;
+    : `${res.list.length} shown · easiest to turn first`;
 }
 
 /* =========================================================
@@ -825,6 +886,7 @@ function build() {
   /* ---- right: the reconstruction and what comes next ---- */
   ui.steps = el('div', { class: 'rc-steps' });
   ui.dist = el('div', { class: 'rc-dist' });
+  ui.slots = el('div', { class: 'rc-slots', hidden: true });
   ui.sugList = el('div', { class: 'rc-sugs' });
   ui.sugMore = el('div', { class: 'rc-more' });
   ui.input = el('input', {
@@ -860,7 +922,7 @@ function build() {
       el('div', { class: 'panel-head' },
         el('span', { text: "What's next" }),
         ui.phaseTag = el('span', { class: 'panel-sub', text: 'cross' })),
-      ui.dist, ui.sugList, ui.sugMore,
+      ui.slots, ui.dist, ui.sugList, ui.sugMore,
       el('div', { class: 'rc-entry' }, ui.input,
         el('button', { class: 'btn primary', text: 'add', onclick: () => flushInput() })),
       el('p', { class: 'rc-hint', text:
@@ -952,6 +1014,7 @@ function loadFrom(item) {
   S.steps = explode(S.scramble, item.moves);
   saveHook = item.save || null;
   ui.title.textContent = item.label;
+  S.slot = null;
   lastBest = null;
   commit();
 }
@@ -985,6 +1048,7 @@ function setScramble(text) {
   if (clean === null) { toast('That scramble has a move I cannot read', { kind: 'bad' }); return false; }
   S.scramble = clean;
   S.steps = [];
+  S.slot = null;
   lastBest = null;
   commit();
   return true;
@@ -1005,6 +1069,7 @@ export async function openRecon({ scramble = '', title = 'Reconstruct', moves = 
   S.steps = explode(S.scramble, moves);
   S.replay = false;
   S.library = library;
+  S.slot = null;
   lastBest = null;
   ui.title.textContent = title;
   ui.replayBtn.classList.remove('on');

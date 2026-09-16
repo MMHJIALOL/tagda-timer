@@ -29,11 +29,11 @@
      perfect in incognito, which is a miserable thing to debug.
      /js/ is `must-revalidate` and does not depend on this, but keep the number
      in step anyway rather than leaving two answers to the same question. -->
-<link rel="modulepreload" href="js/main.js?v=55">
-<link rel="stylesheet" href="css/fonts.css?v=55">
-<link rel="stylesheet" href="css/tokens.css?v=55">
-<link rel="stylesheet" href="css/base.css?v=55">
-<link rel="stylesheet" href="css/components.css?v=55">
+<link rel="modulepreload" href="js/main.js?v=56">
+<link rel="stylesheet" href="css/fonts.css?v=56">
+<link rel="stylesheet" href="css/tokens.css?v=56">
+<link rel="stylesheet" href="css/base.css?v=56">
+<link rel="stylesheet" href="css/components.css?v=56">
 <link rel="icon" href="assets/favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="assets/logo-192.png">
 <link rel="apple-touch-icon" href="assets/logo-180.png">
@@ -150,9 +150,9 @@
         </button>
       </div>
       <div class="seg" id="algs-seg">
-        <a class="seg-btn" id="btn-algs" href="algs.html" title="Algorithm library — every PLL and OLL case">
+        <a class="seg-btn" id="btn-algs" href="algs.html" title="Alg trainer — pick cases for any puzzle and drill them">
           <svg class="ico" viewBox="0 0 24 24"><path d="M5 4.6A1.6 1.6 0 016.6 3H19v14.4H6.6A1.6 1.6 0 005 19z"/><path d="M5 19a1.6 1.6 0 001.6 1.6H19v-3.2"/><path d="M8.6 7.4h6.8M8.6 10.8h4.6"/></svg>
-          <span>Alg library</span>
+          <span>Alg trainer</span>
           <svg class="chev" viewBox="0 0 24 24"><path d="M5 12h13M13 7l5 5-5 5"/></svg>
         </a>
       </div>
@@ -253,6 +253,7 @@
   </header>
 
   <!-- ---------- SCRAMBLE ---------- -->
+
   <section id="scramble-zone" class="fade-layer">
     <div class="scramble-label">Scramble</div>
     <div id="scramble-wrap">
@@ -290,9 +291,29 @@
     <div id="bld-zone" hidden>
       <div id="bld-bar">
         <button class="ghost-btn sm" id="btn-bld-toggle" aria-expanded="false" aria-controls="bld-panel">Show breakdown</button>
+        <!-- Buffers and hold belong next to the letters they produce, not three
+             clicks into a settings drawer. -->
+        <button class="ghost-btn sm icon" id="btn-bld-settings" title="Your buffers, hold and letters">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.1"/><path d="M19.4 15a1.6 1.6 0 00.32 1.77l.06.06a1.94 1.94 0 11-2.75 2.75l-.06-.06a1.6 1.6 0 00-1.77-.32 1.6 1.6 0 00-.97 1.47v.16a1.94 1.94 0 01-3.88 0v-.09a1.6 1.6 0 00-1.05-1.47 1.6 1.6 0 00-1.77.32l-.06.06a1.94 1.94 0 11-2.75-2.75l.06-.06a1.6 1.6 0 00.32-1.77 1.6 1.6 0 00-1.47-.97H3.4a1.94 1.94 0 010-3.88h.09a1.6 1.6 0 001.47-1.05 1.6 1.6 0 00-.32-1.77l-.06-.06a1.94 1.94 0 112.75-2.75l.06.06a1.6 1.6 0 001.77.32h.08a1.6 1.6 0 00.97-1.47V3.4a1.94 1.94 0 013.88 0v.09a1.6 1.6 0 00.97 1.47 1.6 1.6 0 001.77-.32l.06-.06a1.94 1.94 0 112.75 2.75l-.06.06a1.6 1.6 0 00-.32 1.77v.08a1.6 1.6 0 001.47.97h.16a1.94 1.94 0 010 3.88h-.09a1.6 1.6 0 00-1.47.97z"/></svg>
+        </button>
         <span class="bld-split" id="bld-split" hidden></span>
       </div>
       <div id="bld-panel" hidden>
+        <!-- Shown instead of a trace until the solver has said which buffers
+             and which hold are theirs. Guessed letters read as real ones, and
+             a wrong one is worse than none. -->
+        <div id="bld-setup" hidden>
+          <div class="bld-setup-title">Whose letters should these be?</div>
+          <div class="bld-setup-note">
+            A breakdown is only your memo if it is read against your buffers, your hold and your
+            scheme. Set them once — <b id="bld-setup-now">UF / UFR, white on top, Speffz</b> — or take
+            the Speffz defaults as they are.
+          </div>
+          <div class="bld-setup-actions">
+            <button class="ghost-btn sm" id="btn-bld-setup">Set mine up</button>
+            <button class="ghost-btn sm" id="btn-bld-setup-ok">These are mine</button>
+          </div>
+        </div>
         <div class="bld-row">
           <span class="bld-lbl">Edges</span>
           <div class="bld-chips" id="bld-edges"></div>
@@ -304,9 +325,6 @@
         <div class="bld-foot">
           <span class="bld-badge parity" id="bld-parity" hidden>parity</span>
           <span class="bld-note" id="bld-note"></span>
-          <button class="ghost-btn sm" id="btn-bld-settings" title="Blindsolving settings">
-            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1"/></svg>
-          </button>
         </div>
       </div>
     </div>
@@ -428,6 +446,9 @@
 
     <!-- CENTRE: timer -->
     <section id="timer-zone">
+      <!-- Virtual cube. On screen only when the input is "Virtual cube" and the
+           event is a 2x2–7x7; the clock then sits beside it, as on csTimer. -->
+      <div id="vcube-wrap" hidden><div id="vcube-holder"></div></div>
       <!-- Everything the eye reads as "the timer" lives in one box, so it can be
            centred on the screen rather than on the space the header left over. -->
       <div id="timer-core">
@@ -687,7 +708,7 @@
   </div>
 </div>
 
-<script type="module" src="js/main.js?v=55"></script>
+<script type="module" src="js/main.js?v=56"></script>
 <script>
 (function () {
   var isFile = location.protocol === 'file:';

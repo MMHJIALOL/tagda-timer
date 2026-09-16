@@ -1,10 +1,13 @@
 # Algorithm library — browse, compare, and personalize every alg
 
-> A CubeDB/algdb.net-style library living inside Tagda Timer: every PLL/OLL
-> case shown as a picture first (not a bare letter), 3-6 community-ranked
-> algorithm alternates per case, and a way for you to drag your own preferred
-> alg to the top or add one that isn't listed at all. Reached from one quiet
-> link in the footer — it never competes with the timer screen for space.
+> A CubeDB/algdb.net-style library living inside Tagda Timer: pick an event,
+> pick a set, and every case in it is shown as a picture first (not a bare
+> letter), with several ranked algorithm alternates per case, a way to drag
+> your own preferred alg to the top or add one that isn't listed at all, and a
+> button that drops the cases you picked straight into the timer as a drill.
+> Reached from one quiet link in the footer — it never competes with the timer
+> screen for space. §§0-10 describe the original 3x3 page; §11 is what made it
+> cover every event.
 
 ---
 
@@ -672,3 +675,183 @@ out. The `★ 1st` badge and the drag grip imply it; the footer still says to
 drag them into your order. If reordering turns out to be a thing people do not
 discover, that is the sentence that has to come back somewhere — but under a
 case name is where you are looking at a cube, not reading about a mechanism.
+
+---
+
+## 11. Every event, not just the 3x3
+
+The library shipped as four 3x3 tabs. It is now event-first: pick a puzzle,
+pick a set, then the same grid → detail view as before. Nothing about a case,
+a diagram, a drag order or the verification rule changed — what changed is that
+"which set" became a two-level question, because 2x2 CLL and 3x3 PLL are not
+tabs in the same row.
+
+### 11.1 The catalogue
+
+`ALG_EVENTS` in `js/alglibrary.js` lists the events that have algorithm sets,
+in the timer's own order, each with its sets grouped by method (CFOP /
+Advanced / Roux on 3x3). `SET_IDS` falls out of it, `SET_LABELS` gives each tab
+its text before its module has loaded, and `MODULES` / `GENERATED` say where a
+set lives. Adding an event is one row; adding a set to an event is one id.
+
+Only events with sets are listed. Blindfolded events are left out on purpose,
+and so is FMC — its algorithms are 3x3 algorithms, and a second copy of the 3x3
+tabs under another name is not a set of its own. OH shows OH CMLL, not the 3x3
+tabs again.
+
+### 11.2 What ships now
+
+| Event | Sets |
+|---|---|
+| 3x3 | F2L, 2-Look OLL, OLL, 2-Look PLL, PLL · WV, COLL, OLLCP, ZBLL · 2-Look CMLL, CMLL, LSE EO, EOLR |
+| 2x2 | OLL, PBL, CLL, EG-1, EG-2 |
+| 4x4 | PLL Parity |
+| OH | OH CMLL |
+| Pyraminx | Last Layer, L4E |
+| Skewb | Sarah's Intermediate, Sarah's Advanced |
+| Square-1 | Cube Shape, CSP, OBL, EO, CP, EP |
+
+2-Look OLL and 2-Look PLL keep the trainer's own case ids (`OLL_EO` + `OCLL`,
+`PLL_CP` + `PLL_EP` in `js/algs.js`), so a hand-off lands on the modes that
+already drilled them. There are no separate EO / CP / EP tabs any more.
+
+### 11.2a Where the new sets come from
+
+`tools/import-cubingapp.mjs` reads cubingapp's open alg-set JSON and writes
+`js/algsets/<ID>.js` (new sets) and `js/algsets/more-<ID>.js` (more algorithms
+for sets the timer already had, matched to existing cases by executing them).
+Nothing is copied on trust:
+
+1. cubingapp's cube model is ported and cross-checked against `js/cubenet.js`
+   on random sequences of every move kind the data uses (wide, inner slice,
+   M/E/S, rotations) before any grey-sticker list is translated.
+2. Every algorithm is parsed strictly and run through `verifyAlgForCase`;
+   pyraminx, skewb and square-1 run on `js/puzzles.js`.
+3. Every case must sit where its set says it starts — a PLL case with a broken
+   F2L, an EP case with unsolved corners, is not that set's case.
+
+The import prints everything it dropped. What remains dropped was checked
+against every rotation, AUF, slice offset and layer alignment and still does
+not solve its case — errors in the source, not in the checker.
+
+Fixing `2R` in `js/cubenet.js` was part of this: a number on a plain face letter
+is the single inner layer in SiGN, and 4x4 parity algorithms depend on it.
+
+### 11.3 Where the 2x2 algorithms come from
+
+Not from a website, and not from memory. `tools/gen-222.mjs` builds the whole
+3,674,160-state group of the 2x2 under ⟨R, U, F⟩ with one corner pinned, takes a
+complete breadth-first distance table, and reads optimal solutions straight off
+it. Every algorithm in `js/algs2.js` and `js/alglibrary-222.js` is therefore
+*provably* correct and *provably* shortest, which is a stronger claim than any
+scraped list can make.
+
+`scrape_scdb.py` is untouched and still points at the 3x3 pages it was written
+for. Extending it was the obvious plan and is not what happened: exhaustive
+search gives a stronger guarantee than any scrape for a puzzle small enough to
+solve completely, and it has no rate limit, no page-layout dependency and no
+question about whether the list was transcribed correctly. For the puzzles the
+search cannot reach — megaminx, square-1, and the rest — the scraper is still
+the right tool, and the blocker there is the missing simulator rather than the
+missing data: an algorithm nothing can check is not something this page prints.
+
+Three checks stand between the generator and the repository, and it writes
+nothing if any of them fails:
+
+1. its cube model is cross-checked against `js/cubenet.js` — the app's own
+   simulator — on 4,000 random sequences before the search starts;
+2. the search must reach exactly 3,674,160 states (God's number in this move
+   set comes out as 11, which is the published figure);
+3. every generated algorithm is re-run against its own case through
+   `js/cubenet.js` at the end.
+
+A case is the family of states one algorithm covers — a U turn before the
+algorithm and one after it are both free — so cases are the orbits of that
+relation. This is why **CLL is 40 cases here and not the 42 most sheets
+print**: six of the seven corner-orientation families give six cases each, but
+the H family's twist pattern survives a half turn of U, so two of its six
+pictures are two of the others turned round and take the same algorithm.
+6×6 + 4 = 40, covering the identical 624 cube states. EG-1 and EG-2 are 40 for
+the same reason, 2x2 OLL is the familiar 7, and PBL is 8 — every combination of
+bottom and top permutation that is not already solved.
+
+Orientation sets needed one extra care. The app defines a case as *the state
+this algorithm's inverse builds*, because that is how it makes a trainer
+scramble. For a set whose algorithms finish the puzzle those are the same state;
+for an orientation set they are not, since the algorithm leaves the corners in a
+different order than it found them. So the alternates of a 2x2 OLL case are
+solutions of *that* state, not of the one the search started from — otherwise
+every alternate but the first is an algorithm for the case next door, which is
+exactly what the first draft shipped and what check (3) caught.
+
+### 11.4 What "solved" means, per set
+
+`verifyAlgForCase` used to switch on the set id. It now reads two fields, so a
+set says what it needs rather than the verifier keeping a list:
+
+- `n` — the cube size the algorithms run on (2 or 3).
+- `done` — `solved`, `oriented` (U face one colour), `ftl` (first two layers),
+  `eo` (last-layer edges oriented), `cp` (last-layer corners permuted), or
+  `oriented2` (2x2: one colour on top, one underneath).
+
+A single case may override the set with its own `done`, which is what lets
+two-look OLL hold both halves of itself honestly.
+
+The 2x2 `oriented2` test is the pair, not just orientation: a top corner
+dropped into a bottom slot can be perfectly oriented and still put a white
+sticker in the middle of the yellow face. The generator's first goal set missed
+that and produced algorithms that were not 2x2 OLL algorithms at all.
+
+### 11.5 Setup moves stay 3x3
+
+`alglibrary-setup.js` reads 3x3 facelets throughout. A 2x2, 4x4, pyraminx,
+skewb or square-1 case shows no setup line rather than one worked out on the
+wrong puzzle — the same rule as everywhere else here: no sequence is printed
+that has not been executed against the case. Imported 3x3 sets compare setups
+by their grey-sticker picture.
+
+### 11.6 "Train these cases"
+
+The button above the grid is the point of the page. It does not add a second
+way to configure the trainer: it writes a mode and a list of case ids into the
+address bar, and `applyTrainerHandoff()` in `js/main.js` turns that into the
+same three settings the mode picker and the case picker already write —
+`event`, `mode`, `allowedCases[mode]`. The scramble queue then does what it has
+always done.
+
+- A card is two buttons: the picture selects the case, the algorithm strip
+  underneath opens it — separate targets, so selecting never opens a case.
+  Shift-click selects every case between the last one clicked and this one.
+  The bar counts what you picked; nothing picked trains the whole set.
+- A case's detail view has **Train this case**.
+- The address bar is cleared on arrival, for the same reason a race invite is:
+  a reload must not silently re-apply a choice you have since changed.
+- Case ids the set does not have are dropped rather than trusted, so an old
+  link cannot filter every case out and leave the trainer with nothing.
+
+Set → mode: every set names its `trainerMode`. The library-only sets (COLL,
+CMLL, square-1 and the rest) have modes in `js/events.js` whose case list is
+fetched on first use by `loadSetFor` in `js/scramble.js`. Their scramble is the
+source's filler, the case setup, the algorithm backwards and the filler after,
+with each puzzle's own "AUF". A skewb scramble is written in its algorithms'
+notation and carries a translated `preview` for cubing.js.
+
+### 11.7 Startup cost
+
+Unchanged in spirit: `js/alglibrary.js` is on the timer's boot path and still
+statically imports only PLL and OLL. The catalogue is a table of strings. Every
+other set — ZBLL, F2L, the four 3x3 step sets, all five 2x2 sets — arrives as a
+dynamic import the first time its tab is opened.
+
+The one addition to the boot path is `js/algs2.js`, the 2x2 case lists, which
+`js/scramble.js` needs synchronously to build a trainer scramble. That is 135
+cases of short strings, against the 472 ZBLL cases already sitting there.
+
+### 11.8 Verification
+
+`node tools/verify-alglibrary.mjs` runs the whole audit in a terminal;
+`tools/verify-alglibrary.html` is the same check in a browser. Both load every
+set in the catalogue first, so a clean run cannot be a run that never looked.
+
+Current state: **13 sets · 742 cases · 3,214 listed algorithms, all passing**,
+plus all 607 3x3 setups.

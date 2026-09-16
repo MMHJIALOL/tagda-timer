@@ -50,6 +50,7 @@ import { signIn } from './sync-auth.js';
 import { toast } from './toast.js';
 import { formatCountdown, safePhotoUrl, shiftDayId, cleanNote, NOTE_MAX_LEN } from './daily-net.js';
 import { RACE_EMOJI } from './raceapp.js';
+import { isOwnerName, openOwnerCard } from './ownercard.js';
 // Policy lives with the controller — see the comment on it there.
 import { SHOW_COUNT_BOARD } from './daily.js';
 
@@ -79,17 +80,27 @@ import { SHOW_COUNT_BOARD } from './daily.js';
 export function avatar(name, photo) {
   const initial = (String(name || '').trim()[0] || '').toUpperCase();
   const src = safePhotoUrl(photo);
+  const owner = isOwnerName(name);
+  const ownerBits = owner
+    ? { title: `${name} — that’s the site owner, click for the card`,
+        onclick: (e) => { e.stopPropagation(); openOwnerCard(face); } }
+    : {};
+  let face;
   if (src) {
-    const img = el('img', {
-      class: 'db-face', src, alt: '', loading: 'lazy',
-      decoding: 'async', referrerpolicy: 'no-referrer',
+    face = el('img', {
+      class: `db-face${owner ? ' owner' : ''}`, src, alt: '', loading: 'lazy',
+      decoding: 'async', referrerpolicy: 'no-referrer', ...ownerBits,
     });
     // A broken image is a torn box with an alt cross in it. Fall back to the
     // initial instead, which is what this row would have had anyway.
-    img.addEventListener('error', () => img.replaceWith(avatar(name, null)), { once: true });
-    return img;
+    face.addEventListener('error', () => face.replaceWith(avatar(name, null)), { once: true });
+    return face;
   }
-  return el('span', { class: 'db-face db-face-letter', text: initial || '·', 'aria-hidden': 'true' });
+  face = el('span', {
+    class: `db-face db-face-letter${owner ? ' owner' : ''}`, text: initial || '·', 'aria-hidden': 'true',
+    ...ownerBits,
+  });
+  return face;
 }
 
 /* ---------------------------------------------------------
@@ -127,14 +138,21 @@ export function timeBoard(rows, revealed) {
 function timeRow(r, i) {
   const res = r.result || {};
   const shown = res.penalty === 'DNF' ? 'DNF' : fmt(res.timeMs) + (res.penalty === '+2' ? '+' : '');
+  const owner = isOwnerName(res.name);
+  const face = avatar(res.name, res.photo);
+  const nameEl = el('span', {
+    class: `db-name${owner ? ' owner-shine' : ''}`, text: res.name || 'Cuber',
+    title: owner ? `${res.name} — that’s the site owner, click for the card` : '',
+  });
+  if (owner) nameEl.addEventListener('click', (e) => { e.stopPropagation(); openOwnerCard(nameEl); });
   return el('div', { class: 'db-row', dataset: { me: String(r.isMe), rank: String(i + 1) } },
     el('span', { class: 'db-rank', text: String(i + 1) }),
-    avatar(res.name, res.photo),
+    face,
     /* Name and note share one grid cell, stacked. A sixth column for the note
        would have taken the width off the name on a phone, and the note is the
        thing you can afford to lose the tail of — the name is not. */
     el('div', { class: 'db-who' },
-      el('span', { class: 'db-name', text: res.name || 'Cuber' }),
+      nameEl,
       res.note ? el('span', { class: 'db-note', text: res.note, title: res.note }) : null),
     (res.suspect || r.clockOff)
       ? el('span', { class: 'db-flag', text: '⚑', title: r.clockOff
@@ -492,7 +510,10 @@ export function openSotd(app, ctl, { onExit, solving = () => false } = {}) {
 
   /* Declared after renderBoard because it calls it, and before onChange ever
      runs, which is the only thing that matters for the closure. */
-  const history = dayHistory(ctl, () => { renderBoard(); placeBoard(); });
+  /* A past day's read can land after the window has closed, and renderBoard
+     un-hides the card — so a slow fetch put the board back over the ordinary
+     timer. Only the window that asked may draw. */
+  const history = dayHistory(ctl, () => { if (open !== state) return; renderBoard(); placeBoard(); });
 
   const onChange = () => {
     dayNode.textContent = ctl.snap?.dayId || '—';
