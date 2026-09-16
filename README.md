@@ -122,8 +122,8 @@ neutral to amber to red, and the digits breathe faster as time runs out.
 
 Inspection is turned off automatically for the blindfolded events and FMC.
 
-### Custom relay
-Pick **Custom** in the event menu to time several puzzles as one attempt — a 2–5 relay,
+### Relay
+Pick **Relay** in the event menu to time several puzzles as one attempt — a 2–5 relay,
 two 3x3s, five 2x2s, anything up to ten puzzles. The relay builder has presets (2–4,
 2–5, 2–7, 2×3x3, 5×2x2), an event picker with a 1–5 count, and up/down buttons to
 reorder. Only ordinary single-scramble events can go in: no blindfolded, FMC or
@@ -358,7 +358,7 @@ Everything lives in your browser's IndexedDB. No account, no server, nothing upl
 | **← →** | previous / next scramble |
 | **Ctrl + C** | copy the scramble |
 | **X** | enter your own scrambles |
-| **<** / **>** | previous / next puzzle in a Custom relay |
+| **<** / **>** | previous / next puzzle in a relay |
 | **E** / **M** / **S** | event · mode · session |
 | **A** / **H** | statistics · all solves |
 | **T** / **,** | appearance · settings |

@@ -1875,8 +1875,8 @@ export const SHORTCUTS = [
     ['←  →', 'previous / next scramble'],
     ['X', 'enter your own scrambles'],
   ]],
-  // Only on a Custom relay; on any other event these do nothing.
-  ['Custom relay', [
+  // Only on a relay; on any other event these do nothing.
+  ['Relay', [
     ['<  >', 'previous / next puzzle'],
     ['Space', 'start, split to the next puzzle, stop'],
   ]],

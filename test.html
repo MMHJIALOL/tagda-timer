@@ -2004,14 +2004,14 @@ section('custom relay');
 {
   const Ev = await import('./js/events.js');
 
-  check('Custom is in the picker, last, and flagged as a relay',
+  check('Relay is in the picker, last, and flagged as a relay',
     Ev.EVENT_ORDER.at(-1) === 'custom' && Ev.EVENTS.custom.relay === true);
-  check('Custom still answers .puzzle, so no preview caller breaks',
+  check('Relay still answers .puzzle, so no preview caller breaks',
     Ev.eventOf('custom').puzzle === '3x3x3');
   check('a relay only offers random-state, no trainer modes',
     JSON.stringify(Ev.modesForEvent('custom')) === '["wca"]', Ev.modesForEvent('custom').join(','));
   const legs = Ev.relayLegEvents();
-  check('relay legs exclude BLD, FMC, multi-blind and Custom itself',
+  check('relay legs exclude BLD, FMC, multi-blind and Relay itself',
     !legs.some(id => ['333bf', '444bf', '555bf', '333fm', '333mbf', 'custom'].includes(id)), legs.join(' '));
 
   /* Same arithmetic as main.js's multiphaseSplitsOf, which the relay reuses:

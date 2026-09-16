@@ -553,7 +553,7 @@ function bootAnimation() {
 }
 
 /* =========================================================
-   Custom relay
+   Relay
 
    One attempt, several puzzles, one total. The list lives on the session
    (`session.relay`), so switching sessions switches relays and two different
@@ -3875,11 +3875,11 @@ function syncEventConfig() {
 }
 
 /** The relay builder — which puzzles, in which order. */
-const openRelayBuilder = () => openPanel('Custom relay', 'buildRelay', {}, app);
+const openRelayBuilder = () => openPanel('Relay', 'buildRelay', {}, app);
 app.openRelayBuilder = openRelayBuilder;
 
 async function setEvent(id) {
-  /* Custom is not an event you can simply switch to: it is a relay, and a
+  /* Relay is not an event you can simply switch to: it is a relay, and a
      relay is a list of puzzles that has to exist before there is anything to
      scramble. Picking it opens the builder instead. */
   if (eventOf(id).relay && !relayList()) { openRelayBuilder(); return; }
@@ -4242,7 +4242,7 @@ function wireChrome() {
       label: EVENTS[id].name,
       badge: EVENTS[id].short,
       on: id === app.settings.event,
-      /* Custom has no scramble of its own until you say which puzzles are in
+      /* Relay has no scramble of its own until you say which puzzles are in
          it, so picking it opens the builder rather than switching to an event
          with nothing to generate. */
       onSelect: () => (EVENTS[id].relay ? openRelayBuilder() : setEvent(id)),

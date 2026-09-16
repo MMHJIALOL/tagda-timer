@@ -27,7 +27,7 @@ export const EVENTS = {
      points the preview at the active leg's own puzzle before anything is
      drawn. The list itself lives on the session (`session.relay`), not here —
      two relay sessions are two different lists of the same event. */
-  'custom': { name: 'Custom',             short: 'Custom', puzzle: '3x3x3',   relay: true, noInspection: false },
+  'custom': { name: 'Relay',              short: 'Relay',  puzzle: '3x3x3',   relay: true, noInspection: false },
 };
 
 export const EVENT_ORDER = [
