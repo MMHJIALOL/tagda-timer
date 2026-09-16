@@ -49,6 +49,21 @@ export function fmt(ms, { showMs = false } = {}) {
   return (neg ? '-' : '') + out;
 }
 
+/**
+ * One result, printed as whatever that event actually measures.
+ *
+ * Fewest Moves is scored in moves, not seconds, and every number the app
+ * prints goes through fmt() — so without this a 28-move solve reads as
+ * "0.02" everywhere it appears. A single is a whole number; a mean is shown
+ * to two decimals, the way the WCA prints one (a mo3 of 82 moves is 27.33).
+ */
+export function fmtResult(v, moves = false) {
+  if (v === null || v === undefined) return '—';
+  if (!isFinite(v)) return 'DNF';
+  if (!moves) return fmt(v);
+  return Number.isInteger(v) ? String(v) : v.toFixed(2);
+}
+
 /** Running display — same shape but no leading-zero padding on seconds. */
 export function fmtLive(ms, precision = 2) {
   if (ms < 0) ms = 0;

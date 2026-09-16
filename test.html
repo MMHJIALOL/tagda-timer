@@ -401,6 +401,102 @@ const A = await import('./js/algs.js');
       || `${Z.ZBLL_SET.length + P.F2L.length} algs`);
 }
 
+/* ---------------- fewest moves ----------------
+
+   Everything here is WCA Article E, and the two numbers it asks for are not
+   the same number: the result is counted in OBTM (rotations free, E2d) and
+   the 80-move ceiling is counted in ETM (rotations included, E2d1).
+   ---------------------------------------------------- */
+section('fewest moves');
+{
+  const FM = await import('./js/fmc.js');
+  const scr = "R' U' F U F2 D B2 U' R2 F2 D' L2 U' F2 R' B D2 L D' B' L2 R' U' F";
+  const inverse = (alg) => alg.trim().split(/\s+/).reverse()
+    .map(t => t.endsWith('2') ? t : t.endsWith("'") ? t.slice(0, -1) : t + "'").join(' ');
+
+  const undo = inverse(scr);
+  const back = FM.validateFmc(scr, undo);
+  check('a scramble undone by its own inverse is solved', back.ok && back.solved,
+    `${back.moves} moves`);
+
+  /* A solution may finish with the cube held any way up — a rotation moves no
+     pieces, so "solved" has to be asked of the colours rather than of a strict
+     match against the solved state. */
+  const rotated = FM.validateFmc(scr, undo + " y2 x'");
+  check('a solution that ends in a rotation is still solved', rotated.solved);
+  check('and the rotations cost it nothing (OBTM, E2d)',
+    rotated.moves === back.moves, `${back.moves} -> ${rotated.moves} moves`);
+  check('but they do count towards the 80-move limit (ETM, E2d1)',
+    rotated.etm === back.etm + 2, `${back.etm} -> ${rotated.etm} ETM`);
+
+  const c = FM.countMoves("Rw2 x U' y2 R");
+  check('a wide turn is one move and a rotation is none',
+    c.obtm === 3 && c.etm === 5, `OBTM ${c.obtm}, ETM ${c.etm}`);
+
+  const bad = (sol) => FM.validateFmc(scr, sol).error;
+  check('a slice move is refused, and named',
+    /^M2 /.test(bad('R U M2')?.message || ''), bad('R U M2')?.message);
+  check('brackets are refused — a bracket is not a move you turned',
+    /brackets/.test(bad('(R U) F')?.message || ''), bad('(R U) F')?.message);
+  check('a lowercase wide turn is read as the wide turn it spells (E2c6)',
+    FM.countMoves('rw2 uW').obtm === 2 && !FM.countMoves('rw2 uW').error);
+
+  /* The one place the WCA disagrees with every other cubing program on this
+     machine: E2c6+ says a bare `r` is `R`, NOT `Rw`. Counted the WCA's way,
+     and said out loud, because a solution that silently means something else
+     is how you lose an attempt to notation rather than to cubing. */
+  const lower = FM.validateFmc(scr, 'r U');
+  check('a bare lowercase face letter is R, not Rw — and says so (E2c6+)',
+    !lower.error && lower.moves === 2 && /counts as R\b/.test(lower.warnings[0] || ''),
+    lower.warnings[0] || 'no warning');
+
+  check('a turn that is not in WCA 12a is refused',
+    !!bad('R3 U') && !!bad('4Rw'), bad('R3 U')?.message);
+
+  const long = FM.validateFmc(scr, Array.from({ length: 81 }, () => 'R').join(' '));
+  check('81 moves is a DNF, and the message says which metric',
+    !long.ok && /Execution Turn Metric/.test(long.error.message), long.error.message);
+  check('80 moves is not',
+    !FM.validateFmc(scr, Array.from({ length: 80 }, () => 'R').join(' ')).error);
+
+  const wrong = FM.validateFmc(scr, "R U R' U'");
+  check('a legal solution that does not solve the cube is not a result',
+    !wrong.ok && !wrong.solved && !wrong.error, `${wrong.moves} moves, solved ${wrong.solved}`);
+  check('an empty solution is not a result either',
+    !FM.validateFmc(scr, '').ok && FM.validateFmc(scr, '   ').moves === 0);
+
+  /* A whole solve, written the way somebody actually writes one down:
+     rotations in the middle of it, and forty-one moves that are not the
+     scramble backwards. Produced by this app's own solver and re-judged here
+     by the module the workspace uses. */
+  const real = "y' F D' R' D2 R D' U2 F2 R2 F2 R2 y' D R' U2 R D' F R' U' R F' y2 "
+             + "R' F' U' F U' R U y' R' U' D R' U R D' U2 R2 U R' U' R'";
+  const v = FM.validateFmc(scr, real);
+  check('a real solution checks out, and is scored in OBTM',
+    v.ok && v.moves === 41 && v.etm === 45, `${v.moves} moves, ${v.etm} ETM`);
+
+  check('the limits are the ones Article E sets',
+    FM.TIME_LIMIT_MS === 3600000 && FM.MAX_ETM === 80);
+
+  /* And the result lands in the statistics as a move count rather than as a
+     third of a second — the whole reason eff() had to learn a second unit. */
+  const St2 = await import('./js/stats.js');
+  const U2 = await import('./js/util.js');
+  const fm = (n) => ({ timeMs: 1800000, penalty: 'none', fmcMoves: n });
+  check('a Fewest Moves result is its move count, not its duration',
+    St2.eff(fm(28)) === 28 && St2.eff({ ...fm(28), penalty: 'DNF' }) === St2.DNF);
+  check('an ordinary solve is untouched by that',
+    St2.eff({ timeMs: 10000, penalty: '+2' }) === 12000);
+  check('a mean of three move counts reads the way the WCA prints one',
+    U2.fmtResult(St2.meanOf([28, 27, 27].map(n => St2.eff(fm(n)))), true) === '27.33',
+    U2.fmtResult(St2.meanOf([28, 27, 27]), true));
+  check('and a single reads as a whole number of moves',
+    U2.fmtResult(28, true) === '28' && U2.fmtResult(Infinity, true) === 'DNF');
+  check('the best mo3 is the best three in a row, and one DNF spoils its window',
+    St2.bestMean([fm(30), fm(29), fm(28), { ...fm(1), penalty: 'DNF' }], 3) === 29,
+    String(St2.bestMean([fm(30), fm(29), fm(28), { ...fm(1), penalty: 'DNF' }], 3)));
+}
+
 /* ---------------- generated scrambles ---------------- */
 section('generated scrambles');
 const G = await import('./js/scramble.js');
@@ -456,6 +552,20 @@ const EXPECT = {
   '333': [16, 21], '222': [9, 11], '555': [55, 65],
   'pyram': [10, 15], 'skewb': [9, 13], '444': [40, 50],
 };
+{
+  /* An FMC scramble is an ordinary random-state 3x3 scramble wrapped in
+     `R' U' F` at both ends, which is what makes it impossible to tell where
+     the scramble starts and so impossible to work the solution out from it
+     (E2e). cubing.js already does this for the 333fm event id, so there is
+     nothing for the app to add — this is the check that says so. */
+  const s = await G.generate('333fm', 'wca');
+  const toks = s.scramble.trim().split(/\s+/);
+  check('a 333fm scramble is padded with the R U F block at both ends',
+    s.official && toks.slice(0, 3).join(' ') === "R' U' F"
+    && toks.slice(-3).join(' ') === "R' U' F",
+    s.scramble);
+}
+
 for (const [ev, [lo, hi]] of Object.entries(EXPECT)) {
   const s = await G.generate(ev, 'wca');
   const len = s.scramble.trim().split(/\s+/).length;

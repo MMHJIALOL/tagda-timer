@@ -117,6 +117,11 @@ export const DEFAULTS = {
      CFOP's cross/F2L/OLL/PLL or whatever else you press it. Off on a blind
      event, where the memo/exec split already owns the key. */
   multiphase: 0,
+  /* How long a Fewest Moves attempt runs. 60 minutes is the WCA limit
+     (E2b); the shorter ones are for practising under pressure, and for
+     finding out what running out of time actually does without sitting
+     through an hour to see it. */
+  fmcMinutes: 60,
   phasesCollapsed: true,        // the post-solve phase breakdown starts folded away
 
   // appearance
