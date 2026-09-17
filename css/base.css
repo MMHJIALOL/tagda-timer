@@ -349,6 +349,9 @@ body.inspecting #timer-display { opacity: 0; }
     opacity: 1; justify-content: center;
     gap: 4px; margin-top: 2px;
   }
+  /* Always on here, so they have to be findable: --text-faint on the aurora
+     was barely there. */
+  #scramble-tools .ghost-btn:not(:hover) { color: var(--text-dim); }
   /* The tools no longer sit in the row, so the reserved room for them goes too. */
   #scramble-wrap { flex-wrap: wrap; justify-content: center; padding: 0; }
 }
@@ -583,7 +586,9 @@ body[data-input="virtual"] #timer-display { font-size: min(var(--timer-size), 5.
 }
 
 #timer-hint {
-  font-size: .78rem; color: var(--text-faint); letter-spacing: .06em;
+  /* --text-dim, not --text-faint: the faint tone sank into the aurora behind it,
+     and on a phone this line is the only instruction for starting a solve. */
+  font-size: .78rem; color: var(--text-dim); letter-spacing: .06em;
   transition: opacity var(--dur) var(--ease);
   height: 1.2em;
 }

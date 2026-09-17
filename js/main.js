@@ -2314,12 +2314,15 @@ const HIST_MIN_TIME = 58;                  // px — "1:03.45" at the default sc
 function shownCols() { return avgCols().slice(0, Math.max(1, histFit)); }
 
 function syncHistFit() {
-  const chip = $('#hist-list')?.querySelector('.solve-chip');
+  /* An empty session has no row to measure, but it still draws every heading,
+     and on a phone three of them squeezed "time" into a 7px track that printed
+     "TIMEAO5". The heading row sits on the same grid, so it answers too. */
+  const chip = $('#hist-list')?.querySelector('.solve-chip') || document.querySelector('.hist-cols');
   if (!chip) return;
-  const time = chip.querySelector('.t');
-  const avg = chip.querySelector('.avg');
+  const time = chip.querySelector('.t, [data-sort="time"]');
+  const avg = chip.querySelector('.avg, .col-avg');
   if (!time || !avg) return;
-  const shown = chip.querySelectorAll('.avg').length;
+  const shown = chip.querySelectorAll('.avg, .col-avg').length;
   const w = time.getBoundingClientRect().width;
   // What one more column would cost: its track, and the gap in front of it.
   const step = avg.getBoundingClientRect().width + 5;
@@ -2544,13 +2547,20 @@ function renderHistory() {
   const n = app.solves.length;
   syncHistCols();
   syncScrollbarGutter();
+  /* A list only while there are solves in it. role="list" over the lone "no
+     times yet" line is a list with no listitem in it, which assistive tech
+     (and Lighthouse's aria-required-children) rightly calls broken. */
+  if (!n) list.removeAttribute('role');
+  else list.setAttribute('role', 'list');
   if (!n) {
     histShown = HIST_PAGE;
     histIds = [];
     histSigs = [];
     list.innerHTML = '';
+    // Same device test as the hint under the digits: a phone has no spacebar.
     list.append(el('div', { class: 'hist-empty', text: movesMode()
       ? 'No attempts yet — press Start attempt.'
+      : COARSE.matches ? 'No times yet — tap anywhere and go.'
       : 'No times yet — hold space and go.' }));
     return;
   }
@@ -2838,7 +2848,7 @@ function wireHistorySort() {
    changes the answer after boot — so the hint is re-read rather than baked in
    once. */
 const COARSE = matchMedia('(pointer: coarse)');
-COARSE.addEventListener('change', () => updateHint());
+COARSE.addEventListener('change', () => { updateHint(); renderHistory(); });
 
 /** The hint under the digits states what starts a solve on this device. */
 function updateHint() {

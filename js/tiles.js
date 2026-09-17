@@ -318,6 +318,18 @@ function placePreview() {
   const top = r.top, bottom = r.bottom;
   const margin = innerWidth <= 860 ? 10 : 18;
 
+  /* The close button and the 2D/3D switch hang past the preview's own box —
+     the button by design, the switch whenever it is wider than the cube — and
+     it is their edges that have to stay on screen. On a phone the button stuck
+     out 8px into a 10px inset and sat on the very edge of the glass. Each side's
+     inset grows to keep whatever hangs off it EDGE px clear (--cube-edge-*). */
+  const EDGE = 8;
+  const hang = ['cube-close', 'view-toggle']
+    .map(id => document.getElementById(id)?.getBoundingClientRect())
+    .filter(q => q && q.width);
+  const insetL = Math.max(margin, EDGE + Math.max(0, ...hang.map(q => Math.round(r.left - q.left))));
+  const insetR = Math.max(margin, EDGE + Math.max(0, ...hang.map(q => Math.round(q.right - r.right))));
+
   /* Panels only. The credit chip is not an obstacle — it is a 28px link that
      moves to the opposite corner (see components.css), and treating it as one
      meant the left-hand corner always looked occupied and the preview never
@@ -325,7 +337,9 @@ function placePreview() {
   /* The open blindfolded breakdown counts too. It hangs out of the flow under
      the scramble, so on a phone it reaches straight into the band the preview
      parks in and nothing else would move either of them apart. */
-  const boxes = ['panel-times', 'panel-stats', 'panel-spotify', 'panel-race', 'bld-panel']
+  /* So do the digits. On a phone the preview's band is the timer's own, and
+     the clock is centred in a column barely wider than the two of them. */
+  const boxes = ['panel-times', 'panel-stats', 'panel-spotify', 'panel-race', 'bld-panel', 'timer-core']
     .map(id => document.getElementById(id))
     .filter(n => n && !n.hidden && getComputedStyle(n).display !== 'none' && n.dataset.dock !== 'bottom')
     .map(n => n.getBoundingClientRect())
@@ -333,12 +347,14 @@ function placePreview() {
 
   const clashes = (x) => boxes.some(q => !(x + w <= q.left || x >= q.right));
 
-  const rightX = innerWidth - margin - w;
-  const leftX = margin;
+  const rightX = innerWidth - insetR - w;
+  const leftX = insetL;
   const rightBlocked = clashes(rightX);
   const leftBlocked = clashes(leftX);
 
   const root = document.documentElement;
+  root.style.setProperty('--cube-edge-left', `${insetL}px`);
+  root.style.setProperty('--cube-edge-right', `${insetR}px`);
   root.style.setProperty('--cube-clear-left', '0px');
   root.style.setProperty('--cube-clear-right', '0px');
 
