@@ -95,6 +95,25 @@ export function currentAvg(solves, n) {
 }
 
 /**
+ * Where a session stands against its goal ({ value, stat }, value in eff units).
+ * `hit` is the current single/average beating the target; `pct` is the share
+ * of all solves (DNFs included) under it.
+ */
+export function goalProgress(solves, goal) {
+  if (!goal) return null;
+  const current = goal.stat === 'single'
+    ? (solves.length ? eff(solves.at(-1)) : null)
+    : currentAvg(solves, goal.stat === 'ao12' ? 12 : 5);
+  let under = 0;
+  for (const s of solves) if (eff(s) < goal.value) under++;
+  return {
+    current,
+    hit: current !== null && current < goal.value,
+    pct: solves.length ? Math.round(100 * under / solves.length) : null,
+  };
+}
+
+/**
  * The best moN anywhere in the session.
  *
  * A mean of 3 is the round a Fewest Moves competitor actually sits (WCA

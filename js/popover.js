@@ -14,7 +14,7 @@ export const popoverOpen = () => !!openCleanup;
 
 /**
  * items: array of
- *   { label, badge, on, icon, onSelect }  |  { sep: true }  |  { title: 'text' }
+ *   { label, badge, on, icon, onSelect, action: { icon, title, onClick } }  |  { sep: true }  |  { title: 'text' }
  *   | { node }   — anything the caller has already built, appended as-is.
  *                 The letter-pair recall uses it to show a memo image.
  */
@@ -35,6 +35,16 @@ export function popover(anchor, items, { columns = 1, minWidth } = {}) {
     if (it.on) btn.append(el('span', { class: 'pi-dot' }));
     btn.append(el('span', { text: it.label }));
     if (it.badge) btn.append(el('span', { class: 'pi-badge', text: it.badge }));
+    /* A secondary control at the row's end (the session pencil). A span, since
+       a button cannot nest in a button; its click never reaches the row. */
+    if (it.action) {
+      const a = el('span', { class: 'pi-action', role: 'button', tabindex: '0',
+        title: it.action.title, 'aria-label': it.action.title, html: it.action.icon });
+      const run = (e) => { e.stopPropagation(); e.preventDefault(); it.action.onClick(); };
+      a.addEventListener('click', run);
+      a.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') run(e); });
+      btn.append(a);
+    }
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       closePopover();
