@@ -4621,7 +4621,7 @@ function wireInput() {
       e.stopImmediatePropagation();
       if (e.repeat || timer.state !== 'idle' || !timer.inspectionEnabled || !vcube.armed) return;
       vSpace = true;
-      timer.down();                        // -> inspecting; the first turn starts the solve
+      timer.down(e.timeStamp);             // -> inspecting; the first turn starts the solve
       return;
     }
     if (e.shiftKey || !vcube.key(e.code, e.repeat)) return;
@@ -4632,7 +4632,7 @@ function wireInput() {
     if (e.code !== 'Space' || !vSpace) return;
     vSpace = false;
     e.preventDefault();
-    timer.up();
+    timer.up(e.timeStamp);
   }, true);
 
   /**
@@ -4656,7 +4656,7 @@ function wireInput() {
       if (!e.repeat) {
         stopKeys.add(e.code || e.key);
         spaceDown = false;
-        timer.down();                    // -> stop
+        timer.down(e.timeStamp);         // -> stop
       }
       return;
     }
@@ -4669,7 +4669,7 @@ function wireInput() {
     if (modalOpen()) return;
     if (spaceDown) return;
     spaceDown = true;
-    timer.down();
+    timer.down(e.timeStamp);
   }, true);
 
   /**
@@ -4699,7 +4699,7 @@ function wireInput() {
       e.preventDefault();
       e.stopImmediatePropagation();
       if (key === 'Space') spaceDown = false;
-      timer.up();                        // cooldown -> idle
+      timer.up(e.timeStamp);             // cooldown -> idle
       return;
     }
     if (e.code !== 'Space') return;
@@ -4707,7 +4707,7 @@ function wireInput() {
     spaceDown = false;
     if (!wasOurs) return;
     e.preventDefault();
-    timer.up();
+    timer.up(e.timeStamp);
   }, true);
 
   // Touch / pen always drive the timer — on a phone there is no other way to
@@ -4744,7 +4744,7 @@ function wireInput() {
     if (!pointerOK(e) || !touchOK(e)) { tracking = false; return; }
     tracking = true;
     e.preventDefault();
-    timer.down();
+    timer.down(e.timeStamp);
   };
   const up = (e) => {
     if (!e.isPrimary || !tracking) return;
@@ -4754,7 +4754,7 @@ function wireInput() {
        the one input where there is no other way to start the timer: the tap
        that stopped a race solve locked the timer as it landed, its release was
        discarded, and the first tap of the next round went nowhere. */
-    timer.up();
+    timer.up(e.timeStamp);
   };
 
   const stage = $('#stage');

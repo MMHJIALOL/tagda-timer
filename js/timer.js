@@ -1,9 +1,11 @@
 /* ===========================================================
    Tagda Timer — timer state machine + WCA inspection
 
-   Timing is taken from performance.now() timestamps, never from an
-   accumulated frame count, so animation jank can never change a
-   recorded time.
+   Timing is taken from timestamps, never from an accumulated frame count, so
+   animation jank can never change a recorded time. The timestamp is the input
+   event's own `timeStamp` where there is one — same clock as
+   performance.now(), but read when the key or finger actually landed, so a
+   busy main thread does not add its delay to the solve.
 
    States: idle -> [inspecting] -> holding -> ready -> running -> idle
 
@@ -62,13 +64,22 @@ export class Timer extends EventTarget {
 
   /* ---------------- input ---------------- */
 
-  down() {
+  /**
+   * A press.
+   *
+   * `at` is the event's own `timeStamp`, which is on the same clock as
+   * performance.now() but taken when the key or finger actually landed rather
+   * than when this handler got to run — so a busy main thread cannot add its
+   * own delay to somebody's solve. Callers that have no event to quote (the
+   * virtual cube, a Stackmat, a race) pass nothing and get the clock.
+   */
+  down(at) {
     switch (this.state) {
       case 'running':
         // A press part-way through a solve is a phase boundary until the
         // configured number of them have been taken; after that it stops.
-        if (this.splits.length < Math.max(0, this.cfg.phaseSplits)) this._split();
-        else this._stop();
+        if (this.splits.length < Math.max(0, this.cfg.phaseSplits)) this._split(at);
+        else this._stop(at);
         break;
 
       case 'idle':
@@ -89,7 +100,8 @@ export class Timer extends EventTarget {
     }
   }
 
-  up() {
+  /** A release. `at` is the event's own timeStamp — see down(). */
+  up(at) {
     if (this._ignoreUp) { this._ignoreUp = false; return; }
 
     switch (this.state) {
@@ -104,7 +116,7 @@ export class Timer extends EventTarget {
         break;
 
       case 'ready':
-        this._start();
+        this._start(at);
         break;
 
       default:
@@ -177,18 +189,20 @@ export class Timer extends EventTarget {
 
   /* ---------------- run ---------------- */
 
-  _start() {
-    // Read the clock directly rather than trusting the animation-frame value:
-    // a throttled or dropped frame must never change which penalty you get.
+  _start(at) {
+    // The release's own timestamp when there is one, the clock otherwise —
+    // never an animation-frame value: a throttled or dropped frame must never
+    // change which penalty you get.
+    const now = at ?? performance.now();
     if (this.inspectionEnabled && this.inspectStart) {
-      this.inspectElapsed = performance.now() - this.inspectStart;
+      this.inspectElapsed = now - this.inspectStart;
       this.pendingPenalty = this._inspectionPenalty(this.inspectElapsed);
     } else {
       this.inspectElapsed = 0;
       this.pendingPenalty = 'none';
     }
     this.inspectStart = 0;
-    this.solveStart = performance.now();
+    this.solveStart = now;
     this.elapsed = 0;
     this.splits = [];
     this._setState('running');
@@ -201,8 +215,8 @@ export class Timer extends EventTarget {
    * stop is: a split taken from the last animation frame would be up to
    * a frame early, and the phases have to add up to the total exactly.
    */
-  _split() {
-    const at = performance.now() - this.solveStart;
+  _split(stamp) {
+    const at = (stamp ?? performance.now()) - this.solveStart;
     this.splits.push(at);
     const prev = this.splits.length > 1 ? this.splits[this.splits.length - 2] : 0;
     this.emit('split', {
@@ -212,8 +226,8 @@ export class Timer extends EventTarget {
     });
   }
 
-  _stop() {
-    const end = performance.now();
+  _stop(at) {
+    const end = at ?? performance.now();
     cancelAnimationFrame(this._raf);
     this.elapsed = end - this.solveStart;
     this._setState('cooldown');
