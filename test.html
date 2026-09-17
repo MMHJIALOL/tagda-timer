@@ -3,6 +3,11 @@
 <head>
 <meta charset="utf-8">
 <title>Tagda Timer — self test</title>
+<!-- Vercel Speed Insights -->
+<script>
+  window.si = window.si || function () { (window.siq = window.siq || []).push(arguments); };
+</script>
+<script defer src="/_vercel/speed-insights/script.js"></script>
 <!-- Vercel Web Analytics -->
 <script>
   window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
@@ -2475,6 +2480,42 @@ section('custom relay');
     check('DNFs and non-relay solves give no breakdown',
       St.relaySummary([mk(4000, 10000, 'DNF')]) === null && St.relaySummary([{ timeMs: 1, penalty: 'none' }]) === null);
   }
+}
+
+section('statistics — ranges, hours and sittings');
+{
+  const mk = (ms, penalty = 'none', createdAt = 0) => ({ timeMs: ms, penalty, createdAt });
+
+  // 12.00, DNF (8.00 on the clock), 10.00+2, 14.00 — brushed out of a longer run.
+  const run = [mk(9000), mk(12000), mk(8000, 'DNF'), mk(10000, '+2'), mk(14000), mk(7000)];
+  const g = St.groupStats(run.slice(1, 5));
+  check('a selected range leaves its DNF out of mean and best, and counts it',
+    g.count === 4 && g.dnf === 1 && g.valid === 3 && Math.round(g.mean) === 12667 && g.best === 12000,
+    `mean ${g.mean} · best ${g.best}`);
+  const fm = (n) => ({ timeMs: 3600000, penalty: 'none', fmcMoves: n });
+  check('a Fewest Moves range is averaged in moves', St.groupStats([fm(28), fm(31)]).mean === 29.5);
+
+  const at = (h, m) => new Date(2026, 8, 17, h, m).getTime();
+  const hb = St.byHourOfDay([
+    ...[11000, 11200, 11400, 11600, 11800].map((t, i) => mk(t, 'none', at(21, i))),
+    ...[9000, 9000, 9000, 9000].map((t, i) => mk(t, 'none', at(8, i))),      // fastest, but only four
+    ...[12000, 12000, 12000, 12000, 12000].map((t, i) => mk(t, 'none', at(14, i))),
+    mk(5000, 'DNF', at(14, 30)),
+  ]);
+  check('the fastest hour needs five finished solves, and a DNF sits beside its mean',
+    hb.best?.hour === 21 && hb.hours[8].valid === 4 && hb.hours[14].dnf === 1 && hb.hours[14].mean === 12000,
+    `best ${hb.best?.hour}`);
+
+  // Sitting A: 30 solves a minute apart. Exactly 30 minutes later, sitting B: 12 more.
+  const MIN = 60000, seq = [];
+  for (let i = 0; i < 30; i++) seq.push(mk(i < 10 ? 12000 : 11000, 'none', i * MIN));
+  for (let i = 0; i < 12; i++) seq.push(mk(i < 10 ? 13000 : 10000, 'none', 59 * MIN + i * MIN));
+  const sp = St.bySittingPosition([...seq].reverse());
+  check('a 30-minute break starts a new sitting, and positions pool across sittings',
+    sp.buckets.map(b => b.count).join() === '20,17,5,0' && sp.first.lo === 1 && sp.last.lo === 26 && sp.delta === -1500,
+    sp.buckets.map(b => b.count).join());
+  check('a stretch short of five finished solves is skipped, not compared',
+    St.bySittingPosition(seq.slice(0, 12)).last === null);
 }
 
 section('virtual cube');
