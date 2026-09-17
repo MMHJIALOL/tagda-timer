@@ -653,16 +653,18 @@ Screenshots in `docs/screenshots/` are taken from the running app.
 ## Deploying
 
 The folder is already a static site: no build step, no server, no environment
-variables. Drag it onto Netlify, or:
+variables:
 
 ```bash
 npx vercel --prod
 ```
 
-`netlify.toml` and `vercel.json` are committed and set the caching that matters:
-`vendor/` is content-hashed so it is cached for a year, while `js/`, `css/` and
+`vercel.json` is committed and sets the caching that matters: `vendor/` is
+content-hashed so it is cached for a year, while `js/`, `css/` and
 `index.html` are revalidated on every load, so a deploy can never leave a visitor with
-half the old app and half the new one.
+half the old app and half the new one. `.vercelignore` keeps `sync-test.html`
+out of the deployment — it is a developer page, and it writes to whatever
+database the browser opening it is signed in to.
 
 For GitHub Pages, push the folder to a `gh-pages` branch and enable Pages on it.
 The `.nojekyll` file stops Jekyll from touching anything.
@@ -696,8 +698,7 @@ line up for that, and sign-in breaks outright if only one of them does:
 
 Deploying to a new domain therefore means editing `SAME_ORIGIN_AUTH_HOSTS`, both
 console lists, and, on a host that is not Vercel, porting the rewrite to that
-host's own config (`netlify.toml` has no equivalent yet, because nothing is
-deployed there).
+host's own config.
 
 Whatever the host, it must serve the whole folder (`vendor/` included) with
 JavaScript files as `text/javascript`. Every host above does that by default.
