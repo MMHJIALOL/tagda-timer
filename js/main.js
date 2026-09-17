@@ -990,9 +990,11 @@ app.updateCustomBar = updateCustomBar;
 /**
  * Load a pasted block. `append` keeps whatever is left of the current list,
  * which is what you want when you paste a second competition round in.
+ * An array is taken as the scrambles themselves, unsplit — the statistics
+ * drawer hands over recorded ones, and a megaminx scramble spans lines.
  */
 app.setCustomScrambles = (text, { append = false } = {}) => {
-  const list = parseScrambleList(text);
+  const list = Array.isArray(text) ? text.filter(Boolean) : parseScrambleList(text);
   const c = app.custom;
   if (append && c.list.length) {
     c.list = c.list.concat(list);

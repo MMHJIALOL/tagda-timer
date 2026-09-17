@@ -7,8 +7,9 @@
 import { $, el, fmt, fmtResult, fmtDate, download, parseScrambleList } from './util.js';
 import { PRESETS, TIMER_FONTS, exportTheme, importTheme } from './theme.js';
 import { SHADER_NAMES } from './bg.js';
-import { summarize, byCase, eff, DNF, isMoveResult, bestAvg, statWindow, bldSummary, relaySummary } from './stats.js';
-import { renderTrend, renderHistogram, renderHeatmap, renderCaseBars } from './charts.js';
+import { summarize, byCase, eff, DNF, isMoveResult, bestAvg, statWindow, bldSummary, relaySummary,
+         groupStats, byHourOfDay, bySittingPosition, MIN_GROUP, SITTING_GAP_MS } from './stats.js';
+import { renderTrend, renderHistogram, renderHeatmap, renderCaseBars, renderGroupBars } from './charts.js';
 import { MODES, EVENTS, EVENT_ORDER, eventOf, virtualSize, relayLegEvents, relayLabel, RELAY_MAX } from './events.js';
 import { setFor } from './scramble.js';
 import { toast, confirmToast } from './toast.js';
@@ -375,29 +376,40 @@ export function buildStatDetail(app, kind) {
     const list = el('div', { class: 'sd-list' });
     w.list.forEach((s, i) => {
       const gi = w.start + i;
-      const trimmed = w.trimmed.has(gi);
-      const scramble = (s.scramble || '').replace(/\s+/g, ' ').trim();
-      const rowEl = el('div', { class: `sd-row ${trimmed ? 'trimmed' : ''} ${s.penalty === 'DNF' ? 'dnf' : ''}` },
-        el('span', { class: 'sd-i', text: String(i + 1) }),
-        el('span', { class: 'sd-t', text: timeCell(s, trimmed) }),
-        el('div', { class: 'sd-body' },
-          el('div', { class: 'sd-scramble', text: scramble || '(no scramble recorded)' }),
-          el('div', { class: 'sd-meta', text: [
-            `solve #${gi + 1}`,
-            fmtDate(s.createdAt),
-            s.caseName || '',
-            s.comment || '',
-          ].filter(Boolean).join(' · ') })),
-        el('button', {
-          class: 'ghost-btn sm', text: 'copy',
-          title: 'Copy this scramble',
-          onclick: () => app.copyToast(scramble, 'Scramble'),
-        }),
-      );
-      list.append(rowEl);
+      list.append(solveRow(app, s, i + 1, gi, { trimmed: w.trimmed.has(gi) }));
     });
     body.append(list);
   };
+}
+
+/**
+ * One solve in a list of them: place, time, scramble, where it sits in the
+ * session. Shared by the stat detail and the statistics charts, so a solve
+ * reads the same wherever it is opened from. `pinned` is the trend chart's
+ * card, which states the penalty even when there is none and brings its own
+ * buttons instead of the copy one.
+ */
+function solveRow(app, s, n, gi, { trimmed = false, pinned = false } = {}) {
+  const scramble = (s.scramble || '').replace(/\s+/g, ' ').trim();
+  const penalty = s.penalty === '+2' ? '+2 penalty' : s.penalty === 'DNF' ? 'DNF' : 'no penalty';
+  return el('div', { class: `sd-row ${trimmed ? 'trimmed' : ''} ${s.penalty === 'DNF' ? 'dnf' : ''}` },
+    el('span', { class: 'sd-i', text: String(n) }),
+    el('span', { class: 'sd-t', text: timeCell(s, trimmed) }),
+    el('div', { class: 'sd-body' },
+      el('div', { class: 'sd-scramble', text: scramble || '(no scramble recorded)' }),
+      el('div', { class: 'sd-meta', text: [
+        `solve #${gi + 1}`,
+        pinned ? penalty : '',
+        fmtDate(s.createdAt),
+        s.caseName || '',
+        s.comment || '',
+      ].filter(Boolean).join(' · ') })),
+    pinned ? null : el('button', {
+      class: 'ghost-btn sm', text: 'copy',
+      title: 'Copy this scramble',
+      onclick: () => app.copyToast(scramble, 'Scramble'),
+    }),
+  );
 }
 
 /* =========================================================
@@ -1083,8 +1095,14 @@ export function buildStats(app) {
         )),
     );
 
+    // Where each solve sits in the session, for "solve #" labels on any subset.
+    const at = new Map(solves.map((s, i) => [s, i]));
+
     const hoverInfo = el('div', { class: 'bs-sub', style: { minHeight: '1.2em' } });
     const trendHost = el('div');
+    /* What a click or a drag on the trend picked out: one pinned solve with
+       what you can do with it, or a range and what it adds up to. */
+    const pickHost = el('div', { class: 'sd-list', hidden: true });
     /* The cube filter starts as "all cubes" and stays that way if you own
        none — the row appears only once there is something to choose between,
        so a session that has never touched the gear log looks exactly as it
@@ -1093,14 +1111,78 @@ export function buildStats(app) {
     const cubeRow = el('div', { class: 'chart-filter', hidden: true },
       el('span', { class: 'bs-sub', text: 'Cube' }), cubePick);
 
-    const drawTrend = (list, markers) => {
-      renderTrend(trendHost, list, (s, i) => {
-        hoverInfo.textContent = s ? `#${i + 1}  ${fmtResult(eff(s), isMoveResult(s))}  ·  ${s.scramble.slice(0, 60)}` : '';
-      }, { markers });
+    let shown = solves, chart = null, pinned = -1;
+
+    const repeat = (s) => { closeDrawer(); app.repeatScramble(s); };
+
+    const showPin = (i) => {
+      pinned = i;
+      const s = shown[i], gi = at.get(s);
+      pickHost.hidden = false;
+      pickHost.replaceChildren(
+        solveRow(app, s, gi + 1, gi, { pinned: true }),
+        el('div', { class: 'sd-actions' },
+          el('button', { class: 'btn primary', text: 'Repeat this scramble', onclick: () => repeat(s) }),
+          // The workbench is a 3x3 one; a relay's legs are reconstructed one by one from the solve menu.
+          s.relay?.length ? null : el('button', { class: 'ghost-btn', text: 'Reconstruct', onclick: () => app.reconstructSolve(s) }),
+          el('button', { class: 'ghost-btn', text: 'Copy scramble', onclick: () => app.copyToast(s.scramble || '', 'Scramble') }),
+          el('span', { class: 'bs-sub', text: '← → neighbouring solve · Enter repeats' })));
     };
 
-    body.append(el('div', { class: 'chart-card' },
-      el('h4', { text: 'Trend — solves, ao5, ao12, PB' }), cubeRow, trendHost, hoverInfo));
+    const showRange = (a, b) => {
+      pinned = -1;
+      const range = shown.slice(a, b + 1);
+      const g = groupStats(range);
+      // A relay is several scrambles to one attempt, and the queue deals single ones.
+      const scrambles = range.filter(s => !s.relay?.length).map(s => s.scramble).filter(Boolean);
+      pickHost.hidden = false;
+      pickHost.replaceChildren(
+        el('div', { class: 'big-stats' },
+          cell('solves', String(g.count), `#${at.get(shown[a]) + 1}–#${at.get(shown[b]) + 1}`),
+          cell('mean', f(g.mean), g.dnf ? `${g.dnf} DNF left out` : ''),
+          cell('best', f(g.best))),
+        scrambles.length ? el('div', { class: 'sd-actions' },
+          el('button', {
+            class: 'btn primary', text: 'Practise these scrambles again',
+            title: `Loads these ${scrambles.length} as your own scrambles, in order`,
+            onclick: () => app.setCustomScrambles(scrambles),
+          })) : null);
+    };
+
+    const drawTrend = (list, markers) => {
+      shown = list;
+      pinned = -1;
+      pickHost.hidden = true;
+      pickHost.replaceChildren();
+      const focus = () => trendCard.focus({ preventScroll: true });
+      chart = renderTrend(trendHost, list, (s, i) => {
+        hoverInfo.textContent = s ? `#${i + 1}  ${fmtResult(eff(s), isMoveResult(s))}  ·  ${s.scramble.slice(0, 60)}` : '';
+      }, {
+        markers,
+        // Focus follows the click so the arrow keys and Enter land here.
+        onPin: (i) => { showPin(i); focus(); },
+        onBrush: (a, b) => { showRange(a, b); focus(); },
+      });
+    };
+
+    const trendCard = el('div', {
+      class: 'chart-card', tabindex: 0,
+      'aria-label': 'Trend. Click a solve to pin it or drag across a range; arrow keys step the pinned solve, Enter repeats it.',
+    }, el('h4', { text: 'Trend — solves, ao5, ao12, PB' }), cubeRow, trendHost, hoverInfo, pickHost);
+    trendCard.addEventListener('keydown', (e) => {
+      if (!chart || e.target.closest('select')) return;
+      const step = e.key === 'ArrowLeft' ? -1 : e.key === 'ArrowRight' ? 1 : 0;
+      if (step) {
+        e.preventDefault();
+        const i = pinned < 0 ? shown.length - 1 : Math.max(0, Math.min(shown.length - 1, pinned + step));
+        chart.pin(i);
+        showPin(i);
+      } else if (e.key === 'Enter' && pinned >= 0 && !e.target.closest('button')) {
+        e.preventDefault();
+        repeat(shown[pinned]);
+      }
+    });
+    body.append(trendCard);
     drawTrend(solves, []);
 
     (async () => {
@@ -1129,6 +1211,68 @@ export function buildStats(app) {
     const histHost = el('div');
     body.append(el('div', { class: 'chart-card' }, el('h4', { text: 'Distribution' }), histHost));
     renderHistogram(histHost, solves);
+
+    /* ---- when in the day, and how deep into a sitting ----
+       Means leave DNFs out and count them beside the mean. A group short of
+       MIN_GROUP finished solves is still drawn, but never named as a finding. */
+    const hourName = (h) => `${h % 12 || 12} ${h < 12 ? 'am' : 'pm'}`;
+    const plural = (n) => `${n} solve${n === 1 ? '' : 's'}`;
+    const groupText = (g, showMean, note) => [
+      showMean && g.mean !== null ? f(g.mean) : '',
+      plural(g.count) + (g.dnf ? ` (${g.dnf} DNF)` : ''),
+      note,
+    ].filter(Boolean).join(' · ');
+
+    const groupCard = (title, summary, rows, note) => {
+      const host = el('div');
+      const listHost = el('div', { class: 'sd-list', hidden: true });
+      body.append(el('div', { class: 'chart-card' },
+        el('h4', { text: title }),
+        el('div', { text: summary, style: { fontSize: '.84rem', color: 'var(--text-dim)' } }),
+        host,
+        el('div', { class: 'bs-sub', text: note }),
+        listHost));
+      renderGroupBars(host, rows, (row) => {
+        listHost.hidden = !row;
+        listHost.replaceChildren(...(row ? row.list.map((s, i) => solveRow(app, s, i + 1, at.get(s))) : []));
+      });
+    };
+
+    const hb = byHourOfDay(solves);
+    groupCard('When you’re fastest',
+      hb.best
+        ? `Fastest around ${hourName(hb.best.hour)} (mean ${f(hb.best.mean)} over ${plural(hb.best.valid)})`
+        : `No hour has ${MIN_GROUP} finished solves yet, so there is no fastest hour to name.`,
+      hb.hours.filter(h => h.count).map(h => {
+        const few = h.valid < MIN_GROUP;
+        return {
+          label: hourName(h.hour), value: h.mean, faint: few, list: h.list,
+          text: groupText(h, true, h === hb.best ? 'fastest' : few ? 'too few to count' : ''),
+        };
+      }),
+      `local time · faded hours have under ${MIN_GROUP} finished solves · click a bar for its solves`);
+
+    const sp = bySittingPosition(solves);
+    const stretch = (b) => b.hi === Infinity ? `solves ${b.lo}+` : `solves ${b.lo}–${b.hi}`;
+    let slowdown = `Not enough to compare yet — two stretches of a sitting need ${MIN_GROUP} finished solves each.`;
+    if (sp.last) {
+      const d = sp.delta;
+      const word = moves ? (d < 0 ? 'shorter' : 'longer') : (d < 0 ? 'faster' : 'slower');
+      slowdown = d === 0
+        ? `Later solves are no different — ${stretch(sp.last)} and ${stretch(sp.first)} both average ${f(sp.first.mean)}.`
+        : `Later solves are ${word}: ${stretch(sp.last)} average ${f(sp.last.mean)}, `
+          + `${f(Math.abs(d))}${moves ? ' moves' : ''} ${word} than ${stretch(sp.first)} (${f(sp.first.mean)}).`;
+    }
+    groupCard('Do you slow down?', slowdown,
+      solves.length ? sp.buckets.map(b => {
+        // Too few to trust: no bar and no mean, rather than a guess drawn to scale.
+        const few = b.valid < MIN_GROUP;
+        return {
+          label: stretch(b), value: few ? null : b.mean, faint: few, list: b.list,
+          text: groupText(b, !few, few ? 'too few to say' : ''),
+        };
+      }) : [],
+      `a sitting ends at a break of ${SITTING_GAP_MS / 60000} minutes or more · click a bar for its solves`);
 
     /* The heatmap reads the whole store rather than this session, so it is the
        one chart that can go stale while the panel is open: deleting solves
