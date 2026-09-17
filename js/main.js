@@ -1105,6 +1105,8 @@ function showScramble(s, silent = false) {
 
   node.classList.toggle('relay-all', showAll);
   node.textContent = text;
+  // The box stops holding room for a scramble the moment it is holding one.
+  node.classList.remove('warming');
   node.classList.toggle('multiline', text.includes('\n'));
   node.classList.toggle('long', text.length > 90);
   fitScrambleToLine(node);
@@ -1178,7 +1180,13 @@ function watchScrambleWidth() {
     // the fit, so watching it would feed the observer its own result.
     new ResizeObserver(refit).observe(box);
   }
-  document.fonts?.ready?.then(() => { fitScrambleToLine(node); bldFit(); }).catch(() => {});
+  /* `loadingdone`, not `document.fonts.ready`. Reading `.ready` when the fonts
+     have already arrived makes Chrome update style and layout on the spot to
+     see whether the answer is still true — a forced reflow, 74ms of the boot on
+     a throttled phone, for an answer this only wants in order to re-measure.
+     The event says the same thing and costs nothing, and it keeps saying it for
+     a face that loads later (the timer font is a setting). */
+  document.fonts?.addEventListener?.('loadingdone', refit);
 }
 
 /**

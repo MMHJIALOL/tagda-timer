@@ -258,7 +258,7 @@
          thing the clock cannot tell you. -->
     <div id="relay-rail" hidden></div>
     <div id="scramble-wrap">
-      <div id="scramble-text" class="scramble" tabindex="-1">Warming up scrambler&hellip;</div>
+      <div id="scramble-text" class="scramble warming" tabindex="-1">Warming up scrambler&hellip;</div>
       <div id="scramble-tools">
         <button class="ghost-btn" id="btn-prev-scramble" title="Previous scramble">
           <svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg>
@@ -515,7 +515,11 @@
           <span id="stackmat-msg">listening for a Stackmat…</span>
         </div>
 
-        <div id="timer-hint">press <kbd>space</kbd> to start</div>
+        <!-- Both sentences, so the first paint already says what this device's
+             updateHint() is going to say. They are different widths, and the
+             timer block is centred on its own width, so the whole clock slid
+             sideways when the script caught up with the markup. -->
+        <div id="timer-hint"><span class="hint-fine">tap <kbd>space</kbd>, release to start</span><span class="hint-coarse">tap anywhere, release to start</span></div>
 
         <div id="last-delta" hidden></div>
       </div>

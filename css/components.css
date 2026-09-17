@@ -437,6 +437,10 @@
   flex: none;
   display: grid; grid-template-columns: var(--hist-grid);
   align-items: center; gap: var(--hist-gap);
+  /* Empty until renderHistCols() fills it, which is after the first paint —
+     and the solve list below then started 11px lower than where it had been
+     drawn. One row of labels plus this element's own padding and rule. */
+  min-height: calc(1lh + 8px);
   /* #hist-list below bleeds out by half the pad and pads back in so its chips
      can have a hover background that reaches the panel edge. Matching that here
      is what makes the labels line up with the columns rather than sit 9px off. */
@@ -493,6 +497,10 @@
 .col-edit:hover { color: var(--accent); opacity: 1; }
 /* No hover to reveal it on a touch screen, so it is simply always there. */
 @media (hover: none) { .col-edit { opacity: .75; } }
+/* The heading row carries one cell per column plus an empty one for the
+   reconstruct button, and on a touch screen that column is dropped — so the
+   spare cell wraps onto a second (empty) row and the row is a gap taller. */
+@media (hover: none) { .hist-cols { min-height: calc(1lh + var(--hist-gap) + 8px); } }
 
 /* The heading, mid-edit. Sized to the column it replaces so nothing shifts
    while you type. */
@@ -2164,7 +2172,9 @@ body.focus #dock-bottom, body.focus #tile-float-layer { opacity: 0; pointer-even
    placePreview() in tiles.js. */
 @media (min-width: 861px) {
   #sidebar {
-    padding-bottom: max(var(--chip-h-left, 36px), var(--dock-clear-left, 0px), var(--cube-clear-left, 0px));
+    /* 52px is what measureChip() lands on for the chip at its own size, so the
+       rail does not lose 16px of the solve list the moment it is measured. */
+    padding-bottom: max(var(--chip-h-left, 52px), var(--dock-clear-left, 0px), var(--cube-clear-left, 0px));
   }
   #sidebar-right {
     padding-bottom: max(var(--chip-h-right, 0px), var(--dock-clear-right, 0px), var(--cube-clear-right, 0px));

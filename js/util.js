@@ -94,6 +94,21 @@ export function debounce(fn, ms = 200) {
 }
 
 /**
+ * Run `fn` once, after the browser's next layout and before it paints.
+ *
+ * Geometry read in there is free, because layout has just been done, and
+ * whatever `fn` writes still lands in the same frame. Read straight after a
+ * style write instead, the same measurement is a forced synchronous reflow.
+ * A ResizeObserver's first report comes at exactly that point in the frame,
+ * which is the only thing it is used for here. Like requestAnimationFrame, it
+ * waits while the page is not being rendered.
+ */
+export function afterLayout(fn) {
+  const ro = new ResizeObserver(() => { ro.disconnect(); fn(); });
+  ro.observe(document.documentElement);
+}
+
+/**
  * Copy to the clipboard. Resolves to whether it actually worked, and never
  * rejects.
  *
