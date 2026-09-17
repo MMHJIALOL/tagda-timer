@@ -821,6 +821,40 @@ input[type="range"]::-moz-range-thumb {
   margin-left: auto; font-family: var(--font-mono); font-size: .66rem;
   color: var(--text-faint); letter-spacing: .04em;
 }
+.pop-item .pi-badge + .pi-action { margin-left: 6px; }
+.pop-item .pi-action {
+  margin-left: auto; display: grid; place-items: center; flex: none;
+  width: 22px; height: 22px; margin-right: -4px; border-radius: 6px; color: var(--text-faint);
+}
+.pop-item .pi-action:hover, .pop-item .pi-action:focus-visible {
+  color: var(--text); background: color-mix(in srgb, var(--text) 12%, transparent);
+}
+.pop-item .pi-action svg {
+  width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 2;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+.pop-form { display: flex; flex-direction: column; gap: 8px; padding: 4px 10px 8px; width: 250px; }
+.pop-form label { display: flex; flex-direction: column; gap: 4px; font-size: .7rem; color: var(--text-faint); }
+.pop-form .pf-row { display: flex; gap: 6px; }
+.pop-form .pf-row input { flex: 1; min-width: 0; }
+.pop-form .pf-err { font-size: .7rem; color: var(--danger); min-height: 1em; }
+.pop-form .pf-btns { display: flex; justify-content: flex-end; gap: 6px; }
+
+/* A session's goal: same quiet line as now-playing, stacked above it. */
+#goal-line {
+  font-size: .78rem; color: var(--text-faint); text-align: center;
+  margin-top: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  transition: opacity var(--dur) var(--ease);
+}
+#goal-line[hidden] { display: none; }
+/* Stacked with now-playing: one block of two lines, not two spaced rows. The
+   timer is pinned to the viewport centre, so every pixel here is one closer
+   to the digits. */
+#goal-line:not([hidden]) + #now-playing { margin-top: -6px; }
+#goal-line.hit { color: var(--ok); }
+body.focus #goal-line, body.inspecting #goal-line,
+body:has(#timer-display.state-running) #goal-line { opacity: 0; }
 .pop-item .pi-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); flex: none; }
 .pop-sep { height: 1px; margin: 5px 8px; background: var(--border); }
 .pop-title {

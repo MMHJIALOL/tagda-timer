@@ -43,6 +43,13 @@
             "order":     { ".validate": "!newData.exists() || newData.isNumber()" },
             "race":      { ".validate": "!newData.exists() || newData.isBoolean()" },
             "virtual":   { ".validate": "!newData.exists() || newData.isBoolean()" },
+            "goal": {
+              ".validate": "newData.hasChildren(['value', 'stat'])",
+              "value": { ".validate": "newData.isNumber() && newData.val() > 0" },
+              "stat":  { ".validate": "newData.isString() && newData.val().matches(/^(single|ao5|ao12)$/)" },
+              "hitAt": { ".validate": "newData.isNumber()" },
+              "$other": { ".validate": false }
+            },
             "$other":    { ".validate": false }
           }
         },

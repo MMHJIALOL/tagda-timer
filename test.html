@@ -104,6 +104,34 @@ check('bestSingle counts the +2 penalty',
     St.statWindow(solves, 'ao5@2').list.length === 0);
 }
 
+/* ---------------- session goals ---------------- */
+section('session goals');
+{
+  check('a goal typed as bare digits is whole seconds, not centiseconds',
+    U.parseGoal('12') === 12000 && U.parseGoal('11.5') === 11500 && U.parseGoal('1:05.2') === 65200);
+  check('a goal that is not a time is refused, and so is a penalty',
+    U.parseGoal('') === null && U.parseGoal('abc') === null && U.parseGoal('dnf') === null && U.parseGoal('0') === null);
+  check('a Fewest Moves goal is a move count',
+    U.parseGoal('30', true) === 30 && U.parseGoal('1:05', true) === null);
+
+  const mk = (ms, penalty = 'none') => ({ timeMs: ms, penalty });
+  // 11, 13, 11.5, DNF, 12 (exactly the goal: not under it)
+  const solves = [mk(11000), mk(13000), mk(11500), mk(5000, 'DNF'), mk(12000)];
+  const p = St.goalProgress(solves, { value: 12000, stat: 'ao5' });
+  check('% under goal counts strictly-under solves over all solves, DNFs included',
+    p.pct === 40, `${p.pct}%`);
+  check('the current ao5 is compared against the goal',
+    Math.round(p.current) === 12167, String(p.current));
+  check('an ao5 over the goal is not a hit', p.hit === false);
+  check('a single goal reads the last solve',
+    St.goalProgress([mk(13000), mk(11000)], { value: 12000, stat: 'single' }).hit === true);
+  check('no solves: no current, no percentage',
+    (({ current, pct }) => current === null && pct === null)(St.goalProgress([], { value: 12000, stat: 'ao12' })));
+  const fm = (n) => ({ timeMs: 1800000, penalty: 'none', fmcMoves: n });
+  check('an FMC goal is judged in moves, not duration',
+    St.goalProgress([fm(28), fm(33)], { value: 30, stat: 'single' }).pct === 50);
+}
+
 /* ---------------- learn mode scheduler ---------------- */
 const L = await import('./js/learn.js');
 const DAY = 86400000;

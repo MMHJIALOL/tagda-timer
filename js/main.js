@@ -3,7 +3,7 @@
    =========================================================== */
 
 import { $, $$, el, uid, fmt, fmtLive, fmtResult, clamp, copy, download, toCSV, debounce,
-         parseTimeInput, parseScrambleList } from './util.js';
+         parseTimeInput, parseScrambleList, parseGoal } from './util.js';
 import { Solves, Sessions, KV, Assets, LetterPairs, importAll, onWrite } from './db.js';
 import { activeGearId, Gear, gearLabel } from './gear.js';
 import { EVENTS, EVENT_ORDER, MODES, modesForEvent, eventOf, modeOf, virtualSize,
@@ -16,7 +16,7 @@ import { CubeView } from './cube.js';
 import { makeDraggable } from './drag.js';
 import { flash, shockwave, confetti, chime, callout, beep } from './fx.js';
 import { mountMetro, metroExternal } from './metro.js';
-import { summarize, eff, DNF, isMoveResult, bestSingle, bestAvg, trimmedIndices, byCase, sessionBests, rollingSeries, statWindow, STAT_LABELS } from './stats.js';
+import { summarize, eff, DNF, isMoveResult, bestSingle, bestAvg, trimmedIndices, byCase, sessionBests, rollingSeries, statWindow, STAT_LABELS, goalProgress } from './stats.js';
 import { renderMiniTrend } from './charts.js';
 import { DEFAULTS, loadSettings, saveSettings, applyTheme, applyBackground, themeColors, setAlbumTint, paintBackgroundColors } from './theme.js';
 import { loadLibraryPrefs } from './alglibrary.js';
@@ -2095,7 +2095,11 @@ async function recordSolve({ timeMs, penalty = 'none', inspectionMs = 0, splits 
 
   // The visuals start after the render, not before: a render landing on their
   // first frames is the confetti hitch.
-  if (pb) celebratePB(...pb);
+  const goalHit = goalJustHit();
+  if (goalHit !== null) {
+    const g = app.session.goal;
+    celebratePB(g.stat, goalHit, `Goal hit: sub-${goalTarget(g.value)} ${g.stat}!`);
+  } else if (pb) celebratePB(...pb);
   nextScramble();
 }
 
@@ -2140,7 +2144,96 @@ function showDelta(solve, prevBest) {
   void prevBest;
 }
 
-function celebratePB(kind, value) {
+/** A goal target as typed: "12", "11.5", "1:05.2", or a move count. */
+function goalTarget(v, moves = movesStats()) {
+  return moves ? String(v) : fmt(v).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1');
+}
+
+/**
+ * The result that beat the session goal for the first time, or null. Marks the
+ * goal as hit on the session so it only fires once.
+ */
+function goalJustHit() {
+  const s = app.session, g = s?.goal;
+  const p = g && !g.hitAt ? goalProgress(app.solves, g) : null;
+  if (!p?.hit) return null;
+  g.hitAt = Date.now();
+  Sessions.put(s).catch(err => console.warn('[goal] not saved', err));
+  return p.current;
+}
+
+function renderGoal() {
+  const node = $('#goal-line');
+  const g = app.session?.goal;
+  node.hidden = !g;
+  if (!g) return;
+  const p = goalProgress(app.solves, g);
+  const t = goalTarget(g.value);
+  const parts = [`goal sub-${t} ${g.stat}`];
+  if (p.current !== null) parts.push(`current ${fmtNow(p.current)}`);
+  if (p.pct !== null) parts.push(`${p.pct}% of solves under ${t}`);
+  node.textContent = parts.join(' · ');
+  node.classList.toggle('hit', p.hit);
+}
+
+/**
+ * Name and goal of one session, edited in the popover without switching to it.
+ * Clearing the goal field removes the goal.
+ */
+function editSession(anchor, s) {
+  const moves = !!eventOf(s.event).fmc;
+  const name = el('input', { class: 'inp', type: 'text', value: s.name, maxlength: '120' });
+  const target = el('input', {
+    class: 'inp', type: 'text', inputmode: 'decimal',
+    placeholder: moves ? 'moves, e.g. 30' : 'e.g. 12 or 1:05.2',
+    value: s.goal ? goalTarget(s.goal.value, moves) : '',
+  });
+  const stat = el('select', { class: 'inp' },
+    ['single', 'ao5', 'ao12'].map(k => el('option', { value: k, text: k, selected: (s.goal?.stat || 'ao5') === k })));
+  const err = el('div', { class: 'pf-err' });
+
+  const save = async () => {
+    const raw = target.value.trim();
+    let goal = null;
+    if (raw) {
+      const value = parseGoal(raw, moves);
+      if (value === null) { err.textContent = moves ? 'Type a move count, like 30' : 'Type a time, like 12 or 1:05.2'; return; }
+      goal = { value, stat: stat.value };
+    }
+    closePopover();
+    s.name = name.value.trim() || s.name;
+    if (!goal) delete s.goal;
+    else {
+      const same = s.goal && s.goal.value === goal.value && s.goal.stat === goal.stat;
+      if (same) { if (s.goal.hitAt) goal.hitAt = s.goal.hitAt; }
+      else {
+        // Already beaten when set: nothing to celebrate on the next solve.
+        const solves = s.id === app.session.id ? app.solves : await Solves.bySession(s.id);
+        const best = goal.stat === 'single' ? bestSingle(solves) : bestAvg(solves, goal.stat === 'ao12' ? 12 : 5).value;
+        if (best !== null && best < goal.value) goal.hitAt = Date.now();
+      }
+      s.goal = goal;
+    }
+    await app.saveSession(s);
+    renderGoal();
+  };
+
+  const form = el('div', { class: 'pop-form' },
+    el('label', {}, 'Name', name),
+    el('label', {}, moves ? 'Goal (moves)' : 'Goal', el('div', { class: 'pf-row' }, target, stat)),
+    err,
+    el('div', { class: 'pf-btns' },
+      el('button', { class: 'btn small', type: 'button', text: 'Cancel', onclick: closePopover }),
+      el('button', { class: 'btn small primary', type: 'button', text: 'Save', onclick: save })),
+  );
+  // Esc is the popover's own: it closes, which is cancel.
+  form.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); save(); } });
+  popover(anchor, [{ title: 'Edit session' }, { node: form }]);
+  name.focus();
+  name.select();
+}
+
+function celebratePB(kind, value, title) {
   const c = themeColors();
   const intensity = kind === 'single' ? 1 : kind === 'ao5' ? 0.7 : 0.5;
   const motion = app.settings.motion;
@@ -2154,7 +2247,7 @@ function celebratePB(kind, value) {
         power: 0.7 + intensity * 0.5 });
     flash(c.gold);
   }
-  const label = kind === 'single' ? 'New personal best!' : `Best ${kind} of the session!`;
+  const label = title || (kind === 'single' ? 'New personal best!' : `Best ${kind} of the session!`);
   toast(label, { kind: 'good', hold: true });
   const d = $('#timer-display');
 
@@ -2164,7 +2257,7 @@ function celebratePB(kind, value) {
   ticker.className = 'pb-marquee' + (motion === 'off' ? ' still' : '');
   ticker.setAttribute('aria-hidden', 'true');
   const line = document.createElement('span');
-  line.textContent = `best ${kind} · ${value === DNF ? 'DNF' : fmt(value)}`;
+  line.textContent = `${title ? 'goal' : 'best'} ${kind} · ${fmtNow(value)}`;
   ticker.append(line);
   d.append(ticker);
   setTimeout(() => ticker.remove(), 5000);
@@ -2187,6 +2280,7 @@ const refreshHeatmap = debounce(() => document.querySelector('.heat-host')?.refr
 
 function renderAll() {
   renderStats();
+  renderGoal();
   renderHistory();
   updateLabels();
   updateHint();
@@ -4798,8 +4892,14 @@ function wireChrome() {
       badge: String(app.sessionCounts.get(s.id) || 0),
       on: s.id === app.session.id,
       onSelect: () => app.switchSession(s.id),
+      action: {
+        title: `Edit ${s.name}`,
+        icon: '<svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg>',
+        onClick: () => editSession(anchor, s),
+      },
     }));
-    popover(e.currentTarget, [
+    const anchor = e.currentTarget;
+    popover(anchor, [
       { title: 'Sessions' }, ...list, { sep: true },
       { label: '+ New session', onSelect: () => app.newSession() },
       { label: 'Manage…', onSelect: () => openPanel('Sessions', 'buildSessions', undefined, app) },
