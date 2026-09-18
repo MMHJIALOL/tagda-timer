@@ -870,7 +870,7 @@ body.zen #stage { grid-template-columns: minmax(0, 1fr); }
 body.sotd #topbar, body.sotd #sidebar, body.sotd #sidebar-right,
 body.sotd #creator-chip,
 body.sotd #dock-bottom, body.sotd #tile-float-layer,
-body.sotd #now-playing, body.sotd #learn-bar,
+body.sotd #now-playing, body.sotd #goal-line, body.sotd #learn-bar,
 /* Prev / next / copy / paste-your-own. All four are wrong in here: three of
    them step the timer onto a scramble that is not today's, which is the one
    thing this window exists to prevent, and the fourth is a button for a

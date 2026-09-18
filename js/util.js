@@ -191,6 +191,20 @@ export function tidy(alg) {
  *   12.34+     12.34+2    -> +2 penalty on a 12.34 solve
  *   12.34 dnf  dnf        -> DNF
  */
+/**
+ * A session goal typed by hand: "12", "11.5", "1:05.2" — or a move count on
+ * Fewest Moves. Bare digits are whole seconds here, not the centiseconds the
+ * typed-times box reads them as: nobody's goal is sub-0.12. Returns the target
+ * in the unit eff() compares against (ms, or moves), or null.
+ */
+export function parseGoal(raw, moves = false) {
+  const s = String(raw ?? '').trim();
+  if (moves) return /^\d+(\.\d+)?$/.test(s) && +s > 0 ? +s : null;
+  if (/^\d+$/.test(s)) return +s > 0 ? +s * 1000 : null;
+  const t = parseTimeInput(s);
+  return t && t.penalty === 'none' && t.timeMs > 0 ? t.timeMs : null;
+}
+
 export function parseTimeInput(raw) {
   let s = String(raw ?? '').trim().toLowerCase();
   if (!s) return null;

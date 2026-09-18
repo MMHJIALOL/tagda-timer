@@ -132,8 +132,13 @@ export function renderMiniTrend(svg, solves) {
  * `markers` are gear-log events already placed on a solve index by
  * gear.js — a re-lube or a tension change drawn where the first solve after
  * it sits, so a step in the line can be read against what you changed.
+ *
+ * A click pins one solve and calls `onPin(i)`; a drag across the plot selects
+ * a range and calls `onBrush(from, to)`, both inclusive indices into `solves`.
+ * Returns `{ pin(i) }` so the caller can move the pin from the keyboard, or
+ * nothing when there is too little to draw.
  */
-export function renderTrend(host, solves, onHover, { markers = [] } = {}) {
+export function renderTrend(host, solves, onHover, { markers = [], onPin, onBrush } = {}) {
   host.innerHTML = '';
   const W = 660, H = 210, L = 46, R = 10, T = 12, B = 22;
   const svg = svgEl('svg', { viewBox: `0 0 ${W} ${H}` });
@@ -206,23 +211,69 @@ export function renderTrend(host, solves, onHover, { markers = [] } = {}) {
     svg.append(tick);
   }
 
-  // hover
+  // hover, pin and brush
+  const brush = svgEl('rect', { x: 0, y: T, width: 0, height: H - T - B, fill: 'var(--accent)', 'fill-opacity': .14,
+    stroke: 'var(--accent)', 'stroke-opacity': .5, opacity: 0 });
   const cursor = svgEl('line', { x1: 0, x2: 0, y1: T, y2: H - B, stroke: 'var(--text-faint)', 'stroke-width': 1, opacity: 0 });
   const dot = svgEl('circle', { r: 3.5, fill: 'var(--accent)', opacity: 0 });
-  svg.append(cursor, dot);
-  const hit = svgEl('rect', { x: L, y: T, width: W - L - R, height: H - T - B, fill: 'transparent' });
+  const pinLine = svgEl('line', { x1: 0, x2: 0, y1: T, y2: H - B, stroke: 'var(--text)', 'stroke-width': 1.2, opacity: 0 });
+  const pinDot = svgEl('circle', { r: 5, fill: 'none', stroke: 'var(--text)', 'stroke-width': 2, opacity: 0 });
+  svg.append(brush, cursor, dot, pinLine, pinDot);
+  const hit = svgEl('rect', { x: L, y: T, width: W - L - R, height: H - T - B, fill: 'transparent', style: 'cursor: crosshair' });
   svg.append(hit);
-  hit.addEventListener('mousemove', (e) => {
+  // A horizontal drag is a brush; a vertical one still scrolls the drawer.
+  svg.style.touchAction = 'pan-y';
+
+  const idxAt = (e) => {
     const box = svg.getBoundingClientRect();
     const px = ((e.clientX - box.left) / box.width) * W;
     const i = Math.round(((px - L) / (W - L - R)) * (solves.length - 1));
-    const idx = Math.max(0, Math.min(solves.length - 1, i));
+    return Math.max(0, Math.min(solves.length - 1, i));
+  };
+  const pin = (i) => {
+    brush.setAttribute('opacity', 0);
+    pinLine.setAttribute('x1', x(i)); pinLine.setAttribute('x2', x(i)); pinLine.setAttribute('opacity', .8);
+    if (vals[i] !== DNF) { pinDot.setAttribute('cx', x(i)); pinDot.setAttribute('cy', y(vals[i])); pinDot.setAttribute('opacity', 1); }
+    else pinDot.setAttribute('opacity', 0);
+  };
+  const span = (a, b) => {
+    pinLine.setAttribute('opacity', 0); pinDot.setAttribute('opacity', 0);
+    brush.setAttribute('x', x(Math.min(a, b)));
+    brush.setAttribute('width', Math.max(1, Math.abs(x(b) - x(a))));
+    brush.setAttribute('opacity', 1);
+  };
+
+  /* A press that ends within a few pixels of where it started is a click, even
+     if the hand wobbled; anything further is a drag across a range. */
+  let down = null;
+  hit.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    hit.setPointerCapture(e.pointerId);
+    down = { i: idxAt(e), x: e.clientX };
+  });
+  hit.addEventListener('pointermove', (e) => {
+    const idx = idxAt(e);
     cursor.setAttribute('x1', x(idx)); cursor.setAttribute('x2', x(idx)); cursor.setAttribute('opacity', .6);
     if (vals[idx] !== DNF) { dot.setAttribute('cx', x(idx)); dot.setAttribute('cy', y(vals[idx])); dot.setAttribute('opacity', 1); }
     else dot.setAttribute('opacity', 0);
     onHover?.(solves[idx], idx);
+    if (down && Math.abs(e.clientX - down.x) > 4 && idx !== down.i) span(down.i, idx);
   });
-  hit.addEventListener('mouseleave', () => {
+  hit.addEventListener('pointerup', (e) => {
+    if (!down) return;
+    const idx = idxAt(e), from = down;
+    down = null;
+    if (Math.abs(e.clientX - from.x) > 4 && idx !== from.i) {
+      span(from.i, idx);
+      onBrush?.(Math.min(from.i, idx), Math.max(from.i, idx));
+    } else {
+      pin(from.i);
+      onPin?.(from.i);
+    }
+  });
+  hit.addEventListener('pointercancel', () => { down = null; });
+  hit.addEventListener('pointerleave', () => {
     cursor.setAttribute('opacity', 0); dot.setAttribute('opacity', 0); onHover?.(null);
   });
 
@@ -233,6 +284,69 @@ export function renderTrend(host, solves, onHover, { markers = [] } = {}) {
   keys.push({ color: 'var(--gold)', label: 'PB', dash: 'dotted' });
   if (vals.includes(DNF)) keys.push({ color: 'var(--danger)', label: 'DNF' });
   host.append(legend(keys));
+  return { pin };
+}
+
+/* ---------------------------------------------------------
+   Grouped means — one bar per hour of the day, or per
+   stretch of a sitting
+   --------------------------------------------------------- */
+/**
+ * `rows` are { label, text, value, faint, list }. `value` is the bar's length
+ * (a mean, or null for no bar); `text` is printed after it and carries the
+ * exact numbers, because the bars start at zero and a tenth of a second is
+ * barely a pixel. `faint` washes the whole row out.
+ *
+ * Clicking a row, or Enter on it, calls onPick(row); picking the open row
+ * again calls onPick(null).
+ */
+export function renderGroupBars(host, rows, onPick) {
+  host.innerHTML = '';
+  if (!rows.length) { host.append(hint('Not enough solves yet')); return; }
+  const RH = 24, W = 660, LBL = 78, BAR = W - LBL - 240, H = rows.length * RH;
+  const max = Math.max(0, ...rows.map(r => r.value ?? 0)) || 1;
+  const svg = svgEl('svg', { viewBox: `0 0 ${W} ${H}` });
+
+  let open = null;
+  const bgs = [];
+  rows.forEach((r, i) => {
+    const y = i * RH;
+    const g = svgEl('g', { tabindex: 0, role: 'button', style: 'cursor: pointer; outline: none' });
+    const title = svgEl('title');
+    title.textContent = `${r.label} · ${r.text} — click for the solves`;
+    // The whole row is the hit target, not just the bar, which can be a sliver.
+    const bg = svgEl('rect', { x: 0, y, width: W, height: RH, rx: 4, fill: 'var(--text)', 'fill-opacity': 0 });
+    bgs.push(bg);
+    g.append(title, bg);
+
+    const name = svgEl('text', { class: 'axis-txt', x: LBL - 8, y: y + RH / 2 + 3, 'text-anchor': 'end' });
+    name.textContent = r.label;
+    g.append(name);
+
+    let w = 0;
+    if (r.value !== null) {
+      w = Math.max(2, (r.value / max) * BAR);
+      g.append(svgEl('rect', {
+        x: LBL, y: y + 5, width: w, height: RH - 10, rx: 4,
+        fill: 'var(--accent)', 'fill-opacity': r.faint ? .25 : .8,
+      }));
+    }
+    const val = svgEl('text', { class: 'axis-txt', x: LBL + w + 6, y: y + RH / 2 + 3, opacity: r.faint ? .6 : 1 });
+    val.textContent = r.text;
+    g.append(val);
+
+    const pick = () => {
+      open = open === i ? null : i;
+      bgs.forEach((b, j) => b.setAttribute('fill-opacity', j === open ? .08 : 0));
+      onPick?.(open === null ? null : r);
+    };
+    g.addEventListener('click', pick);
+    g.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(); } });
+    g.addEventListener('focus', () => { if (open !== i) bg.setAttribute('fill-opacity', .05); });
+    g.addEventListener('blur', () => { if (open !== i) bg.setAttribute('fill-opacity', 0); });
+    svg.append(g);
+  });
+  host.append(svg);
 }
 
 /* ---------------------------------------------------------

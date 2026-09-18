@@ -95,6 +95,25 @@ export function currentAvg(solves, n) {
 }
 
 /**
+ * Where a session stands against its goal ({ value, stat }, value in eff units).
+ * `hit` is the current single/average beating the target; `pct` is the share
+ * of all solves (DNFs included) under it.
+ */
+export function goalProgress(solves, goal) {
+  if (!goal) return null;
+  const current = goal.stat === 'single'
+    ? (solves.length ? eff(solves.at(-1)) : null)
+    : currentAvg(solves, goal.stat === 'ao12' ? 12 : 5);
+  let under = 0;
+  for (const s of solves) if (eff(s) < goal.value) under++;
+  return {
+    current,
+    hit: current !== null && current < goal.value,
+    pct: solves.length ? Math.round(100 * under / solves.length) : null,
+  };
+}
+
+/**
  * The best moN anywhere in the session.
  *
  * A mean of 3 is the round a Fewest Moves competitor actually sits (WCA
@@ -533,4 +552,76 @@ export function statWindow(solves, kind) {
     trimmed: new Set([...t.best, ...t.worst]),
     start,
   };
+}
+
+/* =========================================================
+   Groups of solves — a brushed range on the trend, an hour of
+   the day, a stretch of a sitting
+   ========================================================= */
+
+/** Fewer finished solves than this and a group's mean is noise, not a finding. */
+export const MIN_GROUP = 5;
+
+/**
+ * Count, DNFs, mean and best of any list of solves.
+ *
+ * DNFs are left out of the mean and counted on their own, the way the session
+ * mean treats them. A WCA mean would turn a forty-solve range into "DNF" over
+ * one pop, which says nothing about the forty.
+ */
+export function groupStats(list) {
+  let sum = 0, valid = 0, dnf = 0, best = null;
+  for (const s of list) {
+    const v = eff(s);
+    if (v === DNF) { dnf++; continue; }
+    valid++;
+    sum += v;
+    if (best === null || v < best) best = v;
+  }
+  return { list, count: list.length, valid, dnf, mean: valid ? sum / valid : null, best };
+}
+
+/**
+ * The session by local hour of day, one group per hour (0–23). `best` is the
+ * fastest hour with at least MIN_GROUP finished solves, or null.
+ */
+export function byHourOfDay(solves) {
+  const lists = Array.from({ length: 24 }, () => []);
+  for (const s of solves) lists[new Date(s.createdAt).getHours()].push(s);
+  const hours = lists.map((list, hour) => ({ hour, ...groupStats(list) }));
+  let best = null;
+  for (const h of hours) {
+    if (h.valid >= MIN_GROUP && (best === null || h.mean < best.mean)) best = h;
+  }
+  return { hours, best };
+}
+
+/** A new sitting starts after a break of this long or more. */
+export const SITTING_GAP_MS = 30 * 60 * 1000;
+/** Positions within a sitting, 1-based and inclusive. */
+export const SITTING_BUCKETS = [[1, 10], [11, 25], [26, 50], [51, Infinity]];
+
+/**
+ * Every solve by how deep into its sitting it was, pooled across sittings.
+ *
+ * `first` and `last` are the earliest and latest buckets with MIN_GROUP
+ * finished solves; a bucket short of that is left out of the comparison rather
+ * than guessed at. `delta` is last minus first — negative means later solves
+ * are faster — or null when fewer than two buckets qualify.
+ */
+export function bySittingPosition(solves, gapMs = SITTING_GAP_MS) {
+  const lists = SITTING_BUCKETS.map(() => []);
+  // Sorted by time, not trusted to be: an import or a sync can interleave.
+  const sorted = [...solves].sort((a, b) => a.createdAt - b.createdAt);
+  let pos = 0, prev = -Infinity;
+  for (const s of sorted) {
+    pos = s.createdAt - prev < gapMs ? pos + 1 : 1;
+    prev = s.createdAt;
+    lists[SITTING_BUCKETS.findIndex(([, hi]) => pos <= hi)].push(s);
+  }
+  const buckets = SITTING_BUCKETS.map(([lo, hi], i) => ({ lo, hi, ...groupStats(lists[i]) }));
+  const usable = buckets.filter(b => b.valid >= MIN_GROUP);
+  const first = usable[0] || null;
+  const last = usable.length > 1 ? usable.at(-1) : null;
+  return { buckets, first, last, delta: last ? last.mean - first.mean : null };
 }
