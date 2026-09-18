@@ -255,7 +255,9 @@
 
 /* ---------------- scramble preview (flat, no panel) ---------------- */
 #panel-cube {
-  position: fixed; right: 18px; bottom: 18px; z-index: 12;
+  /* --cube-edge-* is placePreview() growing the inset so the close button and
+     the 2D/3D switch, which hang off the sides, stay clear of the edge too. */
+  position: fixed; right: max(18px, var(--cube-edge-right, 0px)); bottom: 18px; z-index: 12;
   width: calc(clamp(96px, 12vw, 150px) * var(--cube-scale));
   display: flex; flex-direction: column; align-items: center; gap: 4px;
   /* Interactive now: this is the drag handle as well as the 2D/3D toggle's
@@ -363,7 +365,9 @@
   #panel-cube {
     width: calc(clamp(64px, 17vw, 88px) * var(--cube-scale));
     top: auto;
-    right: 10px;
+    /* 16px before the script has measured: the close button's 8px overhang
+       plus 8px clear, which is what placePreview() lands on anyway. */
+    right: max(10px, var(--cube-edge-right, 16px));
     bottom: calc(34vh + 22px);
   }
   #cube-holder { height: calc(clamp(64px, 17vw, 88px) * var(--cube-scale)); }
@@ -433,6 +437,10 @@
   flex: none;
   display: grid; grid-template-columns: var(--hist-grid);
   align-items: center; gap: var(--hist-gap);
+  /* Empty until renderHistCols() fills it, which is after the first paint —
+     and the solve list below then started 11px lower than where it had been
+     drawn. One row of labels plus this element's own padding and rule. */
+  min-height: calc(1lh + 8px);
   /* #hist-list below bleeds out by half the pad and pads back in so its chips
      can have a hover background that reaches the panel edge. Matching that here
      is what makes the labels line up with the columns rather than sit 9px off. */
@@ -489,6 +497,10 @@
 .col-edit:hover { color: var(--accent); opacity: 1; }
 /* No hover to reveal it on a touch screen, so it is simply always there. */
 @media (hover: none) { .col-edit { opacity: .75; } }
+/* The heading row carries one cell per column plus an empty one for the
+   reconstruct button, and on a touch screen that column is dropped — so the
+   spare cell wraps onto a second (empty) row and the row is a gap taller. */
+@media (hover: none) { .hist-cols { min-height: calc(1lh + var(--hist-gap) + 8px); } }
 
 /* The heading, mid-edit. Sized to the column it replaces so nothing shifts
    while you type. */
@@ -1078,6 +1090,24 @@ body:has(#timer-display.state-running) #goal-line { opacity: 0; }
     position: absolute; left: 50%; top: 50%;
     transform: translate(-50%, -50%);
     width: max(100%, 44px); height: max(100%, 44px);
+  }
+  /* The scramble buttons are 35px wide and were 4px apart, so each 44px target
+     had 5px of it taken by the next one along. 9px apart they each get all 44. */
+  #scramble-tools { gap: 9px; }
+  /* The 2D/3D switch is the bottom edge of a widget that floats over the times
+     panel, and a target centred on it reached past the preview into that
+     panel's top corner — a tap meant for a column pencil reset the cube's
+     angle instead. It grows upward, into the preview's own box. */
+  .view-toggle button::after { top: auto; bottom: 0; transform: translateX(-50%); }
+  /* The column pencils are 9px glyphs with a sort label on one side and the
+     newest solve right underneath, and a centred target would take taps meant
+     for both. So it grows upward instead, over the panel heading, where a tap
+     does nothing else. */
+  .col-edit { position: relative; }
+  .col-edit::after {
+    content: '';
+    position: absolute; left: 50%; bottom: 100%;
+    width: 44px; height: 44px; transform: translateX(-50%);
   }
 }
 
@@ -2176,7 +2206,9 @@ body.focus #dock-bottom, body.focus #tile-float-layer { opacity: 0; pointer-even
    placePreview() in tiles.js. */
 @media (min-width: 861px) {
   #sidebar {
-    padding-bottom: max(var(--chip-h-left, 36px), var(--dock-clear-left, 0px), var(--cube-clear-left, 0px));
+    /* 52px is what measureChip() lands on for the chip at its own size, so the
+       rail does not lose 16px of the solve list the moment it is measured. */
+    padding-bottom: max(var(--chip-h-left, 52px), var(--dock-clear-left, 0px), var(--cube-clear-left, 0px));
   }
   #sidebar-right {
     padding-bottom: max(var(--chip-h-right, 0px), var(--dock-clear-right, 0px), var(--cube-clear-right, 0px));
@@ -2194,13 +2226,13 @@ body.focus #dock-bottom, body.focus #tile-float-layer { opacity: 0; pointer-even
 }
 /* The escape hatch: placePreview() flips this on only while the preview's usual
    corner is occupied and this one is not. */
-#panel-cube[data-side="left"] { right: auto; left: 18px; }
+#panel-cube[data-side="left"] { right: auto; left: max(18px, var(--cube-edge-left, 0px)); }
 /* ...and when both corners are occupied Ã¢â‚¬â€ a race panel down the right rail and
    the solve list down the left Ã¢â‚¬â€ the empty strip between the two rails, which
    is the timer's own floor. --cube-x is measured and written by placePreview. */
 #panel-cube[data-side="centre"] { right: auto; left: var(--cube-x, 50%); }
 @media (max-width: 860px) {
-  #panel-cube[data-side="left"] { right: auto; left: 10px; }
+  #panel-cube[data-side="left"] { right: auto; left: max(10px, var(--cube-edge-left, 0px)); }
 }
 /* ...and the credit chip lives in that corner, so the two swap: the chip takes
    the corner the preview just left. Climbing above the preview instead would

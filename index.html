@@ -29,11 +29,11 @@
      perfect in incognito, which is a miserable thing to debug.
      /js/ is `must-revalidate` and does not depend on this, but keep the number
      in step anyway rather than leaving two answers to the same question. -->
-<link rel="modulepreload" href="js/main.js?v=60">
-<link rel="stylesheet" href="css/fonts.css?v=60">
-<link rel="stylesheet" href="css/tokens.css?v=60">
-<link rel="stylesheet" href="css/base.css?v=60">
-<link rel="stylesheet" href="css/components.css?v=60">
+<link rel="modulepreload" href="js/main.js?v=61">
+<link rel="stylesheet" href="css/fonts.css?v=61">
+<link rel="stylesheet" href="css/tokens.css?v=61">
+<link rel="stylesheet" href="css/base.css?v=61">
+<link rel="stylesheet" href="css/components.css?v=61">
 <link rel="icon" href="assets/favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="assets/logo-192.png">
 <link rel="apple-touch-icon" href="assets/logo-180.png">
@@ -258,7 +258,7 @@
          thing the clock cannot tell you. -->
     <div id="relay-rail" hidden></div>
     <div id="scramble-wrap">
-      <div id="scramble-text" class="scramble" tabindex="-1">Warming up scrambler&hellip;</div>
+      <div id="scramble-text" class="scramble warming" tabindex="-1">Warming up scrambler&hellip;</div>
       <div id="scramble-tools">
         <button class="ghost-btn" id="btn-prev-scramble" title="Previous scramble">
           <svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg>
@@ -387,7 +387,7 @@
              yours to choose: each has a pencil that swaps the column for any
              other average. The last cell is the reconstruct button's column. -->
         <div class="hist-cols"></div>
-        <div id="hist-list" role="list"></div>
+        <div id="hist-list"></div>
         <div class="times-foot">
           <button class="ghost-btn sm" id="btn-open-history" title="All solves  (H)">
             <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg> all
@@ -517,7 +517,11 @@
           <span id="stackmat-msg">listening for a Stackmat…</span>
         </div>
 
-        <div id="timer-hint">press <kbd>space</kbd> to start</div>
+        <!-- Both sentences, so the first paint already says what this device's
+             updateHint() is going to say. They are different widths, and the
+             timer block is centred on its own width, so the whole clock slid
+             sideways when the script caught up with the markup. -->
+        <div id="timer-hint"><span class="hint-fine">tap <kbd>space</kbd>, release to start</span><span class="hint-coarse">tap anywhere, release to start</span></div>
 
         <div id="last-delta" hidden></div>
       </div>
@@ -716,7 +720,7 @@
   </div>
 </div>
 
-<script type="module" src="js/main.js?v=60"></script>
+<script type="module" src="js/main.js?v=61"></script>
 <script>
 (function () {
   var isFile = location.protocol === 'file:';

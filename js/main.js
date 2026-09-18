@@ -1107,6 +1107,8 @@ function showScramble(s, silent = false) {
 
   node.classList.toggle('relay-all', showAll);
   node.textContent = text;
+  // The box stops holding room for a scramble the moment it is holding one.
+  node.classList.remove('warming');
   node.classList.toggle('multiline', text.includes('\n'));
   node.classList.toggle('long', text.length > 90);
   fitScrambleToLine(node);
@@ -1180,7 +1182,13 @@ function watchScrambleWidth() {
     // the fit, so watching it would feed the observer its own result.
     new ResizeObserver(refit).observe(box);
   }
-  document.fonts?.ready?.then(() => { fitScrambleToLine(node); bldFit(); }).catch(() => {});
+  /* `loadingdone`, not `document.fonts.ready`. Reading `.ready` when the fonts
+     have already arrived makes Chrome update style and layout on the spot to
+     see whether the answer is still true — a forced reflow, 74ms of the boot on
+     a throttled phone, for an answer this only wants in order to re-measure.
+     The event says the same thing and costs nothing, and it keeps saying it for
+     a face that loads later (the timer font is a setting). */
+  document.fonts?.addEventListener?.('loadingdone', refit);
 }
 
 /**
@@ -2410,12 +2418,15 @@ const HIST_MIN_TIME = 58;                  // px — "1:03.45" at the default sc
 function shownCols() { return avgCols().slice(0, Math.max(1, histFit)); }
 
 function syncHistFit() {
-  const chip = $('#hist-list')?.querySelector('.solve-chip');
+  /* An empty session has no row to measure, but it still draws every heading,
+     and on a phone three of them squeezed "time" into a 7px track that printed
+     "TIMEAO5". The heading row sits on the same grid, so it answers too. */
+  const chip = $('#hist-list')?.querySelector('.solve-chip') || document.querySelector('.hist-cols');
   if (!chip) return;
-  const time = chip.querySelector('.t');
-  const avg = chip.querySelector('.avg');
+  const time = chip.querySelector('.t, [data-sort="time"]');
+  const avg = chip.querySelector('.avg, .col-avg');
   if (!time || !avg) return;
-  const shown = chip.querySelectorAll('.avg').length;
+  const shown = chip.querySelectorAll('.avg, .col-avg').length;
   const w = time.getBoundingClientRect().width;
   // What one more column would cost: its track, and the gap in front of it.
   const step = avg.getBoundingClientRect().width + 5;
@@ -2640,13 +2651,20 @@ function renderHistory() {
   const n = app.solves.length;
   syncHistCols();
   syncScrollbarGutter();
+  /* A list only while there are solves in it. role="list" over the lone "no
+     times yet" line is a list with no listitem in it, which assistive tech
+     (and Lighthouse's aria-required-children) rightly calls broken. */
+  if (!n) list.removeAttribute('role');
+  else list.setAttribute('role', 'list');
   if (!n) {
     histShown = HIST_PAGE;
     histIds = [];
     histSigs = [];
     list.innerHTML = '';
+    // Same device test as the hint under the digits: a phone has no spacebar.
     list.append(el('div', { class: 'hist-empty', text: movesMode()
       ? 'No attempts yet — press Start attempt.'
+      : COARSE.matches ? 'No times yet — tap anywhere and go.'
       : 'No times yet — hold space and go.' }));
     return;
   }
@@ -2934,7 +2952,7 @@ function wireHistorySort() {
    changes the answer after boot — so the hint is re-read rather than baked in
    once. */
 const COARSE = matchMedia('(pointer: coarse)');
-COARSE.addEventListener('change', () => updateHint());
+COARSE.addEventListener('change', () => { updateHint(); renderHistory(); });
 
 /** The hint under the digits states what starts a solve on this device. */
 function updateHint() {
@@ -4699,7 +4717,7 @@ function wireInput() {
       e.stopImmediatePropagation();
       if (e.repeat || timer.state !== 'idle' || !timer.inspectionEnabled || !vcube.armed) return;
       vSpace = true;
-      timer.down();                        // -> inspecting; the first turn starts the solve
+      timer.down(e.timeStamp);             // -> inspecting; the first turn starts the solve
       return;
     }
     if (e.shiftKey || !vcube.key(e.code, e.repeat)) return;
@@ -4710,7 +4728,7 @@ function wireInput() {
     if (e.code !== 'Space' || !vSpace) return;
     vSpace = false;
     e.preventDefault();
-    timer.up();
+    timer.up(e.timeStamp);
   }, true);
 
   /**
@@ -4734,7 +4752,7 @@ function wireInput() {
       if (!e.repeat) {
         stopKeys.add(e.code || e.key);
         spaceDown = false;
-        timer.down();                    // -> stop
+        timer.down(e.timeStamp);         // -> stop
       }
       return;
     }
@@ -4747,7 +4765,7 @@ function wireInput() {
     if (modalOpen()) return;
     if (spaceDown) return;
     spaceDown = true;
-    timer.down();
+    timer.down(e.timeStamp);
   }, true);
 
   /**
@@ -4777,7 +4795,7 @@ function wireInput() {
       e.preventDefault();
       e.stopImmediatePropagation();
       if (key === 'Space') spaceDown = false;
-      timer.up();                        // cooldown -> idle
+      timer.up(e.timeStamp);             // cooldown -> idle
       return;
     }
     if (e.code !== 'Space') return;
@@ -4785,7 +4803,7 @@ function wireInput() {
     spaceDown = false;
     if (!wasOurs) return;
     e.preventDefault();
-    timer.up();
+    timer.up(e.timeStamp);
   }, true);
 
   // Touch / pen always drive the timer — on a phone there is no other way to
@@ -4822,7 +4840,7 @@ function wireInput() {
     if (!pointerOK(e) || !touchOK(e)) { tracking = false; return; }
     tracking = true;
     e.preventDefault();
-    timer.down();
+    timer.down(e.timeStamp);
   };
   const up = (e) => {
     if (!e.isPrimary || !tracking) return;
@@ -4832,7 +4850,7 @@ function wireInput() {
        the one input where there is no other way to start the timer: the tap
        that stopped a race solve locked the timer as it landed, its release was
        discarded, and the first tap of the next round went nowhere. */
-    timer.up();
+    timer.up(e.timeStamp);
   };
 
   const stage = $('#stage');

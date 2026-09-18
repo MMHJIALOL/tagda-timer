@@ -44,7 +44,8 @@
   --font-ui:       'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-mono:     'JetBrains Mono', ui-monospace, 'Cascadia Mono', monospace;
   --font-timer:    'JetBrains Mono', ui-monospace, monospace;
-  --timer-size:    clamp(3.6rem, 15vw, 11.5rem);
+  /* Same shape applyTheme() writes at the default size, for the same reason. */
+  --timer-size:    clamp(3rem, 15vw, 11.5rem);
   --timer-weight:  700;
   --timer-track:   -0.045em;
   --timer-glow:    0px;                 /* px blur of accent glow behind digits */
@@ -71,9 +72,14 @@
      Each is a plain multiplier the size sliders rewrite live, applied on top
      of the responsive clamp() that already sizes the element. That keeps the
      layout fluid at every window size instead of pinning it to fixed pixels. */
+  /* These four are the defaults in js/theme.js, written out again here on
+     purpose: the stylesheet paints the first frame and applyTheme() only lands
+     once IndexedDB has answered, so a different value here is a layout shift
+     on every single load — the rails were 236px wide until the settings
+     arrived and then jumped to 290. Keep the two lists in step. */
   --scramble-scale: 1;
-  --cube-scale:     1;
-  --sidebar-w:      236px;
+  --cube-scale:     1.2;
+  --sidebar-w:      290px;
   --sidebar-text:   1;
   --times-scale:    1;
 

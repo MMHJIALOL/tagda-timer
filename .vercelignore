@@ -1,0 +1,7 @@
+# Kept out of the deployment, not out of the repository.
+#
+# sync-test.html drives the real cloud-sync module against whatever account the
+# browser opening it is signed in to — it writes solves, deletes them again and
+# reads the sync log. That is a thing to run locally against your own data, not
+# a page to leave reachable on the deployed site.
+sync-test.html

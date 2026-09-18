@@ -2482,6 +2482,65 @@ section('custom relay');
   }
 }
 
+
+/* ---------------- the clock a solve is measured on ----------------
+   The timer takes its start and stop from the input event's own timeStamp, not
+   from performance.now() inside the handler: on a busy main thread the handler
+   can run long after the key actually went down, and that delay used to be
+   added to the solve. Both are the same clock, so the arithmetic below is
+   exact rather than approximate. */
+section('timer clock');
+{
+  const { Timer } = await import('./js/timer.js');
+  const run = (cfg = {}) => new Timer({ inspection: false, useInspection: false, holdTime: 0, ...cfg });
+  const busy = (ms) => { const until = performance.now() + ms; while (performance.now() < until); };
+
+  {
+    const t = run();
+    let res = null;
+    t.addEventListener('stop', (e) => { res = e.detail; });
+    const t0 = performance.now();
+    t.down(t0);            // -> ready
+    t.up(t0);              // -> running, from the release's own stamp
+    busy(60);              // the main thread is late to everything now
+    const pressed = performance.now() - 50;   // the stop landed 50ms ago
+    t.down(pressed);
+    check('a stop records the time up to the event, not up to the handler',
+      res.timeMs === Math.round(pressed - t0), `${res.timeMs}ms for a ${Math.round(pressed - t0)}ms solve`);
+    check('…so the handler’s own delay is not added to the solve',
+      Math.round(performance.now() - t0) - res.timeMs >= 49,
+      `handler is ${Math.round(performance.now() - t0) - res.timeMs}ms behind the press`);
+  }
+
+  {
+    // Everything that drives the timer without an event — the virtual cube, a
+    // Stackmat, a race — passes nothing and must still be timed.
+    const t = run();
+    let res = null;
+    t.addEventListener('stop', (e) => { res = e.detail; });
+    t.down(); t.up();
+    busy(30);
+    t.down();
+    check('with no timestamp it still times the solve off the clock',
+      res.timeMs >= 29 && res.timeMs < 300, `${res.timeMs}ms`);
+  }
+
+  {
+    const t = run({ phaseSplits: 1 });
+    let split = null, res = null;
+    t.addEventListener('split', (e) => { split = e.detail; });
+    t.addEventListener('stop', (e) => { res = e.detail; });
+    const t0 = performance.now();
+    t.down(t0); t.up(t0);
+    t.down(t0 + 700);             // memo ends
+    t.down(t0 + 1800);            // and the solve does
+    check('a split is taken from its own event’s stamp too',
+      split.atMs === 700 && split.phaseMs === 700, `${split.atMs}ms`);
+    check('the phases still add up to the total exactly',
+      res.splits[0] + (res.timeMs - res.splits[0]) === res.timeMs && res.timeMs === 1800,
+      `${res.splits.join('+')} of ${res.timeMs}`);
+  }
+}
 section('statistics — ranges, hours and sittings');
 {
   const mk = (ms, penalty = 'none', createdAt = 0) => ({ timeMs: ms, penalty, createdAt });
@@ -2516,6 +2575,7 @@ section('statistics — ranges, hours and sittings');
     sp.buckets.map(b => b.count).join());
   check('a stretch short of five finished solves is skipped, not compared',
     St.bySittingPosition(seq.slice(0, 12)).last === null);
+
 }
 
 section('virtual cube');

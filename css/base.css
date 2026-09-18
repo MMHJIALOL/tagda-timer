@@ -349,6 +349,9 @@ body.inspecting #timer-display { opacity: 0; }
     opacity: 1; justify-content: center;
     gap: 4px; margin-top: 2px;
   }
+  /* Always on here, so they have to be findable: --text-faint on the aurora
+     was barely there. */
+  #scramble-tools .ghost-btn:not(:hover) { color: var(--text-dim); }
   /* The tools no longer sit in the row, so the reserved room for them goes too. */
   #scramble-wrap { flex-wrap: wrap; justify-content: center; padding: 0; }
 }
@@ -583,11 +586,20 @@ body[data-input="virtual"] #timer-display { font-size: min(var(--timer-size), 5.
 }
 
 #timer-hint {
-  font-size: .78rem; color: var(--text-faint); letter-spacing: .06em;
+  /* --text-dim, not --text-faint: the faint tone sank into the aurora behind it,
+     and on a phone this line is the only instruction for starting a solve. */
+  font-size: .78rem; color: var(--text-dim); letter-spacing: .06em;
   transition: opacity var(--dur) var(--ease);
   height: 1.2em;
 }
 body.focus #timer-hint, body.inspecting #timer-hint { opacity: 0; }
+/* The markup carries both wordings until updateHint() replaces the lot; this
+   is which of them this device was going to end up with anyway. */
+#timer-hint .hint-coarse { display: none; }
+@media (pointer: coarse) {
+  #timer-hint .hint-fine { display: none; }
+  #timer-hint .hint-coarse { display: inline; }
+}
 
 /* =================== RUNNING AVERAGES =================== */
 /* Hangs under the timer block rather than sitting inside it. In the flow it
@@ -738,7 +750,12 @@ body.inspecting #last-delta, body.focus #last-delta { display: none; }
      stats) would otherwise put them the other way round. */
   #sidebar-right { grid-column: 1; grid-row: 2; }
   #sidebar       { grid-column: 2; grid-row: 2; flex-direction: column; padding-bottom: 0; }
-  #sidebar, #sidebar-right { min-height: 0; min-width: 0; max-height: 34vh; }
+  /* A height rather than a cap. Sized by their contents, the two tiles were
+     124px tall on the first frame, 176 once the panels had been filled in and
+     287 once a session's solves arrived — so the timer above them moved twice
+     on every load, which was most of the layout shift a phone actually sees.
+     34vh is where they end up, so 34vh is what they start at. */
+  #sidebar, #sidebar-right { min-height: 0; min-width: 0; height: 34vh; }
   #sidebar > .panel, #sidebar-right > .panel { min-width: 0; }
   #panel-times { flex: 1 1 auto; min-height: 0; }
   #panel-stats { flex: 1 1 auto; min-height: 0; }
@@ -753,7 +770,7 @@ body.inspecting #last-delta, body.focus #last-delta { display: none; }
      the chart button either way. */
   #stage:has(#panel-stats[data-collapsed="false"]) #sidebar { display: none; }
   #stage:has(#panel-stats[data-collapsed="false"]) #sidebar-right {
-    grid-column: 1 / -1; max-height: 46vh;
+    grid-column: 1 / -1; height: 46vh;
   }
 
   .brand-text { display: none; }
@@ -793,6 +810,15 @@ body.inspecting #last-delta, body.focus #last-delta { display: none; }
   /* A floor, so the list is never squeezed out of existence again: two or three
      solves are visible whatever else is on screen, and it scrolls from there. */
   #hist-list { min-height: 58px; }
+
+  /* Room for the scramble that is coming.
+     "Warming up scrambler…" is one line; a 3x3 wraps to two here, so the whole
+     stage under it dropped 38px the moment the first scramble landed. The
+     reservation lasts until showScramble() takes `warming` off, and 85px is
+     what two fitted lines measure across phone widths (80px at 360, 96px at
+     560). An event whose scramble does fit on one line (2x2, pyraminx) pays
+     for it with a box this size until that scramble arrives. */
+  .scramble.warming { min-height: 85px; }
 }
 
 /* ---- landscape on a phone ----
@@ -810,7 +836,10 @@ body.inspecting #last-delta, body.focus #last-delta { display: none; }
      well have the width rather than sit in a half-tile with the other half
      empty. (Not the data-attribute rules above: the list is hidden here by this
      stylesheet, not by the setting those attributes track.) */
-  #sidebar-right { grid-column: 1 / -1; max-height: 44vh; }
+  /* `height: auto` puts back what the portrait block above reserves: on its
+     side the times list is gone, so the figures are the only tile and they are
+     as tall as they are. */
+  #sidebar-right { grid-column: 1 / -1; height: auto; max-height: 44vh; }
   /* min(), not a flat size: --timer-size is written as an inline style from the
      size slider, so it cannot be overridden from a stylesheet at all — and
      should not be. Capping it against the viewport height keeps whatever the

@@ -13,7 +13,7 @@
    bottom bar already knows how to lay them out in a row.
    =========================================================== */
 
-import { $, el } from './util.js';
+import { $, el, afterLayout } from './util.js';
 
 /** Which panels take part, and the element each one is. */
 const SEL = {
@@ -211,6 +211,34 @@ function zoneRects(id) {
 const inRect = (x, y, r) => x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
 
 /**
+ * Write custom properties onto `node`, skipping any already at that value, and
+ * say whether anything actually moved. `null` removes one.
+ *
+ * Skipping matters as much as the batching does: these are inherited custom
+ * properties on <html>, so a write nothing needed still invalidates the style
+ * of every element on the page and turns the next measurement into a forced
+ * recalculation.
+ */
+function setVars(node, vars) {
+  let changed = false;
+  for (const [k, v] of Object.entries(vars)) {
+    if (node.style.getPropertyValue(k) === (v ?? '')) continue;
+    if (v == null) node.style.removeProperty(k);
+    else node.style.setProperty(k, v);
+    changed = true;
+  }
+  return changed;
+}
+
+/** Same idea for the preview's corner. */
+function setSide(node, side) {
+  if ((node.dataset.side || null) === side) return false;
+  if (side) node.dataset.side = side;
+  else node.removeAttribute('data-side');
+  return true;
+}
+
+/**
  * Publish how much of the bottom of the screen the bar is occupying.
  *
  * The rails, the creator chip and the scramble preview are all anchored down
@@ -219,22 +247,14 @@ const inRect = (x, y, r) => x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y +
  * the player, and a constant would be wrong for every combination but one.
  */
 function measureDock() {
-  const root = document.documentElement;
   const dock = document.getElementById('dock-bottom');
   const occupied = !!(dock && dock.children.length);
-  const h = occupied ? Math.round(dock.getBoundingClientRect().height) : 0;
-  root.style.setProperty('--dock-h', h ? `${h + 22}px` : '0px');
+  const d = occupied ? dock.getBoundingClientRect() : null;
+  const h = d ? Math.round(d.height) : 0;
 
   // Where the bar sits, from the same measurement the snap outline is drawn
   // from, so the two can never disagree.
   const z = bottomZone();
-  if (z) {
-    root.style.setProperty('--dock-x', `${Math.round(z.x)}px`);
-    root.style.setProperty('--dock-w', `${Math.round(z.w)}px`);
-  } else {
-    root.style.removeProperty('--dock-x');
-    root.style.removeProperty('--dock-w');
-  }
 
   /* Who actually has to get out of the bar's way.
    *
@@ -248,7 +268,6 @@ function measureDock() {
    *
    * Only the horizontal overlap is tested, and nothing here can change that:
    * these reservations move things vertically. So this cannot feed itself. */
-  const d = occupied ? dock.getBoundingClientRect() : null;
   const need = d ? Math.max(0, Math.round(innerHeight - d.top + 10)) : 0;
   const inFrontOf = (id) => {
     if (!d) return 0;
@@ -258,10 +277,20 @@ function measureDock() {
     if (q.width <= 2) return 0;
     return (d.right <= q.left || d.left >= q.right) ? 0 : need;
   };
-  root.style.setProperty('--dock-clear-left',  `${inFrontOf('sidebar')}px`);
-  root.style.setProperty('--dock-clear-right', `${inFrontOf('sidebar-right')}px`);
-  root.style.setProperty('--dock-clear-chip',  `${inFrontOf('creator-chip')}px`);
-  root.style.setProperty('--dock-clear-cube',  `${inFrontOf('panel-cube')}px`);
+  const clear = {
+    left: inFrontOf('sidebar'), right: inFrontOf('sidebar-right'),
+    chip: inFrontOf('creator-chip'), cube: inFrontOf('panel-cube'),
+  };
+
+  return () => setVars(document.documentElement, {
+    '--dock-h': h ? `${h + 22}px` : '0px',
+    '--dock-x': z ? `${Math.round(z.x)}px` : null,
+    '--dock-w': z ? `${Math.round(z.w)}px` : null,
+    '--dock-clear-left':  `${clear.left}px`,
+    '--dock-clear-right': `${clear.right}px`,
+    '--dock-clear-chip':  `${clear.chip}px`,
+    '--dock-clear-cube':  `${clear.cube}px`,
+  });
 }
 
 /**
@@ -274,18 +303,18 @@ function measureDock() {
  */
 function measureChip() {
   const chip = document.getElementById('creator-chip');
-  const root = document.documentElement;
-  root.style.setProperty('--chip-h-left', '0px');
-  root.style.setProperty('--chip-h-right', '0px');
-  if (!chip || getComputedStyle(chip).display === 'none') return;
-
-  const r = chip.getBoundingClientRect();
-  const need = `${Math.max(0, Math.round(innerHeight - r.top + 10))}px`;
+  const shown = chip && getComputedStyle(chip).display !== 'none';
+  const r = shown ? chip.getBoundingClientRect() : null;
+  const need = r ? `${Math.max(0, Math.round(innerHeight - r.top + 10))}px` : '0px';
   // Only the rail the chip is actually parked in front of pays for it — and
   // which one that is changes, because the chip swaps corners when the
   // scramble preview takes the one it usually sits in.
-  const side = (r.left + r.width / 2) < innerWidth / 2 ? 'left' : 'right';
-  root.style.setProperty(side === 'left' ? '--chip-h-left' : '--chip-h-right', need);
+  const left = !!r && (r.left + r.width / 2) < innerWidth / 2;
+
+  return () => setVars(document.documentElement, {
+    '--chip-h-left':  r && left ? need : '0px',
+    '--chip-h-right': r && !left ? need : '0px',
+  });
 }
 
 /**
@@ -303,20 +332,31 @@ function measureChip() {
  */
 function placePreview() {
   const cube = document.getElementById('panel-cube');
-  if (!cube) return;
+  if (!cube) return null;
   if (cube.dataset.placed === 'true' || getComputedStyle(cube).display === 'none') {
-    cube.removeAttribute('data-side');
-    return;
+    return () => setSide(cube, null);
   }
 
   const r = cube.getBoundingClientRect();
   const w = Math.round(r.width), h = Math.round(r.height);
-  if (!w || !h) return;
+  if (!w || !h) return null;
 
   // Its vertical band is fixed by the stylesheet (it sits above the bottom
   // bar); only the horizontal side is in question here.
   const top = r.top, bottom = r.bottom;
   const margin = innerWidth <= 860 ? 10 : 18;
+
+  /* The close button and the 2D/3D switch hang past the preview's own box —
+     the button by design, the switch whenever it is wider than the cube — and
+     it is their edges that have to stay on screen. On a phone the button stuck
+     out 8px into a 10px inset and sat on the very edge of the glass. Each side's
+     inset grows to keep whatever hangs off it EDGE px clear (--cube-edge-*). */
+  const EDGE = 8;
+  const hang = ['cube-close', 'view-toggle']
+    .map(id => document.getElementById(id)?.getBoundingClientRect())
+    .filter(q => q && q.width);
+  const insetL = Math.max(margin, EDGE + Math.max(0, ...hang.map(q => Math.round(r.left - q.left))));
+  const insetR = Math.max(margin, EDGE + Math.max(0, ...hang.map(q => Math.round(q.right - r.right))));
 
   /* Panels only. The credit chip is not an obstacle — it is a 28px link that
      moves to the opposite corner (see components.css), and treating it as one
@@ -325,7 +365,9 @@ function placePreview() {
   /* The open blindfolded breakdown counts too. It hangs out of the flow under
      the scramble, so on a phone it reaches straight into the band the preview
      parks in and nothing else would move either of them apart. */
-  const boxes = ['panel-times', 'panel-stats', 'panel-spotify', 'panel-race', 'bld-panel']
+  /* So do the digits. On a phone the preview's band is the timer's own, and
+     the clock is centred in a column barely wider than the two of them. */
+  const boxes = ['panel-times', 'panel-stats', 'panel-spotify', 'panel-race', 'bld-panel', 'timer-core']
     .map(id => document.getElementById(id))
     .filter(n => n && !n.hidden && getComputedStyle(n).display !== 'none' && n.dataset.dock !== 'bottom')
     .map(n => n.getBoundingClientRect())
@@ -333,66 +375,95 @@ function placePreview() {
 
   const clashes = (x) => boxes.some(q => !(x + w <= q.left || x >= q.right));
 
-  const rightX = innerWidth - margin - w;
-  const leftX = margin;
+  const rightX = innerWidth - insetR - w;
+  const leftX = insetL;
   const rightBlocked = clashes(rightX);
   const leftBlocked = clashes(leftX);
 
-  const root = document.documentElement;
-  root.style.setProperty('--cube-clear-left', '0px');
-  root.style.setProperty('--cube-clear-right', '0px');
-
   // Right is where it lives; left is the first escape hatch, taken only when
   // the usual corner is occupied and the other one is not.
-  if (!rightBlocked) { cube.removeAttribute('data-side'); return; }
-  if (!leftBlocked) { cube.dataset.side = 'left'; return; }
-
-  /* Both corners occupied — a panel in each rail, both long enough to reach
-     down here. That is the ordinary shape of a race: the room panel makes the
-     right-hand rail tall enough to reach the preview's corner while the solve
-     list already owns the left one, and the preview simply sat on top of the
-     panel it had nowhere to move away from.
-     *
-     * The strip between the rails is the answer, because it is empty by
-     * definition — it is the timer's own floor, below the digits. Only if that
-     * strip is too narrow to hold the preview does the rail give way instead,
-     * which costs that rail some height and is why it is now genuinely the
-     * last resort rather than the second one. */
-  const z = bottomZone();
-  const centreX = z ? Math.round(z.x + (z.w - w) / 2) : null;
-  if (centreX != null && z.w >= w + 24 && !clashes(centreX)) {
-    cube.dataset.side = 'centre';
-    cube.style.setProperty('--cube-x', `${centreX}px`);
-    return;
+  let side = null, cubeX = null, clearRight = '0px';
+  if (rightBlocked && !leftBlocked) side = 'left';
+  else if (rightBlocked) {
+    /* Both corners occupied — a panel in each rail, both long enough to reach
+       down here. That is the ordinary shape of a race: the room panel makes the
+       right-hand rail tall enough to reach the preview's corner while the solve
+       list already owns the left one, and the preview simply sat on top of the
+       panel it had nowhere to move away from.
+       *
+       * The strip between the rails is the answer, because it is empty by
+       * definition — it is the timer's own floor, below the digits. Only if that
+       * strip is too narrow to hold the preview does the rail give way instead,
+       * which costs that rail some height and is why it is now genuinely the
+       * last resort rather than the second one. */
+    const z = bottomZone();
+    const centreX = z ? Math.round(z.x + (z.w - w) / 2) : null;
+    if (centreX != null && z.w >= w + 24 && !clashes(centreX)) {
+      side = 'centre';
+      cubeX = `${centreX}px`;
+    } else {
+      clearRight = `${Math.max(0, Math.round(innerHeight - r.top + 10))}px`;
+    }
   }
 
-  cube.removeAttribute('data-side');
-  root.style.setProperty('--cube-clear-right',
-    `${Math.max(0, Math.round(innerHeight - r.top + 10))}px`);
+  return () => {
+    let changed = setVars(document.documentElement, {
+      '--cube-edge-left': `${insetL}px`,
+      '--cube-edge-right': `${insetR}px`,
+      '--cube-clear-left': '0px',
+      '--cube-clear-right': clearRight,
+    });
+    if (cubeX && setVars(cube, { '--cube-x': cubeX })) changed = true;
+    return setSide(cube, side) || changed;
+  };
 }
 
-let settleFrame = 0;
+let settlePending = false;
 let settleTimeout = 0;
+
+/**
+ * One pass: every reading first, then every write.
+ *
+ * Interleaved, these three cost six forced reflows — each write invalidates the
+ * page's style and the next getBoundingClientRect() has to lay the whole thing
+ * out again, which was a third of the boot on a throttled phone. Taking the
+ * readings together costs one.
+ *
+ * The order they used to run in was load-bearing, though: the preview can push
+ * the credit chip into the other corner, and the chip has to be measured where
+ * it ended up. So a pass that actually moved something goes round again — at
+ * most twice more, and only while something is still moving.
+ */
+function settle() {
+  for (let i = 0; i < 3; i++) {
+    const writes = [measureDock(), placePreview(), measureChip()];
+    let changed = false;
+    for (const write of writes) if (write?.()) changed = true;
+    if (!changed) return;
+  }
+}
 
 /**
  * Everything anchored to an edge, re-measured together.
  *
- * Measured three times on purpose: now, on the next frame, and once the
- * transitions have run. A ResizeObserver only fires when a box changes *size*,
- * and the preview moving — a settings reset putting it back in its corner, a
- * rail appearing and shifting the columns, the statistics panel finishing its
+ * Measured twice on purpose: after the next layout, and once the transitions
+ * have run. A ResizeObserver only fires when a box changes *size*, and the
+ * preview moving — a settings reset putting it back in its corner, a rail
+ * appearing and shifting the columns, the statistics panel finishing its
  * collapse — changes only its position. Nothing else would ever come back to
  * correct a reading taken mid-transition, so this comes back itself.
+ *
+ * Nothing measures synchronously any more: afterLayout() still lands before the
+ * frame is painted, so the same thing ends up on screen without dragging a
+ * layout into the middle of whatever called this.
  */
 export function measureLayout() {
-  // placePreview first: it can push the credit chip up, and measureChip has to
-  // read where the chip ended up, not where it was.
-  const pass = () => { measureDock(); placePreview(); measureChip(); };
-  pass();
-  cancelAnimationFrame(settleFrame);
+  if (!settlePending) {
+    settlePending = true;
+    afterLayout(() => { settlePending = false; settle(); });
+  }
   clearTimeout(settleTimeout);
-  settleFrame = requestAnimationFrame(pass);
-  settleTimeout = setTimeout(pass, 360);
+  settleTimeout = setTimeout(settle, 360);
 }
 
 function paintZones(rects) {

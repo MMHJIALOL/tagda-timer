@@ -8,6 +8,7 @@
 import { KV, Assets } from './db.js';
 import { DEFAULT_BLD } from './bldtrace.js';
 import { applyContrast, hexLuma } from './contrast.js';
+import { afterLayout } from './util.js';
 
 export const PRESETS = {
   nebula:    { name: 'Nebula',    dots: ['#7c5cff', '#35e6c5', '#12102a'] },
@@ -236,6 +237,9 @@ export function saveSettings(s) {
    Apply
    --------------------------------------------------------- */
 
+/** One pending --on-accent read at a time; applyTheme is called in bursts. */
+let onAccentPending = false;
+
 export function applyTheme(s) {
   const root = document.documentElement;
   root.dataset.theme = s.theme;
@@ -264,9 +268,21 @@ export function applyTheme(s) {
   // initial — used to be white no matter what, which is invisible on Carbon's
   // white accent and on any pale colour picked in the appearance editor.
   // Read the accent that actually resolved and pick the side that reads.
-  st.removeProperty('--on-accent');
-  const accent = getComputedStyle(root).getPropertyValue('--accent').trim();
-  st.setProperty('--on-accent', (hexLuma(accent) ?? 0) > 0.6 ? '#0b0b12' : '#ffffff');
+  //
+  // After the next layout rather than here: read straight after the writes
+  // above, getComputedStyle forced a whole-page style recalculation on every
+  // call (over 100ms of the boot on a throttled phone). The answer still lands
+  // before that frame is painted, and is only written when it differs, so the
+  // default theme costs no second recalculation at all.
+  if (!onAccentPending) {
+    onAccentPending = true;
+    afterLayout(() => {
+      onAccentPending = false;
+      const cs = getComputedStyle(root);
+      const on = (hexLuma(cs.getPropertyValue('--accent').trim()) ?? 0) > 0.6 ? '#0b0b12' : '#ffffff';
+      if (cs.getPropertyValue('--on-accent').trim() !== on) st.setProperty('--on-accent', on);
+    });
+  }
 
   document.body.classList.toggle('no-stats', !s.showStats);
   // The right-hand rail reserves room at its foot for the preview floating in
