@@ -187,8 +187,8 @@ export const SET = {
   "library": {
     "SQ1-SHAPE-kite-kite": {"alternates":[{"alg":"/","moveCount":1}]},
     "SQ1-SHAPE-barrel-barrel": {"alternates":[{"alg":"/ 3,3 /","moveCount":2},{"alg":"/ -3,-3 /","moveCount":2}]},
-    "SQ1-SHAPE-left-fist-right-fist": {"alternates":[{"alg":"/ 3,0 / -1,1","moveCount":2},{"alg":"/ -3,0 / -1,1","moveCount":2}]},
-    "SQ1-SHAPE-right-fist-left-fist": {"alternates":[{"alg":"/ 3,0 /","moveCount":2},{"alg":"/ -3,0 /","moveCount":2}]},
+    "SQ1-SHAPE-left-fist-right-fist": {"alternates":[{"alg":"/ 3,0 / -1,1","moveCount":2}]},
+    "SQ1-SHAPE-right-fist-left-fist": {"alternates":[{"alg":"/ 3,0 /","moveCount":2}]},
     "SQ1-SHAPE-square-shield": {"alternates":[{"alg":"/ 0,1 / 0,3 /","moveCount":3}]},
     "SQ1-SHAPE-shield-square": {"alternates":[{"alg":"/ -1,0 / -3,0 /","moveCount":3}]},
     "SQ1-SHAPE-muffin-square": {"alternates":[{"alg":"/ 2,0 / 3,0 /","moveCount":3}]},

@@ -550,7 +550,6 @@ export const ZBLL_LIBRARY = {
     { alg: "y F U R U2 R' U R U R' F'", moveCount: 11 },
     { alg: "L U2 R' U2 R U2 L' U' R' U R", moveCount: 11 },
     { alg: "y2 R U2 r' F2 r U2 R' U' L' U L", moveCount: 12 },
-    { alg: "y F U R U2 R' U R U R' F' U'", moveCount: 12 },
   ] },
   "ZBLL-T-10": { alternates: [
     { alg: "y R U R' U' R' F' R U2 R U2 R' F", moveCount: 13 },
@@ -694,7 +693,6 @@ export const ZBLL_LIBRARY = {
     { alg: "R U' R' U R U R' U' R U R' U' R' D' R U' R' D R", moveCount: 19 },
     { alg: "y2 R' U' R U' R' U R F U' R' U2 R U F'", moveCount: 15 },
     { alg: "y2 R' U' R U' R' U R U L U2 R' U2 R U2 L'", moveCount: 16 },
-    { alg: "y2 R' U' R U' R' U R U L U2 R' U2 R U2 L' U", moveCount: 17 },
   ] },
   "ZBLL-T-34": { alternates: [
     { alg: "R U R' U R U' R' U' L' U2 R U2 R' U2 L", moveCount: 15 },
@@ -753,7 +751,6 @@ export const ZBLL_LIBRARY = {
     { alg: "y2 F R U R' U' R U' R' U' R U R' F'", moveCount: 14 },
     { alg: "f U R U' R' U R' U' R f' R' U R", moveCount: 13 },
     { alg: "y R' F' U' F U R F R' F' R U R U' R'", moveCount: 15 },
-    { alg: "y2 F R U R' U' R U' R' U' R U R' F' U2", moveCount: 15 },
   ] },
   "ZBLL-T-44": { alternates: [
     { alg: "y' R U R' U2 R U' R' U2 R U' R2 F' R U R U' R' F", moveCount: 19 },
@@ -877,7 +874,6 @@ export const ZBLL_LIBRARY = {
   "ZBLL-T-64": { alternates: [
     { alg: "R U2 R' U' R U' R' U R U R' U R U2 R'", moveCount: 15 },
     { alg: "y2 L U2 L' U' L U' L' U L U L' U L U2 L'", moveCount: 16 },
-    { alg: "R U2 R' U' R U' R' U R U R' U R U2 R' U'", moveCount: 16 },
     { alg: "y' R U R' f' z F' R U R' U' R' F R2 U' R' f z'", moveCount: 18 },
   ] },
   "ZBLL-T-65": { alternates: [
@@ -1182,7 +1178,6 @@ export const ZBLL_LIBRARY = {
     { alg: "F R U' R' U R U R' U R U' R' F'", moveCount: 13 },
     { alg: "R U R' U' R' F2 R2 U' R' U' R U R' F2", moveCount: 14 },
     { alg: "R' U' R f R' U R U' R U R' U' f'", moveCount: 13 },
-    { alg: "F R U' R' U R U R' U R U' R' F' U2", moveCount: 14 },
   ] },
   "ZBLL-U-44": { alternates: [
     { alg: "y2 R U' R2 F R U R U' R2 F' R U' F' U F", moveCount: 16 },
@@ -1236,7 +1231,6 @@ export const ZBLL_LIBRARY = {
     { alg: "R2 D' R U R' D R U R U' R' U' R", moveCount: 13 },
     { alg: "R' U2 R F U' R' U' R U F'", moveCount: 10 },
     { alg: "R' U2 R U2 R' F' R U R' U' R' F R2", moveCount: 13 },
-    { alg: "R' U2 R U2 R' F' R U R' U' R' F R2 U'", moveCount: 14 },
   ] },
   "ZBLL-U-53": { alternates: [
     { alg: "F U R U2 R' U R U R' U R U2 R' U R U R' F'", moveCount: 18 },
@@ -1295,12 +1289,10 @@ export const ZBLL_LIBRARY = {
   "ZBLL-U-62": { alternates: [
     { alg: "y' R U R' U' R U' R' U2 R U' R' U2 R U R'", moveCount: 16 },
     { alg: "R' U' R U' R' U2 R U' R' U2 R U R' U R", moveCount: 15 },
-    { alg: "R' U' R U' R' U2 R U' R' U2 R U R' U R U", moveCount: 16 },
     { alg: "y2 L' U' L U' L' U2 L U' L' U2 L U L' U L", moveCount: 16 },
   ] },
   "ZBLL-U-63": { alternates: [
     { alg: "y R U2 R' U' R U' R' U' R U R' U R U2 R'", moveCount: 16 },
-    { alg: "y R U2 R' U' R U' R' U' R U R' U R U2 R' U", moveCount: 17 },
     { alg: "y' L U2 L' U' L U' L' y R U R' U R U2 R'", moveCount: 16 },
     { alg: "y' L U2 L' U' L U' L' U R U R' U R U2 R'", moveCount: 16 },
   ] },
@@ -1313,7 +1305,6 @@ export const ZBLL_LIBRARY = {
   "ZBLL-U-65": { alternates: [
     { alg: "y R' U2 R U R' U R U R' U' R U' R' U2 R", moveCount: 16 },
     { alg: "y' L' U2 L U L' U L U' R' U' R U' R' U2 R", moveCount: 16 },
-    { alg: "y R' U2 R U R' U R U R' U' R U' R' U2 R U'", moveCount: 17 },
     { alg: "y' z U' R2 U R U' R U R U' R' U R' U' R2 U", moveCount: 17 },
   ] },
   "ZBLL-U-66": { alternates: [
@@ -2130,7 +2121,6 @@ export const ZBLL_LIBRARY = {
   ] },
   "ZBLL-Pi-61": { alternates: [
     { alg: "R U2 R2 U' R2 U' R2 U2 R", moveCount: 9 },
-    { alg: "R U2 R2 U' R2 U' R2 U2 R U2", moveCount: 10 },
   ] },
   "ZBLL-Pi-62": { alternates: [
     { alg: "y' R' U2 R U R' U R2 U R' U R U2 R'", moveCount: 14 },
@@ -2170,14 +2160,12 @@ export const ZBLL_LIBRARY = {
   ] },
   "ZBLL-Pi-68": { alternates: [
     { alg: "R' U2 R2 U R2 U R2 U2 R'", moveCount: 9 },
-    { alg: "R' U2 R2 U R2 U R2 U2 R' U2", moveCount: 10 },
     { alg: "y2 L' U2 L2 U L2 U L2 U2 L'", moveCount: 10 },
   ] },
   "ZBLL-Pi-69": { alternates: [
     { alg: "R U R' U R U2 R' U' R U R' U R U2 R'", moveCount: 15 },
     { alg: "R' U' R U R U2 R' U' R U' R2 U2 R", moveCount: 13 },
     { alg: "F' U' L' U L S' U' L' U L f", moveCount: 11 },
-    { alg: "R U R' U R U2 R' U' R U R' U R U2 R' U", moveCount: 16 },
   ] },
   "ZBLL-Pi-70": { alternates: [
     { alg: "R' U' R U' R' U2 R U R' U' R U' R' U2 R", moveCount: 15 },
@@ -2432,7 +2420,7 @@ export const ZBLL_LIBRARY = {
     { alg: "y2 R' U2 R U F R' U R U' F'", moveCount: 11 },
     { alg: "L' U2 L U2 R U' L' U R' L", moveCount: 10 },
     { alg: "U2 R' U2 R U F R' U R U' F' U'", moveCount: 12 },
-    { alg: "y R U R' U R U2 R' l' U R' D2 R U' R' D2 R2", moveCount: 17 },
+    { alg: "y U' R U R' U R U2 R' l' U R' D2 R U' R' D2 R2", moveCount: 18 },
   ] },
   "ZBLL-S-2": { alternates: [
     { alg: "R U R' U R U' R2 F' R U R U' R' F R U' R'", moveCount: 17 },
@@ -2471,7 +2459,6 @@ export const ZBLL_LIBRARY = {
   ] },
   "ZBLL-S-8": { alternates: [
     { alg: "y2 R U R' U R2 D r' U2 r D' R2", moveCount: 12 },
-    { alg: "y2 R U R' U R2 D r' U2 r D' R2 U", moveCount: 13 },
     { alg: "y2 F R U R2 U' R2 U' R2 U2 R U R U R' F'", moveCount: 16 },
   ] },
   "ZBLL-S-9": { alternates: [
@@ -2485,7 +2472,6 @@ export const ZBLL_LIBRARY = {
   "ZBLL-S-11": { alternates: [
     { alg: "y' R' D' R U2 R' D R U' R U R' U2 R U R'", moveCount: 16 },
     { alg: "R U R2 F' R U2 R U2 R' F R U' R'", moveCount: 13 },
-    { alg: "R U R2 F' R U2 R U2 R' F R U' R' U", moveCount: 14 },
     { alg: "F R' U' R2 U' R2 U2 R2 U' R' F'", moveCount: 11 },
   ] },
   "ZBLL-S-12": { alternates: [
@@ -2579,13 +2565,12 @@ export const ZBLL_LIBRARY = {
     { alg: "y R U R' U R U' R2 D' R U R' D R2 U2 R'", moveCount: 16 },
     { alg: "y R U2 R' U2 R' F R2 U R' U' R U R' U' F'", moveCount: 16 },
     { alg: "L U2 L F L' U' L' U L F' U2 L'", moveCount: 12 },
-    { alg: "y2 z U R2 U F U' R' U' R U F' R2 U'", moveCount: 14 },
+    { alg: "y2 U2 z U R2 U F U' R' U' R U F' R2 U'", moveCount: 15 },
   ] },
   "ZBLL-S-29": { alternates: [
     { alg: "R U' L' U R' U' L", moveCount: 7 },
     { alg: "R U' r' F R' F' r", moveCount: 7 },
     { alg: "y2 L U' R' U L' U' R", moveCount: 8 },
-    { alg: "R U' L' U R' U' L U", moveCount: 8 },
   ] },
   "ZBLL-S-30": { alternates: [
     { alg: "y' R' U2 R2 U R D' R U R' D R2 U' R U' R'", moveCount: 16 },
@@ -2602,7 +2587,6 @@ export const ZBLL_LIBRARY = {
   "ZBLL-S-32": { alternates: [
     { alg: "y2 R U R' F' R U R' U R U' R' U' R' F R2 U' R'", moveCount: 18 },
     { alg: "y' D' R2 U R U' R2 U' R U R' D R' U R", moveCount: 15 },
-    { alg: "y2 R U R' F' R U R' U R U' R' U' R' F R2 U' R' U", moveCount: 19 },
     { alg: "R U R' U R U R' U' R U R D R' U' R D' R' U2 R'", moveCount: 19 },
   ] },
   "ZBLL-S-33": { alternates: [
@@ -2621,7 +2605,7 @@ export const ZBLL_LIBRARY = {
     { alg: "R2 D r' U2 r D' R' U' R' U R U2 R'", moveCount: 13 },
     { alg: "y R' U' R U' R' U R U' R D R' U' R D' R' U R' U2 R", moveCount: 20 },
     { alg: "R2 U R U R' U' R' U' R' L' U R' U' L", moveCount: 14 },
-    { alg: "y' y2 z U2 R U R U' R' U' R' D' U' R U' R' D", moveCount: 17 },
+    { alg: "y U z U2 R U R U' R' U' R' D' U' R U' R' D", moveCount: 17 },
   ] },
   "ZBLL-S-36": { alternates: [
     { alg: "y' R' U' D R' U R D' U2 R2 U R' U' R'", moveCount: 14 },
@@ -2671,7 +2655,6 @@ export const ZBLL_LIBRARY = {
     { alg: "F U R U' R' S R' F' R U R U' R' S'", moveCount: 14 },
     { alg: "R' D R' U R D' U R U' R' U' R2 U R U' R'", moveCount: 16 },
     { alg: "R U R' U R U2 R2 U2 R U R' F' R U R' U' R' F R2 U' R' U R", moveCount: 23 },
-    { alg: "F U R U' R' S R' F' R U R U' R' S' U'", moveCount: 15 },
   ] },
   "ZBLL-S-45": { alternates: [
     { alg: "F R U R' U' R' F' R U2 R U' R' U R U2 R'", moveCount: 16 },
@@ -2688,7 +2671,6 @@ export const ZBLL_LIBRARY = {
   "ZBLL-S-47": { alternates: [
     { alg: "R2 F R U R U' R' F' R U' R' U R", moveCount: 13 },
     { alg: "R U R' U' R' F R2 U' R' U' R U R' F' R U R' U R U2 R'", moveCount: 21 },
-    { alg: "R2 F R U R U' R' F' R U' R' U R U", moveCount: 14 },
     { alg: "R' U R U R' U' R' D' R U R' D R2 U R' U R", moveCount: 17 },
   ] },
   "ZBLL-S-48": { alternates: [
@@ -2784,7 +2766,6 @@ export const ZBLL_LIBRARY = {
   ] },
   "ZBLL-S-64": { alternates: [
     { alg: "y' R' U2 R U R' U R", moveCount: 8 },
-    { alg: "y' R' U2 R U R' U R U2", moveCount: 9 },
     { alg: "y L' U2 L U L' U L", moveCount: 8 },
   ] },
   "ZBLL-S-65": { alternates: [
@@ -2803,7 +2784,6 @@ export const ZBLL_LIBRARY = {
     { alg: "R U R' U R U2 R'", moveCount: 7 },
     { alg: "R U R2 U' R2 U R' S R2 S'", moveCount: 10 },
     { alg: "l b d' r f d2 b'", moveCount: 7 },
-    { alg: "R U R' U R U2 R' U2", moveCount: 8 },
   ] },
   "ZBLL-S-68": { alternates: [
     { alg: "R' U2 R2 U2 R2 U' R2 U' R2 U R", moveCount: 11 },
@@ -2867,7 +2847,6 @@ export const ZBLL_LIBRARY = {
   "ZBLL-AS-6": { alternates: [
     { alg: "y2 R' F U' F' U' R F U' R' U' R F'", moveCount: 13 },
     { alg: "y2 R U R' U R' U' R U' R D R' U R D' U' R2 U2 R", moveCount: 19 },
-    { alg: "y2 R' F U' F' U' R F U' R' U' R F' U", moveCount: 14 },
     { alg: "L' R' D2 R U R' D2 R2 U' L U R'", moveCount: 12 },
   ] },
   "ZBLL-AS-7": { alternates: [
@@ -2892,7 +2871,6 @@ export const ZBLL_LIBRARY = {
     { alg: "y R U2 R D R' U' R D' R' U R' U' R U' R'", moveCount: 16 },
     { alg: "y R U2 R' U R' D' R U' R' D R U' R U' R'", moveCount: 16 },
     { alg: "y R' U L U' R U' R' L' U L U' R U2 L'", moveCount: 15 },
-    { alg: "y R U2 R D R' U' R D' R' U R' U' R U' R' U2", moveCount: 17 },
   ] },
   "ZBLL-AS-11": { alternates: [
     { alg: "y2 R2 D R' U R D' R' U R' U' R U' R'", moveCount: 14 },
@@ -2951,8 +2929,6 @@ export const ZBLL_LIBRARY = {
   ] },
   "ZBLL-AS-21": { alternates: [
     { alg: "y2 R' U' R U' R2 D' R U2 R' D R2", moveCount: 12 },
-    { alg: "y2 R' U' R U' R2 D' R U2 R' D R2 U", moveCount: 13 },
-    { alg: "y2 R' U' R U' R2 D' R U2 R' D R2 U'", moveCount: 13 },
   ] },
   "ZBLL-AS-22": { alternates: [
     { alg: "y2 R U2 R' U' R U R' U2 R' F R U R U' R' F'", moveCount: 17 },
@@ -2969,7 +2945,6 @@ export const ZBLL_LIBRARY = {
     { alg: "R' U' R U R' F R U R' U' R' F' R2", moveCount: 13 },
     { alg: "y L U2 L' U2 R' U L2 U' R U L' U' L'", moveCount: 14 },
     { alg: "y R U2 R' U2 R' F R2 U' R' U' R U R' F'", moveCount: 15 },
-    { alg: "R' U' R U R' F R U R' U' R' F' R2 U'", moveCount: 14 },
   ] },
   "ZBLL-AS-25": { alternates: [
     { alg: "y' R U2 R' U' R U R D R' U2 R D' R2", moveCount: 14 },
@@ -3095,7 +3070,6 @@ export const ZBLL_LIBRARY = {
   "ZBLL-AS-48": { alternates: [
     { alg: "R U' R' U2 R U' R' U R' D' R U2 R' D R", moveCount: 15 },
     { alg: "R U R' F' R U2 R' U2 R' F R2 U' R'", moveCount: 13 },
-    { alg: "R U R' F' R U2 R' U2 R' F R2 U' R' U'", moveCount: 14 },
     { alg: "y F R U R2 U2 R2 U R2 U R F'", moveCount: 12 },
   ] },
   "ZBLL-AS-49": { alternates: [
@@ -3197,7 +3171,6 @@ export const ZBLL_LIBRARY = {
     { alg: "y R U2 R' U' R U' R'", moveCount: 8 },
     { alg: "y' L U2 L' U' L U' L'", moveCount: 8 },
     { alg: "y' M' U2 R U2 M R' U' R U' R' U2", moveCount: 12 },
-    { alg: "y R U2 R' U' R U' R' U2", moveCount: 9 },
   ] },
   "ZBLL-AS-67": { alternates: [
     { alg: "R U2 R2 U2 R2 U R2 U R2 U' R'", moveCount: 11 },
@@ -3209,7 +3182,6 @@ export const ZBLL_LIBRARY = {
     { alg: "R' U' R U' R' U2 R", moveCount: 7 },
     { alg: "y2 r' F' r U' r' F2 r", moveCount: 8 },
     { alg: "y R U' R' U' R U R' U R U' R' U R U2 R' U2 R U' R'", moveCount: 20 },
-    { alg: "R' U' R U' R' U2 R U2", moveCount: 8 },
   ] },
   "ZBLL-AS-69": { alternates: [
     { alg: "y R U R' U' R' U' R U R U' R' U' R' U R", moveCount: 16 },

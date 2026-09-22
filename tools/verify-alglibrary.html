@@ -32,7 +32,7 @@
 <ul id="bad"></ul>
 
 <script type="module">
-import { SETS, loadAllSets, auditLibrary, verifyAlgForCase } from '../js/alglibrary.js';
+import { SETS, loadAllSets, auditLibrary, verifyAlgForCase, displayOrder } from '../js/alglibrary.js';
 import { auditSetups } from '../js/alglibrary-setup.js';
 
 /* Every set past PLL and OLL is a dynamic import, so they are absent from SETS
@@ -43,7 +43,7 @@ await loadAllSets();
 const bad = auditLibrary();
 let total = 0;
 for (const set of Object.values(SETS)) {
-  for (const c of set.cases) total += (set.library[c.id]?.alternates || []).length;
+  for (const c of set.cases) total += displayOrder(set.id, c.id).length;
 }
 
 /* The canonical algs in algs.js back every case that research has not reached,
@@ -77,7 +77,7 @@ const list = document.getElementById('bad');
 for (const b of bad) {
   const li = document.createElement('li');
   li.className = 'fail';
-  li.textContent = `${b.set} ${b.caseId}: ${b.alg}`;
+  li.textContent = `${b.set} ${b.caseId}: ${b.alg} — ${b.why}`;
   list.appendChild(li);
 }
 for (const d of defaults) {

@@ -2,10 +2,10 @@
    More algorithms for the 222-PBL cases, in the order that list gives them.
    Every one was executed against the case it is filed under. */
 export const EXTRA = {
-  "222PBL-solved-adjacent-swap-1": [{"alg":"R U R' F' R U R' U' R' F R2 U' R' U'","moveCount":14},{"alg":"U R' F R F' R U2 R' U R U2 R'","moveCount":12}],
+  "222PBL-solved-adjacent-swap-1": [{"alg":"R U R' F' R U R' U' R' F R2 U' R' U'","moveCount":14},{"alg":"R' F R F' R U2 R' U R U2 R'","moveCount":11}],
   "222PBL-solved-diagonal-swap-2": [{"alg":"R U' R' U' F2 U' R U R' U F2","moveCount":11},{"alg":"F R U' R' U' R U R' F' R U R' U' R' F R F'","moveCount":17}],
   "222PBL-diagonal-swap-diagonal-swap-8": [{"alg":"R2 F2 R2","moveCount":3},{"alg":"R2 B2 R2","moveCount":3}],
-  "222PBL-adjacent-swap-adjacent-swap-4": [{"alg":"R2 U' R2 U2 F2 U' R2","moveCount":7},{"alg":"R2 U' B2 U2 R2 U' R2'","moveCount":7}],
+  "222PBL-adjacent-swap-adjacent-swap-4": [{"alg":"R2 U' R2 U2 F2 U' R2","moveCount":7},{"alg":"y2 R2 U' B2 U2 R2 U' R2'","moveCount":8}],
   "222PBL-diagonal-swap-adjacent-swap-7": [{"alg":"U2 R' U R' F2 R F' R","moveCount":8},{"alg":"R' F R' F2 R U' R","moveCount":7}],
-  "222PBL-adjacent-swap-diagonal-swap-5": [{"alg":"R2 U R2 U' R2 U R2 U' R2","moveCount":9},{"alg":"R' D R' F2 R D' R","moveCount":7}],
+  "222PBL-adjacent-swap-diagonal-swap-5": [{"alg":"y' R2 U R2 U' R2 U R2 U' R2","moveCount":10},{"alg":"y2 R' D R' F2 R D' R","moveCount":8}],
 };

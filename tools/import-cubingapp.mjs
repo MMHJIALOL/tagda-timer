@@ -40,7 +40,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { faceletsFor, parseAlg, stickerAt } from '../js/cubenet.js';
 import * as P from '../js/puzzles.js';
-import { loadSet, registerSet, verifyAlgForCase, casePattern, countFor, sq1At } from '../js/alglibrary.js';
+import { loadSet, registerSet, verifyAlgForCase, alignAlg, algKey, casePattern, countFor, sq1At } from '../js/alglibrary.js';
 
 const SRC = process.argv[2];
 if (!SRC) { console.error('usage: node tools/import-cubingapp.mjs <folder of cubingapp alg JSON>'); process.exit(2); }
@@ -247,9 +247,6 @@ function normOther(puzzle, alg) {
 }
 
 const norm = (puzzle, alg) => (puzzle === 'cube' ? normCube(alg) : normOther(puzzle, alg));
-
-/* Two spellings of the same turns — `R2'` and `R2` — are one algorithm. */
-const sameKey = (alg) => alg.replace(/2'/g, '2');
 
 /** The random pre/post moves cubingapp's trainer wraps a case in. */
 function fillers(src, key, puzzle) {
@@ -473,12 +470,15 @@ async function merge(spec, src) {
 
     const known = [...(set.library[caseId]?.alternates || []), { alg: set.cases.find(c => c.id === caseId).alg }];
     for (const a of good) {
-      if (!verifyAlgForCase(set.id, caseId, a.alg)) { dropped++; note(`  ${spec.merge} "${name}" → ${caseId}: does not solve — ${a.alg}`); continue; }
+      /* Matched to the case with a free U turn either side; stored with the
+         one it needs in front, so it works from the picture. */
+      const aligned = verifyAlgForCase(set.id, caseId, a.alg) && alignAlg(set.id, caseId, a.alg);
+      if (!aligned) { dropped++; note(`  ${spec.merge} "${name}" → ${caseId}: does not solve — ${a.alg}`); continue; }
       /* The library's own spelling wins, so a saved order that names it still finds it. */
-      const same = known.find(k => sameKey(k.alg) === sameKey(a.alg));
+      const same = known.find(k => algKey(set.id, k.alg) === algKey(set.id, aligned));
       const list = (extra[caseId] ||= []);
-      const alg = same ? same.alg : a.alg;
-      if (list.some(e => e.alg === alg)) continue;
+      const alg = same ? same.alg : aligned;
+      if (list.some(e => algKey(set.id, e.alg) === algKey(set.id, alg))) continue;
       const notes = a.note || same?.notes;
       list.push({ alg, moveCount: countFor(set.id, alg), ...(notes ? { notes } : {}) });
       if (!same) added++;
@@ -553,8 +553,10 @@ async function build(spec, src, maps) {
     const list = [];
     for (const a of algsOf[c.id]) {
       if (!verifyAlgForCase(spec.id, c.id, a.alg)) { dropped++; note(`  ${spec.id} "${c.name}": does not solve — ${a.alg}`); continue; }
-      if (list.some(e => sameKey(e.alg) === sameKey(a.alg))) continue;
-      list.push({ alg: a.alg, moveCount: countFor(spec.id, a.alg), ...(a.note ? { notes: a.note } : {}) });
+      /* LSE's free opening M is not a U turn, so its algs stay as written. */
+      const alg = alignAlg(spec.id, c.id, a.alg) || a.alg;
+      if (list.some(e => algKey(spec.id, e.alg) === algKey(spec.id, alg))) continue;
+      list.push({ alg, moveCount: countFor(spec.id, alg), ...(a.note ? { notes: a.note } : {}) });
     }
     if (!list.length) { note(`  ${spec.id} "${c.name}": no algorithm survived`); continue; }
     keep.push(c);

@@ -24,7 +24,6 @@ const OLL_LIBRARY = {
     { alg: "R F' R2 U2 F' R", moveCount: 6 },
     { alg: "R' F R F' R U R'", moveCount: 7 },
     { alg: "R' F' R U' R' F2 R", moveCount: 7 },
-    { alg: "R F' R2 U2 F' R U", moveCount: 7 },
   ] },
   "222OLL-T": { alternates: [
     { alg: "R U R' U' F' U' F", moveCount: 7 },
@@ -36,7 +35,6 @@ const OLL_LIBRARY = {
     { alg: "R U F R' F' R'", moveCount: 6 },
     { alg: "R' F' U' F U R", moveCount: 6 },
     { alg: "R U2 R U2 R U R2", moveCount: 7 },
-    { alg: "R U F R' F' R' U", moveCount: 7 },
   ] },
   "222OLL-L": { alternates: [
     { alg: "F R' F' U' R' U R", moveCount: 7 },

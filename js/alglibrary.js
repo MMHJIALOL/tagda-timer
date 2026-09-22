@@ -25,7 +25,7 @@ import { PLL_LIBRARY } from './alglibrary-pll.js';
 import { OLL_LIBRARY } from './alglibrary-oll.js';
 import { faceletsFor, parseAlg } from './cubenet.js';
 import { KV } from './db.js';
-import { invert } from './util.js';
+import { invert, tidy } from './util.js';
 
 /* ---------------------------------------------------------
    Sets
@@ -414,11 +414,11 @@ function puzzleFinished(set, s, target) {
   return Object.keys(target.stickers).every(k => target.stickers[k] === 'X' || s.stickers[k] === target.stickers[k]);
 }
 
-function verifyOnPuzzle(set, c, alg, from) {
+function verifyOnPuzzle(set, c, alg, from, strict) {
   if (!PUZ || !PUZ.parseMoves(set.puzzle, alg)) return false;
   const target = puzzleState(set, c.setup || '');
   if (!target) return false;
-  for (const pre of set.adjust.pre) {
+  for (const pre of strict ? [''] : set.adjust.pre) {
     for (const post of set.adjust.post) {
       const s = puzzleState(set, [from, pre, alg, post].filter(Boolean).join(' '));
       if (s && puzzleFinished(set, s, target)) return true;
@@ -456,14 +456,19 @@ const ANY_PAIR = [...new Set(LAYER_PAIRS.flat())];
  *
  * `from`, when given, replaces the case's own scrambled state — how the setup
  * audit asks "does this algorithm finish the cube *that* setup builds".
+ *
+ * `strict` takes the free moves before the alg away and starts from the case
+ * as it is drawn. That is the promise a listed algorithm makes: do these moves
+ * on the cube in the picture. An alg that needs a U or a y first that it does
+ * not say passes the loose check and fails this one — see alignAlg.
  */
-export function verifyAlgForCase(setId, caseId, alg, from = null) {
+export function verifyAlgForCase(setId, caseId, alg, from = null, strict = false) {
   const set = SETS[setId];
   const c = caseOf(setId, caseId);
   if (!set || !c) return false;
-  const start = from ?? casePattern(setId, caseId);
+  const start = from ?? (strict ? drawnPattern(setId, caseId) : casePattern(setId, caseId));
   if (start == null) return false;
-  if (puzzleOf(set) !== 'cube') return verifyOnPuzzle(set, c, alg, start);
+  if (puzzleOf(set) !== 'cube') return verifyOnPuzzle(set, c, alg, start, strict);
   if (!parseAlg(alg)) return false;
 
   const n = sizeOf(setId);
@@ -476,7 +481,7 @@ export function verifyAlgForCase(setId, caseId, alg, from = null) {
     const holds = TURNS_CUBE.test(start) || TURNS_CUBE.test(alg) ? ORIENTATIONS : [''];
     /* The hold goes before the post-adjustment: after an algorithm that ends
        in a `z`, the layer an AUF has to turn is the one that was on top. */
-    for (const pre of set.adjust.pre) {
+    for (const pre of strict ? [''] : set.adjust.pre) {
       for (const post of set.adjust.post) {
         for (const hold of holds) {
           const f = faceletsFor([start, pre, alg, hold, post].filter(Boolean).join(' '), n, set.greySet);
@@ -488,12 +493,12 @@ export function verifyAlgForCase(setId, caseId, alg, from = null) {
   }
 
   const done = doneFor(setId, caseId);
-  const rots = setId === 'F2L' ? F2L_ROTS : [''];
+  const rots = setId === 'F2L' && !strict ? F2L_ROTS : [''];
   /* A 2x2 has no centres to say which way up it is. Its bottom layer is lined
      up before or after an EG or PBL algorithm as a matter of course, and an
      algorithm with an x, a B or a d in it finishes with those two layers on a
      different axis — so both layers of any axis may take the final turns. */
-  const pres = n === 2 ? LAYER_PAIRS[0] : AUFS;
+  const pres = strict ? [''] : n === 2 ? LAYER_PAIRS[0] : AUFS;
   const posts = n === 2 ? ANY_PAIR : AUFS;
   for (const rot of rots) {
     for (const pre of pres) {
@@ -522,23 +527,84 @@ export function verifyAlgForCase(setId, caseId, alg, from = null) {
 export const caseFacelets = (setId, caseId) => {
   const set = SETS[setId];
   if (puzzleOf(set) !== 'cube') return null;
-  const pattern = casePattern(setId, caseId);
-  if (pattern == null) return null;
-  const n = sizeOf(setId);
-  if (set.greySet) return faceletsFor(pattern, n, set.greySet);
-  if (set.angle !== 'auf') return faceletsFor(pattern, n);
+  const pattern = drawnPattern(setId, caseId);
+  return pattern == null ? null : faceletsFor(pattern, sizeOf(setId), set.greySet || null);
+};
 
-  let best = null, bestScore = -1;
+/** The moves that build the case exactly as caseFacelets draws it. */
+export function drawnPattern(setId, caseId) {
+  const set = SETS[setId];
+  const pattern = casePattern(setId, caseId);
+  if (pattern == null || puzzleOf(set) !== 'cube' || set.greySet || set.angle !== 'auf') return pattern;
+  let best = '', bestScore = -1;
   for (const auf of AUFS) {
-    const f = faceletsFor([pattern, auf].filter(Boolean).join(' '), n);
+    const f = faceletsFor([pattern, auf].filter(Boolean).join(' '), sizeOf(setId));
     let score = 0;
     for (const face of ['R', 'F', 'L', 'B']) {
       for (const s of f[face][0]) if (s === face) score++;
     }
-    if (score > bestScore) { bestScore = score; best = f; }
+    if (score > bestScore) { bestScore = score; best = auf; }
   }
-  return best;
-};
+  return [pattern, best].filter(Boolean).join(' ');
+}
+
+const turnOf = (face, q) => (q % 4 ? face + ['', '', '2', "'"][q % 4] : '');
+
+/**
+ * `alg`, with the U turn or y rotation it needs in front to solve the case from
+ * the angle it is drawn at — or `alg` itself if it already does, or null if no
+ * turn about U will do.
+ *
+ * Alg sheets are written from the angle their author recognises a case at, and
+ * a list gathered from several of them is a list of angles: "U L U' L'" for a
+ * pair drawn in front-right is the back-left version, missing its y2. The loose
+ * check forgives that; someone holding the cube in the picture cannot.
+ *
+ * Opening U, y and d turns are folded into one turn each (d is y' U), so the
+ * slot variant that already had a rotation ends up with the right one rather
+ * than two. Fewest opening moves wins; then whatever kind of move the alg
+ * opened with; then a U turn, which is quicker to do than a rotation.
+ */
+export function alignAlg(setId, caseId, alg) {
+  if (verifyAlgForCase(setId, caseId, alg, null, true)) return alg;
+  if (puzzleOf(SETS[setId]) !== 'cube') return null;
+  const moves = parseAlg(alg);
+  if (!moves) return null;
+  let i = 0, hadRot = false, hadAuf = false, hadD = false;
+  for (; i < moves.length - 1; i++) {
+    const m = /^([yUd])(2'?|')?$/.exec(moves[i]);
+    if (!m) break;
+    if (m[1] === 'y') hadRot = true; else if (m[1] === 'U') hadAuf = true; else hadD = true;
+  }
+  const rest = moves.slice(i).join(' ');
+  const keepRot = (hadRot || hadD) && !hadAuf;
+
+  const tries = [];
+  for (const r of [0, 1, 3, 2]) {
+    for (const u of [0, 1, 3, 2]) {
+      const lead = hadD && r && (r + u) % 4 === 0 ? [turnOf('d', u)] : [turnOf('y', r), turnOf('U', u)].filter(Boolean);
+      const kind = lead.length === 1 && (keepRot ? !r : !u) ? 1 : 0;
+      tries.push({ alg: [...lead, rest].join(' '), rank: lead.length * 2 + kind });
+    }
+  }
+  tries.sort((a, b) => a.rank - b.rank);
+  return tries.find(t => verifyAlgForCase(setId, caseId, t.alg, null, true))?.alg ?? null;
+}
+
+/**
+ * Two spellings of one algorithm give the same key: `R2'` is `R2`, `Rw` is
+ * `r`, `R' R'` is `R2`, and a closing AUF or rotation is dropped, because
+ * every check here already treats those as free. The library lists each key
+ * once per case.
+ */
+export function algKey(setId, alg) {
+  if (puzzleOf(SETS[setId]) !== 'cube') return String(alg).trim().split(/\s+/).join(' ');
+  const spelt = (parseAlg(alg) || []).map(m => m.replace(/2'$/, '2').replace(/^([URFDLB])w/, (_, f) => f.toLowerCase()));
+  const moves = tidy(spelt.join(' ')).split(' ');
+  const free = sizeOf(setId) === 2 ? /^[UDxyz]/ : /^[Uxyz]/;
+  while (moves.length > 1 && free.test(moves.at(-1))) moves.pop();
+  return moves.join(' ');
+}
 
 /** SVG markup of a pyraminx, skewb or square-1 case; null for cubes. */
 export function caseSvg(setId, caseId) {
@@ -600,11 +666,14 @@ export function displayOrder(setId, caseId) {
   if (!set || !c) return [];
 
   const extra = set.extra?.[caseId] || [];
+  /* By key, not by string: the same alg spelt with a closing AUF in one list
+     and without it in another is one entry. */
+  const keys = new Set(extra.map(a => algKey(setId, a.alg)));
   const base = [
     ...extra,
-    ...(set.library[caseId]?.alternates || []).filter(a => !extra.some(e => e.alg === a.alg)),
+    ...(set.library[caseId]?.alternates || []).filter(a => !keys.has(algKey(setId, a.alg))),
   ].map(a => ({ ...a, source: 'community' }));
-  if (!base.some(a => a.alg === c.alg)) {
+  if (!base.some(a => algKey(setId, a.alg) === algKey(setId, c.alg))) {
     base.push({ alg: c.alg, moveCount: countFor(setId, c.alg), source: 'community' });
   }
   const custom = (_custom.get(caseId) || []).map(a => ({ ...a, source: 'custom' }));
@@ -660,13 +729,17 @@ export const hasCustomOrder = (caseId) => _order.has(caseId);
 export async function addCustom(setId, caseId, alg) {
   const set = SETS[setId];
   const moves = puzzleOf(set) === 'cube' ? parseAlg(alg) : PUZ.parseMoves(set.puzzle, alg);
-  const clean = (moves || []).join(' ');
-  if (!clean) return { ok: false, error: t('That is not move notation for this puzzle.') };
-  if (displayOrder(setId, caseId).some(a => a.alg === clean)) {
-    return { ok: false, error: t('That algorithm is already listed for this case.') };
-  }
-  if (!verifyAlgForCase(setId, caseId, clean)) {
+  const typed = (moves || []).join(' ');
+  if (!typed) return { ok: false, error: t('That is not move notation for this puzzle.') };
+  if (!verifyAlgForCase(setId, caseId, typed)) {
     return { ok: false, error: t('That does not solve this case — checked on a simulated puzzle.') };
+  }
+  /* Stored with the U or y it needs from the angle in the picture, like every
+     listed alg. A set whose free opening moves are not U turns (LSE's M) keeps
+     it as typed. */
+  const clean = alignAlg(setId, caseId, typed) || typed;
+  if (displayOrder(setId, caseId).some(a => algKey(setId, a.alg) === algKey(setId, clean))) {
+    return { ok: false, error: t('That algorithm is already listed for this case.') };
   }
   const list = (_custom.get(caseId) || []).concat({ alg: clean, moveCount: countFor(setId, clean) });
   _custom.set(caseId, list);
@@ -689,16 +762,20 @@ export async function removeCustom(caseId, alg) {
    --------------------------------------------------------- */
 
 /**
- * Run every shipped algorithm against its case. Returns the failures.
+ * Run every listed algorithm against its case, from the angle it is drawn at,
+ * and find any listed twice. Returns the failures.
  * `tools/verify-alglibrary.mjs` and `.html` call it.
  */
 export function auditLibrary() {
   const bad = [];
   for (const set of Object.values(SETS)) {
     for (const c of set.cases) {
-      const listed = [...(set.extra?.[c.id] || []), ...(set.library[c.id]?.alternates || [])];
-      for (const a of listed) {
-        if (!verifyAlgForCase(set.id, c.id, a.alg)) bad.push({ set: set.id, caseId: c.id, alg: a.alg });
+      const seen = new Set();
+      for (const a of displayOrder(set.id, c.id)) {
+        const key = algKey(set.id, a.alg);
+        if (seen.has(key)) bad.push({ set: set.id, caseId: c.id, alg: a.alg, why: 'listed twice' });
+        else if (!verifyAlgForCase(set.id, c.id, a.alg, null, true)) bad.push({ set: set.id, caseId: c.id, alg: a.alg, why: 'does not solve the case as drawn' });
+        seen.add(key);
       }
     }
   }
