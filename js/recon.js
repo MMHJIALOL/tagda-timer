@@ -1,3 +1,4 @@
+import { t, lang } from './i18n.js';
 /* ===========================================================
    Tagda Timer — the reconstruction workbench
 
@@ -77,7 +78,7 @@ const S = {
 };
 
 const PHASE_LABEL = {
-  cross: 'Cross', f2l: 'F2L', oll: 'OLL', pll: 'PLL', done: 'Solved',
+  cross: t('Cross'), f2l: 'F2L', oll: 'OLL', pll: 'PLL', done: t('Solved'),
   fb: 'FB', sb: 'SB', cmll: 'CMLL', eo: 'EO', ulur: 'UL/UR', lse: 'LSE',
 };
 
@@ -269,7 +270,7 @@ function setCross(face) {
 }
 
 /** "white cross" — the one name that means the same whichever way up it is. */
-const crossLabel = (a) => `${colourOf(a.face)?.name || a.face} cross`;
+const crossLabel = (a) => t(`${colourOf(a.face)?.name || a.face} cross`);
 
 function paintCrossPicker() {
   const roux = S.method === 'roux';
@@ -317,9 +318,9 @@ function render() {
   ui.scrambleBox.value = S.scramble;
   // The bar at the top is where you edit the scramble; this is where you read
   // it, next to the cube it made, without looking away from the cube.
-  ui.scrambleEcho.textContent = S.scramble || 'no scramble yet';
+  ui.scrambleEcho.textContent = S.scramble || t('no scramble yet');
   ui.scrambleEcho.classList.toggle('empty', !S.scramble);
-  ui.count.textContent = `${count} move${count === 1 ? '' : 's'} so far`;
+  ui.count.textContent = t(count === 1 ? '{n} move so far' : '{n} moves so far', { n: count });
 
   paintCrossPicker();
   renderSteps(a);
@@ -331,14 +332,14 @@ function render() {
 function renderSteps(a) {
   ui.steps.innerHTML = '';
   if (!S.steps.length) {
-    ui.steps.append(el('div', { class: 'rc-empty', text: 'Nothing yet. Pick a move on the right, or type one.' }));
+    ui.steps.append(el('div', { class: 'rc-empty', text: t('Nothing yet. Pick a move on the right, or type one.') }));
   }
   S.steps.forEach((step, i) => {
     const row = el('div', { class: 'rc-step' },
       el('span', { class: 'ph' + (step.zb ? ' zb' : ''), text: stepLabel(step) }),
       el('span', { class: 'mv', text: step.alg }),
       el('span', { class: 'n', text: String(step.alg.split(/\s+/).filter(t => !/^[xyz]/i.test(t)).length) }),
-      el('button', { class: 'rc-x', title: 'Remove this step', text: '×', onclick: (e) => { e.stopPropagation(); holdHover(e); S.steps.splice(i, 1); commit(); } }),
+      el('button', { class: 'rc-x', title: t('Remove this step'), text: '×', onclick: (e) => { e.stopPropagation(); holdHover(e); S.steps.splice(i, 1); commit(); } }),
     );
     row.addEventListener('mousemove', (e) => hoverPreview(e, row, () => playStep(i)));
     row.addEventListener('mouseleave', () => hoverEnd(row));
@@ -346,7 +347,7 @@ function renderSteps(a) {
   });
   ui.steps.append(el('div', { class: 'rc-step current' },
     el('span', { class: 'ph', text: PHASE_LABEL[a.phase] }),
-    el('span', { class: 'mv', text: a.phase === 'done' ? 'solved' : 'you are here' }),
+    el('span', { class: 'mv', text: a.phase === 'done' ? t('solved') : t('you are here') }),
     el('span', { class: 'n', text: '·' })));
   /* The line you are on is the one you are looking for, and a reconstruction
      eventually outgrows any panel it is given — so the list is always left
@@ -535,17 +536,17 @@ function renderSlots(a) {
   const frame = currentFrame();
   const pick = (label) => { S.slot = label; lastBest = null; renderSuggestions(look()); };
   ui.slots.append(
-    el('span', { class: 'rc-rots-lbl', text: 'slot' }),
+    el('span', { class: 'rc-rots-lbl', text: t('slot') }),
     el('button', {
-      class: 'rc-rot' + (S.slot ? '' : ' on'), text: 'any',
-      title: 'The easiest pair, wherever it is', onclick: () => pick(null),
+      class: 'rc-rot' + (S.slot ? '' : ' on'), text: t('any'),
+      title: t('The easiest pair, wherever it is'), onclick: () => pick(null),
     }));
   const rows = a.slots.map(s => ({ ...s, name: slotLabel(s.label, frame) }))
     .sort((x, y) => SLOT_ORDER.indexOf(x.name) - SLOT_ORDER.indexOf(y.name));
   for (const s of rows) {
     ui.slots.append(el('button', {
       class: 'rc-rot' + (S.slot === s.label ? ' on' : ''), text: s.name,
-      title: s.done ? `The ${s.name} pair is already in` : `Only suggest lines for the ${s.name} pair`,
+      title: s.done ? t('The {slot} pair is already in', { slot: s.name }) : t('Only suggest lines for the {slot} pair', { slot: s.name }),
       disabled: s.done || null, onclick: () => pick(s.label),
     }));
   }
@@ -559,14 +560,14 @@ function renderSuggestions(a) {
   if (a.phase === 'done') {
     ui.dist.className = 'rc-dist';
     ui.dist.innerHTML = '';
-    ui.dist.append(el('span', { class: 'n', text: '✓' }), el('span', { class: 'lbl', text: 'the cube is solved — nice reconstruction' }));
+    ui.dist.append(el('span', { class: 'n', text: '✓' }), el('span', { class: 'lbl', text: t('the cube is solved — nice reconstruction') }));
     ui.sugMore.textContent = '';
     return;
   }
 
   ui.dist.innerHTML = '';
-  ui.dist.append(el('span', { class: 'n', text: '…' }), el('span', { class: 'lbl', text: 'looking for the shortest way on' }));
-  ui.sugList.append(el('div', { class: 'rc-empty', text: 'thinking…' }));
+  ui.dist.append(el('span', { class: 'n', text: '…' }), el('span', { class: 'lbl', text: t('looking for the shortest way on') }));
+  ui.sugList.append(el('div', { class: 'rc-empty', text: t('thinking…') }));
 
   // The ticket drops any result a newer click has already outrun.
   const ticket = ++pending;
@@ -598,7 +599,7 @@ let workerSeq = 0;
 function getWorker() {
   if (worker || workerDead) return worker;
   try {
-    worker = new Worker(new URL('./solver.worker.js', import.meta.url), { type: 'module' });
+    worker = new Worker(new URL(`./solver.worker.js?lang=${lang}`, import.meta.url), { type: 'module' });
     worker.onmessage = (e) => {
       const { id, result, error } = e.data || {};
       const job = workerJobs.get(id);
@@ -652,28 +653,28 @@ function paintSuggestions(res, a) {
   ui.dist.innerHTML = '';
   if (res.best < 0) {
     ui.dist.append(el('span', { class: 'n', text: '?' }),
-      el('span', { class: 'lbl', text: 'nothing found within reach — type a move and carry on' }));
+      el('span', { class: 'lbl', text: t('nothing found within reach — type a move and carry on') }));
   } else {
-    const what = a.phase === 'cross' ? `to finish the ${crossLabel(a)}`
-      : a.phase === 'f2l' ? (S.slot ? `to insert the ${slotLabel(S.slot, currentFrame())} pair` : 'to insert the easiest pair')
-      : a.phase === 'oll' ? 'to orient the last layer'
-      : a.phase === 'fb' ? 'to build the first block'
-      : a.phase === 'sb' ? (a.sqF || a.sqB ? 'to finish the second block' : 'to build a second-block square')
-      : a.phase === 'cmll' ? 'to solve the top corners'
-      : a.phase === 'eo' ? 'to orient the last six edges'
-      : a.phase === 'ulur' ? 'to put UL and UR in'
-      : 'to finish the solve';
+    const what = a.phase === 'cross' ? t('to finish the {cross}', { cross: crossLabel(a) })
+      : a.phase === 'f2l' ? (S.slot ? t('to insert the {slot} pair', { slot: slotLabel(S.slot, currentFrame()) }) : t('to insert the easiest pair'))
+      : a.phase === 'oll' ? t('to orient the last layer')
+      : a.phase === 'fb' ? t('to build the first block')
+      : a.phase === 'sb' ? t(a.sqF || a.sqB ? 'to finish the second block' : 'to build a second-block square')
+      : a.phase === 'cmll' ? t('to solve the top corners')
+      : a.phase === 'eo' ? t('to orient the last six edges')
+      : a.phase === 'ulur' ? t('to put UL and UR in')
+      : t('to finish the solve');
     /* The edges are already up, so this OLL does not need a PLL after it.
        That is worth saying out loud — it is the difference between two algs
        and one, and it is easy to miss looking at the cube. */
-    const zb = res.zb ? ` — edges are already oriented, so ${res.zbBest} finishes it in one` : '';
+    const zb = res.zb ? t(' — edges are already oriented, so {alg} finishes it in one', { alg: res.zbBest }) : '';
     ui.dist.append(el('span', { class: 'n', text: String(res.best) }),
-      el('span', { class: 'lbl', text: `${res.best === 1 ? 'move' : 'moves'} ${what}`
-        + zb + (worse ? ' — that last move cost you' : '') }));
+      el('span', { class: 'lbl', text: `${res.best === 1 ? t('move') : t('moves')} ${what}`
+        + zb + (worse ? t(' — that last move cost you') : '') }));
   }
 
   if (!res.list.length) {
-    ui.sugList.append(el('div', { class: 'rc-empty', text: 'No suggestion for this position. Type your own move.' }));
+    ui.sugList.append(el('div', { class: 'rc-empty', text: t('No suggestion for this position. Type your own move.') }));
     ui.sugMore.textContent = '';
     return;
   }
@@ -683,7 +684,7 @@ function paintSuggestions(res, a) {
     const row = el('div', { class: 'rc-sug' + (zb ? ' zb' : s.moves === res.best ? ' top' : '') },
       el('span', {},
         el('span', { class: 'alg', text: s.alg },
-          zb ? el('span', { class: 'rc-zb-tag', text: 'ZBLL', title: 'One alg for the whole last layer' }) : null),
+          zb ? el('span', { class: 'rc-zb-tag', text: 'ZBLL', title: t('One alg for the whole last layer') }) : null),
         el('span', { class: 'why', text: `${s.label} · ${s.note}` })),
       el('span', { class: 'len', text: String(s.moves) }),
     );
@@ -693,8 +694,8 @@ function paintSuggestions(res, a) {
     ui.sugList.append(row);
   }
   ui.sugMore.textContent = res.partial
-    ? `${res.list.length} shown — the search stopped early on this one`
-    : `${res.list.length} shown · easiest to turn first`;
+    ? t('{n} shown — the search stopped early on this one', { n: res.list.length })
+    : t('{n} shown · easiest to turn first', { n: res.list.length });
 }
 
 /* =========================================================
@@ -738,7 +739,7 @@ function addStep(alg, { typed = false } = {}) {
      wide turn is Rw wherever it goes next — the player, the share card, the
      move string saved on the solve. */
   const clean = canonical(String(alg || '').trim());
-  if (clean === null) { toast("Could not read that - try moves like R U2 F'", { kind: 'bad' }); return; }
+  if (clean === null) { toast(t("Could not read that - try moves like R U2 F'"), { kind: 'bad' }); return; }
   if (!clean) return;
   const last = S.steps.at(-1);
   const a = look();
@@ -833,7 +834,7 @@ function build() {
 
   ui.scrambleBox = el('input', {
     id: 'rc-scramble', class: 'rc-inp', spellcheck: 'false', autocomplete: 'off',
-    'aria-label': 'Scramble to reconstruct', placeholder: 'paste any scramble…',
+    'aria-label': t('Scramble to reconstruct'), placeholder: t('paste any scramble…'),
   });
   ui.scrambleBox.addEventListener('keydown', e => e.stopPropagation());
   ui.scrambleBox.addEventListener('change', () => setScramble(ui.scrambleBox.value));
@@ -849,14 +850,14 @@ function build() {
       el('span', { class: 'brand-text', html: 'Tagda <b>Timer</b>' })),
     el('button', {
       class: 'ghost-btn sm', onclick: () => close(),
-      html: '<svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg> back to timer',
+      html: '<svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg> ' + t('back to timer'),
     }),
     el('div', { class: 'rc-scr' },
-      el('span', { class: 'rc-scr-lbl', text: 'scramble' }),
+      el('span', { class: 'rc-scr-lbl', text: t('scramble') }),
       ui.scrambleBox,
       el('button', {
-        class: 'ghost-btn sm', title: 'Copy the scramble',
-        onclick: () => copy(S.scramble).then(() => toast('Scramble copied')),
+        class: 'ghost-btn sm', title: t('Copy the scramble'),
+        onclick: () => copy(S.scramble).then(() => toast(t('Scramble copied'))),
         html: '<svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/></svg>',
       }),
       /* Share lives in two places on purpose. It reads better as a word next to
@@ -864,25 +865,25 @@ function build() {
          has always been and where hands already go for it, and a button that
          moves is a button that has gone missing. */
       el('button', {
-        class: 'ghost-btn sm rc-share-icon', title: 'Make a share card of this reconstruction',
-        'aria-label': 'Share this reconstruction', onclick: shareCard,
+        class: 'ghost-btn sm rc-share-icon', title: t('Make a share card of this reconstruction'),
+        'aria-label': t('Share this reconstruction'), onclick: shareCard,
         html: '<svg viewBox="0 0 24 24"><path d="M4 12v7a2 2 0 002 2h12a2 2 0 002-2v-7M12 3v13M8 7l4-4 4 4"/></svg>',
       }),
     ),
     ui.pick = el('div', { class: 'rc-pick' },
       ui.pickBtn = el('button', {
         class: 'ghost-btn sm', onclick: togglePicker,
-        html: 'from a solve <svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>',
+        html: t('from a solve') + ' <svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>',
       }),
       ui.pickList = el('div', { class: 'rc-picklist', hidden: true })),
-    el('div', { class: 'rc-title' }, ui.title = el('span', { text: 'Reconstruct' })),
+    el('div', { class: 'rc-title' }, ui.title = el('span', { text: t('Reconstruct') })),
   );
 
   /* ---- left: the cube ---- */
   /* The scramble again, above the cube. The bar at the top of the panel is
      where you change it; this is where you read it while you are looking at
      the thing it produced, which is where you are actually looking. */
-  ui.scrambleEcho = el('div', { class: 'rc-cube-scramble mono', title: 'The scramble this position came from' });
+  ui.scrambleEcho = el('div', { class: 'rc-cube-scramble mono', title: t('The scramble this position came from') });
   ui.stage = el('div', { class: 'rc-cube' });
   ui.faceTags = {};
   ui.faces = el('div', { class: 'rc-faces', hidden: true, 'aria-hidden': 'true' },
@@ -892,7 +893,7 @@ function build() {
   ui.strip = el('div', { class: 'rc-strip' });
 
   ui.replayBtn = el('button', {
-    class: 'ghost-btn sm', text: 'replay the whole solve',
+    class: 'ghost-btn sm', text: t('replay the whole solve'),
     onclick: () => { S.replay = !S.replay; ui.replayBtn.classList.toggle('on', S.replay); renderCube(); },
   });
 
@@ -901,25 +902,25 @@ function build() {
      suggestion after that comes back in the orientation they are holding.
      They cost nothing: a rotation is not a move, and the counter ignores it. */
   ui.rots = el('div', { class: 'rc-rots' },
-    el('span', { class: 'rc-rots-lbl', text: 'turn' }),
+    el('span', { class: 'rc-rots-lbl', text: t('turn') }),
     ...['x', "x'", 'x2', 'y', "y'", 'y2', 'z', "z'", 'z2'].map(r =>
       el('button', {
-        class: 'rc-rot', text: r, title: `Turn the whole cube: ${r}`,
+        class: 'rc-rot', text: r, title: t('Turn the whole cube: {r}', { r }),
         onclick: (e) => { holdHover(e); addStep(r, { typed: true }); },
       })),
   );
 
   const left = el('section', { class: 'panel rc-left' },
     el('div', { class: 'panel-head' },
-      el('span', { text: 'Position' }),
+      el('span', { text: t('Position') }),
       /* How the moves are read: where one step ends and the next begins, and
          what gets suggested. The moves themselves are the same either way. */
       ui.methodBtns = el('span', { class: 'rc-method', role: 'group', 'aria-label': 'Solving method' },
         ...[['cfop', 'CFOP'], ['roux', 'Roux']].map(([m, label]) => el('button', {
           class: 'rc-rot', text: label, dataset: { method: m },
-          title: `Read the solve as ${label}`, onclick: () => setMethod(m),
+          title: t('Read the solve as {method}', { method: label }), onclick: () => setMethod(m),
         }))),
-      ui.count = el('span', { class: 'panel-sub', text: '0 moves so far' })),
+      ui.count = el('span', { class: 'panel-sub', text: t('{n} moves so far', { n: 0 }) })),
     ui.scrambleEcho,
     ui.stage,
     el('div', { class: 'rc-cube-tools' },
@@ -928,13 +929,13 @@ function build() {
         ui.crossLbl = el('span', { text: 'cross' }),
         ui.crossSwatches = el('span', { class: 'rc-swatches' },
           ...CROSS_COLOURS.map(c => el('button', {
-            class: 'rc-swatch', title: `${c.name} cross`, 'aria-label': `${c.name} cross`,
+            class: 'rc-swatch', title: t(`${c.name} cross`), 'aria-label': t(`${c.name} cross`),
             dataset: { face: c.face }, style: { background: c.hex },
             onclick: () => setCross(c.face),
           })),
           el('button', {
-            class: 'rc-swatch auto', title: 'Work out the cross colour from the cube',
-            dataset: { face: 'auto' }, text: 'auto', onclick: () => setCross('auto'),
+            class: 'rc-swatch auto', title: t('Work out the cross colour from the cube'),
+            dataset: { face: 'auto' }, text: t('auto'), onclick: () => setCross('auto'),
           })),
       ),
     ),
@@ -952,44 +953,42 @@ function build() {
   ui.sugMore = el('div', { class: 'rc-more' });
   ui.input = el('input', {
     class: 'rc-inp mono', spellcheck: 'false', autocomplete: 'off',
-    placeholder: 'type a move…', 'aria-label': 'Add moves',
+    placeholder: t('type a move…'), 'aria-label': t('Add moves'),
   });
   const flushInput = wireInput(ui.input);
 
   const right = el('aside', { class: 'rc-right' },
     el('section', { class: 'panel' },
       el('div', { class: 'panel-head' },
-        el('span', { text: 'Reconstruction' }),
+        el('span', { text: t('Reconstruction') }),
         /* Copying it out and making a card of it are the two things you do
            with a finished reconstruction, and they used to be unlabelled icons
            in the scramble bar at the top — next to the reconstruction is where
            you look for them, and a word is what you look for. */
         el('span', { class: 'rc-head-tools' },
           el('button', {
-            class: 'ghost-btn sm', text: 'copy', title: 'Copy the reconstruction as text',
+            class: 'ghost-btn sm', text: t('copy'), title: t('Copy the reconstruction as text'),
             onclick: () => {
-              if (!S.steps.length) return toast('Nothing to copy yet');
-              copy(reconText()).then(() => toast('Reconstruction copied', { kind: 'good' }));
+              if (!S.steps.length) return toast(t('Nothing to copy yet'));
+              copy(reconText()).then(() => toast(t('Reconstruction copied'), { kind: 'good' }));
             },
           }),
           el('button', {
-            class: 'ghost-btn sm rc-share', text: 'share',
-            title: 'Make a share card of this reconstruction', onclick: shareCard,
+            class: 'ghost-btn sm rc-share', text: t('share'),
+            title: t('Make a share card of this reconstruction'), onclick: shareCard,
           }),
-          el('button', { class: 'ghost-btn sm', text: 'undo', onclick: undo }),
-          el('button', { class: 'ghost-btn sm danger', text: 'clear', onclick: () => { S.steps = []; commit(); } }))),
+          el('button', { class: 'ghost-btn sm', text: t('undo'), onclick: undo }),
+          el('button', { class: 'ghost-btn sm danger', text: t('clear'), onclick: () => { S.steps = []; commit(); } }))),
       ui.steps),
     el('section', { class: 'panel' },
       el('div', { class: 'panel-head' },
-        el('span', { text: "What's next" }),
-        ui.phaseTag = el('span', { class: 'panel-sub', text: 'cross' })),
+        el('span', { text: t("What's next") }),
+        ui.phaseTag = el('span', { class: 'panel-sub', text: t('cross') })),
       ui.slots, ui.dist, ui.sugList, ui.sugMore,
       el('div', { class: 'rc-entry' }, ui.input,
-        el('button', { class: 'btn primary', text: 'add', onclick: () => flushInput() })),
+        el('button', { class: 'btn primary', text: t('add'), onclick: () => flushInput() })),
       el('p', { class: 'rc-hint', text:
-        'Types in caps and adds as you go — finish a move, press space. Not in the list? '
-        + 'Type it anyway; the suggestions rebuild from wherever you land. Wide turns are RW, LW, UW; '
-        + 'slices are M, E, S.' }),
+        t('Types in caps and adds as you go — finish a move, press space. Not in the list? Type it anyway; the suggestions rebuild from wherever you land. Wide turns are RW, LW, UW; slices are M, E, S.') }),
     ),
   );
 
@@ -1031,7 +1030,7 @@ function cardSteps() {
 /** Hand the whole thing - scramble, the cube it makes, and the solution - to
     the share sheet. Loaded on demand, like every other card in the app. */
 async function shareCard() {
-  if (!S.steps.length) { toast('Reconstruct something first'); return; }
+  if (!S.steps.length) { toast(t('Reconstruct something first')); return; }
   try {
     const m = await import('./sharedlg.js');
     const steps = cardSteps();
@@ -1044,7 +1043,7 @@ async function shareCard() {
     });
   } catch (err) {
     console.warn('[recon] share', err);
-    toast('Could not open the share sheet', { kind: 'bad' });
+    toast(t('Could not open the share sheet'), { kind: 'bad' });
   }
 }
 
@@ -1060,14 +1059,14 @@ function togglePicker(e) {
   if (!open) return;
   ui.pickList.innerHTML = '';
   if (!S.library.length) {
-    ui.pickList.append(el('div', { class: 'rc-empty', text: 'No solves in this session yet.' }));
+    ui.pickList.append(el('div', { class: 'rc-empty', text: t('No solves in this session yet.') }));
     return;
   }
   for (const item of S.library) {
     ui.pickList.append(el('button', { class: 'rc-pickrow', onclick: () => { ui.pickList.hidden = true; loadFrom(item); } },
       el('b', { text: item.label }),
       el('span', { text: item.scramble }),
-      item.moves ? el('i', { text: 'has a reconstruction' }) : null));
+      item.moves ? el('i', { text: t('has a reconstruction') }) : null));
   }
 }
 
@@ -1088,7 +1087,7 @@ function loadFrom(item) {
 async function mountPlayer() {
   if (player) return;
   if (!await loadTwisty() || !customElements.get('twisty-player')) {
-    ui.stage.append(el('div', { class: 'rc-nocube', text: 'cube preview unavailable' }));
+    ui.stage.append(el('div', { class: 'rc-nocube', text: t('cube preview unavailable') }));
     return;
   }
   player = document.createElement('twisty-player');
@@ -1107,7 +1106,7 @@ async function mountPlayer() {
 
 function setScramble(text) {
   const clean = canonical(String(text || '').replace(/\s+/g, ' ').trim());
-  if (clean === null) { toast('That scramble has a move I cannot read', { kind: 'bad' }); return false; }
+  if (clean === null) { toast(t('That scramble has a move I cannot read'), { kind: 'bad' }); return false; }
   S.scramble = clean;
   S.steps = [];
   S.slot = null;

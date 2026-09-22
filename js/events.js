@@ -1,3 +1,4 @@
+import { t } from './i18n.js';
 /* ===========================================================
    Tagda Timer — WCA event catalogue + scramble mode catalogue
    =========================================================== */
@@ -10,17 +11,17 @@ export const EVENTS = {
   '555':    { name: '5x5x5',              short: '5x5',    puzzle: '5x5x5' },
   '666':    { name: '6x6x6',              short: '6x6',    puzzle: '6x6x6',   wrap: true },
   '777':    { name: '7x7x7',              short: '7x7',    puzzle: '7x7x7',   wrap: true },
-  '333bf':  { name: '3x3 Blindfolded',    short: '3BLD',   puzzle: '3x3x3',   noInspection: true, hideDuringSolve: true },
-  '333fm':  { name: '3x3 Fewest Moves',   short: 'FMC',    puzzle: '3x3x3',   noInspection: true, fmc: true },
-  '333oh':  { name: '3x3 One-Handed',     short: 'OH',     puzzle: '3x3x3' },
+  '333bf':  { name: t('3x3 Blindfolded'),    short: '3BLD',   puzzle: '3x3x3',   noInspection: true, hideDuringSolve: true },
+  '333fm':  { name: t('3x3 Fewest Moves'),   short: 'FMC',    puzzle: '3x3x3',   noInspection: true, fmc: true },
+  '333oh':  { name: t('3x3 One-Handed'),     short: 'OH',     puzzle: '3x3x3' },
   'clock':  { name: 'Clock',              short: 'Clock',  puzzle: 'clock',   wrap: true },
   'minx':   { name: 'Megaminx',           short: 'Minx',   puzzle: 'megaminx', wrap: true, multiline: true },
   'pyram':  { name: 'Pyraminx',           short: 'Pyra',   puzzle: 'pyraminx' },
   'skewb':  { name: 'Skewb',              short: 'Skewb',  puzzle: 'skewb' },
   'sq1':    { name: 'Square-1',           short: 'Sq-1',   puzzle: 'square1', wrap: true },
-  '444bf':  { name: '4x4 Blindfolded',    short: '4BLD',   puzzle: '4x4x4',   noInspection: true, hideDuringSolve: true, wrap: true },
-  '555bf':  { name: '5x5 Blindfolded',    short: '5BLD',   puzzle: '5x5x5',   noInspection: true, hideDuringSolve: true, wrap: true },
-  '333mbf': { name: '3x3 Multi-Blind',    short: 'MBLD',   puzzle: '3x3x3',   noInspection: true, hideDuringSolve: true, multi: true, wrap: true },
+  '444bf':  { name: t('4x4 Blindfolded'),    short: '4BLD',   puzzle: '4x4x4',   noInspection: true, hideDuringSolve: true, wrap: true },
+  '555bf':  { name: t('5x5 Blindfolded'),    short: '5BLD',   puzzle: '5x5x5',   noInspection: true, hideDuringSolve: true, wrap: true },
+  '333mbf': { name: t('3x3 Multi-Blind'),    short: 'MBLD',   puzzle: '3x3x3',   noInspection: true, hideDuringSolve: true, multi: true, wrap: true },
   // Unofficial, but cubing.js ships a random-state FTO scrambler and puzzle.
   'fto':    { name: 'FTO',                short: 'FTO',    puzzle: 'fto',     wrap: true },
   /* A relay is several puzzles inside one attempt, so it has no single puzzle
@@ -48,62 +49,62 @@ export const EVENT_ORDER = [
  *   wca-goal — official scramble, but you only time part of the solve
  */
 export const MODES = {
-  'wca':      { name: 'Random state',   kind: 'wca',      events: '*',    desc: 'Official WCA random-state scramble' },
+  'wca':      { name: t('Random state'),   kind: 'wca',      events: '*',    desc: t('Official WCA random-state scramble') },
 
-  'pll':      { name: 'PLL',            kind: 'case',  set: 'PLL',    events: ['333','333oh'], view: 'LL', desc: 'All 21 permutation cases' },
-  'oll':      { name: 'OLL',            kind: 'case',  set: 'OLL',    events: ['333','333oh'], view: 'LL', desc: 'All 57 orientation cases' },
-  'oll2look': { name: '2-look OLL',     kind: 'case',  set: 'OLL2',   events: ['333','333oh'], view: 'LL', desc: 'Edge orientation + OCLL' },
-  'pll2look': { name: '2-look PLL',     kind: 'case',  set: 'PLL2',   events: ['333','333oh'], view: 'LL', desc: 'Corner swap + edge cycle' },
-  'ocll':     { name: 'OCLL',           kind: 'case',  set: 'OCLL',   events: ['333','333oh'], view: 'LL', desc: 'The 7 corner-orientation cases' },
-  'zbll':     { name: 'ZBLL',           kind: 'case',  set: 'ZBLL',   events: ['333','333oh'], view: 'LL', desc: 'All 472 one-look last layers' },
+  'pll':      { name: 'PLL',            kind: 'case',  set: 'PLL',    events: ['333','333oh'], view: 'LL', desc: t('All 21 permutation cases') },
+  'oll':      { name: 'OLL',            kind: 'case',  set: 'OLL',    events: ['333','333oh'], view: 'LL', desc: t('All 57 orientation cases') },
+  'oll2look': { name: t('2-look OLL'),     kind: 'case',  set: 'OLL2',   events: ['333','333oh'], view: 'LL', desc: t('Edge orientation + OCLL') },
+  'pll2look': { name: t('2-look PLL'),     kind: 'case',  set: 'PLL2',   events: ['333','333oh'], view: 'LL', desc: t('Corner swap + edge cycle') },
+  'ocll':     { name: 'OCLL',           kind: 'case',  set: 'OCLL',   events: ['333','333oh'], view: 'LL', desc: t('The 7 corner-orientation cases') },
+  'zbll':     { name: 'ZBLL',           kind: 'case',  set: 'ZBLL',   events: ['333','333oh'], view: 'LL', desc: t('All 472 one-look last layers') },
   // No `view` for F2L: the pair lives in the bottom two layers, so a
   // last-layer picture would show nothing. Whichever preview you have
   // chosen is the right one here.
-  'f2l':      { name: 'F2L',            kind: 'case',  set: 'F2L',    events: ['333','333oh'], desc: 'All 41 first-two-layers cases' },
+  'f2l':      { name: 'F2L',            kind: 'case',  set: 'F2L',    events: ['333','333oh'], desc: t('All 41 first-two-layers cases') },
 
   /* 2x2. The scramble is built exactly the way a 3x3 case scramble is —
      AUF + the inverse of the algorithm + AUF — so per-case statistics work
      here for the same reason they work there. No `view`: a last-layer
      stickering on a 2x2 would hide the bottom layer, and for EG and PBL the
      bottom layer is half the case. */
-  '222oll':   { name: '2x2 OLL',        kind: 'case',  set: 'OLL222', events: ['222'], desc: 'Orient the top — first step of Ortega' },
-  '222pbl':   { name: '2x2 PBL',        kind: 'case',  set: 'PBL222', events: ['222'], desc: 'Permute both layers — last step of Ortega' },
-  '222cll':   { name: '2x2 CLL',        kind: 'case',  set: 'CLL222', events: ['222'], desc: 'Bottom done, top in one algorithm' },
-  '222eg1':   { name: '2x2 EG-1',       kind: 'case',  set: 'EG1222', events: ['222'], desc: 'Bottom with one adjacent swap' },
-  '222eg2':   { name: '2x2 EG-2',       kind: 'case',  set: 'EG2222', events: ['222'], desc: 'Bottom with a diagonal swap' },
+  '222oll':   { name: '2x2 OLL',        kind: 'case',  set: 'OLL222', events: ['222'], desc: t('Orient the top — first step of Ortega') },
+  '222pbl':   { name: '2x2 PBL',        kind: 'case',  set: 'PBL222', events: ['222'], desc: t('Permute both layers — last step of Ortega') },
+  '222cll':   { name: '2x2 CLL',        kind: 'case',  set: 'CLL222', events: ['222'], desc: t('Bottom done, top in one algorithm') },
+  '222eg1':   { name: t('2x2 EG-1'),       kind: 'case',  set: 'EG1222', events: ['222'], desc: t('Bottom with one adjacent swap') },
+  '222eg2':   { name: t('2x2 EG-2'),       kind: 'case',  set: 'EG2222', events: ['222'], desc: t('Bottom with a diagonal swap') },
 
   /* Sets that live in the algorithm library. `set` is the library's own set
      id, and the case list is fetched the first time the mode is used — see
      loadSetFor in scramble.js — so none of them costs the timer anything until
      someone picks one. */
-  'wv':        { name: 'Winter Variation', kind: 'case', set: 'WV',        events: ['333','333oh'], desc: 'Insert the last pair and orient the last layer' },
-  'coll':      { name: 'COLL',             kind: 'case', set: 'COLL',      events: ['333','333oh'], view: 'LL', desc: 'Last-layer corners with the edges oriented' },
-  'ollcp':     { name: 'OLLCP',            kind: 'case', set: 'OLLCP',     events: ['333','333oh'], view: 'LL', desc: 'Orient the last layer and permute its corners' },
-  'cmll2look': { name: '2-look CMLL',      kind: 'case', set: 'CMLL2L',    events: ['333','333oh'], desc: 'Roux corners: orient, then permute' },
-  'cmll':      { name: 'CMLL',             kind: 'case', set: 'CMLL',      events: ['333','333oh'], desc: 'Roux last-layer corners in one look' },
-  'lseeo':     { name: 'LSE EO',           kind: 'case', set: 'LSEEO',     events: ['333','333oh'], desc: 'Orient the last six edges' },
-  'lseeolr':   { name: 'EOLR',             kind: 'case', set: 'LSEEOLR',   events: ['333','333oh'], desc: 'Orient the edges and bring UL and UR down' },
-  'ohcmll':    { name: 'OH CMLL',          kind: 'case', set: 'OHCMLL',    events: ['333oh','333'], desc: 'CMLL picked for one hand' },
-  '444pllp':   { name: 'PLL parity',       kind: 'case', set: '444-PLLP',  events: ['444'], desc: 'Last layers that come with PLL parity' },
-  'pyrall':    { name: 'Last layer',       kind: 'case', set: 'PYRA-LL',   events: ['pyram'], desc: 'The last three edges of layer-by-layer' },
-  'pyral4e':   { name: 'L4E',              kind: 'case', set: 'PYRA-L4E',  events: ['pyram'], desc: 'The last four edges, after a V' },
-  'sarahint':  { name: "Sarah's Intermediate", kind: 'case', set: 'SKEWB-SI', events: ['skewb'], desc: 'The opposite face with sledges and hedges' },
-  'sarahadv':  { name: "Sarah's Advanced", kind: 'case', set: 'SKEWB-SA',  events: ['skewb'], desc: 'Everything after the first face' },
-  'sq1shape':  { name: 'Cube shape',       kind: 'case', set: 'SQ1-SHAPE', events: ['sq1'], desc: 'Back to a cube from any shape' },
-  'sq1csp':    { name: 'CSP',              kind: 'case', set: 'SQ1-CSP',   events: ['sq1'], desc: 'Cube shape with parity fixed' },
-  'sq1obl':    { name: 'OBL',              kind: 'case', set: 'SQ1-OBL',   events: ['sq1'], desc: 'Every piece onto its own layer' },
-  'sq1eo':     { name: 'EO',               kind: 'case', set: 'SQ1-EO',    events: ['sq1'], desc: 'Edges onto their layers' },
-  'sq1cp':     { name: 'CP',               kind: 'case', set: 'SQ1-CP',    events: ['sq1'], desc: 'Permute the corners' },
-  'sq1ep':     { name: 'EP',               kind: 'case', set: 'SQ1-EP',    events: ['sq1'], desc: 'Permute the edges' },
+  'wv':        { name: t('Winter Variation'), kind: 'case', set: 'WV',        events: ['333','333oh'], desc: t('Insert the last pair and orient the last layer') },
+  'coll':      { name: 'COLL',             kind: 'case', set: 'COLL',      events: ['333','333oh'], view: 'LL', desc: t('Last-layer corners with the edges oriented') },
+  'ollcp':     { name: 'OLLCP',            kind: 'case', set: 'OLLCP',     events: ['333','333oh'], view: 'LL', desc: t('Orient the last layer and permute its corners') },
+  'cmll2look': { name: t('2-look CMLL'),      kind: 'case', set: 'CMLL2L',    events: ['333','333oh'], desc: t('Roux corners: orient, then permute') },
+  'cmll':      { name: 'CMLL',             kind: 'case', set: 'CMLL',      events: ['333','333oh'], desc: t('Roux last-layer corners in one look') },
+  'lseeo':     { name: 'LSE EO',           kind: 'case', set: 'LSEEO',     events: ['333','333oh'], desc: t('Orient the last six edges') },
+  'lseeolr':   { name: 'EOLR',             kind: 'case', set: 'LSEEOLR',   events: ['333','333oh'], desc: t('Orient the edges and bring UL and UR down') },
+  'ohcmll':    { name: 'OH CMLL',          kind: 'case', set: 'OHCMLL',    events: ['333oh','333'], desc: t('CMLL picked for one hand') },
+  '444pllp':   { name: t('PLL parity'),       kind: 'case', set: '444-PLLP',  events: ['444'], desc: t('Last layers that come with PLL parity') },
+  'pyrall':    { name: t('Last layer'),       kind: 'case', set: 'PYRA-LL',   events: ['pyram'], desc: t('The last three edges of layer-by-layer') },
+  'pyral4e':   { name: 'L4E',              kind: 'case', set: 'PYRA-L4E',  events: ['pyram'], desc: t('The last four edges, after a V') },
+  'sarahint':  { name: t("Sarah's Intermediate"), kind: 'case', set: 'SKEWB-SI', events: ['skewb'], desc: t('The opposite face with sledges and hedges') },
+  'sarahadv':  { name: t("Sarah's Advanced"), kind: 'case', set: 'SKEWB-SA',  events: ['skewb'], desc: t('Everything after the first face') },
+  'sq1shape':  { name: t('Cube shape'),       kind: 'case', set: 'SQ1-SHAPE', events: ['sq1'], desc: t('Back to a cube from any shape') },
+  'sq1csp':    { name: 'CSP',              kind: 'case', set: 'SQ1-CSP',   events: ['sq1'], desc: t('Cube shape with parity fixed') },
+  'sq1obl':    { name: 'OBL',              kind: 'case', set: 'SQ1-OBL',   events: ['sq1'], desc: t('Every piece onto its own layer') },
+  'sq1eo':     { name: 'EO',               kind: 'case', set: 'SQ1-EO',    events: ['sq1'], desc: t('Edges onto their layers') },
+  'sq1cp':     { name: 'CP',               kind: 'case', set: 'SQ1-CP',    events: ['sq1'], desc: t('Permute the corners') },
+  'sq1ep':     { name: 'EP',               kind: 'case', set: 'SQ1-EP',    events: ['sq1'], desc: t('Permute the edges') },
 
-  'll':       { name: 'Last layer',     kind: 'compose', events: ['333','333oh'], view: 'LL', desc: 'Random OLL + PLL together' },
-  'cross':    { name: 'Cross solved',   kind: 'trigger', depth: [5, 7], events: ['333','333oh'], desc: 'Cross is done — practise F2L + LL' },
-  'lastslot': { name: 'Last slot + LL', kind: 'trigger', depth: [3, 4],  events: ['333','333oh'], view: 'LL3', desc: 'Three pairs in, one to go' },
-  '2gen':     { name: '2-gen (R,U)',    kind: 'subgroup', pool: '2gen', depth: [12, 15], events: ['333','333oh'], desc: 'Only R and U turns' },
-  'lse':      { name: 'Roux LSE (M,U)', kind: 'subgroup', pool: 'lse',  depth: [10, 14], events: ['333','333oh'], desc: 'Last six edges' },
-  'roux':     { name: 'Roux L10P',      kind: 'subgroup', pool: 'roux', depth: [12, 16], events: ['333'], desc: 'R, U and M moves only' },
+  'll':       { name: t('Last layer'),     kind: 'compose', events: ['333','333oh'], view: 'LL', desc: t('Random OLL + PLL together') },
+  'cross':    { name: t('Cross solved'),   kind: 'trigger', depth: [5, 7], events: ['333','333oh'], desc: t('Cross is done — practise F2L + LL') },
+  'lastslot': { name: t('Last slot + LL'), kind: 'trigger', depth: [3, 4],  events: ['333','333oh'], view: 'LL3', desc: t('Three pairs in, one to go') },
+  '2gen':     { name: t('2-gen (R,U)'),    kind: 'subgroup', pool: '2gen', depth: [12, 15], events: ['333','333oh'], desc: t('Only R and U turns') },
+  'lse':      { name: t('Roux LSE (M,U)'), kind: 'subgroup', pool: 'lse',  depth: [10, 14], events: ['333','333oh'], desc: t('Last six edges') },
+  'roux':     { name: t('Roux L10P'),      kind: 'subgroup', pool: 'roux', depth: [12, 16], events: ['333'], desc: t('R, U and M moves only') },
 
-  'crossgoal':{ name: 'Cross practice', kind: 'wca-goal', events: ['333','333oh'], desc: 'Full WCA scramble — time your cross only' },
+  'crossgoal':{ name: t('Cross practice'), kind: 'wca-goal', events: ['333','333oh'], desc: t('Full WCA scramble — time your cross only') },
 };
 
 export const MODE_ORDER = [

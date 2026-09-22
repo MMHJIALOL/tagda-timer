@@ -1,3 +1,4 @@
+import { t } from './i18n.js';
 /* ===========================================================
    Tagda Timer — Learn mode: the spaced-repetition scheduler.
 
@@ -159,10 +160,10 @@ export function summarize(states, allowedIds, now = Date.now()) {
 export function dueLabel(state, now = Date.now()) {
   if (!state || !state.seen) return 'new';
   const ms = state.dueAt - now;
-  if (ms <= 0) return 'again this session';
+  if (ms <= 0) return t('again this session');
   const days = Math.round(ms / DAY);
-  if (days <= 1) return 'due tomorrow';
-  return `due in ${days} days`;
+  if (days <= 1) return t('due tomorrow');
+  return t('due in {n} days', { n: days });
 }
 
 /* ---------------------------------------------------------

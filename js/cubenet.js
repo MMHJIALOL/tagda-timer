@@ -1,3 +1,4 @@
+import { t } from './i18n.js';
 /* ===========================================================
    Tagda Timer — NxN cube state + flat-net drawing
 

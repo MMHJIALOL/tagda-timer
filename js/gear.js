@@ -1,3 +1,4 @@
+import { t } from './i18n.js';
 /* ===========================================================
    Tagda Timer — the gear log
    Which cube you are on, what is in it, and what you changed when.
@@ -65,18 +66,18 @@ export function newGear(fields = {}) {
 
 /** What to call a cube in a list: your own name for it, else what it is. */
 export function gearLabel(g) {
-  if (!g) return 'Untitled cube';
+  if (!g) return t('Untitled cube');
   if (g.name) return g.name;
   const made = [g.brand, g.model].filter(Boolean).join(' ');
-  return made || 'Untitled cube';
+  return made || t('Untitled cube');
 }
 
 export const LOG_KINDS = {
   lubed:   'Re-lubed',
-  tension: 'Tension changed',
-  magnets: 'Magnets changed',
+  tension: t('Tension changed'),
+  magnets: t('Magnets changed'),
   cleaned: 'Cleaned',
-  broke:   'Broke / repaired',
+  broke:   t('Broke / repaired'),
   note:    'Note',
 };
 

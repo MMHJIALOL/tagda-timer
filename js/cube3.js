@@ -1,3 +1,4 @@
+import { t } from './i18n.js';
 /* ===========================================================
    Tagda Timer — a 3x3 the app can reason about
 

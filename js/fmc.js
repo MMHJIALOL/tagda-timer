@@ -1,3 +1,4 @@
+import { t } from './i18n.js';
 /* ===========================================================
    Tagda Timer — Fewest Moves: reading and judging a solution
 
@@ -58,7 +59,7 @@ export function parseSolution(text) {
   if (BRACKETS.test(raw)) {
     const tok = raw.split(/\s+/).find(t => BRACKETS.test(t)) || raw.slice(0, 8);
     return { tokens: null, warnings, error: named(tok,
-      'brackets are not a move. Write the solution out in the order it is turned (WCA E2c2)') };
+      t('brackets are not a move. Write the solution out in the order it is turned (WCA E2c2)')) };
   }
   if (!raw) return { tokens: [], warnings, error: null };
 
@@ -68,8 +69,8 @@ export function parseSolution(text) {
     const m = TOKEN.exec(tok);
     if (!m) {
       const why = /^[MES]/i.test(tok)
-        ? 'slice moves are not 3x3x3 notation (WCA 12a, E2c4)'
-        : 'not a move defined in WCA 12a';
+        ? t('slice moves are not 3x3x3 notation (WCA 12a, E2c4)')
+        : t('not a move defined in WCA 12a');
       return { tokens: null, warnings, error: named(tok, why) };
     }
     const [, count, letter, wideMark, suffix] = m;
@@ -77,7 +78,7 @@ export function parseSolution(text) {
 
     if ('XYZxyz'.includes(letter)) {
       if (wideMark || count) {
-        return { tokens: null, warnings, error: named(tok, 'a rotation is written x, y or z on its own (WCA 12a4)') };
+        return { tokens: null, warnings, error: named(tok, t('a rotation is written x, y or z on its own (WCA 12a4)')) };
       }
       tokens.push({ tok, letter: letter.toLowerCase(), wide: false, amount, rotation: true });
       continue;
@@ -85,11 +86,11 @@ export function parseSolution(text) {
 
     const wide = !!wideMark;
     if (count && !wide) {
-      return { tokens: null, warnings, error: named(tok, 'only wide turns take a number in front (WCA 12a2)') };
+      return { tokens: null, warnings, error: named(tok, t('only wide turns take a number in front (WCA 12a2)')) };
     }
     if (wide && count && count !== '2') {
       return { tokens: null, warnings, error: named(tok,
-        `${count} layers is not a turn on a 3x3x3 — only Rw (or 2Rw) exists here (WCA 12a2+)`) };
+        t('{n} layers is not a turn on a 3x3x3 — only Rw (or 2Rw) exists here (WCA 12a2+)', { n: count })) };
     }
     /* E2c6+ is explicit that a bare `r` is `R` and not `Rw`, which is the
        opposite of what every other cubing program on the machine does with
@@ -97,7 +98,7 @@ export function parseSolution(text) {
        silently means something else is the one way to lose an attempt to
        notation rather than to cubing. */
     if (!wide && letter === letter.toLowerCase()) {
-      warnings.push(`${tok} counts as ${letter.toUpperCase()}${amount === 2 ? '2' : amount === 3 ? "'" : ''}, not a wide turn (WCA E2c6)`);
+      warnings.push(t('{tok} counts as {move}, not a wide turn (WCA E2c6)', { tok, move: letter.toUpperCase() + (amount === 2 ? '2' : amount === 3 ? "'" : '') }));
     }
     tokens.push({ tok, letter: letter.toUpperCase(), wide, amount, rotation: false });
   }
@@ -148,14 +149,14 @@ export function validateFmc(scramble, solution) {
   if (etm > MAX_ETM) {
     return { ok: false, moves: obtm, etm, solved: false, warnings, error: {
       token: null,
-      message: `${etm} moves in Execution Turn Metric — the limit is ${MAX_ETM}, rotations included (WCA E2d1)`,
+      message: t('{n} moves in Execution Turn Metric — the limit is {max}, rotations included (WCA E2d1)', { n: etm, max: MAX_ETM }),
     } };
   }
 
   const scrambled = applyAlg(SOLVED, String(scramble || ''));
   if (!scrambled) {
     return { ok: false, moves: obtm, etm, solved: false, warnings, error: {
-      token: null, message: 'the scramble could not be read',
+      token: null, message: t('the scramble could not be read'),
     } };
   }
   if (!etm) return { ok: false, moves: 0, etm: 0, solved: false, error: null, warnings };

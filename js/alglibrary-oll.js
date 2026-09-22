@@ -1,3 +1,4 @@
+import { t } from './i18n.js';
 /* ===========================================================
    Tagda Timer — OLL algorithm library: all 57 cases.
 
@@ -25,14 +26,14 @@
 
 export const OLL_LIBRARY = {
   OLL1: { alternates: [
-    { alg: "R U2 R2 F R F' U2 R' F R F'", moveCount: 11, notes: "this app's own default for the case" },
+    { alg: "R U2 R2 F R F' U2 R' F R F'", moveCount: 11, notes: t("this app's own default for the case") },
     { alg: "R U2 R' R' F R F' U2 R' F R F'", moveCount: 12 },
     { alg: "y R U' R2 D' r U' r' D R2 U R'", moveCount: 12 },
     { alg: "f R U R' U' R f' U' r' U' R U M'", moveCount: 13 },
   ] },
   OLL2: { alternates: [
     { alg: "f U R U' R' f' F U R U' R' F'", moveCount: 12 },
-    { alg: "F R U R' U' F' f R U R' U' f'", moveCount: 12, notes: "this app's own default for the case" },
+    { alg: "F R U R' U' F' f R U R' U' f'", moveCount: 12, notes: t("this app's own default for the case") },
     { alg: "y' R U' R2 D' r U r' D R2 U R'", moveCount: 12 },
     { alg: "F R U R' U' S R U R' U' f'", moveCount: 11 },
   ] },
@@ -47,17 +48,17 @@ export const OLL_LIBRARY = {
     { alg: "R' F R F' U' S R' U' R U R S'", moveCount: 12 },
   ] },
   OLL5: { alternates: [
-    { alg: "r' U2 R U R' U r", moveCount: 7, notes: "this app's own default for the case" },
+    { alg: "r' U2 R U R' U r", moveCount: 7, notes: t("this app's own default for the case") },
     { alg: "y2 l' U2 L U L' U l", moveCount: 8 },
     { alg: "y2 R' F2 r U r' F R", moveCount: 8 },
   ] },
   OLL6: { alternates: [
-    { alg: "r U2 R' U' R U' r'", moveCount: 7, notes: "this app's own default for the case" },
+    { alg: "r U2 R' U' R U' r'", moveCount: 7, notes: t("this app's own default for the case") },
     { alg: "F U' R2 D R' U' R D' R2 U F'", moveCount: 11 },
     { alg: "y2 l U2 L' U' L U' l'", moveCount: 8 },
   ] },
   OLL7: { alternates: [
-    { alg: "r U R' U R U2 r'", moveCount: 7, notes: "this app's own default for the case" },
+    { alg: "r U R' U R U2 r'", moveCount: 7, notes: t("this app's own default for the case") },
     { alg: "S' R U R' U R U2 R' U S", moveCount: 10 },
     { alg: "L' U2 L U2 L F' L' F", moveCount: 8 },
   ] },
@@ -73,7 +74,7 @@ export const OLL_LIBRARY = {
     { alg: "y2 F' U' F r U' r' U r U r'", moveCount: 11 },
   ] },
   OLL10: { alternates: [
-    { alg: "R U R' U R' F R F' R U2 R'", moveCount: 11, notes: "this app's own default for the case" },
+    { alg: "R U R' U R' F R F' R U2 R'", moveCount: 11, notes: t("this app's own default for the case") },
     { alg: "y F U F' R' F R U' R' F' R", moveCount: 11 },
     { alg: "y M' R' U2 R U R' U R U M", moveCount: 11 },
   ] },
@@ -91,10 +92,10 @@ export const OLL_LIBRARY = {
   OLL13: { alternates: [
     { alg: "r U' r' U' r U r' F' U F", moveCount: 10 },
     { alg: "F U R U2 R' U' R U R' F'", moveCount: 10 },
-    { alg: "F U R U' R2 F' R U R U' R'", moveCount: 11, notes: "this app's own default for the case" },
+    { alg: "F U R U' R2 F' R U R U' R'", moveCount: 11, notes: t("this app's own default for the case") },
   ] },
   OLL14: { alternates: [
-    { alg: "R' F R U R' F' R F U' F'", moveCount: 10, notes: "this app's own default for the case" },
+    { alg: "R' F R U R' F' R F U' F'", moveCount: 10, notes: t("this app's own default for the case") },
     { alg: "r U R' U' r' F R2 U R' U' F'", moveCount: 11 },
     { alg: "l' U l U l' U' l F U' F'", moveCount: 10 },
   ] },
@@ -104,7 +105,7 @@ export const OLL_LIBRARY = {
     { alg: "r' U' M' U' R U r' U r", moveCount: 9 },
   ] },
   OLL16: { alternates: [
-    { alg: "r U r' R U R' U' r U' r'", moveCount: 10, notes: "this app's own default for the case" },
+    { alg: "r U r' R U R' U' r U' r'", moveCount: 10, notes: t("this app's own default for the case") },
     { alg: "r U M U R' U' r U' r'", moveCount: 9 },
     { alg: "y2 R' F R U R' U' F' R U' R' U2 R", moveCount: 13 },
   ] },
@@ -114,7 +115,7 @@ export const OLL_LIBRARY = {
     { alg: "y2 F R' F' R2 r' U R U' R' U' M'", moveCount: 12 },
   ] },
   OLL18: { alternates: [
-    { alg: "r U R' U R U2 r2 U' R U' R' U2 r", moveCount: 13, notes: "this app's own default for the case" },
+    { alg: "r U R' U R U2 r2 U' R U' R' U2 r", moveCount: 13, notes: t("this app's own default for the case") },
     { alg: "y R U2 R' R' F R F' U2 M' U R U' r'", moveCount: 14 },
     { alg: "y R U2 R2 F R F' U2 M' U R U' r'", moveCount: 13 },
     { alg: "y F S' R U' R' S R U2 R' U' F'", moveCount: 12 },
@@ -126,7 +127,7 @@ export const OLL_LIBRARY = {
   ] },
   OLL20: { alternates: [
     { alg: "r U R' U' M2' U R U' R' U' M'", moveCount: 11 },
-    { alg: "r U R' U' M2 U R U' R' U' M'", moveCount: 11, notes: "this app's own default for the case" },
+    { alg: "r U R' U' M2 U R U' R' U' M'", moveCount: 11, notes: t("this app's own default for the case") },
     { alg: "M' U2 M U2 M' U M U2 M' U2 M", moveCount: 11 },
     { alg: "S' R U R' S U' M' U R U' r'", moveCount: 11 },
   ] },
@@ -139,7 +140,7 @@ export const OLL_LIBRARY = {
   OLL22: { alternates: [
     { alg: "R' U2' R2' U R2' U R2' U2' R'", moveCount: 9 },
     { alg: "R U2 R2' U' R2 U' R2' U' U' R", moveCount: 10 },
-    { alg: "R U2 R2 U' R2 U' R2 U2 R", moveCount: 9, notes: "this app's own default for the case" },
+    { alg: "R U2 R2 U' R2 U' R2 U2 R", moveCount: 9, notes: t("this app's own default for the case") },
     { alg: "R' U2 R2 U R2 U R2 U2 R'", moveCount: 9 },
     { alg: "f R U R' U' S' R U R' U' F'", moveCount: 11 },
   ] },
@@ -149,7 +150,7 @@ export const OLL_LIBRARY = {
     { alg: "R U R' U R U2 R2 U' R U' R' U2 R", moveCount: 13 },
   ] },
   OLL24: { alternates: [
-    { alg: "r U R' U' r' F R F'", moveCount: 8, notes: "this app's own default for the case" },
+    { alg: "r U R' U' r' F R F'", moveCount: 8, notes: t("this app's own default for the case") },
     { alg: "y2 R' F' r U R U' r' F", moveCount: 9 },
     { alg: "y' x' R U R' D R U' R' D' x", moveCount: 11 },
   ] },
@@ -164,13 +165,13 @@ export const OLL_LIBRARY = {
     { alg: "y2 L' U' L U' L' U2 L", moveCount: 8 },
   ] },
   OLL27: { alternates: [
-    { alg: "R U R' U R U2 R'", moveCount: 7, notes: "this app's own default for the case" },
+    { alg: "R U R' U R U2 R'", moveCount: 7, notes: t("this app's own default for the case") },
     { alg: "y' R' U2 R U R' U R", moveCount: 8 },
     { alg: "y L' U2 L U L' U L", moveCount: 8 },
   ] },
   OLL28: { alternates: [
     { alg: "r U R' U' M U R U' R'", moveCount: 9 },
-    { alg: "r U R' U' r' R U R U' R'", moveCount: 10, notes: "this app's own default for the case" },
+    { alg: "r U R' U' r' R U R U' R'", moveCount: 10, notes: t("this app's own default for the case") },
     { alg: "R' F R S R' F' R S'", moveCount: 8 },
   ] },
   OLL29: { alternates: [
@@ -185,7 +186,7 @@ export const OLL_LIBRARY = {
     { alg: "y2 F R' F R2 U' R' U' R U R' F2", moveCount: 12 },
   ] },
   OLL31: { alternates: [
-    { alg: "R' U' F U R U' R' F' R", moveCount: 9, notes: "this app's own default for the case" },
+    { alg: "R' U' F U R U' R' F' R", moveCount: 9, notes: t("this app's own default for the case") },
     { alg: "y2 S' L' U' L U L F' L' f", moveCount: 10 },
     { alg: "y S R U R' U' f' U' F", moveCount: 9 },
   ] },
@@ -195,7 +196,7 @@ export const OLL_LIBRARY = {
     { alg: "R U B' U' R' U R B R'", moveCount: 9 },
   ] },
   OLL33: { alternates: [
-    { alg: "R U R' U' R' F R F'", moveCount: 8, notes: "this app's own default for the case" },
+    { alg: "R U R' U' R' F R F'", moveCount: 8, notes: t("this app's own default for the case") },
     { alg: "y2 L' U' L U L F' L' F", moveCount: 9 },
     { alg: "y2 r' F' r U r U' r' F", moveCount: 9 },
   ] },
@@ -205,7 +206,7 @@ export const OLL_LIBRARY = {
     { alg: "F R U R' U' R' F' r U R U' r'", moveCount: 12 },
   ] },
   OLL35: { alternates: [
-    { alg: "R U2 R2 F R F' R U2 R'", moveCount: 9, notes: "this app's own default for the case" },
+    { alg: "R U2 R2 F R F' R U2 R'", moveCount: 9, notes: t("this app's own default for the case") },
     { alg: "R U2 R' R' F R F' R U2 R'", moveCount: 10 },
     { alg: "f R U R' U' f' R U R' U R U2 R'", moveCount: 13 },
     { alg: "R U2 R' d' R' F R U' R' F' R", moveCount: 11 },
@@ -217,11 +218,11 @@ export const OLL_LIBRARY = {
   ] },
   OLL37: { alternates: [
     { alg: "F R U' R' U' R U R' F'", moveCount: 9 },
-    { alg: "F R' F' R U R U' R'", moveCount: 8, notes: "this app's own default for the case" },
+    { alg: "F R' F' R U R U' R'", moveCount: 8, notes: t("this app's own default for the case") },
     { alg: "y F' r U r' U' r' F r", moveCount: 9 },
   ] },
   OLL38: { alternates: [
-    { alg: "R U R' U R U' R' U' R' F R F'", moveCount: 12, notes: "this app's own default for the case" },
+    { alg: "R U R' U R U' R' U' R' F R F'", moveCount: 12, notes: t("this app's own default for the case") },
     { alg: "y F R U' R' S U' R U R' f'", moveCount: 11 },
     { alg: "r U R' U' r' F R U R U' R' F'", moveCount: 12 },
   ] },
@@ -241,7 +242,7 @@ export const OLL_LIBRARY = {
     { alg: "y' S U' R' F' U' F U R S'", moveCount: 10 },
   ] },
   OLL42: { alternates: [
-    { alg: "R' U' R U' R' U2 R F R U R' U' F'", moveCount: 13, notes: "this app's own default for the case" },
+    { alg: "R' U' R U' R' U2 R F R U R' U' F'", moveCount: 13, notes: t("this app's own default for the case") },
     { alg: "y F S' R U R' U' F' U S", moveCount: 10 },
     { alg: "y R' F R F' R' F R F' R U R' U' R U R'", moveCount: 16 },
   ] },
@@ -256,22 +257,22 @@ export const OLL_LIBRARY = {
     { alg: "y R U B U' B' R'", moveCount: 7 },
   ] },
   OLL45: { alternates: [
-    { alg: "F R U R' U' F'", moveCount: 6, notes: "this app's own default for the case" },
+    { alg: "F R U R' U' F'", moveCount: 6, notes: t("this app's own default for the case") },
     { alg: "y R' F' U' F U R", moveCount: 7 },
     { alg: "y2 f U R U' R' f'", moveCount: 7 },
   ] },
   OLL46: { alternates: [
-    { alg: "R' U' R' F R F' U R", moveCount: 8, notes: "this app's own default for the case" },
+    { alg: "R' U' R' F R F' U R", moveCount: 8, notes: t("this app's own default for the case") },
     { alg: "R' F' U' F R U' R' U2 R", moveCount: 9 },
     { alg: "y F R U R' U' F' U' R U R' U R U2 R'", moveCount: 15 },
   ] },
   OLL47: { alternates: [
-    { alg: "F' L' U' L U L' U' L U F", moveCount: 10, notes: "this app's own default for the case" },
+    { alg: "F' L' U' L U L' U' L U F", moveCount: 10, notes: t("this app's own default for the case") },
     { alg: "y' F R' F' R U2 R U' R' U R U2 R'", moveCount: 13 },
     { alg: "R' U' R' F R F' R' F R F' U R", moveCount: 12 },
   ] },
   OLL48: { alternates: [
-    { alg: "F R U R' U' R U R' U' F'", moveCount: 10, notes: "this app's own default for the case" },
+    { alg: "F R U R' U' R U R' U' F'", moveCount: 10, notes: t("this app's own default for the case") },
     { alg: "y2 f U R U' R' U R U' R' f'", moveCount: 11 },
     { alg: "R U2 R' U' R U R' U2 R' F R F'", moveCount: 12 },
   ] },
@@ -281,7 +282,7 @@ export const OLL_LIBRARY = {
     { alg: "R B' R2 F R2 B R2 F' R", moveCount: 9 },
   ] },
   OLL50: { alternates: [
-    { alg: "r' U r2 U' r2 U' r2 U r'", moveCount: 9, notes: "this app's own default for the case" },
+    { alg: "r' U r2 U' r2 U' r2 U r'", moveCount: 9, notes: t("this app's own default for the case") },
     { alg: "y2 R' F R2 B' R2 F' R2 B R'", moveCount: 10 },
     { alg: "y' R U2 R' U' R U' R' F R U R' U' F'", moveCount: 14 },
   ] },
@@ -293,7 +294,7 @@ export const OLL_LIBRARY = {
   OLL52: { alternates: [
     { alg: "F R U R' d R' U' R U' R'", moveCount: 10 },
     { alg: "y2 R' F' U' F U' R U R' U R", moveCount: 11 },
-    { alg: "R U R' U R U' B U' B' R'", moveCount: 10, notes: "this app's own default for the case" },
+    { alg: "R U R' U R U' B U' B' R'", moveCount: 10, notes: t("this app's own default for the case") },
     { alg: "R U R' U R d' R U' R' F'", moveCount: 10 },
   ] },
   OLL53: { alternates: [
@@ -309,17 +310,17 @@ export const OLL_LIBRARY = {
     { alg: "y' r U r' R U R' U' R U R' U' r U' r'", moveCount: 15 },
   ] },
   OLL55: { alternates: [
-    { alg: "R U2 R2 U' R U' R' U2 F R F'", moveCount: 11, notes: "this app's own default for the case" },
+    { alg: "R U2 R2 U' R U' R' U2 F R F'", moveCount: 11, notes: t("this app's own default for the case") },
     { alg: "y R' F U R U' R2 F' R2 U R' U' R", moveCount: 13 },
     { alg: "y R' F R U R U' R2 F' R2 U' R' U R U R'", moveCount: 16 },
   ] },
   OLL56: { alternates: [
-    { alg: "r U r' U R U' R' U R U' R' r U' r'", moveCount: 14, notes: "this app's own default for the case" },
+    { alg: "r U r' U R U' R' U R U' R' r U' r'", moveCount: 14, notes: t("this app's own default for the case") },
     { alg: "r U r' U R U' R' M' U R U2 r'", moveCount: 12 },
     { alg: "F R U R' U' R F' r U R' U' r'", moveCount: 12 },
   ] },
   OLL57: { alternates: [
-    { alg: "R U R' U' M' U R U' r'", moveCount: 9, notes: "this app's own default for the case" },
+    { alg: "R U R' U' M' U R U' r'", moveCount: 9, notes: t("this app's own default for the case") },
     { alg: "y R U' R' S' R U R' S", moveCount: 9 },
     { alg: "y R U R' S' R U' R' S", moveCount: 9 },
   ] },

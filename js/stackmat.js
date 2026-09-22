@@ -1,3 +1,4 @@
+import { t } from './i18n.js';
 /* ===========================================================
    Tagda Timer — Stackmat / aux timer input
 
@@ -180,7 +181,7 @@ export class Stackmat extends EventTarget {
 
   async start() {
     if (this.ctx) return true;
-    if (!navigator.mediaDevices?.getUserMedia) throw new Error('This browser has no microphone access');
+    if (!navigator.mediaDevices?.getUserMedia) throw new Error(t('This browser has no microphone access'));
 
     // Every clean-up the browser applies to speech destroys a data signal.
     this.stream = await navigator.mediaDevices.getUserMedia({

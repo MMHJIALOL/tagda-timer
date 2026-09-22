@@ -1,3 +1,4 @@
+import { t } from './i18n.js';
 /* ===========================================================
    Tagda Timer — the floating metronome window
 
@@ -50,25 +51,25 @@ export function mountMetro(settings, save) {
   const read = el('b', { text: String(clampBpm(S.metronomeBpm)) });
   const range = el('input', {
     id: 'metro-range', type: 'range', min: MIN_BPM, max: MAX_BPM, step: 1,
-    'aria-label': 'Beats per minute',
+    'aria-label': t('Beats per minute'),
   });
-  const play = el('button', { id: 'metro-play', class: 'ghost-btn', type: 'button', text: 'Start' });
+  const play = el('button', { id: 'metro-play', class: 'ghost-btn', type: 'button', text: t('Start') });
   const close = el('button', {
-    id: 'metro-close', type: 'button', title: 'Close the metronome',
-    'aria-label': 'Close the metronome', html: '&times;',
+    id: 'metro-close', type: 'button', title: t('Close the metronome'),
+    'aria-label': t('Close the metronome'), html: '&times;',
   });
 
   const box = el('div', { id: 'metro', hidden: true },
-    el('div', { id: 'metro-grip', title: 'Drag to move the metronome' },
+    el('div', { id: 'metro-grip', title: t('Drag to move the metronome') },
       el('span', { class: 'metro-grip-ico', html:
         '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 9h10M7 15h10"/></svg>' }),
-      el('span', { text: 'Metronome' }),
+      el('span', { text: t('Metronome') }),
       close),
     el('div', { id: 'metro-beats', 'aria-hidden': 'true' }, dots),
     el('div', { id: 'metro-bpm' },
-      el('button', { id: 'metro-slower', type: 'button', title: 'Slower', 'aria-label': 'Slower', html: '&minus;' }),
+      el('button', { id: 'metro-slower', type: 'button', title: t('Slower'), 'aria-label': 'Slower', html: '&minus;' }),
       el('span', { id: 'metro-read' }, read, el('small', { text: 'bpm' })),
-      el('button', { id: 'metro-faster', type: 'button', title: 'Faster', 'aria-label': 'Faster', text: '+' })),
+      el('button', { id: 'metro-faster', type: 'button', title: t('Faster'), 'aria-label': 'Faster', text: '+' })),
     range,
     play,
   );
@@ -105,7 +106,7 @@ export function mountMetro(settings, save) {
 
   const setRunning = (on) => {
     running = on;
-    play.textContent = on ? 'Stop' : 'Start';
+    play.textContent = t(on ? 'Stop' : 'Start');
     box.classList.toggle('ticking', on);
     if (!on) dots.forEach(d => d.classList.remove('on', 'hit'));
     sync();

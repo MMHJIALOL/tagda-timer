@@ -1,3 +1,4 @@
+import { t, translateDOM } from './i18n.js';
 /* ===========================================================
    Tagda Timer — algorithm library page (algs.html).
 
@@ -363,12 +364,12 @@ function renderGrid() {
   const shown = list.slice(0, MAX_CARDS);
   shownIds = shown.map(c => c.id);
   if (!list.length) {
-    host.appendChild(el('p', { class: 'alglib-empty', text: `No ${set.label} case matches “${state.q}”.` }));
+    host.appendChild(el('p', { class: 'alglib-empty', text: t('No {set} case matches “{q}”.', { set: set.label, q: state.q }) }));
   }
   for (const c of shown) host.appendChild(card(set, c));
   if (list.length > shown.length) {
     host.appendChild(el('p', { class: 'alglib-empty',
-      text: `Showing ${shown.length} of ${list.length} — narrow the search to see the rest.` }));
+      text: t('Showing {n} of {total} — narrow the search to see the rest.', { n: shown.length, total: list.length }) }));
   }
   flushDraws();
   renderTrainBar();
@@ -380,7 +381,7 @@ function card(set, c) {
 
   const pick = el('button', {
     class: 'case-pick', type: 'button', 'aria-pressed': String(on),
-    title: 'Select for training · Shift-click selects a range',
+    title: t('Select for training · Shift-click selects a range'),
   },
     el('span', { class: 'case-check', 'aria-hidden': 'true' }),
     caseArt(set, c.id),
@@ -392,17 +393,17 @@ function card(set, c) {
   pick.addEventListener('click', (ev) => toggleCase(c.id, ev.shiftKey));
 
   const open = el('button', {
-    class: 'case-open', type: 'button', title: 'Open this case — every algorithm for it',
-    'aria-label': `Open ${set.caseLabel(c)} — ${algs.length} algorithm${algs.length === 1 ? '' : 's'}`,
+    class: 'case-open', type: 'button', title: t('Open this case — every algorithm for it'),
+    'aria-label': t(algs.length === 1 ? 'Open {case} — {n} algorithm' : 'Open {case} — {n} algorithms', { case: set.caseLabel(c), n: algs.length }),
   },
     el('code', { class: 'case-alg', text: algs[0]?.alg || c.alg }),
-    el('span', { class: 'case-more', text: `${algs.length} alg${algs.length === 1 ? '' : 's'}` }),
+    el('span', { class: 'case-more', text: t(algs.length === 1 ? '{n} alg' : '{n} algs', { n: algs.length }) }),
     icon('M9 6l6 6-6 6'),
   );
   open.addEventListener('click', () => openCase(c.id));
 
   const node = el('div', { class: `case-card${on ? ' on' : ''}`, 'data-case': c.id }, pick, open);
-  if (hasCustomOrder(c.id)) node.appendChild(el('span', { class: 'case-flag', text: 'your order' }));
+  if (hasCustomOrder(c.id)) node.appendChild(el('span', { class: 'case-flag', text: t('your order') }));
   return node;
 }
 
@@ -453,7 +454,7 @@ function renderTrainBar() {
   const n = set.cases.filter(c => sel.has(c.id)).length;
   /* Only a changed count is written, so a screen reader is not told the same
      number again after every search keystroke. */
-  const status = `${n} of ${set.cases.length} selected`;
+  const status = t('{n} of {total} selected', { n, total: set.cases.length });
   if ($('#alglib-status').textContent !== status) $('#alglib-status').textContent = status;
 
   const bulk = (label, title, fn) => {
@@ -468,17 +469,17 @@ function renderTrainBar() {
 
   const go = el('button', {
     class: 'btn primary train-go', type: 'button',
-    text: n ? `Train ${n} case${n === 1 ? '' : 's'}` : `Train all ${set.cases.length}`,
+    text: n ? t(n === 1 ? 'Train {n} case' : 'Train {n} cases', { n }) : t('Train all {n}', { n: set.cases.length }),
     disabled: !set.trainerMode,
   });
   go.addEventListener('click', () => train(set, set.cases.filter(c => sel.has(c.id)).map(c => c.id)));
 
   host.append(
-    el('span', { class: 'sel-count' }, el('b', { text: String(n) }), ` of ${set.cases.length} selected`),
+    el('span', { class: 'sel-count' }, el('b', { text: String(n) }), ' ' + t('of {total} selected', { total: set.cases.length })),
     el('div', { class: 'sel-actions', role: 'group', 'aria-label': 'Selection' },
-      bulk('All', 'Select every case shown', () => shownIds.forEach(id => sel.add(id))),
-      bulk('None', 'Clear the selection', () => sel.clear()),
-      bulk('Invert', 'Flip every case shown', () => shownIds.forEach(id => (sel.has(id) ? sel.delete(id) : sel.add(id)))),
+      bulk('All', t('Select every case shown'), () => shownIds.forEach(id => sel.add(id))),
+      bulk('None', t('Clear the selection'), () => sel.clear()),
+      bulk('Invert', t('Flip every case shown'), () => shownIds.forEach(id => (sel.has(id) ? sel.delete(id) : sel.add(id)))),
     ),
     go,
   );
@@ -520,12 +521,12 @@ function openCase(caseId) {
   $('#alglib-bar').hidden = true;
   scrollTo({ top: 0 });
 
-  const back = el('button', { class: 'btn back', type: 'button' }, icon('M15 18l-6-6 6-6'), el('span', { text: `All ${set.label}` }));
+  const back = el('button', { class: 'btn back', type: 'button' }, icon('M15 18l-6-6 6-6'), el('span', { text: t('All {set}', { set: set.label }) }));
   back.addEventListener('click', closeCase);
 
   const actions = el('div', { class: 'case-actions' });
   if (set.trainerMode) {
-    const one = el('button', { class: 'btn primary small', type: 'button', text: 'Train this case' });
+    const one = el('button', { class: 'btn primary small', type: 'button', text: t('Train this case') });
     one.addEventListener('click', () => train(set, [caseId]));
     actions.appendChild(one);
   }
@@ -542,7 +543,7 @@ function openCase(caseId) {
     ),
   );
 
-  const reset = el('button', { class: 'btn ghost small', type: 'button', text: 'Reset order' });
+  const reset = el('button', { class: 'btn ghost small', type: 'button', text: t('Reset order') });
   const list = el('div', { class: 'alg-list' });
   const rebuild = () => {
     list.textContent = '';
@@ -567,8 +568,8 @@ function openCase(caseId) {
     back,
     head,
     el('div', { class: 'alg-list-head' },
-      el('h3', { text: 'Algorithms' }),
-      el('span', { class: 'sub', text: 'Drag to reorder · the first one is what the trainer scrambles from' }),
+      el('h3', { text: t('Algorithms') }),
+      el('span', { class: 'sub', text: t('Drag to reorder · the first one is what the trainer scrambles from') }),
       reset,
     ),
     list,
@@ -579,7 +580,6 @@ function openCase(caseId) {
   back.focus({ preventScroll: true });
 }
 
-const ORDINAL = ['1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th', '9th', '10th'];
 
 /**
  * The moves that put the case on a solved cube, under its picture — look at the
@@ -592,25 +592,25 @@ function paintSetup(host, setId, caseId) {
   if (!s) { host.hidden = true; return; }
   host.hidden = false;
 
-  const btn = el('button', { class: 'btn ghost small setup-copy', type: 'button', text: 'Copy' });
+  const btn = el('button', { class: 'btn ghost small setup-copy', type: 'button', text: t('Copy') });
   btn.addEventListener('click', async () => {
     const ok = await copy(s.setup);
-    toast(ok ? 'Setup copied' : 'Your browser blocked the clipboard', ok ? {} : { kind: 'bad' });
+    toast(ok ? t('Setup copied') : t('Your browser blocked the clipboard'), ok ? {} : { kind: 'bad' });
   });
 
   const where = displayOrder(setId, caseId).findIndex(a => a.alg === s.from);
   const note = s.reversesFirst
     ? (s.alternative
-        ? `Your 1st algorithm backwards — the shortest setup that is not is ${s.alternative.moves} moves (${s.alternative.setup}).`
-        : 'Your 1st algorithm backwards. Nothing shorter sets this case up.')
+        ? t('Your 1st algorithm backwards — the shortest setup that is not is {n} moves ({setup}).', { n: s.alternative.moves, setup: s.alternative.setup })
+        : t('Your 1st algorithm backwards. Nothing shorter sets this case up.'))
     : where < 0
-      ? 'It is not the algorithm you are drilling, in reverse.'
-      : `Taken from the ${ORDINAL[where] || `${where + 1}th`} algorithm below, so it is not the one you are drilling in reverse.`;
+      ? t('It is not the algorithm you are drilling, in reverse.')
+      : t('Taken from algorithm {n} below, so it is not the one you are drilling in reverse.', { n: where + 1 });
 
   host.append(
     el('div', { class: 'setup-head' },
-      el('h3', { text: 'Setup' }),
-      el('span', { class: 'setup-count', text: `${s.moves} moves` }),
+      el('h3', { text: t('Setup') }),
+      el('span', { class: 'setup-count', text: t('{n} moves', { n: s.moves }) }),
       btn,
     ),
     el('code', { class: 'setup-moves', text: s.setup }),
@@ -620,25 +620,25 @@ function paintSetup(host, setId, caseId) {
 
 function algRow(setId, caseId, a, i, rebuild) {
   const row = el('div', { class: `alg-row${i === 0 ? ' first' : ''}`, 'data-alg': a.alg });
-  const grip = el('span', { class: 'alg-grip', title: 'Drag to reorder' }, icon('M9 6h.01M9 12h.01M9 18h.01M15 6h.01M15 12h.01M15 18h.01'));
+  const grip = el('span', { class: 'alg-grip', title: t('Drag to reorder') }, icon('M9 6h.01M9 12h.01M9 18h.01M15 6h.01M15 12h.01M15 18h.01'));
 
   const meta = el('div', { class: 'alg-meta' },
-    el('span', { class: 'alg-count', text: `${a.moveCount ?? countFor(setId, a.alg)} moves` }),
+    el('span', { class: 'alg-count', text: t('{n} moves', { n: a.moveCount ?? countFor(setId, a.alg) }) }),
   );
-  if (i === 0) meta.appendChild(el('span', { class: 'alg-badge first', text: 'trainer', title: 'Scrambles for this case are built from this algorithm' }));
+  if (i === 0) meta.appendChild(el('span', { class: 'alg-badge first', text: 'trainer', title: t('Scrambles for this case are built from this algorithm') }));
   if (a.source === 'custom') meta.appendChild(el('span', { class: 'alg-badge yours', text: 'yours' }));
   if (a.notes) meta.appendChild(el('span', { class: 'alg-notes', text: a.notes }));
 
-  const moves = el('code', { class: 'alg-moves', text: a.alg, title: 'Click to copy' });
+  const moves = el('code', { class: 'alg-moves', text: a.alg, title: t('Click to copy') });
   moves.addEventListener('click', async () => {
     const ok = await copy(a.alg);
-    toast(ok ? 'Algorithm copied' : 'Your browser blocked the clipboard', ok ? {} : { kind: 'bad' });
+    toast(ok ? t('Algorithm copied') : 'Your browser blocked the clipboard', ok ? {} : { kind: 'bad' });
   });
 
   row.append(grip, el('div', { class: 'alg-body' }, moves, meta));
 
   if (a.source === 'custom') {
-    const del = el('button', { class: 'alg-del', type: 'button', title: 'Remove your algorithm', text: '×' });
+    const del = el('button', { class: 'alg-del', type: 'button', title: t('Remove your algorithm'), text: '×' });
     del.addEventListener('click', async () => {
       await removeCustom(caseId, a.alg);
       rebuild();
@@ -653,16 +653,16 @@ const EXAMPLE = {
   cube: "R U R' U' R' F R2 U' R' U' R U R' F'",
   pyram: "R U R' U R U R'",
   skewb: "R' F R F'",
-  sq1: '1,0 / -1,0 / 0,3 /',
+  sq1: t('1,0 / -1,0 / 0,3 /'),
 };
 
 function addRow(set, caseId, rebuild) {
   const input = el('input', {
-    type: 'text', class: 'alg-input', placeholder: `e.g. ${EXAMPLE[set.puzzle || 'cube']}`,
-    autocomplete: 'off', spellcheck: 'false', 'aria-label': 'Your algorithm',
+    type: 'text', class: 'alg-input', placeholder: t('e.g. {alg}', { alg: EXAMPLE[set.puzzle || 'cube'] }),
+    autocomplete: 'off', spellcheck: 'false', 'aria-label': t('Your algorithm'),
   });
   const err = el('p', { class: 'alg-error', hidden: true });
-  const save = el('button', { class: 'btn primary', type: 'button', text: 'Add' });
+  const save = el('button', { class: 'btn primary', type: 'button', text: t('Add') });
 
   const submit = async () => {
     err.hidden = true;
@@ -679,7 +679,7 @@ function addRow(set, caseId, rebuild) {
   input.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') submit(); });
 
   return el('div', { class: 'alg-add' },
-    el('h3', { text: 'Add your own' }),
+    el('h3', { text: t('Add your own') }),
     el('div', { class: 'alg-add-row' }, input, save),
     err,
   );
@@ -774,7 +774,7 @@ async function showSet() {
   $('#alglib-train').textContent = '';
   $('#alglib-groups').hidden = true;
   $('#alglib-sub').textContent = '';
-  $('#alglib-grid').replaceChildren(el('p', { class: 'alglib-empty', text: 'Loading…' }));
+  $('#alglib-grid').replaceChildren(el('p', { class: 'alglib-empty', text: t('Loading…') }));
   let set = null;
   try {
     set = await loadSet(want);
@@ -783,7 +783,7 @@ async function showSet() {
   }
   if (state.set !== want) return;
   if (!set) {
-    $('#alglib-grid').replaceChildren(el('p', { class: 'alglib-empty', text: 'This set could not be loaded. Check your connection and try again.' }));
+    $('#alglib-grid').replaceChildren(el('p', { class: 'alglib-empty', text: t('This set could not be loaded. Check your connection and try again.') }));
     return;
   }
   renderTabs();
@@ -798,6 +798,9 @@ async function showSet() {
 
 async function init() {
   const settings = await loadSettings();
+
+  translateDOM();
+
   applyTheme(settings);
   /* Same metronome window as the timer — this is the page you sit on while
      drilling a case to a beat. */

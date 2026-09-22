@@ -1,3 +1,4 @@
+import { t } from './i18n.js';
 /* ===========================================================
    Tagda Timer — animated background
    A single fullscreen WebGL quad with swappable fragment shaders,

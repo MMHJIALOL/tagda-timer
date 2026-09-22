@@ -1,3 +1,4 @@
+import { t } from './i18n.js';
 /* ===========================================================
    Tagda Timer — Learn mode: the runtime around the scheduler.
 
@@ -164,8 +165,8 @@ export function createLearn(app) {
   function showVerdict(st, caseAvg) {
     const node = $('#learn-verdict');
     if (!node) return;
-    const word = st.lastGrade === 'pass' ? 'got it' : st.lastGrade === 'hold' ? 'slow' : 'missed';
-    const why = st.lastGrade === 'hold' && caseAvg !== null ? ` (your average is ${fmt(caseAvg)})` : '';
+    const word = st.lastGrade === 'pass' ? t('got it') : st.lastGrade === 'hold' ? t('slow') : t('missed');
+    const why = st.lastGrade === 'hold' && caseAvg !== null ? t(' (your average is {avg})', { avg: fmt(caseAvg) }) : '';
     node.textContent = `${word} — ${dueLabel(st)}${why}`;
     node.className = `lv-${st.lastGrade}`;
   }
@@ -192,8 +193,8 @@ export function createLearn(app) {
     peekBtn.hidden = peeked;
     algBox.hidden = !peeked;
     if (peeked) {
-      $('#learn-tag').textContent = current.stage === 'new' ? 'new case' : current.name;
-      $('#learn-alg-text').textContent = current.alg || '(no algorithm on file)';
+      $('#learn-tag').textContent = current.stage === 'new' ? t('new case') : current.name;
+      $('#learn-alg-text').textContent = current.alg || t('(no algorithm on file)');
     }
   }
 
@@ -211,7 +212,7 @@ export function createLearn(app) {
   function sittingDone() {
     const node = $('#learn-verdict');
     if (node) {
-      node.textContent = 'nothing due — drilling this set at random from here';
+      node.textContent = t('nothing due — drilling this set at random from here');
       node.className = 'lv-done';
     }
   }
@@ -235,8 +236,8 @@ export function createLearn(app) {
     if (want) {
       const sum = summarize(scopedStates(), allowedIds());
       toast(sum.due || sum.new
-        ? `Learn mode on — ${sum.due} due, ${sum.new} you have not seen`
-        : 'Learn mode on — everything in this set is up to date');
+        ? t('Learn mode on — {due} due, {new} you have not seen', { due: sum.due, new: sum.new })
+        : t('Learn mode on — everything in this set is up to date'));
     }
     return true;
   }

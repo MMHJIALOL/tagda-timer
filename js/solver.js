@@ -1,3 +1,4 @@
+import { t } from './i18n.js';
 /* ===========================================================
    Tagda Timer — "what could I have done here?"
 
@@ -299,7 +300,7 @@ function variants(path, frame, crossFace = null) {
 }
 
 /** How a row explains itself, once a grip is part of the answer. */
-const gripNote = (note, rot) => (rot ? `${note} · from a ${rot} grip` : note);
+const gripNote = (note, rot) => (rot ? t('{note} · from a {rot} grip', { note, rot }) : note);
 
 /* =========================================================
    Goal builders
@@ -370,8 +371,8 @@ const isSolvedState = (s) => {
 
 /** How the AUFs a case needed read on the row. */
 const aufNote = (rot, pre, post) =>
-  [rot && 'rotate first', pre && `${pre} to set up`, post && `${post} to finish`]
-    .filter(Boolean).join(' · ') || 'straight in';
+  [rot && t('rotate first'), pre && t('{m} to set up', { m: pre }), post && t('{m} to finish', { m: post })]
+    .filter(Boolean).join(' · ') || t('straight in');
 
 const faceTurns = (alg) => alg.split(/\s+/).filter(t => t && !/^[xyz]/.test(t)).length;
 
@@ -451,7 +452,7 @@ function aufOnly(state, frame, rot) {
     if (!res || !isSolvedState(res.state)) continue;
     return [{
       alg: full, moves: faceTurns(full), awkward: 0, kind: 'PLL',
-      label: 'PLL skip', note: 'the layer is already permuted — just the AUF',
+      label: t('PLL skip'), note: t('the layer is already permuted — just the AUF'),
     }];
   }
   return [];
@@ -522,10 +523,10 @@ export function suggest(state, frame, analysis, { limit = 20, timeMs = 1500, cro
     const h = (s) => dist[crossIndex(s, slotOf)];
     const { best, solutions } = solveGoal(state, crossGoal(homes), h, { want: 120, slack: 2, maxDepth: 9, budget, lead });
     out.best = best;
-    const crossLabel = crossName || `${analysis.face} cross`;
+    const crossLabel = crossName || t('{face} cross', { face: analysis.face });
     out.list = dedupe(solutions.flatMap(p => variants(p, frame, analysis.face).map(v => ({
       alg: v.alg, moves: v.moves, awkward: v.awkward,
-      label: crossLabel, note: gripNote('cross', v.rot),
+      label: crossLabel, note: gripNote(t('cross'), v.rot),
     })))).sort(byEase).slice(0, limit);
     out.partial = budget.left <= 0;
     return out;
@@ -596,7 +597,7 @@ export function suggest(state, frame, analysis, { limit = 20, timeMs = 1500, cro
         const where = slotLabel(slot.label, v.frame);
         all.push({
           alg: v.alg, moves: v.moves, awkward: v.awkward, slot: slot.label, rot: v.rot,
-          label: `${where} pair`, note: gripNote(v.rot ? 'f2l' : 'f2l · no rotation', v.rot),
+          label: t('{slot} pair', { slot: where }), note: gripNote(v.rot ? 'f2l' : t('f2l · no rotation'), v.rot),
         });
       }
     }
@@ -631,7 +632,7 @@ export function suggest(state, frame, analysis, { limit = 20, timeMs = 1500, cro
           const where = slotLabel(slot.label, v.frame);
           all.push({
             alg: v.alg, moves: v.moves, awkward: v.awkward, slot: slot.label, rot: v.rot,
-            label: `${where} pair`, note: gripNote('disturbs a finished pair', v.rot),
+            label: t('{slot} pair', { slot: where }), note: gripNote(t('disturbs a finished pair'), v.rot),
           });
         }
       }

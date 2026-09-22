@@ -1,3 +1,4 @@
+import { t } from './i18n.js';
 /* ===========================================================
    Tagda Timer — drag a floating widget around the screen
 
@@ -24,7 +25,7 @@ function clamp(x, y, w, h, margin = 6) {
  * @param {(pos:{x:number,y:number}|null) => void} opts.set  persist a new one
  * @param {string} [opts.ignore]  selector for children that must stay clickable
  */
-export function makeDraggable(node, { get, set, handle = null, ignore = 'button, a, input, select' }) {
+export function makeDraggable(node, { get, set, handle = null, ignore = t('button, a, input, select') }) {
   let startX = 0, startY = 0, originX = 0, originY = 0, dragging = false, moved = false;
 
   /** Write the saved position onto the element, re-clamped to this viewport. */

@@ -1,3 +1,4 @@
+import { t } from './i18n.js';
 /* ===========================================================
    Tagda Timer — the 472 ZBLL cases, as a trainer set.
 
@@ -22,7 +23,7 @@ const zb = (family, cases) => cases.map(([n, alg]) =>
   ({ id: `ZBLL-${family}-${n}`, name: `${family} ${n}`, label: ZBLL_FAMILIES[family], group: family, alg }));
 
 export const ZBLL_FAMILIES = {
-  T: 'T set', U: 'U set', L: 'L set', H: 'H set', Pi: 'Pi set', S: 'Sune set', AS: 'Antisune set',
+  T: t('T set'), U: t('U set'), L: t('L set'), H: t('H set'), Pi: t('Pi set'), S: t('Sune set'), AS: t('Antisune set'),
 };
 
 export const ZBLL_SET = [

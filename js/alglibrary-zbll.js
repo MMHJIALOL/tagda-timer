@@ -1,3 +1,4 @@
+import { t } from './i18n.js';
 /* ===========================================================
    Tagda Timer — ZBLL: 472 cases, the whole last layer in one alg.
 
@@ -3240,7 +3241,7 @@ export const SET = {
   trained: true,
   trainerMode: 'zbll',
   label: 'ZBLL',
-  title: 'Last layer in one algorithm, edges already oriented',
+  title: t('Last layer in one algorithm, edges already oriented'),
   cases: ZBLL_CASES,
   library: ZBLL_LIBRARY,
   /* 472 cards in one scroll is not navigation. The tab opens on T and you

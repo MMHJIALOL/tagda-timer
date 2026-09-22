@@ -1,3 +1,4 @@
+import { t } from './i18n.js';
 /* ===========================================================
    Tagda Timer — race mode
 
@@ -533,14 +534,14 @@ export class Race extends EventTarget {
    */
   holdText() {
     const r = this.round;
-    if (!r) return 'Getting the room ready…';
-    if (this.submittedRound !== r.no) return 'Waiting for the round’s scramble…';
+    if (!r) return t('Getting the room ready…');
+    if (this.submittedRound !== r.no) return t('Waiting for the round’s scramble…');
 
     const live = this.livePlayers();
     const left = live.filter(([id]) => r.progress?.[id]?.status !== 'done').length;
-    if (this.settleAt) return 'Next scramble loading…';
-    if (left > 0) return `Still solving: ${left} racer${left === 1 ? '' : 's'} — hold your cube, next scramble loading…`;
-    return 'Next scramble loading…';
+    if (this.settleAt) return t('Next scramble loading…');
+    if (left > 0) return t(left === 1 ? 'Still solving: {n} racer — hold your cube, next scramble loading…' : 'Still solving: {n} racers — hold your cube, next scramble loading…', { n: left });
+    return t('Next scramble loading…');
   }
 
   /** Put the right thing in the scramble area, and only when it changes. */
@@ -1090,13 +1091,13 @@ export class Race extends EventTarget {
     status.innerHTML = '';
     if (this.phase === 'lobby') {
       status.append(
-        el('span', { class: 'race-round', text: 'Lobby' }),
-        el('span', { class: 'race-count', text: `${live} / ${ROOM_MAX} here` }),
+        el('span', { class: 'race-round', text: t('Lobby') }),
+        el('span', { class: 'race-count', text: t('{n} / {max} here', { n: live, max: ROOM_MAX }) }),
       );
     } else {
       status.append(
-        el('span', { class: 'race-round', text: `Round ${r?.no ?? 1}` }),
-        el('span', { class: 'race-count', text: `${done} of ${live} done` }),
+        el('span', { class: 'race-round', text: t('Round {n}', { n: r?.no ?? 1 }) }),
+        el('span', { class: 'race-count', text: t('{n} of {total} done', { n: done, total: live }) }),
       );
     }
 
@@ -1110,7 +1111,7 @@ export class Race extends EventTarget {
     const more = node.querySelector('.race-more');
     const hidden = shown.length - fold;
     more.hidden = hidden <= 0 && !this._expanded;
-    more.textContent = this._expanded ? 'show fewer' : `+${hidden} more`;
+    more.textContent = this._expanded ? t('show fewer') : t('+{n} more', { n: hidden });
     more.onclick = () => { this._expanded = !this._expanded; this._syncPanel(); };
 
     /* ---- standings ---- */
@@ -1138,18 +1139,18 @@ export class Race extends EventTarget {
 
     if (this.phase === 'racing' && this.isHost) {
       host.append(el('button', {
-        class: 'btn', text: 'End race',
-        title: 'Take the whole room back to the lobby — standings are kept',
+        class: 'btn', text: t('End race'),
+        title: t('Take the whole room back to the lobby — standings are kept'),
         onclick: async () => {
-          if (!await confirmToast('End the race for everyone in the room?', 'end it')) return;
+          if (!await confirmToast('End the race for everyone in the room?', t('end it'))) return;
           await this._end();
         },
       }));
     }
 
     host.append(el('button', {
-      class: 'btn danger', text: 'Leave room',
-      title: 'Leave this room and go back to your own session',
+      class: 'btn danger', text: t('Leave room'),
+      title: t('Leave this room and go back to your own session'),
       onclick: async () => {
         if (!await confirmToast(`Leave room ${this.snap?.roomId || ''}?`, 'leave')) return;
         await this.leave();
@@ -1277,11 +1278,11 @@ export class Race extends EventTarget {
          the database is running rules that predate chat, so the write falls
          through to the root's ".write": false. Saying so is the difference
          between a five-minute fix and an afternoon spent reading this file —
-         "Could not send that" sent exactly one person hunting for a bug in
+         t("Could not send that") sent exactly one person hunting for a bug in
          code that was working. */
       toast(String(code).includes('PERMISSION_DENIED')
-        ? 'The room refused that — this database is running rules from before chat existed. Publish firebase.rules.json.'
-        : 'Could not send that', { long: true });
+        ? t('The room refused that — this database is running rules from before chat existed. Publish firebase.rules.json.')
+        : t('Could not send that'), { long: true });
     }
   }
 
@@ -1311,7 +1312,7 @@ export class Race extends EventTarget {
 
     host.innerHTML = '';
     if (!log.length) {
-      host.append(el('div', { class: 'race-chat-empty', text: 'Nothing said yet.' }));
+      host.append(el('div', { class: 'race-chat-empty', text: t('Nothing said yet.') }));
     } else {
       let lastUid = null;
       for (const m of log) {
@@ -1378,8 +1379,8 @@ export class Race extends EventTarget {
     const present = new Set(this.livePlayers().map(([uid]) => uid));
     host.innerHTML = '';
     host.append(el('div', { class: 'race-board-head' },
-      el('span', { text: 'Standings' }),
-      el('span', { text: `${entries.length} racer${entries.length === 1 ? '' : 's'}` }),
+      el('span', { text: t('Standings') }),
+      el('span', { text: t(entries.length === 1 ? '{n} racer' : '{n} racers', { n: entries.length }) }),
     ));
 
     entries.forEach(([uid, s], i) => {
@@ -1390,8 +1391,8 @@ export class Race extends EventTarget {
       const boardOwner = isOwnerName(s.name);
       const boardName = el('span', {
         class: `race-board-name${boardOwner ? ' owner-shine' : ''}`, text: s.name || 'Cuber',
-        title: boardOwner ? `${s.name} — that’s the site owner, click for the card`
-          : present.has(uid) ? s.name : `${s.name || 'Cuber'} — no longer in the room`,
+        title: boardOwner ? t('{name} — that’s the site owner, click for the card', { name: s.name })
+          : present.has(uid) ? s.name : t('{name} — no longer in the room', { name: s.name || 'Cuber' }),
       });
       if (boardOwner) boardName.addEventListener('click', (e) => { e.stopPropagation(); openOwnerCard(boardName); });
       line.append(
@@ -1399,7 +1400,7 @@ export class Race extends EventTarget {
         boardName,
         el('span', { class: 'race-board-best', text: s.best != null && isFinite(s.best) ? fmt(s.best) : '—' }),
         el('span', { class: 'race-board-wins', text: `${s.wins}/${s.played}`,
-          title: `${s.wins} won of ${s.played} round${s.played === 1 ? '' : 's'}` }),
+          title: t(s.played === 1 ? '{w} won of {n} round' : '{w} won of {n} rounds', { w: s.wins, n: s.played }) }),
       );
       host.append(line);
     });
@@ -1441,8 +1442,8 @@ export class Race extends EventTarget {
     const av = el('span', {
       class: `race-av${isHost ? ' host' : ''}${owner ? ' owner' : ''}`,
       text: initialsOf(player.name),
-      title: owner ? `${player.name} — that’s the site owner, click for the card`
-        : isHost ? `${player.name} — publishes each round’s scramble` : player.name,
+      title: owner ? t('{name} — that’s the site owner, click for the card', { name: player.name })
+        : isHost ? t('{name} — publishes each round’s scramble', { name: player.name }) : player.name,
     });
     if (owner) av.addEventListener('click', (e) => { e.stopPropagation(); openOwnerCard(av); });
     node.append(av);
@@ -1462,7 +1463,7 @@ export class Race extends EventTarget {
     const name = el('span', { class: 'race-name' },
       nameB,
       !this.revealed && standing?.wins
-        ? el('i', { class: 'race-wins', text: `${standing.wins}W`, title: `${standing.wins} round${standing.wins === 1 ? '' : 's'} won` })
+        ? el('i', { class: 'race-wins', text: `${standing.wins}W`, title: t(standing.wins === 1 ? '{n} round won' : '{n} rounds won', { n: standing.wins }) })
         : null,
     );
     node.append(name);
@@ -1478,7 +1479,7 @@ export class Race extends EventTarget {
     const mine = isMe && this.mySolves.get(this.round?.no);
     if (mine && this.revealed) {
       node.classList.add('editable');
-      node.title = 'Edit this solve — penalty, comment, delete';
+      node.title = t('Edit this solve — penalty, comment, delete');
       node.addEventListener('click', () => this.app.solveMenu?.(mine, node));
     }
     return node;
@@ -1509,18 +1510,18 @@ export class Race extends EventTarget {
         wrap.append(el('i', {
           class: 'race-flagmark', text: '⚑',
           title: row.clockOff
-            ? 'The submitted time is shorter than the window the server timed it in'
-            : 'Far faster than this player’s own recent average',
+            ? t('The submitted time is shorter than the window the server timed it in')
+            : t('Far faster than this player’s own recent average'),
         }));
       }
       return wrap;
     }
 
     const label = {
-      locked:     ['finished', 'They are done. You will see the time when you are.'],
-      solving:    ['solving', 'Currently solving'],
-      inspecting: ['inspecting', 'In inspection'],
-      waiting:    ['waiting', 'Has not started this scramble'],
+      locked:     ['finished', t('They are done. You will see the time when you are.')],
+      solving:    ['solving', t('Currently solving')],
+      inspecting: ['inspecting', t('In inspection')],
+      waiting:    ['waiting', t('Has not started this scramble')],
     }[state] || ['waiting', ''];
 
     wrap.append(el('i', { class: 'race-badge', text: label[0], title: label[1] }));
@@ -1551,44 +1552,44 @@ export class Race extends EventTarget {
     if (this.phase === 'lobby') {
       const ready = live >= 2;
       foot.append(el('div', { class: 'race-note', text: ready
-        ? 'Everyone here gets the same scramble. Start when you are ready.'
-        : 'Share the code — racing starts when the host says go.' }));
+        ? t('Everyone here gets the same scramble. Start when you are ready.')
+        : t('Share the code — racing starts when the host says go.') }));
       if (this.isHost) {
         foot.append(el('button', {
-          class: 'btn primary full', text: live >= 2 ? 'Start racing' : 'Start anyway',
+          class: 'btn primary full', text: live >= 2 ? t('Start racing') : t('Start anyway'),
           onclick: () => this._start(),
         }));
       } else {
-        foot.append(el('div', { class: 'race-wait', text: 'Waiting for the host…' }));
+        foot.append(el('div', { class: 'race-wait', text: t('Waiting for the host…') }));
       }
       return;
     }
 
     if (!this.round?.info?.scramble) {
       foot.append(el('div', { class: 'race-wait',
-        text: `Round ${this.round?.no ?? 1} scramble loading…` }));
+        text: t('Round {n} scramble loading…', { n: this.round?.no ?? 1 }) }));
       return;
     }
 
     if (!this.revealed) {
       foot.append(el('div', { class: 'race-note strong', text: done
-        ? `${done} ${done === 1 ? 'person has' : 'people have'} finished. Times unlock when you do.`
-        : 'Solve the scramble to unlock the room’s times.' }));
+        ? t(done === 1 ? '{n} person has finished. Times unlock when you do.' : '{n} people have finished. Times unlock when you do.', { n: done })
+        : t('Solve the scramble to unlock the room’s times.') }));
     } else if (this.settleAt) {
       const left = Math.max(0, Math.ceil((this.settleAt - Date.now()) / 1000));
       foot.append(el('div', { class: 'race-next' },
-        el('span', { text: 'Next scramble in ' }), el('b', { text: `${left}s` })));
+        el('span', { text: t('Next scramble in') + ' ' }), el('b', { text: `${left}s` })));
     } else if (this.graceAt) {
       const left = Math.max(0, Math.ceil((this.graceAt - Date.now()) / 1000));
       foot.append(el('div', { class: 'race-note',
-        text: `Waiting on ${live - done} more — ${left}s. Keep your cube solved.` }));
+        text: t('Waiting on {n} more — {s}s. Keep your cube solved.', { n: live - done, s: left }) }));
     } else {
       foot.append(el('div', { class: 'race-note',
-        text: 'Waiting for the rest of the room — keep your cube solved.' }));
+        text: t('Waiting for the rest of the room — keep your cube solved.') }));
     }
 
     if (this.kind === 'local') {
-      foot.append(el('div', { class: 'race-local', text: 'Local room — this browser only, and nothing here is enforced.' }));
+      foot.append(el('div', { class: 'race-local', text: t('Local room — this browser only, and nothing here is enforced.') }));
     }
   }
 

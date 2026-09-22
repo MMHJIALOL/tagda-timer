@@ -1,3 +1,4 @@
+import { t } from './i18n.js';
 /* ===========================================================
    Tagda Timer — Scramble of the Day: the window and the two boards
 
@@ -82,7 +83,7 @@ export function avatar(name, photo) {
   const src = safePhotoUrl(photo);
   const owner = isOwnerName(name);
   const ownerBits = owner
-    ? { title: `${name} — that’s the site owner, click for the card`,
+    ? { title: t('{name} — that’s the site owner, click for the card', { name }),
         onclick: (e) => { e.stopPropagation(); openOwnerCard(face); } }
     : {};
   let face;
@@ -114,13 +115,12 @@ export function avatar(name, photo) {
 export function timeBoard(rows, revealed) {
   if (!revealed) {
     return el('div', { class: 'db-locked' },
-      el('div', { class: 'db-locked-icon', text: '🔒' }),
+      el('div', { class: 'db-locked-icon', text: t('🔒') }),
       el('div', { class: 'db-locked-text', text:
-        'Submit today’s attempt to unlock the board. Nobody’s time is visible to '
-        + 'you until you have sent your own — that is a database rule, not a setting.' }),
+        t('Submit today’s attempt to unlock the board. Nobody’s time is visible to you until you have sent your own — that is a database rule, not a setting.') }),
     );
   }
-  if (!rows.length) return el('div', { class: 'db-empty', text: 'Nobody has posted a time yet today.' });
+  if (!rows.length) return el('div', { class: 'db-empty', text: t('Nobody has posted a time yet today.') });
 
   const board = el('div', { class: 'db-board' }, rows.slice(0, 50).map((r, i) => timeRow(r, i)));
 
@@ -130,7 +130,7 @@ export function timeBoard(rows, revealed) {
   if (mine >= 50) {
     return el('div', { class: 'db-stack' }, board,
       el('div', { class: 'db-yours' },
-        el('div', { class: 'db-yours-label', text: 'Your rank' }), timeRow(rows[mine], mine)));
+        el('div', { class: 'db-yours-label', text: t('Your rank') }), timeRow(rows[mine], mine)));
   }
   return board;
 }
@@ -142,7 +142,7 @@ function timeRow(r, i) {
   const face = avatar(res.name, res.photo);
   const nameEl = el('span', {
     class: `db-name${owner ? ' owner-shine' : ''}`, text: res.name || 'Cuber',
-    title: owner ? `${res.name} — that’s the site owner, click for the card` : '',
+    title: owner ? t('{name} — that’s the site owner, click for the card', { name: res.name }) : '',
   });
   if (owner) nameEl.addEventListener('click', (e) => { e.stopPropagation(); openOwnerCard(nameEl); });
   return el('div', { class: 'db-row', dataset: { me: String(r.isMe), rank: String(i + 1) } },
@@ -184,7 +184,7 @@ function noteComposer(ctl) {
   const input = el('input', {
     class: 'db-note-input', type: 'text', autocomplete: 'off',
     maxlength: String(NOTE_MAX_LEN), value: current,
-    placeholder: 'Say one line about it…', 'aria-label': 'Your note on today’s solve',
+    placeholder: t('Say one line about it…'), 'aria-label': t('Your note on today’s solve'),
   });
 
   const save = async () => {
@@ -193,7 +193,7 @@ function noteComposer(ctl) {
     if (body === cleanNote(current)) return;
     current = body;
     input.value = body;
-    if (await ctl.setNote(body)) toast(body ? 'Note saved' : 'Note removed');
+    if (await ctl.setNote(body)) toast(body ? t('Note saved') : t('Note removed'));
   };
 
   input.addEventListener('keydown', (e) => {
@@ -226,7 +226,7 @@ function noteComposer(ctl) {
     })));
 
   const emojiBtn = el('button', {
-    class: 'db-note-emoji', type: 'button', title: 'Emoji', text: '🙂',
+    class: 'db-note-emoji', type: 'button', title: t('Emoji'), text: t('🙂'),
     'aria-label': 'Emoji', 'aria-expanded': 'false',
     onmousedown: (e) => e.preventDefault(),
     onclick: () => {
@@ -317,16 +317,16 @@ export function dayHistory(ctl, redraw) {
       const shown = day || today;
       return el('div', { class: 'daily-daynav' },
         el('button', {
-          class: 'btn', text: '‹', title: 'The day before',
-          'aria-label': 'The day before', disabled: !shown,
+          class: 'btn', text: '‹', title: t('The day before'),
+          'aria-label': t('The day before'), disabled: !shown,
           onclick: () => { day = shiftDayId(shown, -1); redraw(); },
         }),
         el('span', { class: 'daily-daynav-day', text: day ? shown : 'Today' }),
         el('button', {
           // Today is the far end in this direction: there is no board for a
           // day that has not happened, and the rules would refuse one anyway.
-          class: 'btn', text: '›', title: 'The day after',
-          'aria-label': 'The day after', disabled: !day,
+          class: 'btn', text: '›', title: t('The day after'),
+          'aria-label': t('The day after'), disabled: !day,
           onclick: () => {
             const to = shiftDayId(shown, 1);
             day = (today && to >= today) ? null : to;
@@ -347,17 +347,16 @@ export function dayHistory(ctl, redraw) {
  * a day already over simply cannot be met any more.
  */
 function pastView(got) {
-  if (!got) return el('div', { class: 'db-empty', text: 'Loading that day’s board…' });
+  if (!got) return el('div', { class: 'db-empty', text: t('Loading that day’s board…') });
   if (got.error) {
     return el('div', { class: 'db-empty', text:
-      'Could not read that day’s board — check your connection.' });
+      t('Could not read that day’s board — check your connection.') });
   }
   if (got.denied) {
     return el('div', { class: 'db-locked' },
-      el('div', { class: 'db-locked-icon', text: '🔒' }),
+      el('div', { class: 'db-locked-icon', text: t('🔒') }),
       el('div', { class: 'db-locked-text', text:
-        'You did not submit an attempt for this event that day, so its board stays '
-        + 'locked. The reveal rule applies to every day, not just today.' }));
+        t('You did not submit an attempt for this event that day, so its board stays locked. The reveal rule applies to every day, not just today.') }));
   }
   return timeBoard(got.rows, true);
 }
@@ -368,7 +367,7 @@ function pastView(got) {
 
 export function countBoard(rows) {
   if (!rows.length) {
-    return el('div', { class: 'db-empty', text: 'No solves counted yet today. Yours would be the first.' });
+    return el('div', { class: 'db-empty', text: t('No solves counted yet today. Yours would be the first.') });
   }
   return el('div', { class: 'db-board' }, rows.slice(0, 50).map((r, i) =>
     el('div', { class: 'db-row', dataset: { me: String(r.isMe), rank: String(i + 1) } },
@@ -396,9 +395,9 @@ export function countBoard(rows) {
 function signInPrompt() {
   return el('div', { class: 'sotd-signin' },
     el('div', { class: 'sotd-signin-text', text:
-      'Anyone can watch today’s board, but a time on it needs a name attached.' }),
+      t('Anyone can watch today’s board, but a time on it needs a name attached.') }),
     el('button', {
-      class: 'btn primary full', text: 'Sign in with Google to take part',
+      class: 'btn primary full', text: t('Sign in with Google to take part'),
       onclick: async (e) => {
         const btn = e.currentTarget;
         btn.disabled = true;
@@ -422,10 +421,10 @@ function signInPrompt() {
 
 /** What the bar says about where you are in the day's one attempt. */
 const STATE_TEXT = {
-  'signed-out': 'sign in to take part',
-  waiting: 'waiting for today’s scramble',
-  ready: 'this is today’s scramble — one attempt',
-  done: 'attempt submitted',
+  'signed-out': t('sign in to take part'),
+  waiting: t('waiting for today’s scramble'),
+  ready: t('this is today’s scramble — one attempt'),
+  done: t('attempt submitted'),
 };
 
 /** The live window, or null. At most one is ever open. */
@@ -487,7 +486,7 @@ export function openSotd(app, ctl, { onExit, solving = () => false } = {}) {
       el('div', { class: 'sotd-board-head' },
         /* The picker beside it is already showing the date, so the heading
            does not repeat it — it says only what kind of board this is. */
-        el('h3', { text: past ? 'Times' : 'Today’s times' }),
+        el('h3', { text: past ? 'Times' : t('Today’s times') }),
         history.nav(today)),
       /* Today is the LIVE board, off the running listeners and their reveal
          gate. A past day is a one-shot read that never touches them, so the
@@ -501,8 +500,8 @@ export function openSotd(app, ctl, { onExit, solving = () => false } = {}) {
       (!past && ctl.revealed) ? note() : null,
       ctl.snap?.signedIn ? null : signInPrompt(),
       SHOW_COUNT_BOARD ? [
-        el('h3', { class: 'sotd-h3-second' }, 'Most solves today',
-          el('span', { class: 'sotd-h3-note', text: 'any event · resets at midnight IST' })),
+        el('h3', { class: 'sotd-h3-second' }, t('Most solves today'),
+          el('span', { class: 'sotd-h3-note', text: t('any event · resets at midnight IST') })),
         countBoard(ctl.countBoard()),
       ] : null,
     ));

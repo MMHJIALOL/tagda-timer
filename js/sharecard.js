@@ -1,3 +1,4 @@
+import { t } from './i18n.js';
 /* ===========================================================
    Tagda Timer — shareable solve cards
 
@@ -161,7 +162,7 @@ function paintHero(ctx, c, y, label, value, sub) {
   ctx.fillStyle = c.accent2;
   ctx.font = `700 30px ${SANS}`;
   ctx.letterSpacing = '6px';
-  ctx.fillText(String(label).toUpperCase(), 74, y);
+  ctx.fillText(t(String(label)).toUpperCase(), 74, y);
   ctx.letterSpacing = '0px';
 
   const size = fitOneLine(ctx, value, W - 148, MONO, 800, 190, 70);
@@ -206,7 +207,7 @@ function paintScramble(ctx, c, y, scramble, { title = 'SCRAMBLE', maxLines = 4, 
   ctx.fillStyle = hex(c.text, 0.42);
   ctx.font = `700 20px ${SANS}`;
   ctx.letterSpacing = '4px';
-  ctx.fillText(title, x + pad, y + pad);
+  ctx.fillText(t(title), x + pad, y + pad);
   ctx.letterSpacing = '0px';
 
   ctx.fillStyle = c.text;
@@ -254,18 +255,18 @@ export async function drawSolveCard(solve, { index = null } = {}) {
   const ev = eventOf(solve.event);
   const mode = modeOf(solve.mode);
   paintBackground(ctx, H, c);
-  paintHeader(ctx, c, logo, index ? `SOLVE #${index}` : ev.short);
+  paintHeader(ctx, c, logo, index ? t('SOLVE #{n}', { n: index }) : ev.short);
 
   // A Fewest Moves card says 28, and says what 28 is — a card with a bare
   // number on it goes somewhere this app's conventions are not known.
   const moves = isMoveResult(solve);
-  const value = fmtResult(eff(solve), moves) + (moves && eff(solve) !== DNF ? ' moves' : '');
-  const bits = [relay ? `Relay · ${relay.length} puzzles` : ev.name];
+  const value = fmtResult(eff(solve), moves) + (moves && eff(solve) !== DNF ? t(' moves') : '');
+  const bits = [relay ? t('Relay · {n} puzzles', { n: relay.length }) : ev.name];
   if (mode && mode.kind !== 'wca') bits.push(mode.name);
   bits.push(fmtDate(solve.createdAt));
-  if (solve.penalty === '+2') bits.push('+2 penalty');
+  if (solve.penalty === '+2') bits.push(t('+2 penalty'));
 
-  let y = paintHero(ctx, c, 250, solve.caseName || (relay ? 'total' : 'single'), value, bits.join('  ·  '));
+  let y = paintHero(ctx, c, 250, solve.caseName || t(relay ? 'total' : 'single'), value, bits.join('  ·  '));
 
   if (relay) {
     y = paintRows(ctx, c, y + 56, relay.map(p => ({
@@ -348,7 +349,7 @@ export async function drawReconCard({ scramble = '', title = 'Reconstruction', s
 
   const paint = (ctx, H) => {
     paintBackground(ctx, H, c);
-    paintHeader(ctx, c, logo, 'RECONSTRUCTION');
+    paintHeader(ctx, c, logo, t('RECONSTRUCTION'));
 
     /* The time is the headline and the move count is the footnote — it is the
        solve being shared, and the count is how it was done. The step count was
@@ -369,12 +370,12 @@ export async function drawReconCard({ scramble = '', title = 'Reconstruction', s
     const zbUsed = steps.some(st => st.zb);
     ctx.fillStyle = hex(c.text, 0.55);
     ctx.font = `500 26px ${SANS}`;
-    ctx.fillText(`${moves} ${moves === 1 ? 'move' : 'moves'}`, 74, heroBase + 44);
+    ctx.fillText(`${moves} ${t(moves === 1 ? 'move' : 'moves')}`, 74, heroBase + 44);
     if (zbUsed) {
       // The one thing about this solve worth calling out from across a feed.
       ctx.fillStyle = c.accent2;
       ctx.font = `700 24px ${SANS}`;
-      ctx.fillText('ZBLL finish', 74, heroBase + 80);
+      ctx.fillText(t('ZBLL finish'), 74, heroBase + 80);
     }
     const leftBottom = heroBase + (zbUsed ? 100 : 64);
 
@@ -417,7 +418,7 @@ export async function drawReconCard({ scramble = '', title = 'Reconstruction', s
     ctx.fillStyle = hex(c.text, 0.42);
     ctx.font = `700 20px ${SANS}`;
     ctx.letterSpacing = '4px';
-    ctx.fillText('SOLUTION', 74 + pad, boxTop + pad);
+    ctx.fillText(t('SOLUTION'), 74 + pad, boxTop + pad);
     ctx.letterSpacing = '0px';
 
     let ry = boxTop + pad + 40;
@@ -458,7 +459,7 @@ export async function drawReconCard({ scramble = '', title = 'Reconstruction', s
     if (spare) {
       ctx.fillStyle = hex(c.text, 0.45);
       ctx.font = `500 22px ${SANS}`;
-      ctx.fillText(`+ ${spare} more step${spare === 1 ? '' : 's'}`, 74 + pad, ry);
+      ctx.fillText(t(spare === 1 ? '+ {n} more step' : '+ {n} more steps', { n: spare }), 74 + pad, ry);
     }
     ctx.textBaseline = 'alphabetic';
 
@@ -484,7 +485,7 @@ export async function drawReconCard({ scramble = '', title = 'Reconstruction', s
    Card 2 — an average: the counting times and their scrambles
    --------------------------------------------------------- */
 
-export async function drawAverageCard(solves, { label = 'average of 5', value = '—', trimmed = null } = {}) {
+export async function drawAverageCard(solves, { label = t('average of 5'), value = '—', trimmed = null } = {}) {
   await fontsReady();
   const c = themeColors();
   const logo = await logoImage();
@@ -501,7 +502,7 @@ export async function drawAverageCard(solves, { label = 'average of 5', value = 
   paintHeader(ctx, c, logo, ev.short);
 
   const y0 = paintHero(ctx, c, 250, label, value,
-    `${solves.length} solves  ·  ${fmtDate(solves.at(-1).createdAt)}`);
+    t('{n} solves', { n: solves.length }) + `  ·  ${fmtDate(solves.at(-1).createdAt)}`);
 
   // Trimmed solves are parenthesised, exactly as results are written up —
   // the number is there, it just did not count.
@@ -525,7 +526,7 @@ export function canvasBlob(canvas) {
 }
 
 export function shareText(kind, value) {
-  return `${kind} — ${value} on Tagda Timer`;
+  return t('{kind} — {value} on Tagda Timer', { kind, value });
 }
 
 /** Social links that work from a plain <a>: no SDKs, no tracking. */

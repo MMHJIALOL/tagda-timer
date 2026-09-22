@@ -1,3 +1,4 @@
+import { t } from './i18n.js';
 /* ===========================================================
    Scramble of the Day — the intro
    ===========================================================
@@ -36,7 +37,7 @@ const FACE_COLOR = {
 const PALETTE = ['#f4f4f4', '#ffd500', '#00a651', '#1e6fd9', '#c41e3a', '#ff5800'];
 const TOKENS = ["R", "U'", "F2", "L", "D'", "B", "R2", "U", "F'", "L2", "D", "B'"];
 const GOLD = '#ffd166', ACCENT = '#7c5cff', TEXT = '#ececf5', TEXT_DIM = '#9a8cd6';
-const SUBTITLE = 'One scramble. One shot.';
+const SUBTITLE = t('One scramble. One shot.');
 
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 const lerp = (from, to, ease) => (p) => from + (to - from) * ease(p);
@@ -380,7 +381,7 @@ export function playSotdIntro() {
   const skipBtn = mk('button', null, root);
   skipBtn.className = 'sotd-intro-skip';
   skipBtn.type = 'button';
-  skipBtn.innerHTML = 'Skip <kbd>space</kbd>';
+  skipBtn.innerHTML = t('Skip') + ' <kbd>space</kbd>';
 
   return new Promise((resolve) => {
     let raf = 0, start = 0, done = false;

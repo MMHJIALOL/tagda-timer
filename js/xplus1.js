@@ -1,3 +1,4 @@
+import { t, lang } from './i18n.js';
 /* ===========================================================
    Tagda Timer — the Cross+1 trainer
 
@@ -84,7 +85,7 @@ const CROSS_COLOURS = [
   { face: 'L', name: 'orange', hex: '#ff8b00' },
 ];
 const colourOf = (face) => CROSS_COLOURS.find(c => c.face === face);
-const crossName = (face) => face === 'auto' ? 'best colour' : `${colourOf(face)?.name || face} cross`;
+const crossName = (face) => face === 'auto' ? t('best colour') : t(`${colourOf(face)?.name || face} cross`);
 
 /* Where each face sits on the unfolded net:
         U
@@ -96,7 +97,7 @@ const NET_PLACE = { U: [3, 0], L: [0, 3], F: [3, 3], R: [6, 3], B: [9, 3], D: [3
    and its edge home ignoring everything else" — a true lower bound on the
    insertion, which is exactly the right granularity for "is this one easy?". */
 const tierOf = (d) => d === 0 ? 'done' : d <= 3 ? 'easy' : d <= 5 ? 'fair' : 'hard';
-const TIER_WORD = { done: 'already in', easy: 'easy', fair: 'fair', hard: 'awkward' };
+const TIER_WORD = { done: t('already in'), easy: t('easy'), fair: t('fair'), hard: t('awkward') };
 
 const DEFAULTS = {
   crossFace: 'U',            // white — where most people start. 'auto' weighs all six
@@ -258,7 +259,7 @@ let ticket = 0;
 function getWorker() {
   if (worker || workerDead) return worker;
   try {
-    worker = new Worker(new URL('./solver.worker.js', import.meta.url), { type: 'module' });
+    worker = new Worker(new URL(`./solver.worker.js?lang=${lang}`, import.meta.url), { type: 'module' });
     worker.onmessage = (e) => {
       const { id, result, error } = e.data || {};
       const job = jobs.get(id);
@@ -270,7 +271,7 @@ function getWorker() {
       console.warn('[xp1] solver worker failed, falling back', e.message);
       workerDead = true;
       worker = null;
-      for (const job of jobs.values()) job.reject(new Error('worker died'));
+      for (const job of jobs.values()) job.reject(new Error(t('worker died')));
       jobs.clear();
     };
   } catch (err) {
@@ -471,7 +472,7 @@ function paintNet(moves, marks = []) {
   for (const m of marks) {
     for (const i of pieceCells(fl, m.corner, m.edge)) {
       ui.cells[i].dataset.mark = m.tier;
-      ui.cells[i].title = `${m.slot} pair — ${TIER_WORD[m.tier]}`;
+      ui.cells[i].title = t('{slot} pair — {tier}', { slot: m.slot, tier: TIER_WORD[m.tier] });
     }
   }
   return fl;
@@ -490,13 +491,13 @@ function render() {
 }
 
 function renderTop() {
-  ui.scrambleEcho.textContent = S.scramble || 'no scramble yet';
+  ui.scrambleEcho.textContent = S.scramble || t('no scramble yet');
   ui.scrambleEcho.classList.toggle('empty', !S.scramble);
   // Never rewrite the box under somebody who is still typing in it.
   if (document.activeElement !== ui.scrambleBox) ui.scrambleBox.value = S.scramble;
   for (const b of ui.swatches.children) b.classList.toggle('on', b.dataset.face === S.settings.crossFace);
   ui.crossTag.textContent = crossName(S.settings.crossFace)
-    + (S.settings.crossFace !== 'auto' && S.settings.orient === 'bottom' ? ' · on the bottom' : '');
+    + (S.settings.crossFace !== 'auto' && S.settings.orient === 'bottom' ? t(' · on the bottom') : '');
 }
 
 /* ---------------- the 3D cube ----------------
@@ -513,7 +514,7 @@ async function mountPlayer() {
   if (player || !ui.cube3d) return;
   if (!await loadTwisty() || !customElements.get('twisty-player')) {
     // A dead box helps nobody; fall back to the view that always works.
-    ui.cube3d.append(el('div', { class: 'xp-nocube', text: 'the 3D cube could not load — showing the flat net' }));
+    ui.cube3d.append(el('div', { class: 'xp-nocube', text: t('the 3D cube could not load — showing the flat net') }));
     setSetting('view', 'net');
     return;
   }
@@ -588,17 +589,17 @@ function showCube() {
 }
 
 const FACE_WORD = {
-  U: 'on top', D: 'on the bottom', F: 'in front',
-  B: 'at the back', L: 'on the left', R: 'on the right',
+  U: t('on top'), D: t('on the bottom'), F: t('in front'),
+  B: t('at the back'), L: t('on the left'), R: t('on the right'),
 };
 
 /** How the cube is being held, said out loud — the moves only mean this. */
 function holdingNote() {
   const f = faceNow();
-  if (!f) return S.rot ? `turned ${S.rot}` : 'held as the scramble is drawn';
+  if (!f) return S.rot ? t('turned {r}', { r: S.rot }) : t('held as the scramble is drawn');
   const name = colourOf(f)?.name || f;
   const where = FACE_WORD[toUserFace(frameNow(), f)] || '';
-  return `${name} ${where}${S.rot ? ` · ${S.rot}` : ''}`;
+  return `${t(name)} ${where}${S.rot ? ` · ${S.rot}` : ''}`;
 }
 
 function renderStage() {
@@ -608,11 +609,11 @@ function renderStage() {
   host.dataset.view = S.settings.view;
 
   ui.hint.textContent =
-    S.phase === 'exec' ? 'eyes shut — execute, then press space to stop'
-    : S.phase === 'reveal' ? 'here is what was actually there'
+    S.phase === 'exec' ? t('eyes shut — execute, then press space to stop')
+    : S.phase === 'reveal' ? t('here is what was actually there')
     : S.settings.inspection === 'wca'
-      ? 'press space to start the 15 second countdown'
-      : 'take as long as you like — press space when you have it';
+      ? t('press space to start the 15 second countdown')
+      : t('take as long as you like — press space when you have it');
 
   for (const b of ui.viewSeg.children) b.classList.toggle('on', b.dataset.view === S.settings.view);
   ui.rotReset.disabled = S.rot === defaultRot();
@@ -626,7 +627,7 @@ function renderStage() {
     paintNet([S.scramble, rotNow(), sel ? sel.alg : ''].filter(Boolean).join(' '),
       sel ? sel.after.map(p => ({ ...p, tier: tierOf(p.dist) })) : []);
   }
-  ui.netCap.textContent = sel ? `after ${sel.alg} — the ${sel.slot} pair is in` : holdingNote();
+  ui.netCap.textContent = sel ? t('after {alg} — the {slot} pair is in', { alg: sel.alg, slot: sel.slot }) : holdingNote();
 
   renderLegend();
 }
@@ -636,12 +637,12 @@ function renderLegend() {
   if (S.phase !== 'reveal') return;
   const sel = selected();
   if (!sel) return;
-  ui.legend.append(el('span', { class: 'xp-leg-lbl', text: 'left standing' }));
+  ui.legend.append(el('span', { class: 'xp-leg-lbl', text: t('left standing') }));
   for (const p of sel.after) {
     const tier = tierOf(p.dist);
     ui.legend.append(el('span', { class: 'xp-chip', dataset: { mark: tier } },
       el('b', { text: p.slot }),
-      el('i', { text: p.dist === 0 ? 'already in' : `${p.dist} away · ${TIER_WORD[tier]}` })));
+      el('i', { text: p.dist === 0 ? t('already in') : t('{n} away · {tier}', { n: p.dist, tier: TIER_WORD[tier] }) })));
   }
 }
 
@@ -650,10 +651,10 @@ function renderLegend() {
    perfectly still is the worst of the three possible answers. */
 function renderToggles() {
   const rows = [
-    [ui.tpsBtn, 'rankTps', 'Put the lines that stay off B and F first',
-      'every line here is equally kind to the hands — nothing to reorder'],
-    [ui.presBtn, 'rankPreserve', 'Put the lines that leave an already-built pair standing first',
-      'this scramble has no pair built yet, so there is nothing to protect'],
+    [ui.tpsBtn, 'rankTps', t('Put the lines that stay off B and F first'),
+      t('every line here is equally kind to the hands — nothing to reorder')],
+    [ui.presBtn, 'rankPreserve', t('Put the lines that leave an already-built pair standing first'),
+      t('this scramble has no pair built yet, so there is nothing to protect')],
   ];
   for (const [btn, key, live, idle] of rows) {
     const bites = preferenceBites(key);
@@ -670,15 +671,15 @@ function renderResults() {
 
   if (S.phase !== 'reveal') {
     ui.headline.append(el('span', { class: 'n', text: '·' }),
-      el('span', { class: 'lbl', text: S.searching ? 'working the scramble out in the background…' : 'plan it, then start the clock' }));
-    ui.list.append(el('div', { class: 'xp-empty', text: 'The lines stay hidden until you have had your go.' }));
+      el('span', { class: 'lbl', text: S.searching ? t('working the scramble out in the background…') : t('plan it, then start the clock') }));
+    ui.list.append(el('div', { class: 'xp-empty', text: t('The lines stay hidden until you have had your go.') }));
     ui.more.textContent = '';
     return;
   }
 
   if (S.searching) {
-    ui.headline.append(el('span', { class: 'n', text: '…' }), el('span', { class: 'lbl', text: 'still searching' }));
-    ui.list.append(el('div', { class: 'xp-empty', text: 'thinking…' }));
+    ui.headline.append(el('span', { class: 'n', text: '…' }), el('span', { class: 'lbl', text: t('still searching') }));
+    ui.list.append(el('div', { class: 'xp-empty', text: t('thinking…') }));
     return;
   }
 
@@ -686,8 +687,8 @@ function renderResults() {
   if (!res || res.best < 0) {
     ui.headline.append(el('span', { class: 'n', text: '?' }),
       el('span', { class: 'lbl', text: res?.failed
-        ? 'the search could not run here'
-        : 'nothing found inside the depth limit — try raising it in settings' }));
+        ? t('the search could not run here')
+        : t('nothing found inside the depth limit — try raising it in settings') }));
     ui.more.textContent = '';
     return;
   }
@@ -697,16 +698,17 @@ function renderResults() {
   const extra = res.best - res.crossBest;
   ui.headline.append(
     el('span', { class: 'n', text: String(res.best) }),
-    el('span', { class: 'lbl', text: `moves for cross + 1 · the cross alone is ${res.crossBest}`
-      + (extra <= 0 ? ' — the pair is free' : `, so the pair costs ${extra}`) }));
+    el('span', { class: 'lbl', text: t('moves for cross + 1 · the cross alone is {n}', { n: res.crossBest })
+      + (extra <= 0 ? t(' — the pair is free') : t(', so the pair costs {n}', { n: extra })) }));
 
   /* A pair the scramble already built is lookahead you were handed. Saying so
      is the difference between "why is that line two moves longer" and "because
      it is the one that does not smash the pair you already have". */
   if (res.built?.length) {
     ui.list.append(el('div', { class: 'xp-built' },
-      `the scramble already built your ${res.built.join(' and ')} pair`
-      + (res.built.length > 1 ? 's' : '') + ' — the lines below say which ones survive'));
+      t(res.built.length > 1 ? 'the scramble already built your {slots} pairs' : 'the scramble already built your {slots} pair',
+        { slots: res.built.join(t(' and ')) })
+      + t(' — the lines below say which ones survive')));
   }
 
   renderPairTable(res);
@@ -715,17 +717,17 @@ function renderResults() {
   list.forEach((s, i) => {
     const row = el('div', {
       class: 'xp-sug' + (i === selectedIndex() ? ' on' : '') + (s.moves === res.best ? ' top' : ''),
-      title: 'Watch this one on the cube',
+      title: t('Watch this one on the cube'),
       onclick: () => { S.selKey = s.path.join(); render(); showCube(); },
     },
       el('span', {},
         el('span', { class: 'alg', text: s.alg }),
         el('span', { class: 'why' },
-          el('b', { text: `${s.slot} pair` }),
-          s.highTps ? el('i', { class: 'tag tps', text: 'R U L D only' }) : null,
-          s.bMoves ? el('i', { class: 'tag hard', text: s.bMoves === 1 ? '1 B move' : `${s.bMoves} B moves` }) : null,
-          s.preserves === false ? el('i', { class: 'tag broke', text: `breaks ${s.broke.join(', ')}` }) : null,
-          s.after[0] ? el('i', { class: 'tag next', text: `next: ${s.after[0].slot} ${s.after[0].dist} away` }) : null)),
+          el('b', { text: t('{slot} pair', { slot: s.slot }) }),
+          s.highTps ? el('i', { class: 'tag tps', text: t('R U L D only') }) : null,
+          s.bMoves ? el('i', { class: 'tag hard', text: s.bMoves === 1 ? t('1 B move') : t('{n} B moves', { n: s.bMoves }) }) : null,
+          s.preserves === false ? el('i', { class: 'tag broke', text: t('breaks {slots}', { slots: s.broke.join(', ') }) }) : null,
+          s.after[0] ? el('i', { class: 'tag next', text: t('next: {slot} {n} away', { slot: s.after[0].slot, n: s.after[0].dist }) }) : null)),
       el('span', { class: 'len', text: String(s.moves) }),
     );
     ui.list.append(row);
@@ -733,23 +735,23 @@ function renderResults() {
 
   const total = (res.list || []).length;
   ui.more.textContent = res.partial
-    ? `${list.length} of ${total} — the search ran out of budget before it ran out of depth`
-    : `${list.length} of ${total} found`;
+    ? t('{n} of {total} — the search ran out of budget before it ran out of depth', { n: list.length, total })
+    : t('{n} of {total} found', { n: list.length, total });
 }
 
 function renderPairTable(res) {
   const rows = (res.pairs || []).filter(p => p.face === res.face);
   if (!rows.length) return;
   const wrap = el('div', { class: 'xp-pairs' },
-    el('span', { class: 'xp-pairs-lbl', text: 'shortest, per pair' }));
+    el('span', { class: 'xp-pairs-lbl', text: t('shortest, per pair') }));
   for (const p of rows) {
     const on = S.pairFilter === p.rawSlot;
     const dead = p.best < 0;
     wrap.append(el('button', {
       class: 'xp-pair' + (on ? ' on' : '') + (p.best === res.best ? ' best' : '') + (dead ? ' dead' : ''),
-      title: dead ? `No line for the ${p.slot} pair inside the depth limit`
-        : on ? 'Showing only this pair — click to show them all again'
-        : `Show only the lines that build the ${p.slot} pair`,
+      title: dead ? t('No line for the {slot} pair inside the depth limit', { slot: p.slot })
+        : on ? t('Showing only this pair — click to show them all again')
+        : t('Show only the lines that build the {slot} pair', { slot: p.slot }),
       disabled: dead || null,
       // Clicking the pair you are curious about is the point of the table.
       onclick: () => { S.pairFilter = on ? null : p.rawSlot; S.selKey = null; render(); showCube(); },
@@ -759,18 +761,18 @@ function renderPairTable(res) {
   }
   if (S.pairFilter) {
     wrap.append(el('button', {
-      class: 'xp-pair clear', text: 'show all',
+      class: 'xp-pair clear', text: t('show all'),
       onclick: () => { S.pairFilter = null; S.selKey = null; render(); showCube(); },
     }));
   }
   ui.list.append(wrap);
 
   if (S.settings.crossFace === 'auto' && res.faces?.length > 1) {
-    const fw = el('div', { class: 'xp-pairs' }, el('span', { class: 'xp-pairs-lbl', text: 'by colour' }));
+    const fw = el('div', { class: 'xp-pairs' }, el('span', { class: 'xp-pairs-lbl', text: t('by colour') }));
     for (const f of res.faces) {
       fw.append(el('button', {
         class: 'xp-pair' + (f.face === res.face ? ' best' : ''),
-        title: `Solve the ${colourOf(f.face)?.name || f.face} cross instead`,
+        title: t('Solve the {cross} instead', { cross: t(`${colourOf(f.face)?.name || f.face} cross`) }),
         onclick: () => setSetting('crossFace', f.face),
       },
         el('b', { text: colourOf(f.face)?.name || f.face }),
@@ -790,24 +792,24 @@ function checkPlan() {
   const text = S.plan.trim();
   if (!text || !S.state) return null;
   const toks = parse(text);
-  if (!toks) return { kind: 'bad', msg: "can't read that — moves look like R U2 F'" };
+  if (!toks) return { kind: 'bad', msg: t("can't read that — moves look like R U2 F'") };
   const res = applyAlg(S.state, toks, frameNow());
-  if (!res) return { kind: 'bad', msg: "can't read that — moves look like R U2 F'" };
+  if (!res) return { kind: 'bad', msg: t("can't read that — moves look like R U2 F'") };
   const n = text.split(/\s+/).filter(t => t && !/^[xyz]/i.test(t)).length;
   const a = analyse(res.state, faceNow());
-  if (!a.cross) return { kind: 'bad', msg: `${n} moves, but that leaves the cross unfinished` };
+  if (!a.cross) return { kind: 'bad', msg: t('{n} moves, but that leaves the cross unfinished', { n }) };
   const done = a.slots.filter(s => s.done);
-  if (!done.length) return { kind: 'warn', msg: `cross done in ${n} — but no pair with it, so that is a cross, not a cross + 1` };
+  if (!done.length) return { kind: 'warn', msg: t('cross done in {n} — but no pair with it, so that is a cross, not a cross + 1', { n }) };
 
   const best = S.result?.best ?? -1;
   const fr = frameNow();
-  const where = done.map(s => [...s.label].map(f => toUserFace(fr, f)).join('')).join(' + ');
-  if (best < 0) return { kind: 'good', msg: `${n} moves — cross + the ${where} pair` };
+  const where = done.map(s => [...s.label].map(f => toUserFace(fr, f)).join('')).join(t(' + '));
+  if (best < 0) return { kind: 'good', msg: t('{n} moves — cross + the {slot} pair', { n, slot: where }) };
   const delta = n - best;
-  if (delta <= 0) return { kind: 'good', msg: `${n} moves — cross + the ${where} pair. That is optimal.` };
+  if (delta <= 0) return { kind: 'good', msg: t('{n} moves — cross + the {slot} pair. That is optimal.', { n, slot: where }) };
   return {
     kind: delta <= 2 ? 'good' : 'warn',
-    msg: `${n} moves — cross + the ${where} pair. ${delta} more than the ${best} that was there.`,
+    msg: t('{n} moves — cross + the {slot} pair. {delta} more than the {best} that was there.', { n, slot: where, delta, best }),
   };
 }
 
@@ -815,7 +817,7 @@ function renderPlan() {
   const v = checkPlan();
   ui.planOut.className = 'xp-plan-out' + (v ? ` ${v.kind}` : '');
   ui.planOut.textContent = v ? v.msg
-    : 'Optional — type the line you planned and this will tell you whether it works, and what it cost.';
+    : t('Optional — type the line you planned and this will tell you whether it works, and what it cost.');
 }
 
 /* =========================================================
@@ -1004,7 +1006,7 @@ function build() {
   host = el('div', { id: 'xp1', hidden: true });
 
   /* ---- top bar ---- */
-  ui.scrambleEcho = el('div', { class: 'xp-scramble mono', title: 'The scramble you are planning' });
+  ui.scrambleEcho = el('div', { class: 'xp-scramble mono', title: t('The scramble you are planning') });
 
   ui.swatches = el('span', { class: 'xp-swatches' },
     ...CROSS_COLOURS.map(c => el('button', {
@@ -1013,7 +1015,7 @@ function build() {
       onclick: () => setSetting('crossFace', c.face),
     })),
     el('button', {
-      class: 'xp-swatch auto', title: 'Weigh up all six colours — slower, but a real answer',
+      class: 'xp-swatch auto', title: t('Weigh up all six colours — slower, but a real answer'),
       dataset: { face: 'auto' }, text: 'auto', onclick: () => setSetting('crossFace', 'auto'),
     }));
 
@@ -1021,7 +1023,7 @@ function build() {
      the box, and a bad one puts the last good scramble back. */
   ui.scrambleBox = el('input', {
     class: 'xp-inp mono', spellcheck: 'false', autocomplete: 'off',
-    placeholder: 'paste or type your own scramble…', 'aria-label': 'Scramble to drill',
+    placeholder: t('paste or type your own scramble…'), 'aria-label': t('Scramble to drill'),
   });
   ui.scrambleBox.addEventListener('keydown', (e) => {
     e.stopPropagation();
@@ -1048,42 +1050,42 @@ function build() {
       el('span', { class: 'brand-text', html: 'Tagda <b>Timer</b>' })),
     el('button', {
       class: 'ghost-btn sm', onclick: () => close(),
-      html: '<svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg> back to timer',
+      html: '<svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg> ' + t('back to timer'),
     }),
     el('div', { class: 'xp-scr' },
-      el('span', { class: 'xp-scr-lbl', text: 'scramble' }),
+      el('span', { class: 'xp-scr-lbl', text: t('scramble') }),
       ui.scrambleBox,
       el('button', {
-        class: 'ghost-btn sm', title: 'Copy the scramble',
-        onclick: () => copy(S.scramble).then(ok => toast(ok ? 'Scramble copied' : 'Clipboard blocked', { kind: ok ? 'good' : 'bad' })),
+        class: 'ghost-btn sm', title: t('Copy the scramble'),
+        onclick: () => copy(S.scramble).then(ok => toast(ok ? t('Scramble copied') : t('Clipboard blocked'), { kind: ok ? 'good' : 'bad' })),
         html: '<svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/></svg>',
       })),
     ui.pick = el('div', { class: 'xp-pick' },
       el('button', {
-        class: 'ghost-btn sm', onclick: togglePicker, title: 'Drill the scramble of a solve you already did',
-        html: 'from a solve <svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>',
+        class: 'ghost-btn sm', onclick: togglePicker, title: t('Drill the scramble of a solve you already did'),
+        html: t('from a solve') + ' <svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>',
       }),
       ui.pickList = el('div', { class: 'xp-picklist', hidden: true })),
     el('div', { class: 'xp-cross-pick' }, el('span', { text: 'cross' }), ui.swatches),
     ui.crossTag = el('span', { class: 'xp-cross-tag' }),
     ui.settingsWrap = el('div', { class: 'xp-setwrap' },
       el('button', {
-        class: 'ghost-btn sm', title: 'Trainer settings', onclick: toggleSettings,
-        html: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.1"/><path d="M4.5 12h2M17.5 12h2M12 4.5v2M12 17.5v2"/></svg> settings',
+        class: 'ghost-btn sm', title: t('Trainer settings'), onclick: toggleSettings,
+        html: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.1"/><path d="M4.5 12h2M17.5 12h2M12 4.5v2M12 17.5v2"/></svg> ' + t('settings'),
       }),
       ui.settingsPop = el('div', { class: 'xp-settings', hidden: true })),
-    el('div', { class: 'xp-title', text: 'Cross + 1' }),
+    el('div', { class: 'xp-title', text: t('Cross + 1') }),
   );
 
   /* ---- left: the clock, the scramble, the cube ---- */
-  ui.clock = el('div', { class: 'xp-clock', text: '0.00' });
+  ui.clock = el('div', { class: 'xp-clock', text: t('0.00') });
   ui.hint = el('div', { class: 'xp-hint' });
   const net = buildNet();
   ui.cells = net.cells;
   ui.netCap = el('div', { class: 'xp-netcap' });
   ui.legend = el('div', { class: 'xp-legend' });
 
-  ui.newBtn = el('button', { class: 'ghost-btn sm', text: 'new scramble  (N)', onclick: () => nextScramble() });
+  ui.newBtn = el('button', { class: 'ghost-btn sm', text: t('new scramble  (N)'), onclick: () => nextScramble() });
 
   ui.cube3d = el('div', { class: 'xp-cube3d' });
   ui.faceTags = {};
@@ -1097,13 +1099,13 @@ function build() {
      pressed. No search runs again — the answers did not change, only the way
      they are written down. */
   ui.rots = el('div', { class: 'xp-rots' },
-    el('span', { class: 'xp-rots-lbl', text: 'turn' }),
+    el('span', { class: 'xp-rots-lbl', text: t('turn') }),
     ...['x', "x'", 'y', "y'", 'z', "z'"].map(r => el('button', {
-      class: 'xp-rot', text: r, title: `Turn the whole cube: ${r} — the moves rewrite themselves`,
+      class: 'xp-rot', text: r, title: t('Turn the whole cube: {r} — the moves rewrite themselves', { r }),
       onclick: () => turnCube(r),
     })),
     ui.rotReset = el('button', {
-      class: 'xp-rot reset', text: 'reset', title: 'Back to the cross on the bottom',
+      class: 'xp-rot reset', text: 'reset', title: t('Back to the cross on the bottom'),
       onclick: resetRot,
     }),
     ui.viewSeg = el('div', { class: 'xp-seg xp-view' },
@@ -1123,11 +1125,11 @@ function build() {
       ui.netCap,
       ui.rots,
     ),
-    el('div', { class: 'xp-blindnote', text: 'blacked out — you planned it, now do it' }),
+    el('div', { class: 'xp-blindnote', text: t('blacked out — you planned it, now do it') }),
     ui.legend,
     el('div', { class: 'xp-actions' },
       ui.newBtn,
-      el('button', { class: 'ghost-btn sm', text: 'show me  (Enter)', onclick: showAnswer }),
+      el('button', { class: 'ghost-btn sm', text: t('show me  (Enter)'), onclick: showAnswer }),
     ),
   );
   /* A tap anywhere on the stage drives the clock, the way the timer screen
@@ -1148,14 +1150,14 @@ function build() {
   ui.list = el('div', { class: 'xp-sugs' });
   ui.more = el('div', { class: 'xp-more' });
 
-  ui.tpsBtn = el('button', { class: 'xp-toggle', text: 'easy hands',
+  ui.tpsBtn = el('button', { class: 'xp-toggle', text: t('easy hands'),
     onclick: () => setSetting('rankTps', !S.settings.rankTps) });
-  ui.presBtn = el('button', { class: 'xp-toggle', text: 'keep built pairs',
+  ui.presBtn = el('button', { class: 'xp-toggle', text: t('keep built pairs'),
     onclick: () => setSetting('rankPreserve', !S.settings.rankPreserve) });
 
   ui.planBox = el('input', {
     class: 'xp-inp mono', spellcheck: 'false', autocomplete: 'off',
-    placeholder: 'the line you planned…', 'aria-label': 'The cross + 1 you planned',
+    placeholder: t('the line you planned…'), 'aria-label': t('The cross + 1 you planned'),
   });
   ui.planBox.addEventListener('keydown', e => e.stopPropagation());
   ui.planBox.addEventListener('input', () => {
@@ -1170,11 +1172,11 @@ function build() {
   const side = el('aside', { class: 'xp-side' },
     el('section', { class: 'panel xp-answers' },
       el('div', { class: 'panel-head' },
-        el('span', { text: 'Cross + 1' }),
+        el('span', { text: t('Cross + 1') }),
         el('span', { class: 'xp-toggles' }, el('span', { class: 'xp-toggles-lbl', text: 'prefer' }), ui.tpsBtn, ui.presBtn)),
       ui.headline, ui.list, ui.more),
     el('section', { class: 'panel xp-planner' },
-      el('div', { class: 'panel-head' }, el('span', { text: 'What you planned' })),
+      el('div', { class: 'panel-head' }, el('span', { text: t('What you planned') })),
       ui.planBox, ui.planOut),
   );
 
@@ -1196,7 +1198,7 @@ function togglePicker(e) {
   if (!open) return;
   ui.pickList.innerHTML = '';
   if (!library.length) {
-    ui.pickList.append(el('div', { class: 'xp-empty', text: 'No solves in this session yet.' }));
+    ui.pickList.append(el('div', { class: 'xp-empty', text: t('No solves in this session yet.') }));
     return;
   }
   for (const item of library) {
@@ -1241,45 +1243,44 @@ function buildSettings() {
   const s = S.settings;
   ui.settingsPop.innerHTML = '';
   ui.settingsPop.append(
-    setRow('Inspection', 'off by default — this is planning practice, not a comp run',
+    setRow('Inspection', t('off by default — this is planning practice, not a comp run'),
       choice([
-        { value: 'infinite', label: 'unlimited', title: 'Plan for as long as you like' },
-        { value: 'wca', label: '15 seconds', title: 'Real WCA inspection, with +2 and DNF' },
+        { value: 'infinite', label: t('unlimited'), title: t('Plan for as long as you like') },
+        { value: 'wca', label: t('15 seconds'), title: t('Real WCA inspection, with +2 and DNF') },
       ], s.inspection, v => setSetting('inspection', v))),
 
-    setRow('Starting grip', 'where each new scramble puts the cross — turn it any way you like from there',
+    setRow(t('Starting grip'), t('where each new scramble puts the cross — turn it any way you like from there'),
       choice([
-        { value: 'bottom', label: 'cross down', title: 'The way you actually solve' },
-        { value: 'scramble', label: 'as scrambled', title: 'White on top, the way the picture is drawn' },
+        { value: 'bottom', label: t('cross down'), title: t('The way you actually solve') },
+        { value: 'scramble', label: t('as scrambled'), title: t('White on top, the way the picture is drawn') },
       ], s.orient, v => setSetting('orient', v))),
 
-    setRow('Cube view', '',
+    setRow(t('Cube view'), '',
       choice([
-        { value: '3d', label: '3D', title: 'A cube you can turn, and watch the line play out on' },
-        { value: 'net', label: 'flat net', title: 'All six faces at once' },
+        { value: '3d', label: '3D', title: t('A cube you can turn, and watch the line play out on') },
+        { value: 'net', label: t('flat net'), title: t('All six faces at once') },
       ], s.view, v => setView(v))),
 
-    setRow('Black out when you start', 'the scramble and the cube go dark so the execution is blind',
+    setRow(t('Black out when you start'), t('the scramble and the cube go dark so the execution is blind'),
       switchBtn(s.blackout, v => setSetting('blackout', v))),
 
-    setRow('Hide the clock too', 'only while blacked out',
+    setRow(t('Hide the clock too'), t('only while blacked out'),
       switchBtn(s.hideTime, v => setSetting('hideTime', v))),
 
-    setRow('Scrambles', 'where the next one comes from',
+    setRow('Scrambles', t('where the next one comes from'),
       choice([
-        { value: 'own', label: 'generate here' },
-        { value: 'timer', label: "the timer's", title: 'Drill the scramble that is on the timer screen right now' },
+        { value: 'own', label: t('generate here') },
+        { value: 'timer', label: t("the timer's"), title: t('Drill the scramble that is on the timer screen right now') },
       ], s.scrambleSource, v => setSetting('scrambleSource', v))),
 
-    setRow('Lines to show', '',
+    setRow(t('Lines to show'), '',
       choice([4, 8, 15].map(n => ({ value: n, label: String(n) })), s.showLines, v => setSetting('showLines', v))),
 
-    setRow('Search depth', 'deeper finds more and takes longer',
+    setRow(t('Search depth'), t('deeper finds more and takes longer'),
       choice([10, 11, 12].map(n => ({ value: n, label: String(n) })), s.maxDepth, v => setSetting('maxDepth', v))),
 
     el('p', { class: 'xp-set-note', text:
-      'Every line the search returns is already rotation-free — it only ever turns the six faces, '
-      + 'so there is no regrip to filter out.' }),
+      t('Every line the search returns is already rotation-free — it only ever turns the six faces, so there is no regrip to filter out.') }),
   );
 }
 
