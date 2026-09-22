@@ -115,11 +115,12 @@ export class CubeView {
     this.setView(view);
   }
 
-  /** Only 3x3 has a last-layer view; cubes and FTO have a usable flat net. */
+  /** Only 3x3 has a last-layer view; cubes, FTO, pyraminx, skewb, square-1
+      and clock all have a usable flat drawing. */
   supports(view) {
     const cube = /^([234567])x\1x\1$/.test(this.puzzle);
     if (view === 'LL' || view === 'LL3') return this.puzzle === '3x3x3';
-    if (view === '2D') return cube || this.puzzle === 'fto';
+    if (view === '2D') return cube || ['fto', 'pyraminx', 'skewb', 'square1', 'clock'].includes(this.puzzle);
     return true;
   }
 

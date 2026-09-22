@@ -325,6 +325,8 @@ async function one(gen, eventId) {
 /* ---------------------------------------------------------
    Queue — always keeps N scrambles ready for the active mode
    --------------------------------------------------------- */
+const WARM = ['222', 'pyram', 'skewb', 'sq1', 'clock'];
+
 export class ScrambleQueue {
   constructor(depth = 3) {
     this.depth = depth;
@@ -334,20 +336,34 @@ export class ScrambleQueue {
     this.opts = {};
     this.onReady = null;
     this.waiters = [];
+    /* Scrambles already made for contexts that are not active: the rest of a
+       queue you switched away from, and the one-each warm-up below. Switching
+       back to an event hands them straight out instead of starting cold. */
+    this.stash = new Map();
+  }
+
+  static keyOf(eventId, modeId, opts = {}) {
+    /* The relay list is part of the context: two relay sessions are the same
+       event and the same mode, and a queue warmed for a 2-4 relay must never
+       hand its scramble set to a session racing five 2x2s. The relay list and
+       the multi-blind count only mean anything to those events, so nothing
+       else carries them -- or a pyraminx warmed up from a 3x3 session would
+       never match the key pyraminx asks for. */
+    const ev = EVENTS[eventId] || {};
+    return `${eventId}|${modeId}|${JSON.stringify(opts.allowedCases || '')}|${ev.multi ? opts.multiCount || '' : ''}|${ev.relay ? (opts.relay || []).join(',') : ''}`;
   }
 
   /** Switch event/mode. Drops the old queue and starts warming the new one. */
   setContext(eventId, modeId, opts = {}) {
-    /* The relay list is part of the context: two relay sessions are the same
-       event and the same mode, and a queue warmed for a 2-4 relay must never
-       hand its scramble set to a session racing five 2x2s. */
-    const key = `${eventId}|${modeId}|${JSON.stringify(opts.allowedCases || '')}|${opts.multiCount || ''}|${(opts.relay || []).join(',')}`;
+    const key = ScrambleQueue.keyOf(eventId, modeId, opts);
     if (key === this.key) return;
+    if (this.key) this.stash.set(this.key, this.items);
     this.key = key;
     this.eventId = eventId;
     this.modeId = modeId;
     this.opts = opts;
-    this.items = [];
+    this.items = this.stash.get(key) || [];
+    this.stash.delete(key);
     this._release();          // let anyone mid-wait fall through to a fresh one
     this.fill();
   }
@@ -359,14 +375,42 @@ export class ScrambleQueue {
     try {
       while (this.items.length < this.depth && key === this.key) {
         const s = await generate(this.eventId, this.modeId, this.opts);
-        if (key !== this.key) break;             // context changed mid-flight
+        // Context changed mid-flight: keep it for when that context comes back.
+        if (key !== this.key) { this.stash.get(key)?.push(s); break; }
         this.items.push(s);
         this._release();
         if (this.items.length === 1 && this.onReady) this.onReady();
       }
+      if (key === this.key) await this.warm(key);
     } finally {
       this.filling = false;
       this._release();
+    }
+    /* The context switched while that fill was in flight. setContext's own
+       fill() returned straight away because this one still held the flag, so
+       nothing has started on the new event -- and next() is parked waiting
+       for it. Start it now, or the new event never gets a scramble at all. */
+    if (key !== this.key) this.fill();
+  }
+
+  /**
+   * Once the active queue is full, make one scramble for each of the quick
+   * WCA puzzles. cubing.js builds each puzzle's solver the first time it is
+   * asked -- a second or so for pyraminx or square-1, and behind whatever
+   * the worker is already doing -- which is what made switching event sit on
+   * "generating scramble…". Paid here, while you are solving, it is gone by
+   * the time you switch.
+   */
+  async warm(active) {
+    if (this.modeId !== 'wca') return;
+    for (const id of WARM) {
+      if (this.key !== active) return;          // switched: that event goes first
+      const key = ScrambleQueue.keyOf(id, 'wca', this.opts);
+      if (this.stash.get(key)?.length || key === this.key) continue;
+      const s = await generate(id, 'wca', this.opts);
+      if (key === this.key) { this.items.push(s); continue; }  // switched to it meanwhile
+      this.stash.set(key, [...(this.stash.get(key) || []), s]);
+      if (this.items.length < this.depth) return; // the active queue comes first
     }
   }
 
@@ -386,13 +430,12 @@ export class ScrambleQueue {
    */
   async next() {
     if (!this.items.length) {
-      const key = this.key;
       if (!this.filling) this.fill();
       if (!this.items.length) await new Promise(r => this.waiters.push(r));
-      // The fill can end empty (context switched, or generation threw), and it
-      // can end because the context switched under us. Either way, make one
-      // ourselves rather than handing back undefined.
-      if (!this.items.length || key !== this.key) {
+      // The fill can end empty (generation threw). Make one ourselves rather
+      // than handing back undefined. A context switch while waiting is fine:
+      // items and eventId are both the new context's by now.
+      if (!this.items.length) {
         return generate(this.eventId, this.modeId, this.opts);
       }
     }
