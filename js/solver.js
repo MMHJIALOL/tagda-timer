@@ -30,9 +30,11 @@ import {
   MOVES, MOVE_NAMES, FACES, mulInto, applyAlg,
   faceEdges, toUserFace, facelets, parse,
   slotsFor, CORNER_NAMES, EDGE_NAMES, CORNER_FACELETS, EDGE_FACELETS, IDENTITY_FRAME,
+  SOLVED, OPP, rouxPieces, rouxStatus,
 } from './cube3.js';
 import { OLL, PLL } from './algs.js';
 import { OLL_ALGS, PLL_ALGS, ZBLL } from './algsets.js';
+import { SET as CMLL_DATA } from './algsets/CMLL.js';
 import { tidy } from './util.js';
 
 /* ---------------- piece transitions ----------------
@@ -495,6 +497,7 @@ function lastLayer(state, frame, analysis) {
  */
 export function suggest(state, frame, analysis, { limit = 20, timeMs = 1500, crossName = null, lead = [], slot = null } = {}) {
   lead = lead.map(f => FACES.indexOf(f)).filter(i => i >= 0);
+  if (analysis.method === 'roux') return suggestRoux(state, frame, analysis, { limit, timeMs, lead });
   const budget = { left: NODE_BUDGET };
   const started = performance.now();
   const out = { kind: analysis.phase, best: -1, list: [], partial: false, face: analysis.face, zb: false };
@@ -648,6 +651,332 @@ function dedupe(list) {
 
 /** Warm the table for a cross face before the panel needs it. */
 export const warm = (face) => { crossTable(face); };
+
+/* =========================================================
+   Roux
+
+   Four questions, each answered the way a Roux solver thinks about it:
+
+   First block  searched over all eighteen face turns, like the cross.
+                An r is an L to this model and an M is L' R, so a block
+                that wants them still gets found, just spelt in face turns.
+   Second block searched in the moves people actually use for it — U, R,
+                r and M — one square at a time, then the block.
+   CMLL         not searched. Every alg in the app's CMLL set is tried
+                with every AUF, exactly as OLL and PLL are.
+   LSE          searched in U and M: edge orientation, then UL/UR, then
+                the rest. That group is tiny, so no table is needed.
+
+   From the second block on, answers open with the rotation that puts
+   the first block on the left and its bottom down, and are written in
+   U R r M from there — which is how a Roux solve is written out.
+   ========================================================= */
+
+/* The standard scheme, for naming a block by its colours. */
+const COLOUR = { U: 'white', D: 'yellow', F: 'green', B: 'blue', R: 'red', L: 'orange' };
+const turnOf = (k) => (k === 1 ? '' : k === 2 ? '2' : "'");
+
+/* A move table from the position it makes out of a solved cube — which is
+   how composite turns like M, and wide turns under a rotation, get one. */
+const tableOf = (s) => ({ cp: s.subarray(0, 8), co: s.subarray(8, 16), ep: s.subarray(16, 28), eo: s.subarray(28, 40) });
+
+/** "Where does the piece at j go", for a move table — what the BFS walks. */
+function transOf(m) {
+  const ct = new Uint8Array(8), cw = new Uint8Array(8), et = new Uint8Array(12), ef = new Uint8Array(12);
+  for (let i = 0; i < 8; i++) { ct[m.cp[i]] = i; cw[m.cp[i]] = m.co[i]; }
+  for (let i = 0; i < 12; i++) { et[m.ep[i]] = i; ef[m.ep[i]] = m.eo[i]; }
+  return { ct, cw, et, ef };
+}
+const FACE_TRANS = MOVES.map(transOf);
+
+/** A handful of pieces, where each is and which way round, as one number. */
+function pieceIndex(s, cs, es) {
+  let idx = 0;
+  for (const c of cs) { let p = 0; while (s[p] !== c) p++; idx = idx * 24 + p * 3 + s[8 + p]; }
+  for (const e of es) { let p = 0; while (s[16 + p] !== e) p++; idx = idx * 24 + p * 2 + s[28 + p]; }
+  return idx;
+}
+
+/**
+ * Exact distance, for these pieces only, to any of `goals`, under `moves`.
+ * Three pieces is 13,824 entries — built in a blink, and exact for a square.
+ */
+function pieceTable(cs, es, goals, moves) {
+  const n = cs.length + es.length, nc = cs.length;
+  const dist = new Uint8Array(24 ** n).fill(255);
+  let frontier = [];
+  for (const g of goals) {
+    const i = pieceIndex(g, cs, es);
+    if (dist[i] === 255) { dist[i] = 0; frontier.push(i); }
+  }
+  const dig = new Array(n);
+  for (let d = 0; frontier.length; d++) {
+    const next = [];
+    for (const idx of frontier) {
+      let x = idx;
+      for (let i = n - 1; i >= 0; i--) { dig[i] = x % 24; x = (x / 24) | 0; }
+      for (const m of moves) {
+        let ni = 0;
+        for (let i = 0; i < n; i++) {
+          const v = dig[i];
+          if (i < nc) { const p = (v / 3) | 0; ni = ni * 24 + m.ct[p] * 3 + (v % 3 + m.cw[p]) % 3; }
+          else { const p = v >> 1; ni = ni * 24 + m.et[p] * 2 + ((v & 1) ^ m.ef[p]); }
+        }
+        if (dist[ni] === 255) { dist[ni] = d + 1; next.push(ni); }
+      }
+    }
+    frontier = next;
+  }
+  return dist;
+}
+
+const rouxTables = new Map();
+
+/**
+ * Distance for one square of a block, home under any turn of its own layer.
+ *
+ * The second block's tables also know about M. It is two face turns to this
+ * model and one to a Roux solver, and a table that charged two would make the
+ * search give up on lines that are really a move shorter than it thinks.
+ */
+function squareTable(set, layer, axis) {
+  const key = `${set.corners}|${set.edges}|${layer}|${axis}`;
+  if (rouxTables.has(key)) return rouxTables.get(key);
+  const goals = [0, 1, 2, 3].map(k => (k ? applyAlg(SOLVED, layer + turnOf(k)).state : SOLVED));
+  const moves = axis
+    ? [...FACE_TRANS, ...[1, 2, 3].map(a => transOf(tableOf(applyAlg(SOLVED, `${axis}${turnOf(4 - a)} ${layer}${turnOf(a)}`).state)))]
+    : FACE_TRANS;
+  const t = pieceTable(set.corners, set.edges, goals, moves);
+  rouxTables.set(key, t);
+  return t;
+}
+const squareH = (t, set) => (s) => t[pieceIndex(s, set.corners, set.edges)];
+
+/* The 24 ways to hold the cube, fewest rotations first. */
+const HOLDS = ['', 'x', "x'", 'x2', 'z', "z'"]
+  .flatMap(a => ['', 'y', "y'", 'y2'].map(b => [a, b].filter(Boolean).join(' ')))
+  .sort((a, b) => a.split(' ').filter(Boolean).length - b.split(' ').filter(Boolean).length);
+
+/**
+ * The rotation that puts the first block on the left with its bottom down,
+ * and the frame that leaves you in. The block's bottom is wherever its bottom
+ * edge is now, which after an M or two is not the face it started on.
+ */
+function rouxGrip(state, frame, P) {
+  const e = P.fbF.edges[0];
+  let at = 0;
+  while (state[16 + at] !== e) at++;
+  const down = [...EDGE_NAMES[at]].find(f => f !== P.side);
+  for (const rot of HOLDS) {
+    const f = rotatedFrame(frame, rot);
+    if (f.L === P.side && f.D === down) return { rot, frame: f };
+  }
+  return { rot: '', frame };
+}
+
+/**
+ * U, R, r and M (or just U and M) as move tables, for each of the four ways an
+ * M or r can leave the cube turned about the x axis. `nt` is where the move
+ * leaves you: an r is an x, an M an x'.
+ */
+function physMoves(frame0, letters) {
+  const frames = [frame0];
+  for (let t = 1; t < 4; t++) frames.push(rotatedFrame(frames[t - 1], 'x'));
+  const key = (f) => FACES.map(x => f[x]).join('');
+  const keys = frames.map(key);
+  return frames.map(f => letters.flatMap(l => ['', '2', "'"].map(sfx => {
+    const name = l + sfx;
+    const r = applyAlg(SOLVED, name, f);
+    return { name, letter: l, amt: sfx === '2' ? 2 : sfx ? 3 : 1, m: tableOf(r.state), nt: keys.indexOf(key(r.frame)) };
+  })));
+}
+
+/**
+ * Only one spelling of each run of turns about the x axis. R, r and M all
+ * commute, and r is R M', so R then M is kept only when it is not an r, and
+ * nothing follows an r or an M on that axis.
+ */
+function follows(p, m) {
+  if (p.letter === m.letter) return false;
+  if (p.letter === 'U' || m.letter === 'U') return true;
+  return p.letter === 'R' && m.letter === 'M' && (p.amt + m.amt) % 4 !== 0;
+}
+
+/** searchDepth, for moves that carry a rotation with them. */
+function searchPhys(start, P, goal, h, limit, want, out, budget) {
+  const S = [];
+  for (let i = 0; i <= limit; i++) S.push(new Uint8Array(40));
+  S[0].set(start);
+  const path = new Array(limit);
+  let nodes = 0;
+  const rec = (d, t, prev) => {
+    if (out.length >= want || nodes > budget.left) return;
+    if (d === limit) {
+      nodes++;
+      if (goal(S[d]) && !(d > 0 && goal(S[d - 1]))) out.push(path.slice(0, limit));
+      return;
+    }
+    if (d + h(S[d]) > limit) return;
+    for (const mv of P[t]) {
+      if (prev && !follows(prev, mv)) continue;
+      nodes++;
+      mulInto(S[d + 1], S[d], mv.m);
+      path[d] = mv.name;
+      rec(d + 1, mv.nt, mv);
+      if (out.length >= want || nodes > budget.left) return;
+    }
+  };
+  rec(0, 0, null);
+  budget.left -= nodes;
+  return out;
+}
+
+function solvePhys(start, P, goal, h, { want = 30, slack = 1, maxDepth = 12, budget }) {
+  const out = [];
+  let best = -1;
+  for (let d = 0; d <= maxDepth; d++) {
+    if (budget.left <= 0) break;
+    searchPhys(start, P, goal, h, d, want, out, budget);
+    if (out.length && best < 0) best = d;
+    if (best >= 0 && (d >= best + (best >= 9 ? 0 : slack) || out.length >= want)) break;
+  }
+  return { best, solutions: out };
+}
+
+const zero = () => 0;
+
+const CMLL_SET = CMLL_DATA.cases.map(c =>
+  merge(c, (CMLL_DATA.library?.[c.id]?.alternates || []).map(a => a.alg)));
+
+/** First block: every candidate block weighed by its tables, the best few searched. */
+function rouxFirstBlock(state, frame, a, { limit, lead, started, timeMs }) {
+  const bottoms = a.auto ? FACES : [a.bottom];
+  const cands = [];
+  for (const bottom of bottoms) {
+    for (const side of FACES) {
+      if (side === bottom || side === OPP[bottom]) continue;
+      const P = rouxPieces(side, bottom);
+      const hf = squareH(squareTable(P.fbF, side, null), P.fbF);
+      const hb = squareH(squareTable(P.fbB, side, null), P.fbB);
+      const h = (s) => Math.max(hf(s), hb(s));
+      cands.push({ side, bottom, P, h, hf, hb, lb: h(state), mine: side === a.side && bottom === a.bottom });
+    }
+  }
+  cands.sort((x, y) => x.lb - y.lb || y.mine - x.mine);
+  const out = { best: -1, list: [], partial: false };
+  const all = [];
+  const tries = cands.slice(0, a.auto ? 3 : 2);
+  for (const c of tries) {
+    if (performance.now() - started > timeMs) { out.partial = true; break; }
+    const budget = { left: NODE_BUDGET / tries.length };
+    const goal = (s) => c.h(s) === 0 && rouxStatus(s, c.side, c.bottom).fb;
+    const cap = out.best >= 0 ? Math.min(10, out.best + 1) : 10;
+    const { best, solutions } = solveGoal(state, goal, c.h, { want: 30, slack: 1, maxDepth: cap, budget, lead });
+    if (budget.left <= 0) out.partial = true;
+    if (best >= 0 && (out.best < 0 || best < out.best)) out.best = best;
+    const name = `${COLOUR[c.side]} side, ${COLOUR[c.bottom]} bottom`;
+    for (const p of solutions) {
+      for (const v of variants(p, frame)) all.push({ alg: v.alg, moves: v.moves, awkward: v.awkward, label: 'First block', note: gripNote(name, v.rot) });
+    }
+  }
+  /* A block too deep to find in time still has a square in it, and a square is
+     what most people build first anyway. */
+  if (!all.length) {
+    const c = cands[0];
+    const name = `${COLOUR[c.side]} side, ${COLOUR[c.bottom]} bottom`;
+    for (const h of [c.hf, c.hb]) {
+      const budget = { left: NODE_BUDGET / 4 };
+      const { best, solutions } = solveGoal(state, (s) => h(s) === 0, h, { want: 15, slack: 1, maxDepth: 8, budget, lead });
+      if (best >= 0 && (out.best < 0 || best < out.best)) out.best = best;
+      for (const p of solutions) {
+        for (const v of variants(p, frame)) all.push({ alg: v.alg, moves: v.moves, awkward: v.awkward, label: 'First block square', note: gripNote(name, v.rot) });
+      }
+    }
+  }
+  out.list = dedupe(all).sort(byEase).slice(0, limit);
+  return out;
+}
+
+/** "front" or "back", for a second-block square, as the cube is held. */
+function squareSide(state, frame, set) {
+  const c = set.corners[0];
+  let at = 0;
+  while (state[at] !== c) at++;
+  return [...CORNER_NAMES[at]].map(f => toUserFace(frame, f)).includes('F') ? 'front' : 'back';
+}
+
+function suggestRoux(state, frame, a, { limit = 20, timeMs = 1500, lead = [] }) {
+  const started = performance.now();
+  const out = { kind: a.phase, best: -1, list: [], partial: false, face: a.bottom, zb: false };
+  if (a.phase === 'done') return out;
+  if (a.phase === 'fb') return { ...out, ...rouxFirstBlock(state, frame, a, { limit, lead, started, timeMs }) };
+
+  const P = rouxPieces(a.side, a.bottom);
+  const grip = rouxGrip(state, frame, P);
+  const rot = grip.rot;
+  const write = (path) => tidy([rot, ...path].filter(Boolean).join(' '));
+  const status = (s) => rouxStatus(s, a.side, a.bottom);
+  const budget = { left: NODE_BUDGET };
+  const found = [];
+  const add = (solutions, label, note) => {
+    for (const p of solutions) {
+      const alg = write(p);
+      found.push({ alg, moves: faceTurns(alg), awkward: rot ? 1 : 0, label, note: rot ? `${note} · ${rot} first` : note });
+    }
+  };
+
+  if (a.phase === 'sb') {
+    const moves = physMoves(grip.frame, ['U', 'R', 'r', 'M']);
+    const tf = squareH(squareTable(P.sbF, P.opp, P.side), P.sbF);
+    const tb = squareH(squareTable(P.sbB, P.opp, P.side), P.sbB);
+    if (!a.sqF && !a.sqB) {
+      /* Either square, the way F2L offers any pair: the question is which one
+         was easier from here. */
+      for (const [h, set, which] of [[tf, P.sbF, 'sqF'], [tb, P.sbB, 'sqB']]) {
+        const { best, solutions } = solvePhys(state, moves, (s) => h(s) === 0 && status(s)[which], h,
+          { want: 20, slack: 1, maxDepth: 11, budget: { left: NODE_BUDGET / 2 } });
+        if (best >= 0 && (out.best < 0 || best < out.best)) out.best = best;
+        add(solutions, `Second block ${squareSide(state, grip.frame, set)} square`, 'U R r M');
+      }
+    } else {
+      const h = (s) => Math.max(tf(s), tb(s));
+      const { best, solutions } = solvePhys(state, moves, (s) => h(s) === 0 && status(s).sb, h,
+        { want: 30, slack: 1, maxDepth: 12, budget });
+      out.best = best;
+      add(solutions, 'Second block', 'finishes the block · U R r M');
+    }
+    out.partial = budget.left <= 0;
+    out.list = dedupe(found).sort(byNiceness).slice(0, limit);
+    return out;
+  }
+
+  if (a.phase === 'cmll') {
+    const ok = (s) => status(s).cmll;
+    const skip = AUFS.slice(1).map(u => tidy([rot, u].filter(Boolean).join(' ')))
+      .filter(alg => ok(applyAlg(state, alg, frame).state))
+      .map(alg => ({ alg, moves: faceTurns(alg), awkward: 0, kind: 'CMLL', label: 'CMLL skip', note: 'the corners only need the AUF' }));
+    const list = skip.length ? skip : hits(CMLL_SET, state, frame, rot, ok, AUFS, 'CMLL', e => e.name).sort(byNiceness);
+    out.list = list.slice(0, limit);
+    out.best = list.length ? list[0].moves : -1;
+    return out;
+  }
+
+  /* The last six edges, a step at a time. */
+  const moves = physMoves(grip.frame, ['U', 'M']);
+  const step = {
+    eo: [5, 'LSE edge orientation', 'EO'],
+    ulur: [6, 'UL and UR', 'UL/UR'],
+    lse: [7, 'the last four edges', 'LSE'],
+  }[a.phase];
+  const { best, solutions } = solvePhys(state, moves, (s) => status(s).rank >= step[0], zero,
+    { want: 20, slack: 1, maxDepth: 13, budget });
+  out.best = best;
+  add(solutions, step[2], `${step[1]} · M U`);
+  out.partial = budget.left <= 0;
+  out.list = dedupe(found).sort(byNiceness).slice(0, limit);
+  return out;
+}
+
 
 /* =========================================================
    Cross + 1 — the cross and the first pair, searched together

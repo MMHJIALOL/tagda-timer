@@ -13,7 +13,7 @@
    =========================================================== */
 
 import { el, copy } from './util.js';
-import { SOLVED, applyAlg, analyse, parse, canonical, IDENTITY_FRAME } from './cube3.js';
+import { SOLVED, applyAlg, analyse, analyseRoux, parse, canonical, IDENTITY_FRAME } from './cube3.js';
 import { suggest, slotLabel } from './solver.js';
 import { toast } from './toast.js';
 
@@ -64,7 +64,11 @@ const S = {
   steps: [],                // [{ alg, phase }]
   positions: [],            // state after each step, [0] is after the scramble
   frames: [],
-  crossPref: 'U',           // white, which is where most people start
+  method: loadMethod(),     // 'cfop' or 'roux'
+  /* The colour picker means the cross colour in CFOP and the first block's
+     bottom colour in Roux, so each method remembers its own. Roux starts on
+     auto: Roux solvers are far more often colour neutral about the block. */
+  prefs: { cfop: 'U', roux: 'auto' },
   library: [],              // recorded solves you can jump straight into
   replay: false,
   thinking: false,
@@ -72,7 +76,24 @@ const S = {
   slot: null,               // F2L slot picked by hand, as the solver names it
 };
 
-const PHASE_LABEL = { cross: 'Cross', f2l: 'F2L', oll: 'OLL', pll: 'PLL', done: 'Solved' };
+const PHASE_LABEL = {
+  cross: 'Cross', f2l: 'F2L', oll: 'OLL', pll: 'PLL', done: 'Solved',
+  fb: 'FB', sb: 'SB', cmll: 'CMLL', eo: 'EO', ulur: 'UL/UR', lse: 'LSE',
+};
+
+/* The progress strip, one bar per rank a solve can reach. */
+const STRIP = {
+  cfop: ['cross', 'f2l 1', 'f2l 2', 'f2l 3', 'f2l 4', 'oll', 'pll'],
+  roux: ['fb', 'sb sq', 'sb', 'cmll', 'eo', 'ul/ur', 'lse'],
+};
+
+/* Which method you reconstruct with is a fact about you, not about one solve,
+   so it is remembered across visits. Storage can be missing (private windows),
+   and then it is simply CFOP every time. */
+const METHOD_KEY = 'tagda.recon.method';
+function loadMethod() {
+  try { return localStorage.getItem(METHOD_KEY) === 'roux' ? 'roux' : 'cfop'; } catch { return 'cfop'; }
+}
 
 /* A step that took an oriented-edge OLL straight to a solved cube did both
    jobs at once, and calling that "OLL" undersells it — everywhere the step is
@@ -98,25 +119,30 @@ export const reconOpen = () => !!host && !host.hidden;
    Position bookkeeping
    ========================================================= */
 
+const pref = () => (S.prefs[S.method] === 'auto' ? null : S.prefs[S.method]);
+
+/** Where a position is in the solve, for whichever method is picked. */
+const analyseAt = (state, frame) =>
+  (S.method === 'roux' ? analyseRoux(state, pref(), frame) : analyse(state, pref()));
+
 /** Rebuild every intermediate position from the scramble forwards. */
 function recompute() {
   const start = applyAlg(SOLVED, S.scramble, IDENTITY_FRAME);
   if (!start) { S.positions = []; S.frames = []; return false; }
   S.positions = [start.state];
   S.frames = [start.frame];
-  const pref = S.crossPref === 'auto' ? null : S.crossPref;
   for (const step of S.steps) {
     const prev = S.positions.at(-1), pf = S.frames.at(-1);
     // A step is named for the phase it was working on, not the one it left you
     // in — the move that finishes the cross belongs under "Cross".
-    const a = analyse(prev, pref);
+    const a = analyseAt(prev, pf);
     step.phase = a.phase;
     step.rank = rankOf(a);
     const next = applyAlg(prev, step.alg, pf);
     if (!next) break;
     // Recognised rather than remembered, so it survives closing the panel:
     // an OLL with its edges already up that comes out solved was a ZBLL.
-    step.zb = a.phase === 'oll' && a.eo && analyse(next.state, pref).solved;
+    step.zb = a.phase === 'oll' && a.eo && analyseAt(next.state, next.frame).solved;
     S.positions.push(next.state);
     S.frames.push(next.frame);
   }
@@ -124,13 +150,15 @@ function recompute() {
 }
 
 /**
- * How far through a CFOP solve a position is, as one increasing number:
+ * How far through a solve a position is, as one increasing number. Roux
+ * works its own out (see rouxStatus); for CFOP it is
  * 0 before the cross, 1-4 as the pairs go in, 5 once F2L is whole, 6 once the
  * last layer is oriented, 7 when it is finished. Steps break where this goes
  * up, which is what stops a pair insertion that momentarily disturbs the cross
  * from being filed under "Cross".
  */
 function rankOf(a) {
+  if (a.method === 'roux') return a.rank;
   if (a.solved) return 7;
   if (a.oll) return 6;
   if (a.f2l) return 5;
@@ -154,7 +182,7 @@ function explode(scramble, moves) {
   for (const raw of list) {
     const tok = canonical(raw);
     if (!tok) break;
-    const a = analyse(state);
+    const a = analyseAt(state, frame);
     const rank = rankOf(a);
     const last = steps.at(-1);
     if (joinsLast(last, rank)) last.alg += ` ${tok}`;
@@ -170,8 +198,8 @@ const currentState = () => S.positions.at(-1);
 const currentFrame = () => S.frames.at(-1);
 const allMoves = () => S.steps.map(s => s.alg).join(' ').trim();
 
-/** Analysis of where we are, honouring a hand-picked cross colour. */
-const look = () => analyse(currentState(), S.crossPref === 'auto' ? null : S.crossPref);
+/** Analysis of where we are, honouring the method and a hand-picked colour. */
+const look = () => analyseAt(currentState(), currentFrame());
 
 /* =========================================================
    Rendering
@@ -232,9 +260,9 @@ function holdHover(e) {
   clickedAt = e ? { x: e.clientX, y: e.clientY } : null;
 }
 
-/** Pick the cross colour by hand. Everything downstream is asked about it. */
+/** Pick the cross (or block bottom) colour by hand. Everything downstream is asked about it. */
 function setCross(face) {
-  S.crossPref = face;
+  S.prefs[S.method] = face;
   S.slot = null;
   lastBest = null;
   commit();
@@ -244,9 +272,36 @@ function setCross(face) {
 const crossLabel = (a) => `${colourOf(a.face)?.name || a.face} cross`;
 
 function paintCrossPicker() {
+  const roux = S.method === 'roux';
+  ui.crossLbl.textContent = roux ? 'bottom' : 'cross';
   for (const b of ui.crossSwatches.children) {
-    b.classList.toggle('on', b.dataset.face === S.crossPref);
+    b.classList.toggle('on', b.dataset.face === S.prefs[S.method]);
+    const name = colourOf(b.dataset.face)?.name;
+    const tip = b.dataset.face === 'auto'
+      ? (roux ? 'Work out which block you are building from the cube' : 'Work out the cross colour from the cube')
+      : (roux ? `First block with ${name} on the bottom` : `${name} cross`);
+    b.title = tip;
+    b.setAttribute('aria-label', tip);
   }
+  for (const b of ui.methodBtns.children) {
+    const on = b.dataset.method === S.method;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-pressed', String(on));
+  }
+}
+
+/** CFOP or Roux. Nothing about the moves changes - only how they are read. */
+function setMethod(method) {
+  if (method === S.method) return;
+  S.method = method;
+  try { localStorage.setItem(METHOD_KEY, method); } catch { /* private mode */ }
+  S.slot = null;
+  lastBest = null;
+  ui.legend.replaceChildren(...STRIP[method].map(t => el('span', { text: t })));
+  /* The lines are re-cut too: where one step ends is a question about the
+     method, and a Roux solve read as CFOP is one long "Cross". */
+  S.steps = explode(S.scramble, allMoves());
+  commit();
 }
 
 /* Set while a move is being committed. The commit redraws the panel, and the
@@ -299,18 +354,12 @@ function renderSteps(a) {
   ui.steps.scrollTop = ui.steps.scrollHeight;
 }
 
+/* Bar i is behind you once the solve has reached rank i + 1 - the same for
+   both methods, because both ranks count seven milestones. */
 function renderStrip(a) {
-  ui.strip.innerHTML = '';
-  const order = ['cross', 'f2l1', 'f2l2', 'f2l3', 'f2l4', 'oll', 'pll'];
-  const doneSlots = a.slots ? a.slots.filter(s => s.done).length : 0;
-  const reached = { cross: a.cross, f2l1: doneSlots >= 1, f2l2: doneSlots >= 2, f2l3: doneSlots >= 3, f2l4: a.f2l, oll: a.oll, pll: a.solved };
-  let markedNow = false;
-  for (const k of order) {
-    const done = reached[k];
-    const now = !done && !markedNow;
-    if (now) markedNow = true;
-    ui.strip.append(el('div', { class: done ? 'done' : now ? 'now' : '' }));
-  }
+  const rank = rankOf(a);
+  ui.strip.replaceChildren(...STRIP[S.method].map((_, i) =>
+    el('div', { class: rank > i ? 'done' : rank === i ? 'now' : '' })));
 }
 
 /* ---------------- driving the cube ----------------
@@ -522,7 +571,7 @@ function renderSuggestions(a) {
   // The ticket drops any result a newer click has already outrun.
   const ticket = ++pending;
   askSolver(currentState(), currentFrame(), a, {
-    limit: 20, crossName: crossLabel(a), lead: leadFaces(),
+    limit: 20, crossName: a.method === 'roux' ? null : crossLabel(a), lead: leadFaces(),
     slot: a.phase === 'f2l' ? S.slot : null,
   })
     .then((res) => { if (ticket === pending) paintSuggestions(res, a); })
@@ -608,6 +657,11 @@ function paintSuggestions(res, a) {
     const what = a.phase === 'cross' ? `to finish the ${crossLabel(a)}`
       : a.phase === 'f2l' ? (S.slot ? `to insert the ${slotLabel(S.slot, currentFrame())} pair` : 'to insert the easiest pair')
       : a.phase === 'oll' ? 'to orient the last layer'
+      : a.phase === 'fb' ? 'to build the first block'
+      : a.phase === 'sb' ? (a.sqF || a.sqB ? 'to finish the second block' : 'to build a second-block square')
+      : a.phase === 'cmll' ? 'to solve the top corners'
+      : a.phase === 'eo' ? 'to orient the last six edges'
+      : a.phase === 'ulur' ? 'to put UL and UR in'
       : 'to finish the solve';
     /* The edges are already up, so this OLL does not need a PLL after it.
        That is worth saying out loud — it is the difference between two algs
@@ -858,13 +912,20 @@ function build() {
   const left = el('section', { class: 'panel rc-left' },
     el('div', { class: 'panel-head' },
       el('span', { text: 'Position' }),
+      /* How the moves are read: where one step ends and the next begins, and
+         what gets suggested. The moves themselves are the same either way. */
+      ui.methodBtns = el('span', { class: 'rc-method', role: 'group', 'aria-label': 'Solving method' },
+        ...[['cfop', 'CFOP'], ['roux', 'Roux']].map(([m, label]) => el('button', {
+          class: 'rc-rot', text: label, dataset: { method: m },
+          title: `Read the solve as ${label}`, onclick: () => setMethod(m),
+        }))),
       ui.count = el('span', { class: 'panel-sub', text: '0 moves so far' })),
     ui.scrambleEcho,
     ui.stage,
     el('div', { class: 'rc-cube-tools' },
       ui.replayBtn,
       el('span', { class: 'rc-cross-pick' },
-        el('span', { text: 'cross' }),
+        ui.crossLbl = el('span', { text: 'cross' }),
         ui.crossSwatches = el('span', { class: 'rc-swatches' },
           ...CROSS_COLOURS.map(c => el('button', {
             class: 'rc-swatch', title: `${c.name} cross`, 'aria-label': `${c.name} cross`,
@@ -879,8 +940,8 @@ function build() {
     ),
     ui.rots,
     ui.strip,
-    el('div', { class: 'rc-strip-legend' },
-      ...['cross', 'f2l 1', 'f2l 2', 'f2l 3', 'f2l 4', 'oll', 'pll'].map(t => el('span', { text: t }))),
+    ui.legend = el('div', { class: 'rc-strip-legend' },
+      ...STRIP[S.method].map(t => el('span', { text: t }))),
   );
 
   /* ---- right: the reconstruction and what comes next ---- */
@@ -927,7 +988,8 @@ function build() {
         el('button', { class: 'btn primary', text: 'add', onclick: () => flushInput() })),
       el('p', { class: 'rc-hint', text:
         'Types in caps and adds as you go — finish a move, press space. Not in the list? '
-        + 'Type it anyway; the suggestions rebuild from wherever you land. Wide turns are RW, LW, UW.' }),
+        + 'Type it anyway; the suggestions rebuild from wherever you land. Wide turns are RW, LW, UW; '
+        + 'slices are M, E, S.' }),
     ),
   );
 

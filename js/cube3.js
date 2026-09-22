@@ -351,3 +351,157 @@ export function analyse(s, prefer = null) {
 const OPP = { U: 'D', D: 'U', L: 'R', R: 'L', F: 'B', B: 'F' };
 const isOpposite = (a, b) => OPP[a] === b;
 export { OPP };
+
+/* ---------------- Roux ----------------
+   A Roux solve is two 1x2x3 blocks, the four top corners, then the six
+   edges left over, solved with M and U. None of that fits `analyse`, which
+   is built around a cross.
+
+   The catch is the M slice. This model never moves a centre: an M is L' R
+   plus a rotation, so after one the first block is — as far as the model
+   is concerned — turned a quarter on its own layer, even though nobody
+   touched it. So a block counts as built when some turn of its own layer
+   would put it home, and everything after the first block is asked of the
+   cube with those turns undone ("normalised"): both blocks home, and the
+   M slice's centres lined up with them. */
+
+const ROUX_PIECES = new Map();
+
+/**
+ * The pieces of a Roux solve whose first block sits on `side` with its bottom
+ * on `bottom`. `f` and `b` are the two faces the blocks run between; the
+ * squares are named for them.
+ */
+export function rouxPieces(side, bottom) {
+  const key = side + bottom;
+  if (ROUX_PIECES.has(key)) return ROUX_PIECES.get(key);
+  const opp = OPP[side], top = OPP[bottom];
+  const [f, b] = FACES.filter(x => x !== side && x !== opp && x !== bottom && x !== top);
+  const E = (...fs) => edgeIndex(fs.join(''));
+  const C = (...fs) => cornerIndex(fs.join(''));
+  const sq = (x, y) => ({ corners: [C(x, bottom, y)], edges: [E(x, bottom), E(x, y)] });
+  const p = {
+    side, opp, bottom, top, f, b,
+    fbF: sq(side, f), fbB: sq(side, b), sbF: sq(opp, f), sbB: sq(opp, b),
+    cmll: [C(side, top, f), C(side, top, b), C(opp, top, f), C(opp, top, b)],
+    lse: [E(side, top), E(opp, top), E(bottom, f), E(bottom, b), E(top, f), E(top, b)],
+    ulur: [E(side, top), E(opp, top)],
+  };
+  ROUX_PIECES.set(key, p);
+  return p;
+}
+
+const home = (s, set) => set.corners.every(i => cornerHome(s, i)) && set.edges.every(i => edgeHome(s, i));
+
+/** `s` with `face` turned k quarters. A fresh array unless k is 0. */
+function turned(s, face, k) {
+  if (!k) return s;
+  const out = new Uint8Array(40);
+  mulInto(out, s, MOVES[moveIndex(face, k)]);
+  return out;
+}
+
+function solvedState(s) {
+  for (let i = 0; i < 8; i++) if (s[i] !== i || s[8 + i] !== 0) return false;
+  for (let i = 0; i < 12; i++) if (s[16 + i] !== i || s[28 + i] !== 0) return false;
+  return true;
+}
+
+/* Where a Roux solve is, as one increasing number, and the phase each rank is
+   working on. Squares are a rank of their own so a second-block square that
+   went in starts a new line, the way a pair does in CFOP. */
+export const ROUX_PHASES = ['fb', 'sb', 'sb', 'cmll', 'eo', 'ulur', 'lse', 'done'];
+
+/**
+ * How far a Roux solve with this first block has got.
+ *   rank  0 nothing, 1 first block, 2 a second-block square, 3 second block,
+ *         4 CMLL, 5 LSE edges oriented, 6 UL and UR in, 7 solved
+ *   k     the turn of the first block's layer that puts it home, or -1
+ */
+export function rouxStatus(s, side, bottom) {
+  const P = rouxPieces(side, bottom);
+  const st = { rank: 0, k: -1, fb: false, sqF: false, sqB: false, sb: false, cmll: false, eo: false, ulur: false, solved: false };
+  if (solvedState(s)) return Object.assign(st, { rank: 7, k: 0, fb: true, sqF: true, sqB: true, sb: true, cmll: true, eo: true, ulur: true, solved: true });
+  for (let k = 0; k < 4; k++) {
+    const t = turned(s, side, k);
+    if (home(t, P.fbF) && home(t, P.fbB)) { st.k = k; break; }
+  }
+  if (st.k < 0) return st;
+  st.fb = true; st.rank = 1;
+  /* The second block only counts lined up with the first: turning the two
+     outer layers the same way by the same amount is an M-slice offset, which
+     is free, and anything else is a block built on the wrong side. X^k and
+     X'^-k are that same-way turn, because clockwise on opposite faces is
+     opposite ways round. */
+  const u = turned(turned(s, side, st.k), P.opp, (4 - st.k) % 4);
+  st.sqF = home(u, P.sbF); st.sqB = home(u, P.sbB);
+  if (!st.sqF && !st.sqB) return st;
+  st.rank = 2;
+  if (!st.sqF || !st.sqB) return st;
+  st.sb = true; st.rank = 3;
+  if (!P.cmll.every(i => cornerHome(u, i))) return st;
+  st.cmll = true; st.rank = 4;
+  /* An LSE edge is good when its top-or-bottom colour is on the top or bottom
+     face — the one that M and U alone can solve without a flip. */
+  const fl = facelets(u);
+  const ud = (c) => c === P.top || c === P.bottom;
+  st.eo = P.lse.every(i => EF[i].some(x => ud(fl[x]) && ud(FACES[(x / 9) | 0])));
+  if (!st.eo) return st;
+  st.rank = 5;
+  if (!P.ulur.every(i => edgeHome(u, i))) return st;
+  st.ulur = true; st.rank = 6;
+  return st;
+}
+
+/** First-block pieces home under the best turn of its layer — a cheap way to
+    pick which block somebody is building before any of them is done. */
+function fbProgress(s, P) {
+  const corners = [...P.fbF.corners, ...P.fbB.corners];
+  const edges = [...new Set([...P.fbF.edges, ...P.fbB.edges])];
+  let best = 0;
+  for (let k = 0; k < 4; k++) {
+    const t = turned(s, P.side, k);
+    const n = corners.filter(i => cornerHome(t, i)).length + edges.filter(i => edgeHome(t, i)).length;
+    if (n > best) best = n;
+  }
+  return best;
+}
+
+/**
+ * The Roux counterpart of `analyse`.
+ * `prefer` is a bottom colour picked by hand; without one every first block
+ * on the cube is weighed and the one furthest along wins, ties going to a
+ * yellow-bottom block on the left.
+ *
+ * Once both blocks are in, either one is a "first block", and after UL/UR
+ * so is every block along that axis. `frame` settles those ties towards the
+ * block already sitting bottom-left the way the cube is held, so the answer
+ * does not change its mind about which way up you are between two moves and
+ * start every suggestion with a y2.
+ */
+export function analyseRoux(s, prefer = null, frame = null) {
+  const bottoms = prefer && FACES.includes(prefer) ? [prefer] : FACES;
+  const held = (side, bottom) => {
+    if (!frame || frame.L !== side) return false;
+    const e = edgeIndex(side + bottom);
+    let at = 0;
+    while (s[16 + at] !== e) at++;
+    return EDGE_NAMES[at].includes(frame.D);
+  };
+  let pick = null;
+  for (const bottom of bottoms) {
+    for (const side of FACES) {
+      if (side === bottom || side === OPP[bottom]) continue;
+      const st = rouxStatus(s, side, bottom);
+      const score = st.rank * 100 + (st.rank ? 0 : fbProgress(s, rouxPieces(side, bottom)) * 10)
+        + (st.rank && held(side, bottom) ? 5 : 0)
+        + (bottom === 'D' ? 2 : 0) + (side === 'L' ? 1 : 0);
+      if (!pick || score > pick.score) pick = { score, side, bottom, st };
+    }
+  }
+  const { side, bottom, st } = pick;
+  return {
+    ...st, method: 'roux', side, bottom, face: bottom, auto: bottoms.length > 1,
+    phase: ROUX_PHASES[st.rank],
+  };
+}
