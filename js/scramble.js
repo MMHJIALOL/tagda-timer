@@ -325,7 +325,26 @@ async function one(gen, eventId) {
 /* ---------------------------------------------------------
    Queue — always keeps N scrambles ready for the active mode
    --------------------------------------------------------- */
-const WARM = ['222', 'pyram', 'skewb', 'sq1', 'clock'];
+/* Every event with one random-state scramble of its own, 4x4 last: at about a
+   second a scramble (four cold) it is the one that holds cubing.js's single
+   worker longest, and anything asked for behind it waits. */
+const WARM = Object.keys(EVENTS)
+  .filter(id => !EVENTS[id].multi && !EVENTS[id].relay)
+  .sort((a, b) => a.startsWith('444') - b.startsWith('444'));
+
+/* Unseen WCA scrambles, kept across reloads. A switch that finds one here is
+   instant, however busy the worker is; without it the first switch after
+   every reload queued behind whatever the worker was already making. */
+const STASH_KEY = 'tagda.scrambleStash';
+const STASH_KEEP = 2;
+const keepable = (key, s) => key.split('|')[1] === 'wca' && s && s.official !== false && !s.parts;
+
+function loadStash() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(STASH_KEY) || '{}');
+    return new Map(Object.entries(raw).filter(([, v]) => Array.isArray(v)));
+  } catch { return new Map(); }
+}
 
 export class ScrambleQueue {
   constructor(depth = 3) {
@@ -339,7 +358,19 @@ export class ScrambleQueue {
     /* Scrambles already made for contexts that are not active: the rest of a
        queue you switched away from, and the one-each warm-up below. Switching
        back to an event hands them straight out instead of starting cold. */
-    this.stash = new Map();
+    this.stash = loadStash();
+  }
+
+  /** Write the unseen scrambles back, active queue included: none was shown. */
+  save() {
+    const out = {};
+    const add = (key, list) => {
+      const keep = (list || []).filter(x => keepable(key, x)).slice(0, STASH_KEEP);
+      if (keep.length) out[key] = keep;
+    };
+    for (const [key, list] of this.stash) add(key, list);
+    if (this.key) add(this.key, this.items);
+    try { localStorage.setItem(STASH_KEY, JSON.stringify(out)); } catch { /* full or blocked: memory only */ }
   }
 
   static keyOf(eventId, modeId, opts = {}) {
@@ -376,8 +407,13 @@ export class ScrambleQueue {
       while (this.items.length < this.depth && key === this.key) {
         const s = await generate(this.eventId, this.modeId, this.opts);
         // Context changed mid-flight: keep it for when that context comes back.
-        if (key !== this.key) { this.stash.get(key)?.push(s); break; }
+        if (key !== this.key) {
+          this.stash.set(key, [...(this.stash.get(key) || []), s]);
+          this.save();
+          break;
+        }
         this.items.push(s);
+        this.save();
         this._release();
         if (this.items.length === 1 && this.onReady) this.onReady();
       }
@@ -394,22 +430,25 @@ export class ScrambleQueue {
   }
 
   /**
-   * Once the active queue is full, make one scramble for each of the quick
-   * WCA puzzles. cubing.js builds each puzzle's solver the first time it is
-   * asked -- a second or so for pyraminx or square-1, and behind whatever
-   * the worker is already doing -- which is what made switching event sit on
-   * "generating scramble…". Paid here, while you are solving, it is gone by
-   * the time you switch.
+   * Once the active queue is full, make one scramble for every other WCA
+   * event. cubing.js runs one worker: a switch that has to generate waits for
+   * whatever that worker is already doing -- a second or more behind a 4x4 --
+   * which is what made switching event sit on "generating scramble…". With
+   * one waiting for each event (and kept across reloads) a switch never asks
+   * the worker for anything before it has something to show.
    */
   async warm(active) {
     if (this.modeId !== 'wca') return;
-    for (const id of WARM) {
+    // Two passes: one each first, then a second each, so a switch away and
+    // straight back still finds one waiting.
+    for (let want = 1; want <= STASH_KEEP; want++) for (const id of WARM) {
       if (this.key !== active) return;          // switched: that event goes first
       const key = ScrambleQueue.keyOf(id, 'wca', this.opts);
-      if (this.stash.get(key)?.length || key === this.key) continue;
+      if ((this.stash.get(key)?.length || 0) >= want || key === this.key) continue;
       const s = await generate(id, 'wca', this.opts);
       if (key === this.key) { this.items.push(s); continue; }  // switched to it meanwhile
       this.stash.set(key, [...(this.stash.get(key) || []), s]);
+      this.save();
       if (this.items.length < this.depth) return; // the active queue comes first
     }
   }
@@ -440,6 +479,7 @@ export class ScrambleQueue {
       }
     }
     const s = this.items.shift();
+    this.save();
     this.fill();
     return s;
   }

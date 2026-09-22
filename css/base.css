@@ -302,7 +302,10 @@ body.inspecting #timer-display { opacity: 0; }
   padding-top: 14px; padding-bottom: 14px;
 }
 .scramble.wrapped { text-wrap: balance; text-align: center; }
-.scramble.multiline { text-wrap: initial; }
+/* Seven lines of megaminx at 1.8 leading ate a third of the screen and ran
+   under the timer. csTimer's block is tight and only as wide as its lines;
+   so is this one, centred. JS (fitScrambleHeight) caps its height. */
+.scramble.multiline { text-wrap: initial; line-height: 1.45; flex: 0 1 auto; margin-inline: auto; }
 .scramble .m { display: inline-block; transition: color var(--dur-fast); }
 
 /* A race hold: the room is between scrambles, or you have finished one the
