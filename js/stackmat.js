@@ -44,6 +44,12 @@ export class StackmatDecoder {
     this.sinceGood = 0;
     this.buf = [];                      // pending samples for one frame
     this.frameAt = -1;
+    // Diagnostics only (?smdebug): how loud the line is, how many serial
+    // frames and packets came out of it, and the last raw bytes seen.
+    this.level = 0;
+    this.frames = 0;
+    this.packets = 0;
+    this.seen = [];
   }
 
   /** Feed one block of mono samples. */
@@ -57,7 +63,9 @@ export class StackmatDecoder {
       // survives coupling intact, so compare each sample with the one a
       // quarter-bit earlier and hold the level between edges.
       const raw = block[i];
-      const v = (raw - this.hist[this.hi]) * this.polarity;
+      const r = Math.abs(raw);
+      this.level = r > this.level ? r : this.level * 0.99995;
+      const v =(raw - this.hist[this.hi]) * this.polarity;
       this.hist[this.hi] = raw;
       this.hi = (this.hi + 1) % this.hist.length;
       const a = Math.abs(v);
@@ -106,6 +114,9 @@ export class StackmatDecoder {
     let byte = 0;
     for (let k = 0; k < 8; k++) if (at(k + 1)) byte |= 1 << k;
 
+    this.frames++;
+    this.seen.push(byte);
+    if (this.seen.length > 12) this.seen.shift();
     this.bytes.push(byte);
     if (this.bytes.length > 16) this.bytes.shift();
     this._scan();
@@ -143,6 +154,7 @@ export class StackmatDecoder {
         const ms = digits[0] * 60000 + (digits[1] * 10 + digits[2]) * 1000 + frac;
         this.bytes = b.slice(i + n + 2);
         this.sinceGood = 0;
+        this.packets++;
         this.onPacket({ status, timeMs: ms });
         return;
       }
@@ -192,6 +204,19 @@ export class Stackmat extends EventTarget {
   }
 
   get active() { return !!this.ctx; }
+
+  /** One line saying where the chain breaks, for testers to screenshot. */
+  debugLine() {
+    const d = this.decoder;
+    if (!this.ctx || !d) return 'smdebug: not started';
+    const track = this.stream?.getAudioTracks()[0];
+    const s = track?.getSettings?.() || {};
+    const db = d.level > 0 ? (20 * Math.log10(d.level)).toFixed(0) : '-inf';
+    const bytes = d.seen.map(b => b >= 32 && b < 127 ? String.fromCharCode(b) : `\\x${b.toString(16).padStart(2, '0')}`).join('');
+    return `audio ${this.ctx.state} ${this.ctx.sampleRate}Hz · input "${track?.label || '?'}" ${track?.readyState || ''}` +
+      ` agc=${s.autoGainControl} · level ${db} dB · frames ${d.frames} · packets ${d.packets}` +
+      ` · pol ${d.polarity} · bytes [${bytes}]`;
+  }
 
   emit(type, detail) { this.dispatchEvent(new CustomEvent(type, { detail })); }
 
