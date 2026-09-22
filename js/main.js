@@ -580,6 +580,7 @@ async function init() {
   // above: a visitor who has never signed in never downloads any of it.
   startCloudSync().catch(err => console.warn('[sync] not started', err));
   wireAccountButtonOnFirstClick();
+  adoptCloudChanges();
 
   cube.orbit = app.settings.cubeOrbit;
   cube.init().then(() => {
@@ -2842,8 +2843,9 @@ function applyHistGrid(count) {
   const panel = $('#panel-times');
   if (!panel) return;
   const avg = t(' var(--ao-col)').repeat(count);
-  panel.style.setProperty('--hist-grid', `24px minmax(0, 1fr)${avg} 20px`);
-  panel.style.setProperty('--hist-grid-touch', `24px minmax(0, 1fr)${avg}`);
+  // --idx-col: the stylesheet folds the solve-number column away on the narrowest phones.
+  panel.style.setProperty('--hist-grid', `var(--idx-col, 24px) minmax(0, 1fr)${avg} 20px`);
+  panel.style.setProperty('--hist-grid-touch', `var(--idx-col, 24px) minmax(0, 1fr)${avg}`);
 }
 
 /** One average column heading: a sort button, and a pencil that changes it. */
@@ -3686,7 +3688,16 @@ async function startCloudSync() {
   wireAccountButton($('#btn-account'), { setSetting: app.setSetting });
   const err = takeRedirectError();
   if (err) toast('Could not finish signing in — try again', { kind: 'bad' });
+}
 
+/**
+ * Wired at boot for everyone, not only a browser resuming a session: a first
+ * sign-in in this tab never runs startCloudSync()'s signed-in half, so the
+ * account's settings and solves landed in IndexedDB and stayed off screen
+ * until a reload.
+ */
+function adoptCloudChanges() {
+  addEventListener('sync:remote', refreshFromCloud);
   // sync.js applies the account's settings straight into IndexedDB, which
   // this module's in-memory `app.settings` knows nothing about — and
   // persist() writes that copy back over the whole 'settings' key. Without
@@ -3707,6 +3718,28 @@ async function startCloudSync() {
     applyAll();
   });
 }
+
+/**
+ * Solves and sessions from another device (or from the merge on sign-in) land
+ * in IndexedDB behind this page's back; re-read them so they show up without a
+ * reload. Never mid-solve, and read again if a solve was recorded while the
+ * read was in flight, so a solve just finished cannot drop off the list.
+ */
+const refreshFromCloud = debounce(async () => {
+  if (timer && timer.state !== 'idle' && timer.state !== 'cooldown') { refreshFromCloud(); return; }
+  const before = app.solves.length;
+  app.sessions = await Sessions.all();
+  const here = app.sessions.find(s => s.id === app.session.id);
+  if (!here && app.sessions.length) { await app.switchSession(app.sessions[0].id); return; }
+  if (here) app.session = here;
+  const solves = await Solves.bySession(app.session.id);
+  if (app.solves.length !== before) { refreshFromCloud(); return; }
+  app.solves = solves;
+  await refreshCounts();
+  lastStats = {};
+  renderAll();
+  syncTimerDisplay();
+}, 300);
 
 /**
  * The top-bar account icon needs to work on the very first click for a

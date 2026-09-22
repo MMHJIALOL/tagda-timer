@@ -58,7 +58,16 @@ export function showMergeDialog({ localCount, cloudCount, totalCount, email, con
     btn.addEventListener('click', async () => {
       btn.disabled = true;
       btn.textContent = t('Merging…');
-      await confirm();
+      try {
+        await confirm();
+      } catch (err) {
+        // Left spinning, the dialog sat over the timer for good and sync never started.
+        console.warn('[sync] merge failed', err?.code || err);
+        toast(t('Could not merge — check your connection and try again'), { kind: 'bad' });
+        btn.disabled = false;
+        btn.textContent = t('Merge and continue');
+        return;
+      }
       scrim.remove();
       card.remove();
       toast(`Merged — ${totalCount} solves synced`, { kind: 'good' });
@@ -120,13 +129,7 @@ export function buildAccountRow() {
           el('span', { class: 'sub', text: t('follow your solves across devices') })),
         el('button', {
           class: 'ghost-btn', text: t('sign in with Google'),
-          onclick: async () => {
-            try {
-              await signIn('google');
-            } catch (err) {
-              reportSignInFailure(err);
-            }
-          },
+          onclick: () => signInAndSay(),
         }),
       );
     }
@@ -149,6 +152,14 @@ function reportSignInFailure(err) {
   if (err?.code === 'auth/popup-closed-by-user' || err?.code === 'auth/cancelled-popup-request') return;
   console.warn('[sync] sign-in failed', err?.code || err);
   toast('Could not sign in — try again', { kind: 'bad' });
+}
+
+/* The popup closes a beat before the account has answered. Saying so right
+   away keeps that beat from looking like the sign-in did nothing. */
+function signInAndSay() {
+  return signIn('google')
+    .then((user) => { if (user) toast(t('Signed in — syncing your solves…')); })
+    .catch(reportSignInFailure);
 }
 
 const ACCOUNT_ICON = '<svg viewBox="0 0 24 24"><circle cx="12" cy="8.5" r="3.4"/><path d="M4.8 20a7.2 7.2 0 0114.4 0"/></svg>';
@@ -234,7 +245,7 @@ export function wireAccountButton(btn, { setSetting } = {}) {
         } },
       ]);
     } else {
-      signIn('google').catch(reportSignInFailure);
+      signInAndSay();
     }
   });
 

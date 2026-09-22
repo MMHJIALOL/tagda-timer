@@ -394,6 +394,14 @@
    reason as the block above Ã¢â‚¬â€ `display: flex` is declared in this file.) */
 @media (max-width: 940px) and (max-height: 500px) and (orientation: landscape) {
   #panel-cube { display: none; }
+  /* One bar, not two: the wrapped picker row cost 45px of a 360px screen, and
+     the timer was left with none — the stats tile sat on top of the digits. */
+  #topbar { flex-wrap: nowrap; }
+  .topbar-center { order: 0; flex: 1 1 auto; }
+  /* The six figures on one line, and never the expanded block, which is taller
+     than the whole screen here. The drawer has the rest. */
+  #panel-stats #stats-body { display: none; }
+  #panel-stats .stats-peek { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); }
 }
 
 .view-toggle button {
@@ -543,6 +551,12 @@
    sidebar a minutes-long time is wider than its column, and two numbers printed
    over each other are worse than one that ends early. */
 .solve-chip .t   { text-align: left; min-width: 0; overflow: hidden; }
+/* At 320px the half-width times tile left "14.22" a 24px track and printed
+   "14."; the solve number is the column that can go. */
+@media (max-width: 359px) {
+  #panel-times { --idx-col: 0px; }
+  .solve-chip .idx { overflow: hidden; }
+}
 .solve-chip .tag { font-size: .6rem; color: var(--text-faint); letter-spacing: .06em; }
 /* A running average up to this solve. Quieter than the time itself Ã¢â‚¬â€ it is
    context, not the number you just set. */
@@ -898,7 +912,11 @@ body:has(#timer-display.state-running) #goal-line { opacity: 0; }
   padding: 8px 10px 4px; font-size: .6rem; font-weight: 700;
   letter-spacing: .17em; text-transform: uppercase; color: var(--text-faint);
 }
-.pop-cols { display: grid; grid-template-columns: repeat(2, 1fr); gap: 2px; }
+/* minmax(0, …): plain 1fr would not shrink below "3x3 Fewest Moves  FMC", and
+   on a 320px phone the second column ran out past the popover's right edge. */
+.pop-cols { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px; }
+.pop-cols .pop-item { min-width: 0; }
+@media (max-width: 400px) { .pop-cols .pi-badge { display: none; } }
 /* A past solve's phase breakdown, dropped into the solve menu Ã¢â‚¬â€ the same
    chips the post-solve zone uses, just reached from an older row. */
 .pop-phases { padding: 2px 10px 8px; justify-content: flex-start; }
@@ -1156,7 +1174,11 @@ body:has(#timer-display.state-running) #goal-line { opacity: 0; }
    below that the last picker was being cut in half by the centre group's
    `overflow: hidden`, on an ordinary laptop window. Two rows there rather than
    a button nobody can read or reach. */
-@media (max-width: 1040px) {
+/* Between here and 1400px the wordmark is the one thing on the bar that can go:
+   at 1280 the pickers were 35px short and printed "3×…", "Sessi…", "C…". */
+@media (max-width: 1400px) { .brand-text { display: none; } }
+
+@media (max-width: 1220px) {
   #topbar { flex-wrap: wrap; row-gap: 8px; }
   .topbar-right { margin-left: auto; }
   .topbar-center {
@@ -1520,9 +1542,13 @@ body:has(#timer-display.state-running) #goal-line { opacity: 0; }
    fit at every rail width, and truncating the last one is the worst of the
    available outcomes. Two rows of three: the averages you watch while a
    session runs, then the ones that say how it went. */
+/* Three across where a cell can hold "13.02", two where it cannot. In a phone's
+   half-width tile or a 1024px rail a third of the width is ~45px, and every
+   figure printed as "13…". The max() caps it at three per row when wide. */
 .stats-peek {
   flex: 1 0 100%; margin-left: 0;
-  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px;
+  display: grid; gap: 6px;
+  grid-template-columns: repeat(auto-fit, minmax(max(56px, calc((100% - 12px) / 3)), 1fr));
 }
 .stats-peek > span:nth-child(n + 4) {
   background: color-mix(in srgb, var(--text) 3%, transparent);

@@ -242,9 +242,9 @@ body.inspecting #timer-display { opacity: 0; }
    overlapping the icons -- which is exactly what the equivalent grid does.
    Perfect above ~1530px, and progressively less wrong below it.
 
-   Only above 1040px: below that the bar wraps and the centre group becomes
+   Only above 1220px: below that the bar wraps and the centre group becomes
    its own scrolling row, where being centred is not the question. */
-@media (min-width: 1041px) {
+@media (min-width: 1221px) {
   .topbar-left, .topbar-right { flex: 1 1 0; min-width: max-content; }
   .topbar-right { justify-content: flex-end; }
   .topbar-center { margin: 0; }
@@ -784,6 +784,13 @@ body.inspecting #last-delta, body.focus #last-delta { display: none; }
      not repeated somewhere else on the page. */
   #timer-hint { display: block; font-size: .72rem; }
   #timer-core { gap: 6px; }
+}
+
+/* On a small phone the scramble preview parks beside the digits, and the hint
+   under them is wider than the digits — "start" ran underneath the cube. Kept
+   to the width the preview leaves free, it wraps to two lines instead. */
+@media (max-width: 400px) {
+  #timer-hint { max-width: calc(100vw - 190px); height: auto; min-height: 1.2em; text-align: center; text-wrap: balance; }
 }
 
 /* The session picker used to be dropped here, on the grounds that S and the
