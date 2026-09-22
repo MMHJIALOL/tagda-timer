@@ -87,8 +87,12 @@ export class StackmatDecoder {
       if (this.frameAt >= 0) {
         this.buf.push(bit);
         this.frameAt++;
-        // One start bit + 8 data + 1 stop = 10 bit times.
-        if (this.frameAt >= Math.ceil(spb * 10)) this._frame();
+        // One start bit + 8 data + 1 stop. Close the frame in the middle of
+        // the stop bit, not at its end: QiYi (and others) send bytes
+        // back-to-back, and at 44.1 kHz ten bits are 367.5 samples, so waiting
+        // for the whole stop bit swallowed the next start edge and every
+        // later byte came out misaligned.
+        if (this.frameAt > Math.round(spb * 9.5)) this._frame();
       }
     }
 
