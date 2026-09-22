@@ -40,6 +40,17 @@ let painted = false;          // the shared materials have been touched at least
 export const DEFAULT_CUBE_COLORS = Object.fromEntries(
   FACES.map(f => [f, '#' + CUBE3D_COLORS[f].toString(16).padStart(6, '0')]));
 
+/**
+ * The alg the preview applies. Multi-blind hands over several numbered
+ * scrambles and previews the first; any other line breaks (megaminx writes
+ * seven lines) are layout, and every line of it is part of the one scramble.
+ */
+export function previewAlg(scramble) {
+  const s = scramble || '';
+  const alg = /^\s*\d+\)/.test(s) ? s.replace(/^\s*\d+\)\s*/gm, '').split('\n')[0] : s;
+  return alg.replace(/\s+/g, ' ').trim();
+}
+
 export class CubeView {
   constructor(host, fallbackEl) {
     this.host = host;
@@ -115,12 +126,12 @@ export class CubeView {
     this.setView(view);
   }
 
-  /** Only 3x3 has a last-layer view; cubes, FTO, pyraminx, skewb, square-1
-      and clock all have a usable flat drawing. */
+  /** Only 3x3 has a last-layer view; cubes, FTO, megaminx, pyraminx, skewb,
+      square-1 and clock all have a usable flat drawing. */
   supports(view) {
     const cube = /^([234567])x\1x\1$/.test(this.puzzle);
     if (view === 'LL' || view === 'LL3') return this.puzzle === '3x3x3';
-    if (view === '2D') return cube || ['fto', 'pyraminx', 'skewb', 'square1', 'clock'].includes(this.puzzle);
+    if (view === '2D') return cube || ['fto', 'megaminx', 'pyraminx', 'skewb', 'square1', 'clock'].includes(this.puzzle);
     return true;
   }
 
@@ -163,8 +174,7 @@ export class CubeView {
     if (!this.player) return;
     if (opts.view) this.setView(opts.view);
 
-    // Multi-blind hands over several numbered scrambles; preview the first.
-    const only = (scramble || '').replace(/^\s*\d+\)\s*/gm, '').split('\n')[0].trim();
+    const only = previewAlg(scramble);
     const clean = this.orientation ? `${this.orientation} ${only}`.trim() : only;
     // `force` also throws away any turns added on top — the virtual cube's reset.
     if (clean === this.applied && !opts.force) return;
