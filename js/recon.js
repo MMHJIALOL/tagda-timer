@@ -69,7 +69,7 @@ const S = {
   /* The colour picker means the cross colour in CFOP and the first block's
      bottom colour in Roux, so each method remembers its own. Roux starts on
      auto: Roux solvers are far more often colour neutral about the block. */
-  prefs: { cfop: 'U', roux: 'auto' },
+  prefs: { cfop: 'U', roux: 'auto', rouxFront: 'auto' },
   library: [],              // recorded solves you can jump straight into
   replay: false,
   thinking: false,
@@ -122,9 +122,23 @@ export const reconOpen = () => !!host && !host.hidden;
 
 const pref = () => (S.prefs[S.method] === 'auto' ? null : S.prefs[S.method]);
 
+/* Roux is held first block on the left, so a bottom colour and a front colour
+   together name the face the block is built on: left = bottom x front. */
+const AXIS = { U: [0, 1, 0], D: [0, -1, 0], R: [1, 0, 0], L: [-1, 0, 0], F: [0, 0, 1], B: [0, 0, -1] };
+const OPP = { U: 'D', D: 'U', L: 'R', R: 'L', F: 'B', B: 'F' };
+export function leftOf(bottom, front) {
+  const [a, b] = [AXIS[bottom], AXIS[front]];
+  const c = [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+  return Object.keys(AXIS).find(k => AXIS[k].every((x, i) => x === c[i])) || null;
+}
+const rouxSide = () => {
+  const { roux: bottom, rouxFront: front } = S.prefs;
+  return bottom !== 'auto' && front !== 'auto' ? leftOf(bottom, front) : null;
+};
+
 /** Where a position is in the solve, for whichever method is picked. */
 const analyseAt = (state, frame) =>
-  (S.method === 'roux' ? analyseRoux(state, pref(), frame) : analyse(state, pref()));
+  (S.method === 'roux' ? analyseRoux(state, pref(), frame, rouxSide()) : analyse(state, pref()));
 
 /** Rebuild every intermediate position from the scramble forwards. */
 function recompute() {
@@ -264,10 +278,31 @@ function holdHover(e) {
 /** Pick the cross (or block bottom) colour by hand. Everything downstream is asked about it. */
 function setCross(face) {
   S.prefs[S.method] = face;
+  // A front on the bottom's own axis is not a way to hold the cube.
+  if (S.method === 'roux' && (face === 'auto' || [face, OPP[face]].includes(S.prefs.rouxFront))) S.prefs.rouxFront = 'auto';
   S.slot = null;
   lastBest = null;
   commit();
 }
+
+/** Roux front colour: with the bottom it fixes which side the first block is on. */
+function setFront(face) {
+  S.prefs.rouxFront = face;
+  S.slot = null;
+  lastBest = null;
+  commit();
+}
+
+/** Six colour swatches and an "auto", each calling `pick` with a face letter. */
+const swatchRow = (pick, autoTip) => el('span', { class: 'rc-swatches' },
+  ...CROSS_COLOURS.map(c => el('button', {
+    class: 'rc-swatch', dataset: { face: c.face }, style: { background: c.hex },
+    onclick: () => pick(c.face),
+  })),
+  el('button', {
+    class: 'rc-swatch auto', title: autoTip, dataset: { face: 'auto' }, text: t('auto'),
+    onclick: () => pick('auto'),
+  }));
 
 /** "white cross" — the one name that means the same whichever way up it is. */
 const crossLabel = (a) => t(`${colourOf(a.face)?.name || a.face} cross`);
@@ -281,6 +316,21 @@ function paintCrossPicker() {
     const tip = b.dataset.face === 'auto'
       ? t(roux ? 'Work out which block you are building from the cube' : 'Work out the cross colour from the cube')
       : (roux ? t('First block with {colour} on the bottom', { colour: t(name) }) : t(`${name} cross`));
+    b.title = tip;
+    b.setAttribute('aria-label', tip);
+  }
+  ui.frontPick.hidden = !roux;
+  const bottom = S.prefs.roux;
+  for (const b of ui.frontSwatches.children) {
+    const f = b.dataset.face;
+    const bad = f !== 'auto' && (bottom === 'auto' || f === bottom || f === OPP[bottom]);
+    b.disabled = bad;
+    b.classList.toggle('on', f === S.prefs.rouxFront);
+    const name = colourOf(f)?.name;
+    const tip = f === 'auto' ? t('Work out the front from the cube')
+      : bottom === 'auto' ? t('Pick a bottom colour first')
+      : bad ? t('Not possible with that bottom')
+      : t('{colour} front: first block on the {side} side', { colour: t(name), side: t(colourOf(leftOf(bottom, f)).name) });
     b.title = tip;
     b.setAttribute('aria-label', tip);
   }
@@ -913,32 +963,26 @@ function build() {
   const left = el('section', { class: 'panel rc-left' },
     el('div', { class: 'panel-head' },
       el('span', { text: t('Position') }),
-      /* How the moves are read: where one step ends and the next begins, and
-         what gets suggested. The moves themselves are the same either way. */
-      ui.methodBtns = el('span', { class: 'rc-method', role: 'group', 'aria-label': t('Solving method') },
-        ...[['cfop', 'CFOP'], ['roux', 'Roux']].map(([m, label]) => el('button', {
-          class: 'rc-rot', text: label, dataset: { method: m },
-          title: t('Read the solve as {method}', { method: label }), onclick: () => setMethod(m),
-        }))),
       ui.count = el('span', { class: 'panel-sub', text: t('{n} moves so far', { n: 0 }) })),
+    /* How the moves are read: where one step ends and the next begins, and
+       what gets suggested. The moves themselves are the same either way. It
+       sits above everything it decides, big enough that Roux is noticed. */
+    ui.methodBtns = el('div', { class: 'rc-method', role: 'group', 'aria-label': t('Solving method') },
+      ...[['cfop', 'CFOP', t('cross · F2L · OLL · PLL')], ['roux', 'Roux', t('blocks · CMLL · LSE')]].map(([m, label, sub]) => el('button', {
+        class: 'rc-method-btn', dataset: { method: m },
+        title: t('Read the solve as {method}', { method: label }), onclick: () => setMethod(m),
+      }, el('b', { text: label }), el('small', { text: sub })))),
+    el('div', { class: 'rc-orient' },
+      el('span', { class: 'rc-cross-pick' },
+        ui.crossLbl = el('span', { class: 'rc-pick-lbl', text: t('cross') }),
+        ui.crossSwatches = swatchRow(setCross, t('Work out the cross colour from the cube'))),
+      ui.frontPick = el('span', { class: 'rc-cross-pick', hidden: true },
+        el('span', { class: 'rc-pick-lbl', text: t('front') }),
+        ui.frontSwatches = swatchRow(setFront, t('Work out the front from the cube'))),
+    ),
     ui.scrambleEcho,
     ui.stage,
-    el('div', { class: 'rc-cube-tools' },
-      ui.replayBtn,
-      el('span', { class: 'rc-cross-pick' },
-        ui.crossLbl = el('span', { text: t('cross') }),
-        ui.crossSwatches = el('span', { class: 'rc-swatches' },
-          ...CROSS_COLOURS.map(c => el('button', {
-            class: 'rc-swatch', title: t(`${c.name} cross`), 'aria-label': t(`${c.name} cross`),
-            dataset: { face: c.face }, style: { background: c.hex },
-            onclick: () => setCross(c.face),
-          })),
-          el('button', {
-            class: 'rc-swatch auto', title: t('Work out the cross colour from the cube'),
-            dataset: { face: 'auto' }, text: t('auto'), onclick: () => setCross('auto'),
-          })),
-      ),
-    ),
+    el('div', { class: 'rc-cube-tools' }, ui.replayBtn),
     ui.rots,
     ui.strip,
     ui.legend = el('div', { class: 'rc-strip-legend' },

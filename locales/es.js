@@ -1,6 +1,13 @@
 /* Spanish for Tagda Timer. Keys are the English source text exactly as it is
    written in js/ and in the HTML; {name} placeholders are filled by t(). */
 export const es = {
+  "front": "delante",
+  "Work out the front from the cube": "Deducir el frente a partir del cubo",
+  "Pick a bottom colour first": "Elige primero un color de abajo",
+  "Not possible with that bottom": "No es posible con ese color abajo",
+  "{colour} front: first block on the {side} side": "{colour} delante: primer bloque en el lado {side}",
+  "cross · F2L · OLL · PLL": "cruz · F2L · OLL · PLL",
+  "blocks · CMLL · LSE": "bloques · CMLL · LSE",
   "  ·  active": "  ·  activo",
   "  ·  exec ": "  ·  ejec. ",
   " - odd target": " - objetivo impar",
