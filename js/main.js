@@ -1411,6 +1411,7 @@ function wireTimer() {
      on screen for nothing. At 240Hz it is over half of them. Compare first. */
   let lastDigits = '';
   timer.addEventListener('tick', (e) => {
+    if (inputMode() === 'stackmat') return;   // the mat writes its own digits
     const txt = fmtLive(e.detail.elapsed, app.settings.precision);
     if (txt !== lastDigits) { lastDigits = txt; main.textContent = txt; }
   });
@@ -3599,9 +3600,13 @@ async function wireStackmat() {
   });
 
   stackmat.addEventListener('time', (e) => {
+    // The mat starting is the solve starting: going through the Timer is what
+    // ends a spacebar inspection with its penalty, and what focus mode, hidden
+    // digits and the rest of the running-state UI all key off.
+    if (timer.state !== 'running') timer.start();
     // Mirror the mat's own display rather than running a second clock; the mat
-    // is the source of truth and the two would visibly disagree.
-    $('#timer-display').className = 'state-running';
+    // is the source of truth and the two would visibly disagree. The Timer's
+    // own tick is muted in this mode for the same reason.
     $('#time-main').textContent = fmtLive(e.detail.timeMs, app.settings.precision);
     $('#time-penalty').textContent = '';
   });
@@ -3612,14 +3617,19 @@ async function wireStackmat() {
   });
 
   stackmat.addEventListener('ready', () => {
+    // Reset mid-solve abandons it. A reset during inspection is just the mat
+    // being zeroed for this attempt, so the countdown carries on.
+    if (timer.state === 'running') { timer.reset(); timer.emit('cancel'); }
+    if (timer.state !== 'idle') return;
     $('#timer-display').className = 'state-idle';
     syncTimerDisplay();
   });
 
-  stackmat.addEventListener('solve', async (e) => {
-    $('#timer-display').className = 'state-idle';
-    $('#time-main').textContent = fmt(e.detail.timeMs);
-    await recordSolve({ timeMs: e.detail.timeMs });
+  stackmat.addEventListener('solve', (e) => {
+    // Normally already running from the first 'time' packet; a solve that
+    // arrives without one (timer reset mid-solve) still gets recorded.
+    if (timer.state !== 'running') timer.start();
+    timer.stop(e.detail.timeMs);   // -> 'stop' -> onSolveFinished, with the inspection penalty
   });
 
   return stackmat;
@@ -4784,6 +4794,26 @@ function wireInput() {
     vSpace = false;
     e.preventDefault();
     timer.up(e.timeStamp);
+  }, true);
+
+  /* On a Stackmat the spacebar only starts inspection, the same as on the
+     virtual cube: the mat itself starts the solve when your hands come off it
+     (see wireStackmat), and Escape cancels as usual. */
+  let smSpace = false;
+  document.addEventListener('keydown', (e) => {
+    if (e.code !== 'Space' || inputMode() !== 'stackmat' || isTyping() || modalOpen()) return;
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    if (e.repeat || timer.state !== 'idle' || !timer.inspectionEnabled) return;
+    smSpace = true;
+    timer.down(e.timeStamp);               // -> inspecting
+  }, true);
+  document.addEventListener('keyup', (e) => {
+    if (e.code !== 'Space' || !smSpace) return;
+    smSpace = false;
+    e.preventDefault();
+    timer.up(e.timeStamp);                 // swallowed by the Timer: it was the inspection press
   }, true);
 
   /**

@@ -149,9 +149,10 @@ export class Timer extends EventTarget {
     if (this.state === 'idle' || this.state === 'inspecting') this._start();
   }
 
-  stop() {
+  /** `timeMs` overrides our clock — a Stackmat's own display is the real time. */
+  stop(timeMs) {
     if (this.state !== 'running') return;
-    this._stop();
+    this._stop(timeMs == null ? undefined : this.solveStart + timeMs);
     this._ignoreUp = false;
     this.up();
   }
