@@ -856,6 +856,7 @@ function rouxFirstBlock(state, frame, a, { limit, lead, started, timeMs }) {
   for (const bottom of bottoms) {
     for (const side of FACES) {
       if (side === bottom || side === OPP[bottom]) continue;
+      if (a.sideFixed && side !== a.side) continue;
       const P = rouxPieces(side, bottom);
       const hf = squareH(squareTable(P.fbF, side, null), P.fbF);
       const hb = squareH(squareTable(P.fbB, side, null), P.fbB);

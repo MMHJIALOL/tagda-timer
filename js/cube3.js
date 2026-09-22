@@ -470,8 +470,9 @@ function fbProgress(s, P) {
 
 /**
  * The Roux counterpart of `analyse`.
- * `prefer` is a bottom colour picked by hand; without one every first block
- * on the cube is weighed and the one furthest along wins, ties going to a
+ * `prefer` is a bottom colour picked by hand and `preferSide` the face the
+ * first block is built on (what picking a front colour pins down); without
+ * them every first block on the cube is weighed and the one furthest along wins, ties going to a
  * yellow-bottom block on the left.
  *
  * Once both blocks are in, either one is a "first block", and after UL/UR
@@ -480,7 +481,7 @@ function fbProgress(s, P) {
  * does not change its mind about which way up you are between two moves and
  * start every suggestion with a y2.
  */
-export function analyseRoux(s, prefer = null, frame = null) {
+export function analyseRoux(s, prefer = null, frame = null, preferSide = null) {
   const bottoms = prefer && FACES.includes(prefer) ? [prefer] : FACES;
   const held = (side, bottom) => {
     if (!frame || frame.L !== side) return false;
@@ -493,6 +494,7 @@ export function analyseRoux(s, prefer = null, frame = null) {
   for (const bottom of bottoms) {
     for (const side of FACES) {
       if (side === bottom || side === OPP[bottom]) continue;
+      if (preferSide && side !== preferSide) continue;
       const st = rouxStatus(s, side, bottom);
       const score = st.rank * 100 + (st.rank ? 0 : fbProgress(s, rouxPieces(side, bottom)) * 10)
         + (st.rank && held(side, bottom) ? 5 : 0)
@@ -502,7 +504,7 @@ export function analyseRoux(s, prefer = null, frame = null) {
   }
   const { side, bottom, st } = pick;
   return {
-    ...st, method: 'roux', side, bottom, face: bottom, auto: bottoms.length > 1,
+    ...st, method: 'roux', side, bottom, face: bottom, auto: bottoms.length > 1, sideFixed: !!preferSide,
     phase: ROUX_PHASES[st.rank],
   };
 }

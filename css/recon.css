@@ -177,10 +177,36 @@ body.recon-open #bg-root { opacity: 0; }
 }
 .rc-rot:disabled { opacity: .4; cursor: default; }
 
-/* CFOP or Roux, in the Position header: it decides how every line below is
-   cut and what gets suggested, so it sits above all of it. */
-.rc-method { display: flex; gap: 4px; margin-left: auto; letter-spacing: normal; text-transform: none; }
-.rc-method .rc-rot { height: 22px; font-family: inherit; font-size: .68rem; }
+/* CFOP or Roux: it decides how every line below is cut and what gets
+   suggested, so it is a full-width switch above all of it, not a chip. */
+.rc-method {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px;
+  border-radius: 12px; background: color-mix(in srgb, var(--text) 5%, transparent);
+  border: 1px solid var(--border);
+}
+.rc-method-btn {
+  display: flex; flex-direction: column; align-items: center; gap: 1px;
+  padding: 7px 10px; border-radius: 9px; border: 1px solid transparent;
+  background: none; color: var(--text-dim);
+  transition: all var(--dur-fast) var(--ease);
+}
+.rc-method-btn b { font-size: .95rem; font-weight: 800; letter-spacing: .02em; }
+.rc-method-btn small { font-size: .62rem; color: var(--text-faint); }
+.rc-method-btn:hover { color: var(--text); background: color-mix(in srgb, var(--text) 8%, transparent); }
+.rc-method-btn.on {
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--accent) 50%, transparent);
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.rc-method-btn.on small { color: var(--text-dim); }
+.rc-method-btn:focus-visible { outline: 2px solid var(--accent-2); outline-offset: 2px; }
+
+/* The orientation you solve in: a cross colour for CFOP, a bottom and a
+   front for Roux (white bottom, green front). */
+.rc-orient { display: flex; flex-wrap: wrap; gap: 8px 18px; }
+.rc-cross-pick[hidden] { display: none; }
+.rc-pick-lbl { min-width: 44px; }
+.rc-swatch:disabled { opacity: .18; cursor: not-allowed; transform: none; }
 
 /* Which F2L slot the suggestions are for. */
 .rc-slots { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
