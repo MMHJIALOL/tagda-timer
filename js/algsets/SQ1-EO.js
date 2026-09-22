@@ -28,7 +28,7 @@ export const SET = {
     "SQ1-EO-4-4": {"alternates":[{"alg":"1,0 / -1,-1 / -2,4 / -1,-1 / 0,1","moveCount":4,"notes":"M2 U' D M2"}]},
     "SQ1-EO-adj-adj": {"alternates":[{"alg":"1,0 / 3,0 / -1,-1 / -3,0 / 0,1","moveCount":4}]},
     "SQ1-EO-3-3": {"alternates":[{"alg":"1,0 / 3,0 / 3,0 / -1,-1 / -3,0 / -3,0 / 0,1","moveCount":6}]},
-    "SQ1-EO-adj-opp": {"alternates":[{"alg":"1,0 / 0,-3 / 0,3 / 2,-1 / -3,0 / 0,1","moveCount":5,"notes":"Fastest alg"},{"alg":"1,0 / 3,0 / 3,0 / -1,-1 / -2,1 / -4,-1 / 1,0","moveCount":6,"notes":"Preserves CP"}]},
-    "SQ1-EO-opp-adj": {"alternates":[{"alg":"0,-1 / 3,0 / -3,0 / 1,-2 / 0,3 / -1,0","moveCount":5,"notes":"Fastest alg"},{"alg":"0,-1 / 0,-3 / 0,-3 / 1,1 / -1,2 / 1,4 / -1,0","moveCount":6,"notes":"Preserves CP"}]},
+    "SQ1-EO-adj-opp": {"alternates":[{"alg":"1,0 / 0,-3 / 0,3 / 2,-1 / -3,0 / 0,1","moveCount":5,"notes":"Fastest alg"},{"alg":"-5,0 / 3,0 / 3,0 / -1,-1 / -2,1 / -4,-1 / 1,0","moveCount":6,"notes":"Preserves CP"}]},
+    "SQ1-EO-opp-adj": {"alternates":[{"alg":"0,-1 / 3,0 / -3,0 / 1,-2 / 0,3 / -1,0","moveCount":5,"notes":"Fastest alg"},{"alg":"0,5 / 0,-3 / 0,-3 / 1,1 / -1,2 / 1,4 / -1,0","moveCount":6,"notes":"Preserves CP"}]},
   },
 };

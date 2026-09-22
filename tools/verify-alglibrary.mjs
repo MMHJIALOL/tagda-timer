@@ -1,10 +1,19 @@
 /* Run every shipped algorithm against its own case, in Node.
        node tools/verify-alglibrary.mjs
    Same check as tools/verify-alglibrary.html, without a browser. */
-import { SETS, loadAllSets, auditLibrary, verifyAlgForCase, displayOrder } from '../js/alglibrary.js';
+import assert from 'node:assert/strict';
+import { SETS, loadAllSets, auditLibrary, verifyAlgForCase, displayOrder, alignAlg, algKey } from '../js/alglibrary.js';
 import { auditSetups } from '../js/alglibrary-setup.js';
 
 await loadAllSets();
+
+/* alignAlg: a slot variant gets its rotation, an extra one folds away, d is y' U. */
+assert.equal(alignAlg('F2L', 'F2L1', "U L U' L'"), "y2 U L U' L'");
+assert.equal(alignAlg('F2L', 'F2L1', "y' U R U' R'"), "U R U' R'");
+assert.equal(alignAlg('F2L', 'F2L1', "d R U' R'"), "U R U' R'");
+assert.equal(alignAlg('OLL', 'OLL27', "U2 R U R' U R U2 R'"), "R U R' U R U2 R'");
+/* algKey: R' R' is R2, and a closing U is free. */
+assert.equal(algKey('OLL', "R U2 R' R' F R F' U2 R' F R F'"), algKey('OLL', "R U2 R2 F R F' U2 R' F R F' U"));
 
 let total = 0, cases = 0;
 for (const set of Object.values(SETS)) {
@@ -14,8 +23,8 @@ for (const set of Object.values(SETS)) {
 
 const bad = auditLibrary();
 console.log(`${Object.keys(SETS).length} sets · ${cases} cases · ${total} listed algorithms`);
-console.log(bad.length ? `FAIL ${bad.length} algorithms do not solve their case` : 'PASS every listed algorithm solves its case');
-for (const b of bad.slice(0, 40)) console.log('  ', b.set, b.caseId, b.alg);
+console.log(bad.length ? `FAIL ${bad.length} listed algorithms are wrong or repeated` : 'PASS every listed algorithm solves its case as drawn, none listed twice');
+for (const b of bad.slice(0, 40)) console.log('  ', b.set, b.caseId, b.alg, '—', b.why);
 
 /* The canonical algorithm of every case, too: `auditLibrary` only walks the
    alternates, and a set whose cases carry their own alg (ZBLL, F2L, 2x2) would

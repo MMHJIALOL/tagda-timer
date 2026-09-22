@@ -495,7 +495,10 @@ out.OLL = (() => {
          every one of them but the first would be an algorithm for the case
          next door. */
       const pattern = modelOf(invert(first).split(' '));
-      const algs = [first, ...algsFor(orient.dist, pattern, 6).filter(a => a !== first)].slice(0, 4);
+      /* `first` came from a different search than the rest, so the stem rule
+         in algsFor never saw it: `first` plus a closing U is the same alg. */
+      const algs = [first, ...algsFor(orient.dist, pattern, 6)
+        .filter(a => a !== first && stem(a) !== first && stem(a) !== stem(first))].slice(0, 4);
       return {
         family: ORI_NAME.get(k) || k,
         name: ORI_NAME.get(k) || k,

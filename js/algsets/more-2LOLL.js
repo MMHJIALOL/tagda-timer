@@ -3,12 +3,12 @@
    Every one was executed against the case it is filed under. */
 export const EXTRA = {
   "EO-line": [{"alg":"F R U R' U' F'","moveCount":6,"notes":"F sexy F'"}],
-  "EO-L": [{"alg":"F U R U' R' F'","moveCount":6,"notes":"F inverse sexy F'"}],
+  "EO-L": [{"alg":"U2 F U R U' R' F'","moveCount":7,"notes":"F inverse sexy F'"}],
   "OCLL-27": [{"alg":"R U R' U R U2 R'","moveCount":7,"notes":"this app's own default for the case"}],
   "OCLL-26": [{"alg":"R U2 R' U' R U' R'","moveCount":7,"notes":"Inverse of Sune"}],
   "OCLL-21": [{"alg":"U R U R' U R U' R' U R U2 R'","moveCount":12,"notes":"Double Sune with cancellation"}],
   "OCLL-24": [{"alg":"r U R' U' r' F R F'","moveCount":8,"notes":"Sexy sledge with wide moves"}],
-  "OCLL-25": [{"alg":"F R' F' r U R U' r'","moveCount":8,"notes":"Inverse of T OLL"}],
+  "OCLL-25": [{"alg":"U' F R' F' r U R U' r'","moveCount":9,"notes":"Inverse of T OLL"}],
   "OCLL-22": [{"alg":"R U2 R2 U' R2 U' R2 U2 R","moveCount":9,"notes":"this app's own default for the case"}],
   "OCLL-23": [{"alg":"R2 D' R U2 R' D R U2 R","moveCount":9}],
 };

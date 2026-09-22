@@ -30,36 +30,36 @@ export const PLL_LIBRARY = {
   Aa: {
     alternates: [
       { alg: "x R' U R' D2 R U' R' D2 R2 x'", moveCount: 11, notes: t("most popular Aa, clean R-U-D fingertricks, by far the community favorite") },
-      { alg: "y' x L2 D2 L' U' L D2 L' U L'", moveCount: 10, notes: t("mirrored left-hand version, popular with left-dominant solvers") },
-      { alg: "y x' R2 D2 R' U' R D2 R' U R' x", moveCount: 11, notes: t("alternate angle of the standard alg, same fingertricks shifted") },
+      { alg: "y' x L2 D2 L' U' L D2 L' U L'", moveCount: 11, notes: t("mirrored left-hand version, popular with left-dominant solvers") },
+      { alg: "y x' R2 D2 R' U' R D2 R' U R' x", moveCount: 12, notes: t("alternate angle of the standard alg, same fingertricks shifted") },
       { alg: "l' U R' D2 R U' R' D2 R2 x'", moveCount: 10, notes: t("wide-move variant, slightly fewer moves but less common") },
     ],
   },
 
   Ab: {
     alternates: [
-      { alg: "x R2 D2 R U R' D2 R U' R x'", moveCount: 11, notes: t("most popular Ab, mirror of the standard Aa alg") },
+      { alg: "U' x R2 D2 R U R' D2 R U' R x'", moveCount: 12, notes: t("most popular Ab, mirror of the standard Aa alg") },
       { alg: "y x' L2 D2 L U L' D2 L U' L", moveCount: 11, notes: t("mirrored left-hand version, popular with left-dominant solvers") },
-      { alg: "y x' R U' R D2 R' U R D2 R2 x", moveCount: 11, notes: t("alternate recognition angle of the standard alg") },
-      { alg: "R' B' R U' R D R' U R D' R2 B R", moveCount: 13, notes: t("no-rotation alternative, more moves, rarely used at speed") },
+      { alg: "x' R U' R D2 R' U R D2 R2 x", moveCount: 11, notes: t("alternate recognition angle of the standard alg") },
+      { alg: "U' R' B' R U' R D R' U R D' R2 B R", moveCount: 14, notes: t("no-rotation alternative, more moves, rarely used at speed") },
     ],
   },
 
   E: {
     alternates: [
       { alg: "x' R U' R' D R U R' D' R U R' D R U' R' D' x", moveCount: 18, notes: t("most popular E-perm, repeating R U R' D triggers, easy to learn") },
-      { alg: "y R' U' R' D' R U' R' D R U R' D' R U R' D R2", moveCount: 17, notes: t("alternate angle, one move shorter in this source's count") },
-      { alg: "R2 U F' R' U R U' R' U R U' R' U R U' F U' R2", moveCount: 18, notes: t("no cube rotation needed, but harder execution") },
+      { alg: "R' U' R' D' R U' R' D R U R' D' R U R' D R2", moveCount: 17, notes: t("alternate angle, one move shorter in this source's count") },
+      { alg: "U R2 U F' R' U R U' R' U R U' R' U R U' F U' R2", moveCount: 19, notes: t("no cube rotation needed, but harder execution") },
       { alg: "x' L' U L D' L' U' L D L' U' L D' L' U L D", moveCount: 17, notes: t("mirrored left-hand version of the standard alg") },
     ],
   },
 
   F: {
     alternates: [
-      { alg: "y R' U' F' R U R' U' R' F R2 U' R' U' R U R' U R", moveCount: 18, notes: t("most popular F-perm and this app's default, standard in most tutorials") },
-      { alg: "y R' F R f' R' F R2 U R' U' R' F' R2 U R' S", moveCount: 16, notes: t("fewer moves but relies on slice/rotation tricks, less beginner friendly") },
-      { alg: "R' U R U' R2 F' U' F U R F R' F' R2", moveCount: 14, notes: t("shortest common F-perm, fast once drilled but less intuitive") },
-      { alg: "y R2 F R F' R' U' F' U F R2 U R' U' R", moveCount: 14, notes: t("another short variant, similar speed potential to the above") },
+      { alg: "R' U' F' R U R' U' R' F R2 U' R' U' R U R' U R", moveCount: 18, notes: t("most popular F-perm and this app's default, standard in most tutorials") },
+      { alg: "R' F R f' R' F R2 U R' U' R' F' R2 U R' S", moveCount: 16, notes: t("fewer moves but relies on slice/rotation tricks, less beginner friendly") },
+      { alg: "U' R' U R U' R2 F' U' F U R F R' F' R2", moveCount: 15, notes: t("shortest common F-perm, fast once drilled but less intuitive") },
+      { alg: "R2 F R F' R' U' F' U F R2 U R' U' R", moveCount: 14, notes: t("another short variant, similar speed potential to the above") },
     ],
   },
 
@@ -67,7 +67,7 @@ export const PLL_LIBRARY = {
     alternates: [
       { alg: "R2 U R' U R' U' R U' R2 D U' R' U R D'", moveCount: 15, notes: t("most popular Ga; this app's default written with the commuting D and U' swapped") },
       { alg: "R2 u R' U R' U' R u' R2 F' U F", moveCount: 12, notes: t("shorter wide-move variant, fast but trickier recognition of the u slice") },
-      { alg: "y R U R' F' R U R' U' R' F R U' R' F R2 U' R' U' R U R' F'", moveCount: 22, notes: t("much longer alternative, mostly of historical interest") },
+      { alg: "y R U R' F' R U R' U' R' F R U' R' F R2 U' R' U' R U R' F'", moveCount: 23, notes: t("much longer alternative, mostly of historical interest") },
       { alg: "D' R2 U R' U R' U' R U' R2 U' D R' U R", moveCount: 15, notes: t("same length as the top alg, alternate D-layer timing") },
     ],
   },
@@ -76,7 +76,7 @@ export const PLL_LIBRARY = {
     alternates: [
       { alg: "D R' U' R U D' R2 U R' U R U' R U' R2", moveCount: 15, notes: t("top-voted Gb variant, smooth D-layer setup") },
       { alg: "R' U' R U D' R2 U R' U R U' R U' R2 D", moveCount: 15, notes: t("matches this app's existing default alg, nearly as popular as the top pick") },
-      { alg: "y F' U' F R2 u R' U R U' R u' R2", moveCount: 12, notes: t("shorter wide-move alternative, faster once the u-slice trick is comfortable") },
+      { alg: "y F' U' F R2 u R' U R U' R u' R2", moveCount: 13, notes: t("shorter wide-move alternative, faster once the u-slice trick is comfortable") },
       { alg: "R' d' F R2 u R' U R U' R u' R2", moveCount: 12, notes: t("similar short variant using a d slice instead") },
     ],
   },
@@ -84,7 +84,7 @@ export const PLL_LIBRARY = {
   Gc: {
     alternates: [
       { alg: "R2 U' R U' R U R' U R2 D' U R U' R' D", moveCount: 15, notes: t("top-voted Gc; this app's default written with the commuting D' and U swapped") },
-      { alg: "y2 R2 F2 R U2 R U2 R' F R U R' U' R' F R2", moveCount: 15, notes: t("close second in popularity, different trigger shape") },
+      { alg: "y2 R2 F2 R U2 R U2 R' F R U R' U' R' F R2", moveCount: 16, notes: t("close second in popularity, different trigger shape") },
       { alg: "D R2 U' R U' R U R' U R2 D' U R U' R'", moveCount: 15, notes: t("same move count, alternate D-layer timing") },
       { alg: "R2 u' R U' R U R' u R2 f R' f'", moveCount: 12, notes: t("shorter wide-move variant, less commonly taught") },
     ],
@@ -95,7 +95,7 @@ export const PLL_LIBRARY = {
       { alg: "R U R' U' D R2 U' R U' R' U R' U R2 D'", moveCount: 15, notes: t("top-voted Gd, matches this app's existing default alg") },
       { alg: "D' R U R' U' D R2 U' R U' R' U R' U R2", moveCount: 15, notes: t("same length, alternate D-layer timing") },
       { alg: "R U R' y' R2 u' R U' R' U R' u R2", moveCount: 13, notes: t("shorter wide-move variant, faster but less common") },
-      { alg: "y R2 F' R U R U' R' F' R U2 R' U2 R' F2 R2", moveCount: 15, notes: t("less common alternative with F-trigger framing") },
+      { alg: "y R2 F' R U R U' R' F' R U2 R' U2 R' F2 R2", moveCount: 16, notes: t("less common alternative with F-trigger framing") },
     ],
   },
 
@@ -110,10 +110,10 @@ export const PLL_LIBRARY = {
 
   Ja: {
     alternates: [
-      { alg: "y2 x R2 F R F' R U2 r' U r U2 x'", moveCount: 12, notes: t("most popular Ja, quick R2 F trigger opener") },
-      { alg: "y R' U L' U2 R U' R' U2 R L", moveCount: 10, notes: t("matches this app's existing default alg style, fewer moves, well known") },
-      { alg: "L' U' L F L' U' L U L F' L2 U L", moveCount: 13, notes: t("no-AUF alternative but noticeably more moves") },
-      { alg: "R U' L' U R' U2 L U' L' U2 L", moveCount: 11, notes: t("another common short variant") },
+      { alg: "x R2 F R F' R U2 r' U r U2 x'", moveCount: 12, notes: t("most popular Ja, quick R2 F trigger opener") },
+      { alg: "y' R' U L' U2 R U' R' U2 R L", moveCount: 11, notes: t("matches this app's existing default alg style, fewer moves, well known") },
+      { alg: "U2 L' U' L F L' U' L U L F' L2 U L", moveCount: 14, notes: t("no-rotation alternative but noticeably more moves") },
+      { alg: "U2 R U' L' U R' U2 L U' L' U2 L", moveCount: 12, notes: t("another common short variant") },
     ],
   },
 
@@ -146,19 +146,19 @@ export const PLL_LIBRARY = {
 
   Ra: {
     alternates: [
-      { alg: "y R U' R' U' R U R D R' U' R D' R' U2 R'", moveCount: 15, notes: t("most popular Ra; this app's default from a rotated angle, without the trailing AUF") },
-      { alg: "y R U R' F' R U2 R' U2 R' F R U R U2 R' U'", moveCount: 15, notes: t("second most common, different trigger shape, same length") },
-      { alg: "L U2 L' U2 L F' L' U' L U L F L2", moveCount: 13, notes: t("shorter mirrored variant, fewer moves but less taught") },
-      { alg: "y R U' R' U' R U R' U R' D' R U' R' D R2 U R'", moveCount: 17, notes: t("longer, uncommon alternative") },
+      { alg: "R U' R' U' R U R D R' U' R D' R' U2 R'", moveCount: 15, notes: t("most popular Ra; this app's default without the trailing AUF") },
+      { alg: "R U R' F' R U2 R' U2 R' F R U R U2 R' U'", moveCount: 16, notes: t("second most common, different trigger shape, same length") },
+      { alg: "U' L U2 L' U2 L F' L' U' L U L F L2", moveCount: 14, notes: t("shorter mirrored variant, fewer moves but less taught") },
+      { alg: "R U' R' U' R U R' U R' D' R U' R' D R2 U R'", moveCount: 17, notes: t("longer, uncommon alternative") },
     ],
   },
 
   Rb: {
     alternates: [
       { alg: "R' U2 R U2 R' F R U R' U' R' F' R2", moveCount: 13, notes: t("most popular Rb, R' U2 opener, easier recognition than the F-trigger version") },
-      { alg: "y R2 F R U R U' R' F' R U2 R' U2 R", moveCount: 13, notes: t("close second in popularity, and this app's default alg") },
+      { alg: "y R2 F R U R U' R' F' R U2 R' U2 R", moveCount: 14, notes: t("close second in popularity, and this app's default alg") },
       { alg: "R' U2 R' D' R U' R' D R U R U' R' U' R", moveCount: 15, notes: t("longer alternative, less commonly used") },
-      { alg: "y R' U R U R' U' R' D' R U R' D R U2 R", moveCount: 15, notes: t("rare alternative, mostly of academic interest") },
+      { alg: "y R' U R U R' U' R' D' R U R' D R U2 R", moveCount: 16, notes: t("rare alternative, mostly of academic interest") },
     ],
   },
 
@@ -172,18 +172,18 @@ export const PLL_LIBRARY = {
 
   Ua: {
     alternates: [
-      { alg: "y2 M2 U M U2 M' U M2", moveCount: 7, notes: t("most popular Ua among M-slice users, very fast") },
-      { alg: "R U R' U R' U' R2 U' R' U R' U R", moveCount: 13, notes: t("no M turns needed, close second in votes") },
-      { alg: "y R2 U' S' U2 S U' R2", moveCount: 7, notes: t("short slice-turn alternative, popular with some solvers") },
-      { alg: "y2 R U' R U R U R U' R' U' R2", moveCount: 11, notes: t("this app's own default alg, no slice moves, fewest moves of the four") },
+      { alg: "M2 U M U2 M' U M2", moveCount: 7, notes: t("most popular Ua among M-slice users, very fast") },
+      { alg: "U2 R U R' U R' U' R2 U' R' U R' U R", moveCount: 14, notes: t("no M turns needed, close second in votes") },
+      { alg: "y' R2 U' S' U2 S U' R2", moveCount: 8, notes: t("short slice-turn alternative, popular with some solvers") },
+      { alg: "R U' R U R U R U' R' U' R2", moveCount: 11, notes: t("this app's own default alg, no slice moves, fewest moves of the four") },
     ],
   },
 
   Ub: {
     alternates: [
-      { alg: "y2 M2 U' M U2 M' U' M2", moveCount: 7, notes: t("most popular Ub among M-slice users, very fast") },
-      { alg: "R' U R' U' R' U' R' U R U R2", moveCount: 11, notes: t("no-M-slice alternative, fewer moves than this app's existing default") },
-      { alg: "y2 R2 U R U R' U' R' U' R' U R'", moveCount: 11, notes: t("this app's default alg, shown from its usual recognition angle") },
+      { alg: "M2 U' M U2 M' U' M2", moveCount: 7, notes: t("most popular Ub among M-slice users, very fast") },
+      { alg: "U2 R' U R' U' R' U' R' U R U R2", moveCount: 12, notes: t("no-M-slice alternative, fewer moves than this app's existing default") },
+      { alg: "R2 U R U R' U' R' U' R' U R'", moveCount: 11, notes: t("this app's default alg") },
     ],
   },
 
@@ -192,7 +192,7 @@ export const PLL_LIBRARY = {
       { alg: "R' U R' U' R D' R' D R' U D' R2 U' R2 D R2", moveCount: 16, notes: t("most popular V-perm variant") },
       { alg: "R' U R U' R' f' U' R U2 R' U' R U' R' f R", moveCount: 16, notes: t("close second, common alternative with an f slice trigger") },
       { alg: "R' U R' U' y R' F' R2 U' R' U R' F R F", moveCount: 15, notes: t("matches this app's existing default alg style, one move shorter") },
-      { alg: "y R U' R U R' D R D' R U' D R2 U R2 D' R2", moveCount: 16, notes: t("mirrored-angle alternative, similarly common") },
+      { alg: "y R U' R U R' D R D' R U' D R2 U R2 D' R2", moveCount: 17, notes: t("mirrored-angle alternative, similarly common") },
     ],
   },
 
@@ -209,8 +209,8 @@ export const PLL_LIBRARY = {
     alternates: [
       { alg: "M' U' M2 U' M2 U' M' U2 M2", moveCount: 9, notes: t("most popular Z-perm variant") },
       { alg: "M2 U M2 U M' U2 M2 U2 M'", moveCount: 9, notes: t("close second, mirrored AUF timing") },
-      { alg: "M' U M2 U M2 U M' U2 M2", moveCount: 9, notes: t("matches this app's existing default alg, similarly common") },
-      { alg: "y M2 U' M2 U' M' U2 M2 U2 M'", moveCount: 9, notes: t("alternate recognition angle of a similar trigger") },
+      { alg: "U M' U M2 U M2 U M' U2 M2", moveCount: 10, notes: t("matches this app's existing default alg, similarly common") },
+      { alg: "y M2 U' M2 U' M' U2 M2 U2 M'", moveCount: 10, notes: t("alternate recognition angle of a similar trigger") },
     ],
   },
 };

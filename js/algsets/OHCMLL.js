@@ -60,7 +60,7 @@ export const SET = {
     {"id":"OHCMLL-l-back-commutator","name":"L Back Commutator","group":"L","alg":"U R' U' R U' R U R' U R U2 f' U' f"},
   ],
   "library": {
-    "OHCMLL-o-adjacent": {"alternates":[{"alg":"R U' F U' R' U' R U F' U2' R'","moveCount":11},{"alg":"R U R' F' R U R' U' R' F R2 U' R'","moveCount":13},{"alg":"R U2 R' U' R U2 L' U R' U' L","moveCount":11},{"alg":"R' U2' R U R' U2' L U' R U L'","moveCount":11},{"alg":"r' U2' R U R' U' U' z U R' D R u' z'","moveCount":14}]},
+    "OHCMLL-o-adjacent": {"alternates":[{"alg":"R U' F U' R' U' R U F' U2' R'","moveCount":11},{"alg":"R U R' F' R U R' U' R' F R2 U' R'","moveCount":13},{"alg":"R U2 R' U' R U2 L' U R' U' L","moveCount":11},{"alg":"R' U2' R U R' U2' L U' R U L'","moveCount":11},{"alg":"r' U2 R U R' U2 z U R' D R u' z'","moveCount":13}]},
     "OHCMLL-o-diagonal": {"alternates":[{"alg":"R' U R U' R' f' U' R U2 R' U' R U' R' f R","moveCount":16},{"alg":"F R U' R' U' R U R' F' R U R' U' R' F R F'","moveCount":17},{"alg":"R U2' R' U2 F' R U' R' F R' F' R F","moveCount":13},{"alg":"x U' R' U R U' x' R U R' F U2' R U2 R'","moveCount":15},{"alg":"R' U R U' x' U R U2 R' U' R U' R' U2 R U R' U' x","moveCount":19}]},
     "OHCMLL-h-columns": {"alternates":[{"alg":"U R' U' R U' R' U R U' R' U2 R","moveCount":12},{"alg":"R' U2' R U R' U' R U R' U R","moveCount":11},{"alg":"U R U R' U R U' R' U R U2' R'","moveCount":12}]},
     "OHCMLL-h-rows": {"alternates":[{"alg":"F R U R' U' R U R' U' R U R' U' F'","moveCount":14}]},
@@ -87,7 +87,7 @@ export const SET = {
     "OHCMLL-sune-left-bar": {"alternates":[{"alg":"U R U R' U R U2 R'","moveCount":8},{"alg":"R' U2 R U R' U R","moveCount":7}]},
     "OHCMLL-sune-x": {"alternates":[{"alg":"U' R' U2' R U2 R f' U' f","moveCount":9},{"alg":"U F U R U2' R' U' R U R' F'","moveCount":11}]},
     "OHCMLL-sune-forward-slash": {"alternates":[{"alg":"U F R' F' R U2 R U2 R'","moveCount":9},{"alg":"U M' F R' F' r U2 R U2 R'","moveCount":10}]},
-    "OHCMLL-sune-columns": {"alternates":[{"alg":"U2 R' U' R U' R' U2 F R F' r U r'","moveCount":13},{"alg":"F U' R' U R U F' U2 R f' U' f","moveCount":12},{"alg":"U R U R' U' R' F R F' R U R' U R U2' R'","moveCount":16}]},
+    "OHCMLL-sune-columns": {"alternates":[{"alg":"U2 R' U' R U' R' U2 F R F' r U r'","moveCount":13},{"alg":"U2 F U' R' U R U F' U2 R f' U' f","moveCount":13},{"alg":"U R U R' U' R' F R F' R U R' U R U2' R'","moveCount":16}]},
     "OHCMLL-sune-right-bar": {"alternates":[{"alg":"U' R U R' U R' F R F' R U2 R'","moveCount":12}]},
     "OHCMLL-sune-backslash": {"alternates":[{"alg":"U r U' r' F R' F' R","moveCount":8},{"alg":"U R U' r' F R' F' r","moveCount":8}]},
     "OHCMLL-antisune-right-bar": {"alternates":[{"alg":"U R' U' R U' R' U2 R","moveCount":8},{"alg":"U2 R U2 R' U' R U' R'","moveCount":8},{"alg":"U r' U' R U' R' U2 r","moveCount":8}]},

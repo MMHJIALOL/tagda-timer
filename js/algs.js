@@ -24,13 +24,13 @@ export const PLL = [
   { id: 'Na', name: 'Na', group: 'both',    alg: "R U R' U R U R' F' R U R' U' R' F R2 U' R' U2 R U' R'" },
   { id: 'Nb', name: 'Nb', group: 'both',    alg: "R' U R U' R' F' U' F R U R' F R' F' R U' R" },
   { id: 'Ra', name: 'Ra', group: 'both',    alg: "R U' R' U' R U R D R' U' R D' R' U2 R' U'" },
-  { id: 'Rb', name: 'Rb', group: 'both',    alg: "R2 F R U R U' R' F' R U2 R' U2 R" },
+  { id: 'Rb', name: 'Rb', group: 'both',    alg: "U R2 F R U R U' R' F' R U2 R' U2 R" },
   { id: 'T',  name: 'T',  group: 'both',    alg: "R U R' U' R' F R2 U' R' U' R U R' F'" },
   { id: 'Ua', name: 'Ua', group: 'edges',   alg: "R U' R U R U R U' R' U' R2" },
   { id: 'Ub', name: 'Ub', group: 'edges',   alg: "R2 U R U R' U' R' U' R' U R'" },
   { id: 'V',  name: 'V',  group: 'both',    alg: "R' U R' U' y R' F' R2 U' R' U R' F R F y'" },
   { id: 'Y',  name: 'Y',  group: 'both',    alg: "F R U' R' U' R U R' F' R U R' U' R' F R F'" },
-  { id: 'Z',  name: 'Z',  group: 'edges',   alg: "M' U M2 U M2 U M' U2 M2" },
+  { id: 'Z',  name: 'Z',  group: 'edges',   alg: "U M' U M2 U M2 U M' U2 M2" },
 ];
 
 /* ---------------------- OLL (57) ---------------------- */

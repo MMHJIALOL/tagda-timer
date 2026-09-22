@@ -201,7 +201,7 @@ export const SET = {
     "SQ1-CSP-4-1-1-paired-edges-even": {"alternates":[{"alg":"2,2 / 0,4 / 4,-1 / -3,0 / -1,1","moveCount":4}]},
     "SQ1-CSP-3-3-paired-edges-odd": {"alternates":[{"alg":"-1,4 / 0,2 / -3,0 / -2,-1 / 0,-3 / -1,1","moveCount":5}]},
     "SQ1-CSP-3-3-paired-edges-even": {"alternates":[{"alg":"-1,0 / 0,-2 / 3,0 / 2,1 / 0,3 /","moveCount":5}]},
-    "SQ1-CSP-3-1-2-paired-edges-odd": {"alternates":[{"alg":"0,-2 / 0,-5 / 3,-2 / -2,-1 / 0,-3 / -1,1","moveCount":5},{"alg":"3,0 / 0,-4 / 0,-2 / 4,-1 / -3,0 / -1,1","moveCount":5}]},
+    "SQ1-CSP-3-1-2-paired-edges-odd": {"alternates":[{"alg":"0,-2 / 0,-5 / 3,-2 / -2,-1 / 0,-3 / -1,1","moveCount":5},{"alg":"3,-2 / 0,-4 / 0,-2 / 4,-1 / -3,0 / -1,1","moveCount":5}]},
     "SQ1-CSP-3-1-2-paired-edges-even": {"alternates":[{"alg":"-3,2 / 2,0 / 0,-2 / 0,1 / 0,3 /","moveCount":5}]},
     "SQ1-CSP-3-2-1-paired-edges-odd": {"alternates":[{"alg":"3,0 / 5,0 / -3,2 / -2,-1 / 0,-3 / -1,1","moveCount":5},{"alg":"/ 4,0 / 0,2 / 4,-1 / 0,-3 / -1,1","moveCount":5}]},
     "SQ1-CSP-3-2-1-paired-edges-even": {"alternates":[{"alg":"0,2 / -2,0 / 0,2 / 0,-1 / 0,-3 / -1,1","moveCount":5}]},
