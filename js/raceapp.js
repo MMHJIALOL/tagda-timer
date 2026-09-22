@@ -55,7 +55,7 @@ import { t } from './i18n.js';
  * refuses the sign-in with redirect_uri_mismatch otherwise. See README.md's
  * "Sign-in and the /__/auth/* proxy".
  */
-const SAME_ORIGIN_AUTH_HOSTS = new Set(['tagdatimer.vercel.app']);
+const SAME_ORIGIN_AUTH_HOSTS = new Set(['tagdatimer.me', 'www.tagdatimer.me', 'tagdatimer.vercel.app']);
 
 const AUTH_DOMAIN = SAME_ORIGIN_AUTH_HOSTS.has(location.hostname)
   ? location.hostname

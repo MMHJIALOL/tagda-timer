@@ -17,8 +17,8 @@ import { faceletsFor, drawNet, cubeSizeFor } from './cubenet.js';
 import { themeColors } from './theme.js';
 import { eventOf, modeOf } from './events.js';
 
-export const SITE = 'tagdatimer.vercel.app';
-export const SITE_URL = 'https://tagdatimer.vercel.app/';
+export const SITE = 'tagdatimer.me';
+export const SITE_URL = 'https://tagdatimer.me/';
 export const INSTA = '@cubingngagng';
 export const INSTA_URL = 'https://instagram.com/cubingngagng';
 

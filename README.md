@@ -5,7 +5,7 @@ real competition inspection, trainers with per-case stats, an alg trainer for se
 puzzles, a reconstruction workbench, live race rooms, a daily scramble with a
 leaderboard, and a theme engine that lets you rebuild the entire look.
 
-**Live at [tagdatimer.vercel.app](https://tagdatimer.vercel.app/)** · built by
+**Live at [tagdatimer.me](https://tagdatimer.me/)** · built by
 [@cubingngagng](https://instagram.com/cubingngagng)
 
 ![The timer, mid-session](docs/screenshots/timer.webp)
@@ -699,6 +699,12 @@ line up for that, and sign-in breaks outright if only one of them does:
 Deploying to a new domain therefore means editing `SAME_ORIGIN_AUTH_HOSTS`, both
 console lists, and, on a host that is not Vercel, porting the rewrite to that
 host's own config.
+
+Solves and settings live in IndexedDB, which the browser keys by origin, so
+`tagdatimer.me` starts empty for someone who has only ever used
+`tagdatimer.vercel.app`. Signing in on the new domain pulls synced solves back;
+anything unsynced has to come across as a Settings → backup export and import.
+That is why the old domain still serves the app instead of redirecting.
 
 Whatever the host, it must serve the whole folder (`vendor/` included) with
 JavaScript files as `text/javascript`. Every host above does that by default.
