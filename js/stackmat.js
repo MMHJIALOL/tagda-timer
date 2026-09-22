@@ -9,10 +9,10 @@ import { t } from './i18n.js';
 
    Packet, once decoded from the bit stream:
 
-     <status> <1 digit minutes> <2 digits seconds> <3 digits ms>
+     <status> <1 digit minutes> <2 digits seconds> <3 digits ms | 2 digits cs>
      <checksum> <CR/LF>
 
-   with checksum = 64 + (sum of the six digits). The status byte varies
+   with checksum = 64 + (sum of the digits). The status byte varies
    between firmware revisions, so the run/stop logic below is driven by
    the *time* rather than by the letter — that behaviour is identical on
    every unit ever shipped, which the letters are not.
@@ -35,7 +35,9 @@ export class StackmatDecoder {
   }
 
   reset() {
-    this.dc = 0;
+    // Last quarter-bit of raw samples, for the edge detector in push().
+    this.hist = new Float32Array(Math.max(1, Math.round(this.spb / 4)));
+    this.hi = 0;
     this.peak = 0.02;
     this.prev = 1;
     this.bytes = [];
@@ -48,17 +50,24 @@ export class StackmatDecoder {
   push(block) {
     const { spb } = this;
     for (let i = 0; i < block.length; i++) {
-      // Remove the DC offset the sound card adds, and track the envelope so
-      // the slicer works at any input gain.
+      // Slice on edges, not levels. Sound-card inputs are AC-coupled, so a run
+      // of equal bits sags back toward zero and a level slicer loses it —
+      // how far depends on the card's cutoff, which is why the old slicer
+      // worked on some machines and not others. The step across a transition
+      // survives coupling intact, so compare each sample with the one a
+      // quarter-bit earlier and hold the level between edges.
       const raw = block[i];
-      this.dc += (raw - this.dc) * 0.0005;
-      const v = (raw - this.dc) * this.polarity;
+      const v = (raw - this.hist[this.hi]) * this.polarity;
+      this.hist[this.hi] = raw;
+      this.hi = (this.hi + 1) % this.hist.length;
       const a = Math.abs(v);
       this.peak = a > this.peak ? a : this.peak * 0.99995;
 
-      // Hysteresis around zero, scaled to the envelope: a silent line must not
-      // rattle between levels and manufacture start bits out of noise.
-      const gate = Math.max(0.01, this.peak * 0.25);
+      // Threshold scaled to the edge envelope, so any input gain works. The
+      // floor is tiny on purpose: some timers (QiYi through a 2.5→3.5 mm
+      // adapter) arrive only a few thousandths of full scale, and noise that
+      // slips through is harmless because the checksum rejects it.
+      const gate = Math.max(0.0005, this.peak * 0.4);
       const bit = v > gate ? 1 : v < -gate ? 0 : this.prev;
 
       if (this.frameAt < 0) {
@@ -111,25 +120,32 @@ export class StackmatDecoder {
    */
   _scan() {
     const b = this.bytes;
-    for (let i = 0; i + 8 <= b.length; i++) {
+    for (let i = 0; i < b.length; i++) {
       const status = String.fromCharCode(b[i]);
       if (!HEADERS.includes(status)) continue;
-      let sum = 0, ok = true;
-      const digits = [];
-      for (let k = 1; k <= 6; k++) {
-        const d = b[i + k] - 48;
-        if (d < 0 || d > 9) { ok = false; break; }
-        digits.push(d);
-        sum += d;
-      }
-      if (!ok || b[i + 7] !== ((sum + 64) & 0xff)) continue;
+      // Gen3+ sends six digits (m ss mmm); Gen2, QiYi and many clones send
+      // five (m ss cc). The checksum byte is always >= 64, so it can never be
+      // mistaken for a digit and the two lengths cannot both match.
+      for (const n of [6, 5]) {
+        if (i + n + 2 > b.length) continue;
+        let sum = 0, ok = true;
+        const digits = [];
+        for (let k = 1; k <= n; k++) {
+          const d = b[i + k] - 48;
+          if (d < 0 || d > 9) { ok = false; break; }
+          digits.push(d);
+          sum += d;
+        }
+        if (!ok || b[i + n + 1] !== ((sum + 64) & 0xff)) continue;
 
-      const ms = (digits[0] * 60000) + (digits[1] * 10 + digits[2]) * 1000 +
-                 (digits[3] * 100 + digits[4] * 10 + digits[5]);
-      this.bytes = b.slice(i + 8);
-      this.sinceGood = 0;
-      this.onPacket({ status, timeMs: ms });
-      return;
+        const frac = n === 6 ? digits[3] * 100 + digits[4] * 10 + digits[5]
+                             : (digits[3] * 10 + digits[4]) * 10;
+        const ms = digits[0] * 60000 + (digits[1] * 10 + digits[2]) * 1000 + frac;
+        this.bytes = b.slice(i + n + 2);
+        this.sinceGood = 0;
+        this.onPacket({ status, timeMs: ms });
+        return;
+      }
     }
   }
 }
@@ -183,18 +199,36 @@ export class Stackmat extends EventTarget {
     if (this.ctx) return true;
     if (!navigator.mediaDevices?.getUserMedia) throw new Error(t('This browser has no microphone access'));
 
-    // Every clean-up the browser applies to speech destroys a data signal.
-    this.stream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        echoCancellation: false,
-        noiseSuppression: false,
-        autoGainControl: false,
-        channelCount: 1,
-      },
-    });
+    // Created before the permission prompt, while the click that got us here
+    // still counts as a gesture. Chrome keeps a context made without one
+    // suspended, and resume() then never settles — awaiting it hung start()
+    // for good (the status stuck on "listening…", and re-selecting Stackmat
+    // hit the early return above). So don't wait: resume on the next click
+    // or key instead, which is all the browser is waiting for.
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    ctx.resume();
+    if (ctx.state === 'suspended') {
+      const wake = () => { if (this.ctx === ctx) ctx.resume(); };
+      addEventListener('pointerdown', wake, { once: true, capture: true });
+      addEventListener('keydown', wake, { once: true, capture: true });
+    }
 
-    this.ctx = new (window.AudioContext || window.webkitAudioContext)();
-    await this.ctx.resume();
+    // Every clean-up the browser applies to speech destroys a data signal.
+    try {
+      this.stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false,
+          channelCount: 1,
+        },
+      });
+    } catch (err) {
+      ctx.close();
+      throw err;
+    }
+
+    this.ctx = ctx;
     const src = this.ctx.createMediaStreamSource(this.stream);
     const decoder = new StackmatDecoder(this.ctx.sampleRate, (p) => this._packet(p));
     this.decoder = decoder;
