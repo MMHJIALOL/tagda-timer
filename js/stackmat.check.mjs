@@ -6,7 +6,7 @@ globalThis.navigator ??= { language: 'en' };
 const { StackmatDecoder } = await import('./stackmat.js');
 import assert from 'node:assert';
 
-const RATE = 48000, SPB = RATE / 1200;
+let RATE, SPB;
 function packet(status, digits) {
   const sum = [...digits].reduce((s, d) => s + +d, 0);
   return [status, ...digits].map(c => c.charCodeAt(0)).concat(64 + sum, 13, 10);
@@ -34,8 +34,11 @@ function decode(bytes, amp, sign, fc) {
   for (let i = 0; i < 4; i++) for (let j = 0; j < s.length; j += 128) d.push(s.subarray(j, j + 128));
   return got;
 }
-for (const sign of [1, -1]) for (const amp of [0.5, 0.003]) for (const fc of [2, 5, 20, 50, 100]) {
-  const tag = `amp=${amp} sign=${sign} highpass=${fc}Hz`;
+// 44.1 kHz matters: a bit is 36.75 samples there, not a whole number, which
+// is where frame timing slips on timers that send bytes back-to-back.
+for (const rate of [44100, 48000]) for (const sign of [1, -1]) for (const amp of [0.5, 0.003]) for (const fc of [2, 5, 20, 50, 100]) {
+  RATE = rate; SPB = rate / 1200;
+  const tag = `rate=${rate} amp=${amp} sign=${sign} highpass=${fc}Hz`;
   const six = decode(packet('S', '012345'), amp, sign, fc);
   assert(six.length && six.at(-1).timeMs === 12345, `6-digit ${tag}`);
   const five = decode(packet(' ', '10734'), amp, sign, fc);

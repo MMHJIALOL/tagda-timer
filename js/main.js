@@ -3581,10 +3581,17 @@ async function wireStackmat() {
   stackmatWired = true;
   const msg = $('#stackmat-msg');
   const dot = $('#stackmat-dot');
+  // ?smdebug swaps the friendly status for the decoder's own numbers, so a
+  // tester's screenshot says which link of the chain is broken.
+  const debug = new URLSearchParams(location.search).has('smdebug');
   const say = (text, cls) => {
-    if (msg) msg.textContent = text;
+    if (msg && !debug) msg.textContent = text;
     if (dot) dot.className = `sm-dot ${cls || ''}`;
   };
+  if (debug && msg) {
+    msg.style.cssText = 'font: 11px/1.4 ui-monospace, monospace; white-space: normal; word-break: break-all; user-select: text';
+    setInterval(() => { msg.textContent = stackmat.debugLine(); }, 300);
+  }
 
   stackmat.addEventListener('signal', (e) => {
     if (e.detail.ok) say(t('Stackmat connected'), 'live');
