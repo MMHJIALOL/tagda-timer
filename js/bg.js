@@ -31,18 +31,37 @@ float fbm(vec2 p){
 }`;
 
 const SHADERS = {
+  /* Curtains, the way the real thing hangs: each one has a lower edge that
+     ripples slowly along its length and is brightest right there, then thins
+     out upward in vertical rays. The rays come from noise that varies along x
+     only, which is what makes them read as light falling rather than smoke. */
   aurora: `${HEAD}
+vec3 curtain(vec2 q, float base, float seed, float t){
+  float x = q.x + 0.06 * sin(q.y * 4.0 + q.x * 1.7 + t * 0.9 + seed);
+  float edge = base
+    + 0.09 * sin(x * 1.1 + t * 0.55 + seed * 7.0)
+    + 0.04 * sin(x * 2.9 - t * 0.8 + seed * 3.0)
+    + 0.03 * (noise(vec2(x * 3.5 + seed * 11.0, t * 0.4)) - 0.5);
+  float d = q.y - edge;
+  float on = smoothstep(-0.015, 0.004, d);
+  float body = exp(-max(d, 0.0) * 4.2) * on;
+  float rays = noise(vec2(x * 34.0 + seed * 5.0, t * 0.5));
+  rays = 0.25 + 0.75 * rays * rays;
+  float lip = exp(-abs(d) * 55.0) * 0.55;
+  vec3 hue = mix(u_c3, u_c2, smoothstep(0.0, 0.32, d));
+  return hue * (body * rays + lip * on);
+}
 void main(){
   vec2 uv = gl_FragCoord.xy / u_res.xy;
-  vec2 q = uv; q.x *= u_res.x / u_res.y;
-  float t = u_t * 0.06 * u_speed;
-  float f1 = fbm(q * 2.2 + vec2(t, t * 0.6));
-  float f2 = fbm(q * 3.1 - vec2(t * 0.8, t * 1.3) + f1);
-  float band = smoothstep(0.15, 0.95, f2 + uv.y * 0.55);
-  vec3 col = mix(u_c1, u_c2, band);
-  col = mix(col, u_c3, smoothstep(0.55, 1.0, f1 * 1.25));
-  float glow = pow(1.0 - abs(uv.y - 0.45) * 1.4, 3.0);
-  col += u_c3 * glow * 0.14 * u_amount;
+  vec2 q = vec2(uv.x * u_res.x / u_res.y, uv.y);
+  float t = u_t * 0.35 * u_speed;
+  vec3 sky = u_c1 * (0.22 + 0.38 * (1.0 - uv.y));
+  vec3 a = curtain(q, 0.34, 0.0, t) * 0.85
+         + curtain(q, 0.50, 1.7, t * 0.8) * 0.55
+         + curtain(q, 0.64, 3.9, t * 1.1) * 0.32;
+  a *= smoothstep(1.02, 0.55, uv.y);
+  vec3 col = sky + a * 1.25;
+  col = 1.0 - exp(-col * 1.6);
   gl_FragColor = vec4(col * u_amount, 1.0);
 }`,
 
@@ -111,6 +130,31 @@ void main(){
     col += u_c3 * star * tw * (0.5 - fi * 0.11);
   }
   col += u_c3 * fbm(q * 1.7 + t * 3.0) * 0.05;
+  gl_FragColor = vec4(col * u_amount, 1.0);
+}`,
+
+  /* Aceternity's background beams: a fan of hairline curves across a dark
+     field, each with a short bright pulse running along it on its own clock. */
+  beams: `${HEAD}
+void main(){
+  vec2 uv = gl_FragCoord.xy / u_res.xy;
+  float ar = u_res.x / u_res.y;
+  float t = u_t * 0.12 * u_speed;
+  float px = 1.0 / u_res.y;
+  vec3 col = u_c1 * (0.18 + 0.22 * smoothstep(1.2, 0.0, length(uv - vec2(0.5, 0.0))));
+  for(int i = 0; i < 14; i++){
+    float fi = float(i);
+    float h = hash(vec2(fi, 7.0));
+    float y = -0.6 + fi * 0.09 + 0.55 * uv.x + 0.22 * uv.x * uv.x + 0.05 * sin(uv.x * 2.4 + fi * 1.3);
+    float d = abs(uv.y - y) / px;
+    float hair = exp(-d * 0.8) * 0.16;
+    float head = fract(t * (0.5 + h * 0.6) + h * 3.7);
+    float s = head * 1.5 - 0.25 - uv.x;
+    float tail = smoothstep(-0.03, 0.0, s) * exp(-max(s, 0.0) * 5.5);
+    float pulse = exp(-d * 0.28) * tail;
+    col += mix(u_c2, u_c3, tail) * (hair + pulse * 1.4);
+  }
+  col = 1.0 - exp(-col * 1.4);
   gl_FragColor = vec4(col * u_amount, 1.0);
 }`,
 };
