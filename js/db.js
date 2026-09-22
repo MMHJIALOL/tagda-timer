@@ -70,14 +70,16 @@ export const wrap = (req) => new Promise((res, rej) => {
    subscriber, and it reaches in through this tiny pub-sub instead of db.js
    importing Firebase. Fired after the local write has already succeeded, so
    a hook throwing or a slow cloud push can never affect what IndexedDB has. */
-const hooks = { solves: [], solvesBatch: [], sessions: [], solvesDel: [], sessionsDel: [], kv: [] };
+const hooks = { solves: [], solvesBatch: [], sessions: [], solvesDel: [], sessionsDel: [], kv: [], rec: [], recDel: [] };
 
 export function onWrite(store, fn) {
   hooks[store].push(fn);
   return () => { hooks[store] = hooks[store].filter(f => f !== fn); };
 }
 
-function emit(store, record) {
+/* Exported for the stores that live in their own module (gear.js): 'rec' is
+   { store, rec } after a put, 'recDel' is { store, ids } after a delete. */
+export function emit(store, record) {
   for (const fn of hooks[store]) {
     try { fn(record); } catch (err) { console.warn('[db] write hook failed', err); }
   }
@@ -115,7 +117,7 @@ function loadTombstones() {
   if (_tomb) return Promise.resolve(_tomb);
   if (!_tombPromise) _tombPromise = (async () => {
     const raw = (await wrap((await tx('kv')).get(TOMBSTONE_KEY))) || {};
-    _tomb = { solves: raw.solves || {}, sessions: raw.sessions || {} };
+    _tomb = { ...raw, solves: raw.solves || {}, sessions: raw.sessions || {} };
     return _tomb;
   })();
   return _tombPromise;
@@ -132,10 +134,11 @@ function saveTombstones() {
 
 export const Tombstones = {
   async all() { return loadTombstones(); },
-  async has(store, id) { return !!(await loadTombstones())[store][id]; },
+  async has(store, id) { return !!(await loadTombstones())[store]?.[id]; },
 
   async record(store, ids) {
     const t = await loadTombstones();
+    t[store] ||= {};
     const now = Date.now();
     let changed = false;
     for (const id of ids) if (!t[store][id]) { t[store][id] = now; changed = true; }
@@ -148,7 +151,7 @@ export const Tombstones = {
   async clear(store, ids) {
     const t = await loadTombstones();
     let changed = false;
-    for (const id of ids) if (t[store][id]) { delete t[store][id]; changed = true; }
+    for (const id of ids) if (t[store]?.[id]) { delete t[store][id]; changed = true; }
     if (changed) await saveTombstones();
   },
 
@@ -159,7 +162,7 @@ export const Tombstones = {
   async prune(now = Date.now()) {
     const t = await loadTombstones();
     let changed = false;
-    for (const store of ['solves', 'sessions']) {
+    for (const store of Object.keys(t)) {
       for (const [id, at] of Object.entries(t[store])) {
         if (now - at > TOMBSTONE_TTL_MS) { delete t[store][id]; changed = true; }
       }
@@ -246,7 +249,7 @@ export const KV = {
     return v === undefined ? fallback : v;
   },
   async set(key, value) { const r = await wrap((await tx('kv', 'readwrite')).put(value, key)); emit('kv', { key, value }); return r; },
-  async del(key)        { return wrap((await tx('kv', 'readwrite')).delete(key)); },
+  async del(key)        { const r = await wrap((await tx('kv', 'readwrite')).delete(key)); emit('kv', { key, value: null }); return r; },
   /**
    * Every entry whose key starts with `prefix`, as a Map, in one transaction.
    *
@@ -273,19 +276,37 @@ export const Assets = {
 };
 
 /* ---------------- letter pairs (3BLD) ---------------- */
+/* Record stores other than solves/sessions share one pair of write hooks —
+   sync.js mirrors each to users/<uid>/<store>, keyed by `idKey`. */
+async function putRec(store, rec, idKey = 'id') {
+  const r = await wrap((await tx(store, 'readwrite')).put(rec));
+  await Tombstones.clear(store, [rec[idKey]]);
+  emit('rec', { store, rec });
+  return r;
+}
+
+async function delRecs(store, ids) {
+  if (!ids.length) return;
+  const os = await tx(store, 'readwrite');
+  await Promise.all(ids.map(id => wrap(os.delete(id))));
+  await Tombstones.record(store, ids);
+  emit('recDel', { store, ids });
+}
+
+export { putRec, delRecs };
+
 export const LetterPairs = {
-  async put(rec)  { return wrap((await tx('letterPairs', 'readwrite')).put({ ...rec, updatedAt: Date.now() })); },
+  async put(rec)  { return putRec('letterPairs', { ...rec, updatedAt: Date.now() }, 'pair'); },
   async get(pair) { return wrap((await tx('letterPairs')).get(pair)); },
-  async del(pair) { return wrap((await tx('letterPairs', 'readwrite')).delete(pair)); },
+  async del(pair) { return delRecs('letterPairs', [pair]); },
   async all()     {
     const list = await wrap((await tx('letterPairs')).getAll());
     return list.sort((a, b) => a.pair.localeCompare(b.pair));
   },
   async putMany(list) {
-    const store = await tx('letterPairs', 'readwrite');
-    await Promise.all(list.map(r => wrap(store.put({ ...r, updatedAt: r.updatedAt || Date.now() }))));
+    for (const r of list) await putRec('letterPairs', { ...r, updatedAt: r.updatedAt || Date.now() }, 'pair');
   },
-  async clear()   { return wrap((await tx('letterPairs', 'readwrite')).clear()); },
+  async clear()   { return delRecs('letterPairs', (await this.all()).map(r => r.pair)); },
 };
 
 /* ---------------- backup ---------------- */
@@ -329,8 +350,7 @@ export async function importAll(data, { merge = true } = {}) {
      written before the gear log existed have no key at all. */
   for (const [name, rows] of [['gear', data.gear], ['gearLog', data.gearLog]]) {
     if (!Array.isArray(rows) || !rows.length) continue;
-    const store = await tx(name, 'readwrite');
-    await Promise.all(rows.map(r => wrap(store.put(r))));
+    for (const r of rows) await putRec(name, r);
   }
   /* Only if this browser has not already chosen one — the cube on your desk
      is a fact about here and now, not about the machine the backup came from. */

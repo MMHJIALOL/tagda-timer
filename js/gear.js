@@ -14,7 +14,7 @@ import { t } from './i18n.js';
    what is actually on your desk is worse than no picker.
    =========================================================== */
 
-import { tx, wrap, KV } from './db.js';
+import { tx, wrap, KV, putRec, delRecs } from './db.js';
 import { uid } from './util.js';
 
 /* ---------------- seeds ----------------
@@ -93,10 +93,10 @@ export function newLogEntry(gearId, fields = {}) {
 }
 
 export const Gear = {
-  async put(g)   { return wrap((await tx('gear', 'readwrite')).put(g)); },
+  async put(g)   { return putRec('gear', g); },
   async get(id)  { return wrap((await tx('gear')).get(id)); },
   async del(id)  {
-    await wrap((await tx('gear', 'readwrite')).delete(id));
+    await delRecs('gear', [id]);
     // The log belongs to the cube. Left behind it is unreachable rows that
     // would still be drawn as markers on whatever chart asked for them.
     await GearLog.delFor(id);
@@ -109,16 +109,15 @@ export const Gear = {
 };
 
 export const GearLog = {
-  async put(e)   { return wrap((await tx('gearLog', 'readwrite')).put(e)); },
-  async del(id)  { return wrap((await tx('gearLog', 'readwrite')).delete(id)); },
+  async put(e)   { return putRec('gearLog', e); },
+  async del(id)  { return delRecs('gearLog', [id]); },
   async byGear(gearId) {
     const store = await tx('gearLog');
     return sortLog(await wrap(store.index('byGear').getAll(gearId)));
   },
   async delFor(gearId) {
     const list = await this.byGear(gearId);
-    const store = await tx('gearLog', 'readwrite');
-    await Promise.all(list.map(e => wrap(store.delete(e.id))));
+    await delRecs('gearLog', list.map(e => e.id));
   },
   async all() { return sortLog(await wrap((await tx('gearLog')).getAll())); },
 };

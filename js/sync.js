@@ -24,11 +24,31 @@ import { t } from './i18n.js';
    solve as something the other side is missing.
    =========================================================== */
 
-import { Solves, Sessions, KV, Tombstones, onWrite } from './db.js';
+import { Solves, Sessions, KV, Tombstones, onWrite, tx, wrap } from './db.js';
 import { onAuthChange, getDatabaseHandle } from './sync-auth.js';
 
 const QUEUE_KEY = '_syncQueue';
 const KV_DEBOUNCE_MS = 1500;
+
+/* Record stores mirrored to users/<uid>/<store>, and the field each is keyed
+   by. Cubes and their log, and the 3BLD letter-pair dictionary. */
+const RECORD_STORES = { gear: 'id', gearLog: 'id', letterPairs: 'pair' };
+
+/* KV keys mirrored to users/<uid>/kv/<key>, besides 'settings' and 'learn'
+   which keep their own nodes. Left out on purpose: spotify tokens (a secret
+   for this browser), gear.active and fmc.attempt (what is on this desk right
+   now), customScrambles (a queue position), the tombstones and sync queue. */
+export const isSyncedKv = (key) =>
+  key.startsWith('alglib:') || key === 'xp1Settings' || key === 'xp1History';
+
+/* Database keys cannot contain . # $ [ ] or /. */
+export const encKey = (key) => encodeURIComponent(key).replace(/\./g, '%2E');
+export const decKey = (k) => decodeURIComponent(k);
+
+/* Settings that say where this browser is right now rather than how it is set
+   up. Pushed like the rest, never adopted from another device — switching
+   event on the laptop must not switch it on the phone mid-solve. */
+export const LOCAL_ONLY_SETTINGS = ['sessionId', 'event', 'mode', 'raceReturnSession', 'raceLastRoom'];
 
 /**
  * Serializes every read-modify-write against the offline queue. KV.get/set
@@ -270,10 +290,27 @@ function pushSession(session) {
 }
 
 function pushKv({ key, value }) {
-  if (key !== 'settings' && key !== 'learn') return;
+  const path = key === 'settings' || key === 'learn' ? userPath(key)
+    : isSyncedKv(key) ? userPath('kv', encKey(key)) : null;
+  if (!path) return;
   if (isEcho(`kv:${key}`, value)) return;
   clearTimeout(_kvTimers.get(key));
-  _kvTimers.set(key, setTimeout(() => pushOrQueue(userPath(key), value), KV_DEBOUNCE_MS));
+  _kvTimers.set(key, setTimeout(() => pushOrQueue(path, value ?? null), KV_DEBOUNCE_MS));
+}
+
+/* Remote records are written straight into the store, not through putRec(),
+   so they never wake the write hook — no echo to detect. (LetterPairs.put
+   restamps updatedAt, so an echo would not even be byte-identical.) */
+function pushRec({ store, rec }) {
+  const idKey = RECORD_STORES[store];
+  if (idKey) pushOrQueue(userPath(store, rec[idKey]), rec);
+}
+
+function pushRecDel({ store, ids }) {
+  if (!RECORD_STORES[store]) return;
+  const updates = {};
+  for (const id of ids) updates[userPath(store, id)] = null;
+  pushUpdateOrQueue(updates);
 }
 
 /**
@@ -333,6 +370,25 @@ async function applyRemoteSessionRemoved(id) {
   await Sessions.del(id);
 }
 
+async function applyRemoteRec(store, rec) {
+  const id = rec?.[RECORD_STORES[store]];
+  if (id == null) return;
+  if (await rejectAsDeleted(store, id)) return;
+  await wrap((await tx(store, 'readwrite')).put(rec));
+}
+
+async function applyRemoteRecRemoved(store, id) {
+  if (!id) return;
+  await wrap((await tx(store, 'readwrite')).delete(id));
+}
+
+async function applyRemoteKv(k, value) {
+  const key = decKey(k);
+  if (!isSyncedKv(key)) return;
+  _lastRemoteJSON.set(`kv:${key}`, JSON.stringify(value ?? null));
+  await (value == null ? KV.del(key) : KV.set(key, value));
+}
+
 async function applyRemoteLearn(remote) {
   if (!remote || typeof remote !== 'object') return;
   const local = (await KV.get('learn', {})) || {};
@@ -356,11 +412,19 @@ async function applyRemoteLearn(remote) {
  * spread a level deeper for the same reason loadSettings() does it: a
  * cloud copy written before a `bld` field existed would otherwise blank it.
  */
+export function mergeSettings(local, remote) {
+  const merged = { ...local, ...remote };
+  if (local.bld || remote.bld) merged.bld = { ...(local.bld || {}), ...(remote.bld || {}) };
+  for (const k of LOCAL_ONLY_SETTINGS) {
+    if (k in local) merged[k] = local[k]; else delete merged[k];
+  }
+  return merged;
+}
+
 async function applyRemoteSettings(remote) {
   if (!remote || typeof remote !== 'object') return;
   const local = (await KV.get('settings', {})) || {};
-  const merged = { ...local, ...remote };
-  if (local.bld || remote.bld) merged.bld = { ...(local.bld || {}), ...(remote.bld || {}) };
+  const merged = mergeSettings(local, remote);
   _lastRemoteJSON.set('kv:settings', JSON.stringify(merged));
   await KV.set('settings', merged);
 }
@@ -380,6 +444,17 @@ async function attachListeners() {
   _unsubs.push(onChildRemoved(sessionsRef, (s) => applyRemoteSessionRemoved(s.key)));
   _unsubs.push(onValue(settingsRef, (s) => { if (s.exists()) applyRemoteSettings(s.val()); }));
   _unsubs.push(onValue(learnRef, (s) => { if (s.exists()) applyRemoteLearn(s.val()); }));
+
+  for (const store of Object.keys(RECORD_STORES)) {
+    const r = ref(db, userPath(store));
+    _unsubs.push(onChildAdded(r, (s) => applyRemoteRec(store, s.val())));
+    _unsubs.push(onChildChanged(r, (s) => applyRemoteRec(store, s.val())));
+    _unsubs.push(onChildRemoved(r, (s) => applyRemoteRecRemoved(store, s.key)));
+  }
+  const kvRef = ref(db, userPath('kv'));
+  _unsubs.push(onChildAdded(kvRef, (s) => applyRemoteKv(s.key, s.val())));
+  _unsubs.push(onChildChanged(kvRef, (s) => applyRemoteKv(s.key, s.val())));
+  _unsubs.push(onChildRemoved(kvRef, (s) => applyRemoteKv(s.key, null)));
 }
 
 function detachListeners() {
@@ -462,8 +537,36 @@ async function performMerge({ localSolves, localSessions, cloudSolves, cloudSess
   for (const s of mergedSolves) updates[userPath('solves', s.id)] = s;
   for (const s of mergedSessions) updates[userPath('sessions', s.id)] = s;
   if (Object.keys(mergedLearn).length) updates[userPath('learn')] = mergedLearn;
-  const settings = await KV.get('settings', null);
-  if (settings) updates[userPath('settings')] = settings;
+  /* Only when the account has none yet. Uploading this browser's copy over an
+     existing one was how signing in on a fresh device reset every other
+     device to defaults; the listener merges the account's copy down instead. */
+  const [settings, cloudSettings] = await Promise.all([
+    KV.get('settings', null),
+    _sdk.get(_sdk.ref(_sdk.db, userPath('settings'))),
+  ]);
+  if (settings && !cloudSettings.exists()) updates[userPath('settings')] = settings;
+
+  /* Cubes, letter pairs, custom algs: upload what the account has never seen,
+     clear what this device deleted. Everything the account already has comes
+     down through the listeners start() attaches, which replay the whole tree. */
+  const tombs = await Tombstones.all();
+  for (const [store, idKey] of Object.entries(RECORD_STORES)) {
+    const [local, snap] = await Promise.all([
+      wrap((await tx(store)).getAll()),
+      _sdk.get(_sdk.ref(_sdk.db, userPath(store))),
+    ]);
+    const cloud = snap.exists() ? snap.val() : {};
+    for (const r of local) if (!(r[idKey] in cloud)) updates[userPath(store, r[idKey])] = r;
+    for (const id of Object.keys(cloud)) if (tombs[store]?.[id]) updates[userPath(store, id)] = null;
+  }
+  const [localKv, kvSnap] = await Promise.all([
+    KV.prefixed(''),
+    _sdk.get(_sdk.ref(_sdk.db, userPath('kv'))),
+  ]);
+  const cloudKv = kvSnap.exists() ? kvSnap.val() : {};
+  for (const [key, value] of localKv) {
+    if (isSyncedKv(key) && !(encKey(key) in cloudKv)) updates[userPath('kv', encKey(key))] = value;
+  }
   // Same batch, so the account's leftovers go in the one round trip that
   // uploads the union rather than a second pass that could half-apply.
   for (const id of dead.solves) updates[userPath('solves', id)] = null;
@@ -492,6 +595,8 @@ async function start() {
     onWrite('solvesDel', pushSolvesDel),
     onWrite('sessionsDel', pushSessionsDel),
     onWrite('kv', pushKv),
+    onWrite('rec', pushRec),
+    onWrite('recDel', pushRecDel),
   ];
   window.addEventListener('online', flushQueue);
   await flushQueue();

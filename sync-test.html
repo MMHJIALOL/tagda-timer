@@ -78,6 +78,23 @@ section('mergeLearn');
   check('handles an empty local', Sync.mergeLearn({}, remote).AB.box === 4);
 }
 
+/* ---------------- mergeSettings / kv keys ---------------- */
+section('mergeSettings');
+{
+  const merged = Sync.mergeSettings(
+    { theme: 'light', event: '222', sessionId: 's-here', bld: { a: 1 } },
+    { theme: 'dark', event: '333', sessionId: 's-there', raceLastRoom: 'X', bld: { b: 2 } });
+  check('the account wins on a preference', merged.theme === 'dark');
+  check('where this browser is stays local', merged.event === '222' && merged.sessionId === 's-here');
+  check('a local-only key the local copy lacks is not adopted', !('raceLastRoom' in merged));
+  check('bld is merged a level deep', merged.bld.a === 1 && merged.bld.b === 2);
+  check('kv keys round-trip through the path encoding',
+    ['alglib:order:T.perm', 'xp1History'].every(k => Sync.decKey(Sync.encKey(k)) === k)
+    && !/[.#$\[\]\/]/.test(Sync.encKey('alglib:order:a.b/c')));
+  check('only the listed kv keys sync',
+    Sync.isSyncedKv('alglib:custom:x') && !Sync.isSyncedKv('spotify') && !Sync.isSyncedKv('gear.active'));
+}
+
 /* ---------------- decideMergeAction ---------------- */
 section('decideMergeAction (sign-in ambiguity)');
 {
