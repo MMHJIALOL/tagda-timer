@@ -13,7 +13,8 @@
 
    Redirect URIs registered against it (both must stay registered, and any new
    deploy origin has to be added here *and* in the dashboard before it works):
-     https://tagdatimer.vercel.app/
+     https://tagdatimer.me/
+     https://tagdatimer.vercel.app/          — old domain, still serving
      http://127.0.0.1:5199/          — local development
    =========================================================== */
 

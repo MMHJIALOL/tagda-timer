@@ -364,7 +364,8 @@ defined behaviour rather than an exception.
    **Keep your own Premium active** — see §3.4. If it lapses, the link breaks for
    all five of you, not just for you.
 2. **Keep the redirect URIs registered.** They must match byte for byte:
-   - `https://tagdatimer.vercel.app/` — production
+   - `https://tagdatimer.me/` — production
+   - `https://tagdatimer.vercel.app/` — the old domain, still serving
    - `http://127.0.0.1:5199/` — local development. Spotify permits `http` only
      on a loopback **IP**; `localhost` is rejected outright, and the panel
      detects this and prints the URL to use instead.
