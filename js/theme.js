@@ -143,7 +143,7 @@ export const DEFAULTS = {
 
   // background
   bgMode: 'shader',             // shader | image | video | gradient | solid
-  bgShader: 'aurora',
+  bgShader: 'plasma',
   bgSpeed: 1,
   bgAmount: 1,
   bgBlur: 0,
