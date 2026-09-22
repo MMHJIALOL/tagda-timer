@@ -1205,6 +1205,9 @@ function watchScrambleWidth() {
     // the fit, so watching it would feed the observer its own result.
     new ResizeObserver(refit).observe(box);
   }
+  // A multi-line scramble is fitted to the window's height, which the box's
+  // width never hears about.
+  addEventListener('resize', refit);
   /* `loadingdone`, not `document.fonts.ready`. Reading `.ready` when the fonts
      have already arrived makes Chrome update style and layout on the spot to
      see whether the answer is still true — a forced reflow, 74ms of the boot on
@@ -1230,7 +1233,7 @@ function fitScrambleToLine(node) {
   node.style.fontSize = '';
   node.classList.remove('oneline', 'wrapped');
   // Scrambles with real line breaks in them (megaminx, multi-blind) mean it.
-  if (node.classList.contains('multiline')) return;
+  if (node.classList.contains('multiline')) { fitScrambleHeight(node); return; }
   /* A hold is a sentence standing in for a scramble, and the whole of this
      function is about packing notation onto one line. Left to run on prose it
      shrinks a message to fit a width it was never meant to fill, so a screen
@@ -1270,6 +1273,31 @@ function fitScrambleToLine(node) {
   node.classList.add('wrapped');
   const twoLine = base * ((box * 2 * 0.88) / need);
   node.style.fontSize = `${Math.max(base * 0.58, Math.min(base, twoLine)).toFixed(2)}px`;
+}
+
+/**
+ * Keep a multi-line scramble out of the timer's way.
+ *
+ * Seven megaminx lines at the reading size were taller than the gap between
+ * the top bar and the timer, so they ran under the digits and shoved the side
+ * panels down until the times list was a sliver. Shrink the type until the
+ * block fits above the timer (pinned to the viewport's middle on desktop), and
+ * never past a quarter of the screen however the timer is laid out.
+ */
+function fitScrambleHeight(node) {
+  const top = node.getBoundingClientRect().top;
+  let room = innerHeight * 0.26;
+  const core = $('#timer-core');
+  const digits = $('#time-main');
+  if (core && digits && getComputedStyle(core).position === 'fixed') {
+    room = Math.min(room, digits.getBoundingClientRect().top - top - 16);
+  }
+  room = Math.max(room, 120);
+  const base = parseFloat(getComputedStyle(node).fontSize) || 16;
+  for (let i = 0; i < 2 && node.offsetHeight > room; i++) {
+    const size = parseFloat(node.style.fontSize) || base;
+    node.style.fontSize = `${Math.max(10, size * (room / node.offsetHeight) * 0.98).toFixed(2)}px`;
+  }
 }
 
 /* =========================================================
