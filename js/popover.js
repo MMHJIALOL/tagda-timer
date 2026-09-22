@@ -24,7 +24,8 @@ export function popover(anchor, items, { columns = 1, minWidth } = {}) {
   const pop = $('#popover');
   pop.innerHTML = '';
   pop.hidden = false;
-  if (minWidth) pop.style.minWidth = minWidth + 'px';
+  // Capped at the screen: a 400px event grid on a 320px phone ran off its right edge.
+  if (minWidth) pop.style.minWidth = `min(${minWidth}px, calc(100vw - 20px))`;
 
   const body = columns > 1 ? el('div', { class: 'pop-cols' }) : pop;
 

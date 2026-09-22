@@ -770,6 +770,8 @@ export const es = {
   "Merge and continue": "Combinar y continuar",
   "Merging your solves": "Combinando tus resoluciones",
   "Merging…": "Combinando…",
+  "Could not merge — check your connection and try again": "No se pudo combinar: revisa tu conexión y vuelve a intentarlo",
+  "Signed in — syncing your solves…": "Sesión iniciada: sincronizando tus resoluciones…",
   "Metronome": "Metrónomo",
   "Metronome speed": "Velocidad del metrónomo",
   "Metronome window": "Ventana del metrónomo",

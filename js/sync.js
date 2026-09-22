@@ -98,6 +98,43 @@ export function partitionDeleted(list, tombs) {
   return { live, dead };
 }
 
+/* The database hands a record back with its keys sorted and every null, empty
+   array and empty object dropped, so comparing bytes with the local copy would
+   call nearly every record changed. */
+function canon(v) {
+  if (Array.isArray(v)) return v.length ? v.map(canon) : undefined;
+  if (v && typeof v === 'object') {
+    const o = {};
+    for (const k of Object.keys(v).sort()) {
+      const c = canon(v[k]);
+      if (c !== undefined) o[k] = c;
+    }
+    return Object.keys(o).length ? o : undefined;
+  }
+  return v ?? undefined;
+}
+
+/** Same record as far as the cloud can tell, whichever side it came from. */
+export const sameRecord = (a, b) => JSON.stringify(canon(a)) === JSON.stringify(canon(b));
+
+/**
+ * What each side is missing, by id. On a shared id that differs, `localWins`
+ * picks the side: true for two histories meeting for the first time (the old
+ * union, where this device's copy won), false once this browser has synced
+ * with the account before — then the cloud has every edit made elsewhere
+ * while this device was closed, and this device's own edits since went out
+ * through the push path or are sitting in the queue that start() flushes.
+ */
+export function diffById(local, cloud, localWins) {
+  const cloudById = new Map(cloud.map(r => [r.id, r]));
+  const localById = new Map(local.map(r => [r.id, r]));
+  const up = local.filter(r => cloudById.has(r.id)
+    ? localWins && !sameRecord(r, cloudById.get(r.id)) : true);
+  const down = cloud.filter(r => localById.has(r.id)
+    ? !localWins && !sameRecord(r, localById.get(r.id)) : true);
+  return { up, down };
+}
+
 /** Keeps whichever side is further along (higher `box`) per case, same rule as db.js importAll. */
 export function mergeLearn(localMap, remoteMap) {
   const out = { ...(localMap || {}) };
@@ -335,19 +372,56 @@ async function rejectAsDeleted(store, id) {
   return true;
 }
 
-async function applyRemoteSolve(solve) {
-  if (!solve || !solve.id) return;
-  if (await rejectAsDeleted('solves', solve.id)) return;
-  _lastRemoteJSON.set(`solves:${solve.id}`, JSON.stringify(solve));
-  await Solves.put(solve);
+/**
+ * Tells the page that solves or sessions changed underneath it, so the list
+ * on screen can re-read them instead of waiting for a reload. Debounced: a
+ * first attach or a merge lands hundreds of rows at once.
+ */
+let _notifyTimer = 0;
+function notifyRemote() {
+  clearTimeout(_notifyTimer);
+  _notifyTimer = setTimeout(() => window.dispatchEvent(new CustomEvent('sync:remote')), 150);
 }
 
-async function applyRemoteSession(session) {
-  if (!session || !session.id) return;
-  if (await rejectAsDeleted('sessions', session.id)) return;
-  _lastRemoteJSON.set(`sessions:${session.id}`, JSON.stringify(session));
-  await Sessions.put(session);
+/**
+ * Remote solves and sessions are gathered and written once per burst. The
+ * listener hands them over one child at a time, and a first attach replays the
+ * entire history in one go — written one transaction each, that was thousands
+ * of IndexedDB round trips on every page load for rows that were already
+ * here. Only the ones that actually differ from the local copy are written.
+ */
+const _incoming = { solves: new Map(), sessions: new Map() };
+let _incomingTimer = 0;
+
+function queueIncoming(store, rec) {
+  if (!rec || !rec.id) return;
+  _incoming[store].set(rec.id, rec);
+  _incomingTimer ||= setTimeout(applyIncoming, 0);
 }
+
+async function applyIncoming() {
+  _incomingTimer = 0;
+  let changed = false;
+  for (const store of ['solves', 'sessions']) {
+    const recs = [..._incoming[store].values()];
+    _incoming[store].clear();
+    if (!recs.length) continue;
+    const live = [];
+    for (const r of recs) if (!(await rejectAsDeleted(store, r.id))) live.push(r);
+    const os = await tx(store);
+    const current = await Promise.all(live.map(r => wrap(os.get(r.id))));
+    const fresh = live.filter((r, i) => !sameRecord(r, current[i]));
+    if (!fresh.length) continue;
+    for (const r of fresh) _lastRemoteJSON.set(`${store}:${r.id}`, JSON.stringify(r));
+    if (store === 'solves') await Solves.putMany(fresh);
+    else for (const s of fresh) await Sessions.put(s);
+    changed = true;
+  }
+  if (changed) notifyRemote();
+}
+
+const applyRemoteSolve = (solve) => queueIncoming('solves', solve);
+const applyRemoteSession = (session) => queueIncoming('sessions', session);
 
 /**
  * Another device (or this one, echoed back) removed the row. Deleting it
@@ -360,14 +434,20 @@ async function applyRemoteSession(session) {
  */
 async function applyRemoteSolveRemoved(id) {
   if (!id) return;
+  _incoming.solves.delete(id);
+  if (!(await Solves.get(id))) return; // our own delete coming back
   _lastRemoteJSON.set(`solvesDel:${id}`, JSON.stringify(null));
   await Solves.del(id);
+  notifyRemote();
 }
 
 async function applyRemoteSessionRemoved(id) {
   if (!id) return;
+  _incoming.sessions.delete(id);
+  if (!(await Sessions.get(id))) return;
   _lastRemoteJSON.set(`sessionsDel:${id}`, JSON.stringify(null));
   await Sessions.del(id);
+  notifyRemote();
 }
 
 async function applyRemoteRec(store, rec) {
@@ -470,11 +550,15 @@ function detachListeners() {
  * user has seen it. If there's no ambiguity, merges silently and returns null.
  */
 export async function mergeOnSignIn(user) {
-  const { db, ref, get } = _sdk;
-  const [cloudSolvesSnap, cloudSessionsSnap] = await Promise.all([
-    get(ref(db, userPath('solves'))),
-    get(ref(db, userPath('sessions'))),
-  ]);
+  const { db, ref, onValue } = _sdk;
+  /* Watched rather than fetched. get() downloads the tree and forgets it, so
+     the listeners start() attaches right after downloaded the whole history a
+     second time before anything went live. A listener kept from here on holds
+     the copy, and theirs is served from it. */
+  const watch = (path) => new Promise((resolve, reject) => {
+    _unsubs.push(onValue(ref(db, userPath(path)), resolve, reject));
+  });
+  const [cloudSolvesSnap, cloudSessionsSnap] = await Promise.all([watch('solves'), watch('sessions')]);
   /* Read after the cloud, never before it. These two reads are what the union
      is built from, and the gap between them and the write listeners start()
      attaches is a window where a solve belongs to neither: not in the snapshot
@@ -498,13 +582,15 @@ export async function mergeOnSignIn(user) {
   const { live: cloudSessions, dead: deadSessions } = partitionDeleted(allCloudSessions, tombs.sessions);
   const dead = { solves: deadSolves.map(s => s.id), sessions: deadSessions.map(s => s.id) };
 
+  const mergedBefore = hasMergedBefore(_uid);
   const action = decideMergeAction({
     localCount: localSolves.length,
     cloudCount: cloudSolves.length,
-    mergedBefore: hasMergedBefore(_uid),
+    mergedBefore,
   });
+  const merge = { localSolves, localSessions, cloudSolves, cloudSessions, dead, localWins: !mergedBefore };
   if (action === 'upload') {
-    await performMerge({ localSolves, localSessions, cloudSolves, cloudSessions, dead });
+    await performMerge(merge);
     return null;
   }
 
@@ -514,56 +600,56 @@ export async function mergeOnSignIn(user) {
     cloudCount: cloudSolves.length,
     totalCount: mergedCount,
     email: user?.email || '',
-    confirm: () => performMerge({ localSolves, localSessions, cloudSolves, cloudSessions, dead }),
+    confirm: () => performMerge(merge),
   };
 }
 
-async function performMerge({ localSolves, localSessions, cloudSolves, cloudSessions, dead = { solves: [], sessions: [] } }) {
-  const mergedSolves = unionById(localSolves, cloudSolves);
-  const mergedSessions = unionById(localSessions, cloudSessions);
-  const [localLearn, cloudLearnSnap] = await Promise.all([
-    KV.get('learn', {}),
-    _sdk.get(_sdk.ref(_sdk.db, userPath('learn'))),
+async function performMerge({ localSolves, localSessions, cloudSolves, cloudSessions, dead, localWins }) {
+  const node = (...path) => _sdk.get(_sdk.ref(_sdk.db, userPath(...path)));
+  const val = (snap, empty) => (snap.exists() ? snap.val() : empty);
+  const stores = Object.keys(RECORD_STORES);
+  // One round of reads in parallel, not a round trip per node in turn.
+  const [localLearn, learnSnap, settings, settingsSnap, localKv, kvSnap, tombs, ...recs] = await Promise.all([
+    KV.get('learn', {}), node('learn'),
+    KV.get('settings', null), node('settings'),
+    KV.prefixed(''), node('kv'),
+    Tombstones.all(),
+    ...stores.flatMap(store => [tx(store).then(os => wrap(os.getAll())), node(store)]),
   ]);
-  const mergedLearn = mergeLearn(localLearn, cloudLearnSnap.exists() ? cloudLearnSnap.val() : {});
 
-  // Write the union back to both sides. Additive for everything either side
-  // still has; the only thing cleared is what this device deleted on purpose.
-  for (const s of mergedSolves) await Solves.put(s);
-  for (const s of mergedSessions) await Sessions.put(s);
-  if (Object.keys(mergedLearn).length) await KV.set('learn', mergedLearn);
+  /* Each side gets only what it is missing. This runs on every page load of a
+     signed-in browser, and rewriting the whole union into IndexedDB one solve
+     at a time, then uploading all of it again, was most of what made the
+     merge slow — and uploading this device's stale copies was how an edit
+     made on another device got undone the next time this one opened. */
+  const solves = diffById(localSolves, cloudSolves, localWins);
+  const sessions = diffById(localSessions, cloudSessions, localWins);
+  const cloudLearn = val(learnSnap, {});
+  const learn = mergeLearn(localLearn, cloudLearn);
+
+  if (solves.down.length) await Solves.putMany(solves.down);
+  for (const s of sessions.down) await Sessions.put(s);
+  if (!sameRecord(learn, localLearn)) await KV.set('learn', learn);
 
   const updates = {};
-  for (const s of mergedSolves) updates[userPath('solves', s.id)] = s;
-  for (const s of mergedSessions) updates[userPath('sessions', s.id)] = s;
-  if (Object.keys(mergedLearn).length) updates[userPath('learn')] = mergedLearn;
+  for (const s of solves.up) updates[userPath('solves', s.id)] = s;
+  for (const s of sessions.up) updates[userPath('sessions', s.id)] = s;
+  if (!sameRecord(learn, cloudLearn)) updates[userPath('learn')] = learn;
   /* Only when the account has none yet. Uploading this browser's copy over an
      existing one was how signing in on a fresh device reset every other
      device to defaults; the listener merges the account's copy down instead. */
-  const [settings, cloudSettings] = await Promise.all([
-    KV.get('settings', null),
-    _sdk.get(_sdk.ref(_sdk.db, userPath('settings'))),
-  ]);
-  if (settings && !cloudSettings.exists()) updates[userPath('settings')] = settings;
+  if (settings && !settingsSnap.exists()) updates[userPath('settings')] = settings;
 
   /* Cubes, letter pairs, custom algs: upload what the account has never seen,
      clear what this device deleted. Everything the account already has comes
      down through the listeners start() attaches, which replay the whole tree. */
-  const tombs = await Tombstones.all();
-  for (const [store, idKey] of Object.entries(RECORD_STORES)) {
-    const [local, snap] = await Promise.all([
-      wrap((await tx(store)).getAll()),
-      _sdk.get(_sdk.ref(_sdk.db, userPath(store))),
-    ]);
-    const cloud = snap.exists() ? snap.val() : {};
+  stores.forEach((store, i) => {
+    const idKey = RECORD_STORES[store];
+    const local = recs[2 * i], cloud = val(recs[2 * i + 1], {});
     for (const r of local) if (!(r[idKey] in cloud)) updates[userPath(store, r[idKey])] = r;
     for (const id of Object.keys(cloud)) if (tombs[store]?.[id]) updates[userPath(store, id)] = null;
-  }
-  const [localKv, kvSnap] = await Promise.all([
-    KV.prefixed(''),
-    _sdk.get(_sdk.ref(_sdk.db, userPath('kv'))),
-  ]);
-  const cloudKv = kvSnap.exists() ? kvSnap.val() : {};
+  });
+  const cloudKv = val(kvSnap, {});
   for (const [key, value] of localKv) {
     if (isSyncedKv(key) && !(encKey(key) in cloudKv)) updates[userPath('kv', encKey(key))] = value;
   }
@@ -577,6 +663,7 @@ async function performMerge({ localSolves, localSessions, cloudSolves, cloudSess
   // sign-in — including the one a page reload performs for you — goes
   // straight to live sync with nothing to confirm.
   rememberMerged(_uid);
+  if (solves.down.length || sessions.down.length) notifyRemote();
 }
 
 let _writeUnsubs = [];
@@ -604,6 +691,10 @@ async function start() {
 
 function stop() {
   detachListeners();
+  clearTimeout(_incomingTimer);
+  _incomingTimer = 0;
+  _incoming.solves.clear();
+  _incoming.sessions.clear();
   for (const unsub of _writeUnsubs) unsub();
   _writeUnsubs = [];
   window.removeEventListener('online', flushQueue);

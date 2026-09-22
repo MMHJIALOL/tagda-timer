@@ -60,11 +60,24 @@ function providerFor(authMod, name) {
   return make();
 }
 
+/* Fetched alongside the auth SDK rather than after sign-in: sync needs it the
+   moment an account appears, and fetching it only then put a second download
+   between closing the Google popup and the merge dialog. */
+let _dbMod = null;
+function loadDatabaseModule() {
+  if (!_dbMod) {
+    _dbMod = import(/* @vite-ignore */ `https://www.gstatic.com/firebasejs/${FIREBASE_VERSION}/firebase-database.js`);
+    _dbMod.catch(() => { _dbMod = null; });
+  }
+  return _dbMod;
+}
+
 async function ensureSdk() {
   if (_sdk) return _sdk;
   if (_initPromise) return _initPromise;
   _initPromise = (async () => {
     if (!FIREBASE_CONFIG) throw new Error('no-config');
+    loadDatabaseModule();
     const base = `https://www.gstatic.com/firebasejs/${FIREBASE_VERSION}`;
     const [appMod, authMod] = await Promise.all([
       import(/* @vite-ignore */ `${base}/firebase-app.js`),
@@ -215,8 +228,7 @@ export function hasPersistedSession() {
 
 export async function getDatabaseHandle() {
   const { appMod, auth } = await ensureSdk();
-  const base = `https://www.gstatic.com/firebasejs/${FIREBASE_VERSION}`;
-  const dbMod = await import(/* @vite-ignore */ `${base}/firebase-database.js`);
+  const dbMod = await loadDatabaseModule();
   const app = appMod.getApp(APP_NAME);
   return { ...dbMod, db: dbMod.getDatabase(app), auth };
 }

@@ -62,6 +62,25 @@ section('unionById');
     Sync.unionById(local, local).length === 2);
 }
 
+/* ---------------- sameRecord / diffById ---------------- */
+section('sameRecord / diffById (what each side is sent)');
+{
+  check('key order, nulls and empty arrays do not count as a change',
+    Sync.sameRecord({ id: 'a', timeMs: 9, splits: null, relay: [] }, { timeMs: 9, id: 'a' }));
+  check('a real edit does', !Sync.sameRecord({ id: 'a', penalty: '+2' }, { id: 'a', penalty: 'none' }));
+  check('a missing local copy is a change', !Sync.sameRecord({ id: 'a' }, undefined));
+
+  const local = [{ id: 'a', p: 1 }, { id: 'b', p: 1 }, { id: 'l' }];
+  const cloud = [{ id: 'a', p: 1 }, { id: 'b', p: 2 }, { id: 'c' }];
+  const first = Sync.diffById(local, cloud, true);
+  check('first merge: local-only goes up, and local wins a shared edit',
+    first.up.map(r => r.id).sort().join() === 'b,l' && first.down.map(r => r.id).join() === 'c');
+  const later = Sync.diffById(local, cloud, false);
+  check('synced before: the cloud wins a shared edit, so another device\'s edit is not undone',
+    later.up.map(r => r.id).join() === 'l' && later.down.map(r => r.id).sort().join() === 'b,c');
+  check('identical rows are sent nowhere', !first.up.some(r => r.id === 'a') && !later.down.some(r => r.id === 'a'));
+}
+
 /* ---------------- mergeLearn ---------------- */
 section('mergeLearn');
 {
