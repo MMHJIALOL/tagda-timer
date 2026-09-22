@@ -85,18 +85,33 @@ function slider(value, min, max, step, onChange, fmtVal = v => v) {
   return el('div', { class: 'range-row' }, r, out);
 }
 
+/* One highlight that slides to whichever chip is picked, rather than each chip
+   lighting up on its own. The drawer is built while hidden, so nothing can be
+   measured yet: the ResizeObserver places it once the row is actually laid out
+   (and again if the row reflows), without animating that first placement. */
 function chips(options, value, onChange) {
-  const wrap = el('div', { class: 'chips' });
+  const pill = el('span', { class: 'chip-pill', 'aria-hidden': 'true' });
+  const wrap = el('div', { class: 'chips has-pill' }, pill);
+  const place = (c, instant) => {
+    pill.classList.toggle('instant', instant);
+    if (!c) { pill.style.opacity = '0'; return; }
+    Object.assign(pill.style, {
+      opacity: '1', width: `${c.offsetWidth}px`, height: `${c.offsetHeight}px`,
+      transform: `translate(${c.offsetLeft}px, ${c.offsetTop}px)`,
+    });
+  };
   for (const o of options) {
     const v = o.value ?? o;
     const c = el('button', { class: `chip ${v === value ? 'on' : ''}`, text: o.label ?? o });
     c.addEventListener('click', () => {
       [...wrap.children].forEach(x => x.classList.remove('on'));
       c.classList.add('on');
+      place(c, false);
       onChange(v);
     });
     wrap.append(c);
   }
+  new ResizeObserver(() => place(wrap.querySelector('.chip.on'), true)).observe(wrap);
   return wrap;
 }
 
@@ -121,8 +136,39 @@ export function buildAppearance(app) {
       card.addEventListener('click', () => {
         [...grid.children].forEach(c => c.classList.remove('on'));
         card.classList.add('on');
-        set('accent', ''); set('accent2', '');
+        set('accent', ''); set('accent2', ''); set('bg2', ''); set('albumTheme', '');
         set('theme', id);
+      });
+      grid.append(card);
+    }
+
+    /* Album themes, saved from the Spotify panel. Picking one writes its three
+       colours over the theme it was saved on. While Spotify is tinting, the
+       playing cover still wins — that is the album tint, not a setting. */
+    for (const p of S.albumThemes || []) {
+      const del = el('button', { class: 'tc-del', type: 'button', title: 'Remove this theme', 'aria-label': 'Remove this theme', text: '×' });
+      const card = el('div', {
+        class: `theme-card album ${S.albumTheme === p.id ? 'on' : ''}`,
+        style: { background: p.bg2 }, title: `${p.name} — ${p.artist}`,
+      },
+        p.art ? el('img', { class: 'tc-art', src: p.art, alt: '', loading: 'lazy' }) : null,
+        el('div', { class: 'tc-dots' }, ...[p.accent, p.accent2].map(c => el('i', { style: { background: c } }))),
+        // Not via `text`: an album title is a name, never something to translate.
+        Object.assign(el('div', { class: 'tc-name' }), { textContent: p.name }),
+        del,
+      );
+      card.addEventListener('click', () => {
+        [...grid.children].forEach(c => c.classList.remove('on'));
+        card.classList.add('on');
+        set('theme', p.theme in PRESETS ? p.theme : 'nebula');
+        set('accent', p.accent); set('accent2', p.accent2); set('bg2', p.bg2);
+        set('albumTheme', p.id);
+      });
+      del.addEventListener('click', (e) => {
+        e.stopPropagation();
+        set('albumThemes', app.settings.albumThemes.filter(x => x.id !== p.id));
+        if (app.settings.albumTheme === p.id) set('albumTheme', '');
+        card.remove();
       });
       grid.append(card);
     }
@@ -130,7 +176,7 @@ export function buildAppearance(app) {
     /* custom colours */
     const colorItem = (label, key, fallback) => {
       const inp = el('input', { class: 'inp', type: 'color', value: S[key] || fallback });
-      inp.addEventListener('input', () => set(key, inp.value));
+      inp.addEventListener('input', () => { set(key, inp.value); set('albumTheme', ''); });
       return el('div', { class: 'color-item' }, inp, el('span', { text: label }));
     };
 
@@ -141,7 +187,7 @@ export function buildAppearance(app) {
       const m = app.settings.bgMode;
       if (m === 'shader') {
         bgExtra.append(
-          row('Shader', select(SHADER_NAMES.map(n => ({ value: n, label: n })), S.bgShader, v => set('bgShader', v))),
+          row('Shader', chips(SHADER_NAMES.map(n => ({ value: n, label: t(n[0].toUpperCase() + n.slice(1)) })), S.bgShader, v => set('bgShader', v))),
           row('Speed', slider(S.bgSpeed, 0, 3, .05, v => set('bgSpeed', v), v => v.toFixed(2) + '×')),
           row('Brightness', slider(S.bgAmount, 0, 2, .05, v => set('bgAmount', v), v => v.toFixed(2))),
         );
@@ -498,6 +544,14 @@ export function buildSpotify(app) {
             t('the cover, track and controls in the sidebar')),
           row(t('Track under the scramble'), toggle(app.settings.spotifyNowPlaying,
             v => set('spotifyNowPlaying', v)), t('a single line, off by default')),
+          (() => {
+            const now = app.albumNow?.();
+            const name = now && (now.track.album || now.track.title);
+            return row(t('Save colours as a theme'),
+              el('button', { class: 'ghost-btn sm', type: 'button', text: 'Save',
+                disabled: !now, onclick: () => app.saveAlbumTheme() }),
+              name ? t('keeps {name} in Appearance → Theme', { name }) : t('play something to save its colours'));
+          })(),
           el('div', { class: 'hint-note', text:
             t('Colours are never written into your saved theme, and never change mid-solve — a new track waits for the timer to go idle. The status colours for inspection are never touched at all.') }),
         ));
@@ -550,8 +604,9 @@ export function buildSpotify(app) {
     };
 
     render();
-    // A redirect can complete while this panel is open.
-    app.spotifyChanged = render;
+    // A redirect can complete while this panel is open. Every drawer shares one
+    // body, so once another drawer has replaced this one there is nothing to redraw.
+    app.spotifyChanged = () => { if (current === 'Spotify') render(); };
   };
 }
 

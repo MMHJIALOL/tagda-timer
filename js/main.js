@@ -1047,6 +1047,25 @@ function previewOrientation(mode, ev) {
   return /^([234567])x\1x\1$/.test(ev.puzzle) ? 'z2' : '';
 }
 
+/* Moves come in one after another out of a blur (Aceternity's text generate
+   effect). Each move is an inline span holding the same text, so the width the
+   line-fit measured, copy and textContent are all unchanged. The keyframes
+   never start fully transparent, for the reason given where this is called. */
+function revealMoves(node, text) {
+  node.textContent = '';
+  let i = 0;
+  for (const part of text.split(/(\s+)/)) {
+    if (!part) continue;
+    if (/^\s/.test(part)) { node.append(part); continue; }
+    // Not el(): its text goes through t(), and a move is not a word to translate.
+    const m = document.createElement('span');
+    m.textContent = part;
+    node.append(m);
+    m.animate([{ opacity: 0.15, filter: 'blur(6px)' }, { opacity: 1, filter: 'none' }],
+      { duration: 420, delay: Math.min(i++ * 22, 440), easing: 'ease-out', fill: 'backwards' });
+  }
+}
+
 function showScramble(s, silent = false) {
   app.scramble = s;
   const ev = eventOf(app.settings.event);
@@ -1138,6 +1157,7 @@ function showScramble(s, silent = false) {
   if (!silent && canAnimate()) {
     node.animate([{ transform: 'translateY(-6px)' }, { transform: 'none' }],
       { duration: 340, easing: 'cubic-bezier(.22,1,.36,1)' });
+    revealMoves(node, text);
   }
 
   const mode = modeOf(app.settings.mode);
@@ -3769,6 +3789,29 @@ async function startAlbumTheming() {
   app.spotifyChanged?.();
 }
 
+/* The cover on screen and the palette pulled from it, for "Save colours as a
+   theme". Saved under album + artist, so saving the same record twice (a
+   second track off it) updates the one card rather than adding another. */
+let npAlbum = null;
+
+function saveAlbumTheme() {
+  const now = app.albumNow();
+  if (!now) return;
+  const { palette, track } = now;
+  const name = track.album || track.title;
+  const theme = {
+    id: `${name}|${track.artist}`, name, artist: track.artist, art: track.artUrl,
+    theme: app.settings.theme,
+    accent: palette.accent, accent2: palette.accent2, bg2: palette.bg2,
+  };
+  const list = (app.settings.albumThemes || []).filter(x => x.id !== theme.id);
+  app.setSetting('albumThemes', [...list, theme]);
+  toast(t('Saved “{name}” to your themes — find it in Appearance', { name }), { kind: 'good' });
+}
+
+app.albumNow = () => npAlbum;
+app.saveAlbumTheme = saveAlbumTheme;
+
 function wireSpotify() {
   spotify.addEventListener('track', async (e) => {
     const { artUrl, title, artist } = e.detail;
@@ -3792,6 +3835,8 @@ function wireSpotify() {
       // already in settings. Also the whole fallback when pixels are refused.
       bg.setMedia(`center/cover no-repeat url("${artUrl}")`);
     }
+    npAlbum = palette ? { palette, track: e.detail } : null;
+    app.spotifyChanged?.();   // the Spotify drawer's save row names this album
     if (!palette) return;
 
     paintSwatches(palette);
@@ -3940,6 +3985,7 @@ function paintNowPlaying(track) {
     if (card) { card.removeAttribute('href'); card.classList.remove('has-track'); }
     if (prog) prog.hidden = true;
     $('#np-controls').hidden = true;
+    npAlbum = null;
     paintSwatches(null);
     paintBarTint(null);
     npAt = null;
@@ -4272,7 +4318,7 @@ function applyAll(changed) {
   // bgSolid and bgGradient were missing here, so editing the background colour
   // or the gradient string did nothing at all until some unrelated setting
   // happened to trigger a re-apply.
-  if (!changed || ['bgMode','bgShader','bgSpeed','bgAmount','theme','accent','accent2',
+  if (!changed || ['bgMode','bgShader','bgSpeed','bgAmount','theme','accent','accent2','bg2',
                    'bgDim','bgSolid','bgGradient','autoContrast',
                    'spotifyGradient','spotifyTint'].includes(changed)) {
     applyBackground(bg, app.settings);

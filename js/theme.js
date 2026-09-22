@@ -132,6 +132,10 @@ export const DEFAULTS = {
   motion: 'full',               // full | reduced | off
   accent: '',                   // '' = use preset
   accent2: '',
+  bg2: '',                      // '' = use preset; set by an album theme
+  // Palettes saved from Spotify covers: [{id, name, artist, art, theme, accent, accent2, bg2}]
+  albumThemes: [],
+  albumTheme: '',               // id of the album theme last picked, for the card's highlight
   timerFont: 'JetBrains Mono',
   timerWeight: 700,
   timerSize: 100,               // % of the fluid default
@@ -264,6 +268,7 @@ export function applyTheme(s) {
 
   if (s.accent)  st.setProperty('--accent', s.accent);  else st.removeProperty('--accent');
   if (s.accent2) st.setProperty('--accent-2', s.accent2); else st.removeProperty('--accent-2');
+  if (s.bg2)     st.setProperty('--bg-2', s.bg2);         else st.removeProperty('--bg-2');
 
   // Anything printed *on* an accent — a primary button, a selection, the avatar
   // initial — used to be white no matter what, which is invisible on Carbon's
@@ -365,8 +370,9 @@ export function setAlbumTint(colors, settings) {
   const root = document.documentElement;
   if (!colors) {
     // Hand the theme back its own values rather than guessing them.
-    root.style.removeProperty('--bg-2');
-    if (settings?.accent)  root.style.setProperty('--accent', settings.accent);
+    if (settings?.bg2) root.style.setProperty('--bg-2', settings.bg2);
+    else root.style.removeProperty('--bg-2');
+    if (settings?.accent) root.style.setProperty('--accent', settings.accent);
     else root.style.removeProperty('--accent');
     if (settings?.accent2) root.style.setProperty('--accent-2', settings.accent2);
     else root.style.removeProperty('--accent-2');
@@ -472,7 +478,7 @@ export async function applyBackground(bg, s) {
    --------------------------------------------------------- */
 
 const THEME_KEYS = [
-  'theme','density','motion','accent','accent2','timerFont','timerWeight','timerSize','timerGlow',
+  'theme','density','motion','accent','accent2','bg2','timerFont','timerWeight','timerSize','timerGlow',
   'bgMode','bgShader','bgSpeed','bgAmount','bgBlur','bgDim','bgSat','bgGradient','bgSolid',
   'showStats','showCube','showHistory','cubeView','hintFacelets','autoContrast',
   'panelStyle','scrambleSize','cubeSize','sidebarWidth','sidebarText','timesSize',
