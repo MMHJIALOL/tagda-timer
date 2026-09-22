@@ -234,7 +234,8 @@ export class Stackmat extends EventTarget {
     // for good (the status stuck on "listening…", and re-selecting Stackmat
     // hit the early return above). So don't wait: resume on the next click
     // or key instead, which is all the browser is waiting for.
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const AC = window.AudioContext || window.webkitAudioContext;
+    let ctx = new AC();
     ctx.resume();
     if (ctx.state === 'suspended') {
       const wake = () => { if (this.ctx === ctx) ctx.resume(); };
@@ -257,8 +258,33 @@ export class Stackmat extends EventTarget {
       throw err;
     }
 
+    // Firefox refuses to connect a microphone whose sample rate differs from
+    // the context's ("different sample-rate is currently not supported");
+    // Chrome resamples silently. So on failure rebuild the context at the
+    // mic's rate — or the usual ones, as Firefox may not report it. An active
+    // capture counts as permission to play there, so no gesture is needed.
+    let src;
+    const track = this.stream.getAudioTracks()[0];
+    const tried = new Set();
+    for (;;) {
+      try { src = ctx.createMediaStreamSource(this.stream); break; }
+      catch (err) {
+        tried.add(ctx.sampleRate);
+        ctx.close().catch(() => {});
+        const rate = [track?.getSettings?.().sampleRate, 48000, 44100]
+          .find(r => r && !tried.has(r));
+        if (!rate) {
+          // Out of options: let go of everything, or the `if (this.ctx)`
+          // above would turn every retry into a silent no-op.
+          this.stream.getTracks().forEach(t => t.stop());
+          this.stream = null;
+          throw err;
+        }
+        ctx = new AC({ sampleRate: rate });
+        ctx.resume();
+      }
+    }
     this.ctx = ctx;
-    const src = this.ctx.createMediaStreamSource(this.stream);
     const decoder = new StackmatDecoder(this.ctx.sampleRate, (p) => this._packet(p));
     this.decoder = decoder;
 
