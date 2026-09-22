@@ -572,6 +572,23 @@ const sample = async (mode, n, test) => {
     .every(s => s.scramble.split(/\s+/).every(m => /^[MU][2']?$/.test(m)));
   check('LSE scrambles use only M and U turns', onlyMU);
 }
+{
+  /* Switching event while the old event's queue is still generating used to
+     park next() forever: setContext's fill() bailed on the in-flight one's
+     flag, and nothing restarted it for the new event. */
+  const q = new G.ScrambleQueue(3);
+  q.setContext('333', 'wca');
+  await new Promise(r => setTimeout(r, 20));
+  q.setContext('pyram', 'wca');
+  const s = await Promise.race([q.next(), new Promise(r => setTimeout(() => r(null), 20000))]);
+  check('switching event mid-fill still hands out the new event\'s scramble',
+    !!s && !/[FD]/.test(s.scramble), s ? s.scramble : 'timed out after 20s');
+  // Switching away and back hands out what was already made, not a cold start.
+  q.setContext('skewb', 'wca');
+  await q.next();
+  q.setContext('pyram', 'wca');
+  check('switching back to an event reuses its queued scrambles', q.ready);
+}
 
 section('official WCA scrambles');
 // Random-state scrambles vary in length — a solved-state search can finish
