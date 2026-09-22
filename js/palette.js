@@ -1,3 +1,4 @@
+import { t } from './i18n.js';
 /* ===========================================================
    Tagda Timer — command palette (Ctrl+K)
    =========================================================== */
@@ -31,7 +32,7 @@ function render() {
   const list = $('#pal-list');
   list.innerHTML = '';
   if (!filtered.length) {
-    list.append(el('div', { class: 'pal-empty', text: 'Nothing matches that' }));
+    list.append(el('div', { class: 'pal-empty', text: t('Nothing matches that') }));
     return;
   }
   filtered.forEach((it, i) => {

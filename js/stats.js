@@ -1,3 +1,4 @@
+import { t } from './i18n.js';
 /* ===========================================================
    Tagda Timer — WCA-correct statistics
    A solve is { timeMs, penalty: 'none'|'+2'|'DNF' }.
@@ -475,12 +476,12 @@ export function relaySummary(solves) {
 }
 
 export const STAT_LABELS = {
-  best: 'Best single', mean: 'Session mean',
-  ao5: 'Average of 5', ao12: 'Average of 12',
-  ao50: 'Average of 50', ao100: 'Average of 100',
-  'best-single': 'Best single',
-  'best-ao5': 'Best average of 5', 'best-ao12': 'Best average of 12',
-  'best-ao50': 'Best average of 50', 'best-ao100': 'Best average of 100',
+  best: t('Best single'), mean: t('Session mean'),
+  ao5: t('Average of 5'), ao12: t('Average of 12'),
+  ao50: t('Average of 50'), ao100: t('Average of 100'),
+  'best-single': t('Best single'),
+  'best-ao5': t('Best average of 5'), 'best-ao12': t('Best average of 12'),
+  'best-ao50': t('Best average of 50'), 'best-ao100': t('Best average of 100'),
 };
 
 /** The trimmed best/worst of an arbitrary window, as indices into `solves`. */
@@ -508,7 +509,7 @@ export function statWindow(solves, kind) {
   const at = /^ao(\d+)@(\d+)$/.exec(kind);
   if (at) {
     const n = Number(at[1]), end = Number(at[2]);
-    const label = `Average of ${n} · to solve #${end + 1}`;
+    const label = t('Average of {n} · to solve #{i}', { n, i: end + 1 });
     const start = end - n + 1;
     if (start < 0 || end >= solves.length) return { ...base, label };
     return {
@@ -534,7 +535,7 @@ export function statWindow(solves, kind) {
   const best = kind.startsWith('best-');
   const n = Number((best ? kind.slice(7) : kind.slice(2)));
   if (!n || solves.length < n) {
-    return { ...base, label: STAT_LABELS[kind] || `Average of ${n || '?'}` };
+    return { ...base, label: STAT_LABELS[kind] || t('Average of {n}', { n: n || '?' }) };
   }
 
   if (best) {
@@ -544,12 +545,12 @@ export function statWindow(solves, kind) {
   }
 
   const start = solves.length - n;
-  const t = trimmedIndices(solves, n);
+  const tr = trimmedIndices(solves, n);
   return {
     ...base,
     value: currentAvg(solves, n),
     list: solves.slice(start),
-    trimmed: new Set([...t.best, ...t.worst]),
+    trimmed: new Set([...tr.best, ...tr.worst]),
     start,
   };
 }

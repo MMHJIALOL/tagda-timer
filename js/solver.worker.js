@@ -16,9 +16,14 @@
    written before there was a second kind still asks the same way.
    =========================================================== */
 
-import { suggest, suggestCrossPlusOne } from './solver.js';
+/* Imported, not statically: solver.js pulls in i18n.js, whose top-level
+   await loads the dictionary, and a message that arrives while a worker's
+   module graph is still evaluating has no handler to land on and is lost.
+   The handler goes on now; the solver is awaited inside it. */
+const solver = import('./solver.js');
 
-self.onmessage = (e) => {
+self.onmessage = async (e) => {
+  const { suggest, suggestCrossPlusOne } = await solver;
   const { id, type = 'suggest', state, frame, analysis, opts } = e.data || {};
   try {
     const result = type === 'xp1'

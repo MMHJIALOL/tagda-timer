@@ -1,3 +1,4 @@
+import { t } from './i18n.js';
 /* ===========================================================
    Tagda Timer — daily leaderboard controller
 
@@ -519,11 +520,10 @@ export class Daily extends EventTarget {
 
   /** The line that stands in for the scramble when there is nothing to solve. */
   holdText() {
-    if (!this.snap?.signedIn) return 'Sign in to be given today’s scramble';
-    if (this.submittedToday) return 'You have already done today’s scramble — come back after the reset';
+    if (!this.snap?.signedIn) return t('Sign in to be given today’s scramble');
+    if (this.submittedToday) return t('You have already done today’s scramble — come back after the reset');
     if (this.snap.readError) {
-      return 'Today’s board cannot be read on this deployment — see DAILY.md, '
-           + 'firebase.rules.json probably needs republishing.';
+      return t('Today’s board cannot be read on this deployment — see DAILY.md, firebase.rules.json probably needs republishing.');
     }
     /* Three different things used to share one message. "…" implies something
        is still in flight, which was a lie in two of these cases: an attempt
@@ -531,9 +531,9 @@ export class Daily extends EventTarget {
        never succeed. Only the first line below is allowed to say "…". */
     if (!this.snap.scramble) {
       if (this.gaveUpPublishing()) {
-        return 'Today’s scramble could not be published after several tries'
+        return t('Today’s scramble could not be published after several tries')
              + (this.publishError ? ` (${this.publishError})` : '')
-             + ' — reload, or see DAILY.md if this keeps happening.';
+             + t(' — reload, or see DAILY.md if this keeps happening.');
       }
       /* An attempt has already failed and another is queued. Saying only
          "Publishing…" here hid the reason for the best part of a minute —
@@ -542,18 +542,18 @@ export class Daily extends EventTarget {
          reason is known the moment the first attempt fails, so it is said
          then rather than kept back until the last one. */
       if (this.publishError) {
-        return `Still trying to publish today’s scramble (${this.publishError})…`;
+        return t('Still trying to publish today’s scramble ({err})…', { err: this.publishError });
       }
       /* Only while the courtesy wait is actually running: once an attempt has
          been made, "reading" is no longer what is happening. */
       if (!this.snap.scrambleLoaded && !this._publishTries && this._readWaits) {
-        return 'Reading today’s board…';
+        return t('Reading today’s board…');
       }
-      return 'Publishing today’s scramble…';
+      return t('Publishing today’s scramble…');
     }
     // Today's scramble is here; whether you may still attempt it is not known yet.
-    if (!this._resultChecked) return 'Checking whether today’s attempt is already in…';
-    return 'Nothing to solve right now';
+    if (!this._resultChecked) return t('Checking whether today’s attempt is already in…');
+    return t('Nothing to solve right now');
   }
 
   /** Every attempt at publishing has been spent and none of them worked. */
@@ -777,8 +777,8 @@ export class Daily extends EventTarget {
     } catch (err) {
       console.warn('[daily] note refused', err);
       toast(String(err?.code || err).includes('PERMISSION_DENIED')
-        ? 'The board would not take that note — this database is running rules from before notes existed. Publish firebase.rules.json.'
-        : 'Could not save that note', { kind: 'bad', long: true });
+        ? t('The board would not take that note — this database is running rules from before notes existed. Publish firebase.rules.json.')
+        : t('Could not save that note'), { kind: 'bad', long: true });
       return false;
     }
   }

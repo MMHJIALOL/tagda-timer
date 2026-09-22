@@ -1,3 +1,4 @@
+import { t } from './i18n.js';
 /* ===========================================================
    Tagda Timer — small shared helpers
    =========================================================== */
@@ -5,10 +6,17 @@
 export const $  = (sel, root = document) => root.querySelector(sel);
 export const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
+/* Every literal label in the app reaches the page through here, so this is
+   where it is translated: text, title, placeholder, aria-label and bare
+   string children. t() is an exact lookup, so scrambles, times and names
+   pass through untouched. */
+const SAID = new Set(['text', 'title', 'placeholder', 'aria-label']);
+
 export function el(tag, props = {}, ...kids) {
   const n = document.createElement(tag);
-  for (const [k, v] of Object.entries(props)) {
+  for (let [k, v] of Object.entries(props)) {
     if (v === null || v === undefined || v === false) continue;
+    if (SAID.has(k) && typeof v === 'string') v = t(v);
     if (k === 'class') n.className = v;
     else if (k === 'html') n.innerHTML = v;
     else if (k === 'text') n.textContent = v;
@@ -19,7 +27,7 @@ export function el(tag, props = {}, ...kids) {
   }
   for (const kid of kids.flat()) {
     if (kid === null || kid === undefined || kid === false) continue;
-    n.append(kid.nodeType ? kid : document.createTextNode(kid));
+    n.append(kid.nodeType ? kid : document.createTextNode(typeof kid === 'string' ? t(kid) : kid));
   }
   return n;
 }

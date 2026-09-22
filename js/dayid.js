@@ -1,3 +1,4 @@
+import { t } from './i18n.js';
 /* ===========================================================
    Tagda Timer — Scramble of the Day: the pure half
 
@@ -170,7 +171,7 @@ export function rankByCount(counts, myUid) {
 export function formatCountdown(msRemaining) {
   const ms = Math.max(0, msRemaining);
   const totalMin = Math.floor(ms / 60000);
-  if (totalMin < 1) return 'under a minute';
+  if (totalMin < 1) return t('under a minute');
   const h = Math.floor(totalMin / 60);
   const m = totalMin % 60;
   return h > 0 ? `${h}h ${m}m` : `${m}m`;

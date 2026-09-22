@@ -1,3 +1,4 @@
+import { t } from './i18n.js';
 /* ===========================================================
    Tagda Timer — algorithm sets used to build trainer scrambles.
 
@@ -42,12 +43,12 @@ export const OLL = [
   O(4,  'Dot',      'dot',     "f R U R' U' f' U F R U R' U' F'"),
   O(5,  'Square',   'square',  "r' U2 R U R' U r"),
   O(6,  'Square',   'square',  "r U2 R' U' R U' r'"),
-  O(7,  'Small L',  'lshape',  "r U R' U R U2 r'"),
-  O(8,  'Small L',  'lshape',  "r' U' R U' R' U2 r"),
+  O(7,  t('Small L'),  'lshape',  "r U R' U R U2 r'"),
+  O(8,  t('Small L'),  'lshape',  "r' U' R U' R' U2 r"),
   O(9,  'Fish',     'fish',    "R U R' U' R' F R2 U R' U' F'"),
   O(10, 'Fish',     'fish',    "R U R' U R' F R F' R U2 R'"),
-  O(11, 'Small L',  'lshape',  "r U R' U R' F R F' R U2 r'"),
-  O(12, 'Small L',  'lshape',  "M' R' U' R U' R' U2 R U' R r'"),
+  O(11, t('Small L'),  'lshape',  "r U R' U R' F R F' R U2 r'"),
+  O(12, t('Small L'),  'lshape',  "M' R' U' R U' R' U2 R U' R r'"),
   O(13, 'Knight',   'knight',  "F U R U' R2 F' R U R U' R'"),
   O(14, 'Knight',   'knight',  "R' F R U R' F' R F U' F'"),
   O(15, 'Knight',   'knight',  "l' U' l L' U' L U l' U l"),
@@ -56,11 +57,11 @@ export const OLL = [
   O(18, 'Dot',      'dot',     "r U R' U R U2 r2 U' R U' R' U2 r"),
   O(19, 'Dot',      'dot',     "r' R U R U R' U' M' R' F R F'"),
   O(20, 'Dot',      'dot',     "r U R' U' M2 U R U' R' U' M'"),
-  O(21, 'Cross H',  'ocll',    "R U2 R' U' R U R' U' R U' R'"),
-  O(22, 'Cross Pi', 'ocll',    "R U2 R2 U' R2 U' R2 U2 R"),
-  O(23, 'Cross U',  'ocll',    "R2 D' R U2 R' D R U2 R"),
-  O(24, 'Cross T',  'ocll',    "r U R' U' r' F R F'"),
-  O(25, 'Cross L',  'ocll',    "F' r U R' U' r' F R"),
+  O(21, t('Cross H'),  'ocll',    "R U2 R' U' R U R' U' R U' R'"),
+  O(22, t('Cross Pi'), 'ocll',    "R U2 R2 U' R2 U' R2 U2 R"),
+  O(23, t('Cross U'),  'ocll',    "R2 D' R U2 R' D R U2 R"),
+  O(24, t('Cross T'),  'ocll',    "r U R' U' r' F R F'"),
+  O(25, t('Cross L'),  'ocll',    "F' r U R' U' r' F R"),
   O(26, 'Antisune', 'ocll',    "R U2 R' U' R U' R'"),
   O(27, 'Sune',     'ocll',    "R U R' U R U2 R'"),
   O(28, 'Corners',  'corner',  "r U R' U' r' R U R U' R'"),
@@ -82,14 +83,14 @@ export const OLL = [
   O(44, 'P',        'pshape',  "F U R U' R' F'"),
   O(45, 'T',        'tshape',  "F R U R' U' F'"),
   O(46, 'C',        'cshape',  "R' U' R' F R F' U R"),
-  O(47, 'Small L',  'lshape',  "F' L' U' L U L' U' L U F"),
-  O(48, 'Small L',  'lshape',  "F R U R' U' R U R' U' F'"),
-  O(49, 'Small L',  'lshape',  "r U' r2 U r2 U r2 U' r"),
-  O(50, 'Small L',  'lshape',  "r' U r2 U' r2 U' r2 U r'"),
+  O(47, t('Small L'),  'lshape',  "F' L' U' L U L' U' L U F"),
+  O(48, t('Small L'),  'lshape',  "F R U R' U' R U R' U' F'"),
+  O(49, t('Small L'),  'lshape',  "r U' r2 U r2 U r2 U' r"),
+  O(50, t('Small L'),  'lshape',  "r' U r2 U' r2 U' r2 U r'"),
   O(51, 'Big L',    'biglshape', "F U R U' R' U R U' R' F'"),
   O(52, 'Big L',    'biglshape', "R U R' U R U' B U' B' R'"),
-  O(53, 'Small L',  'lshape',  "l' U2 L U L' U' L U L' U l"),
-  O(54, 'Small L',  'lshape',  "r U2 R' U' R U R' U' R U' r'"),
+  O(53, t('Small L'),  'lshape',  "l' U2 L U L' U' L U L' U l"),
+  O(54, t('Small L'),  'lshape',  "r U2 R' U' R U R' U' R U' r'"),
   O(55, 'Big L',    'biglshape', "R U2 R2 U' R U' R' U2 F R F'"),
   O(56, 'Big L',    'biglshape', "r U r' U R U' R' U R U' R' r U' r'"),
   O(57, 'Corners',  'corner',  "R U R' U' M' U R U' r'"),
@@ -103,7 +104,7 @@ export const OLL_EO = [
 ];
 
 export const OCLL = OLL.filter(o => o.group === 'ocll')
-  .map(o => ({ id: 'OCLL-' + o.name, name: o.label.replace('Cross ', ''), alg: o.alg }));
+  .map(o => ({ id: 'OCLL-' + o.name, name: o.label.replace(t('Cross '), ''), alg: o.alg }));
 
 export const PLL_CP = [
   { id: 'CP-adj',  name: 'Adjacent', alg: "R U R' U' R' F R2 U' R' U' R U R' F'" },

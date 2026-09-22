@@ -1,3 +1,4 @@
+import { t } from './i18n.js';
 /* ===========================================================
    Tagda Timer — 3BLD target tracing
 
@@ -409,7 +410,7 @@ export function diagnose(bld, wrong) {
     // 0 — pieces that were never traced at all. Memo problem, not execution.
     if (hits.every(h => !h.at.length)) {
       out.push(`${label}: ${hits.map(named).join(', ')} never appear in this solve's memo — ` +
-               'they were mis-traced or dropped while memorising, so the memo itself was wrong.');
+               t('they were mis-traced or dropped while memorising, so the memo itself was wrong.'));
       continue;
     }
 
@@ -419,14 +420,14 @@ export function diagnose(bld, wrong) {
     if (nearBreak.length >= 2) {
       const i = nearBreak[0].at[0];
       out.push(`${label}: target ${i + 1} — ${g.letters[i]} sits on a cycle break. ` +
-               'Missing a break leaves exactly these pieces behind.');
+               t('Missing a break leaves exactly these pieces behind.'));
       continue;
     }
 
     // 2 — parity was flagged and two pieces of one type are left over.
     if (bld.parity && mine.length === 2) {
       out.push(`${label}: this scramble had parity and two ${label.toLowerCase()} are left — ` +
-               'the parity algorithm was skipped, or applied the wrong way round.');
+               t('the parity algorithm was skipped, or applied the wrong way round.'));
       continue;
     }
 
@@ -434,8 +435,8 @@ export function diagnose(bld, wrong) {
     const twisted = hits.find(h => h.at.some((i, k) => k > 0 && h.at[k - 1] === i - 1));
     if (twisted) {
       out.push(`${label}: ${named(twisted)} is shot at twice in a row (targets ` +
-               `${twisted.at.map(i => i + 1).join(' and ')}) — a ${kind === 'edge' ? 'flipped edge' : 'twisted corner'} ` +
-               'put back the wrong way round.');
+               `${twisted.at.map(i => i + 1).join(' and ')}) — a ${kind === 'edge' ? t('flipped edge') : t('twisted corner')} ` +
+               t('put back the wrong way round.'));
       continue;
     }
 
@@ -443,7 +444,7 @@ export function diagnose(bld, wrong) {
     const where = hits.filter(h => h.at.length)
       .map(h => `${named(h)} at target ${h.at.map(i => i + 1).join('/')} (${h.at.map(i => g.letters[i]).join('/')})`);
     out.push(`${label}: ${where.join('; ')} — no familiar failure shape, so most likely ` +
-             'a single mis-executed algorithm rather than a memo or tracing error.');
+             t('a single mis-executed algorithm rather than a memo or tracing error.'));
   }
 
   return out.length ? out : null;

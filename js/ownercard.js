@@ -1,3 +1,4 @@
+import { t } from './i18n.js';
 /* ===========================================================
    Tagda Timer — the owner's shine and profile card
 
@@ -34,8 +35,8 @@ export function openOwnerCard(anchor) {
     el('div', { class: 'about-hero' },
       el('img', { class: 'about-avatar', src: AVATAR, alt: 'Ishaan', width: 52, height: 52, loading: 'lazy', decoding: 'async' }),
       el('div', {},
-        el('div', { class: 'about-name', text: 'Ishaan' }),
-        el('div', { class: 'about-handle', text: 'site owner' }))),
+        el('div', { class: 'about-name', text: t('Ishaan') }),
+        el('div', { class: 'about-handle', text: t('site owner') }))),
     el('div', { class: 'about-bio', text: OWNER_BIO }),
     link('Instagram', IG_PROFILE_URL, IG_HANDLE),
     link('GitHub', GH_PROFILE, GH_HANDLE),

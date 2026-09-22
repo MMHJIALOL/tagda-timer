@@ -1,3 +1,4 @@
+import { t } from './i18n.js';
 /* ===========================================================
    Tagda Timer — the Fewest Moves attempt
 
@@ -65,28 +66,28 @@ export class Fmc {
   mount() {
     if (this.host) return this.host;
 
-    this.startBtn = el('button', { class: 'fmc-start', type: 'button', text: 'Start attempt' });
+    this.startBtn = el('button', { class: 'fmc-start', type: 'button', text: t('Start attempt') });
     this.startBtn.addEventListener('click', () => this.start());
     this.idle = el('div', { class: 'fmc-idle' },
       this.startBtn,
-      el('p', { class: 'fmc-hint', text: 'One solution, 60 minutes, counted in moves. The clock starts when you press it.' }),
+      el('p', { class: 'fmc-hint', text: t('One solution, 60 minutes, counted in moves. The clock starts when you press it.') }),
     );
 
-    this.clockEl = el('div', { class: 'fmc-clock', id: 'fmc-clock', text: '60:00' });
-    this.submitBtn = el('button', { class: 'ghost-btn sm', type: 'button', id: 'fmc-submit', text: 'Submit' });
-    this.abandonBtn = el('button', { class: 'ghost-btn sm', type: 'button', id: 'fmc-abandon', text: 'Abandon' });
+    this.clockEl = el('div', { class: 'fmc-clock', id: 'fmc-clock', text: t('60:00') });
+    this.submitBtn = el('button', { class: 'ghost-btn sm', type: 'button', id: 'fmc-submit', text: t('Submit') });
+    this.abandonBtn = el('button', { class: 'ghost-btn sm', type: 'button', id: 'fmc-abandon', text: t('Abandon') });
     this.submitBtn.addEventListener('click', () => this.submit());
     this.abandonBtn.addEventListener('click', () => this.abandon());
 
     this.solution = el('textarea', {
       class: 'fmc-box', id: 'fmc-solution', spellcheck: 'false', rows: 3,
-      placeholder: "your solution — R U R' U' …",
-      'aria-label': 'Your solution',
+      placeholder: t("your solution — R U R' U' …"),
+      'aria-label': t('Your solution'),
     });
     this.notes = el('textarea', {
       class: 'fmc-box fmc-notes', id: 'fmc-notes', spellcheck: 'false', rows: 2,
-      placeholder: 'scratch notes — never judged, kept with the solve',
-      'aria-label': 'Scratch notes',
+      placeholder: t('scratch notes — never judged, kept with the solve'),
+      'aria-label': t('Scratch notes'),
     });
     this.count = el('span', { class: 'fmc-count', id: 'fmc-count' });
     this.etmEl = el('span', { class: 'fmc-etm', id: 'fmc-etm' });
@@ -190,9 +191,9 @@ export class Fmc {
     const v = this.judge();
     if (!v.ok && !auto) {
       const why = v.error ? v.error.message
-        : !v.moves ? 'the box is empty'
-        : 'it does not solve the cube';
-      const go = await confirmToast(`That is a DNF — ${why}. Submit anyway?`, 'submit DNF', { timeout: 12000 });
+        : !v.moves ? t('the box is empty')
+        : t('it does not solve the cube');
+      const go = await confirmToast(`That is a DNF — ${why}. Submit anyway?`, t('submit DNF'), { timeout: 12000 });
       if (!go || !this.attempt) return;      // cancelled, or the clock ran out while asking
     }
     await this._finish(v);
@@ -231,7 +232,7 @@ export class Fmc {
       fmcSolution: solution,
       fmcNotes: notes,
     });
-    toast(v.ok ? `${v.moves} moves` : 'DNF', { kind: v.ok ? 'good' : 'bad', long: true });
+    toast(v.ok ? t('{n} moves', { n: v.moves }) : 'DNF', { kind: v.ok ? 'good' : 'bad', long: true });
   }
 
   /* ---------------- painting ---------------- */
@@ -250,8 +251,8 @@ export class Fmc {
     const v = this.judge();
     const etm = v.etm ?? 0;
 
-    this.count.textContent = v.moves === null ? '—' : `${v.moves} moves`;
-    this.count.title = 'the result is the OBTM count: a face or wide turn is 1, a rotation is 0 (WCA E2d)';
+    this.count.textContent = v.moves === null ? '—' : t('{n} moves', { n: v.moves });
+    this.count.title = t('the result is the OBTM count: a face or wide turn is 1, a rotation is 0 (WCA E2d)');
 
     /* Two numbers, because the WCA caps a different metric from the one it
        scores: the 80 is ETM, which counts rotations, and the result is OBTM,
@@ -259,11 +260,11 @@ export class Fmc {
        with six rotations in their skeleton that they had room they have not
        got. */
     this.etmEl.textContent = `${etm} / ${MAX_ETM}`;
-    this.etmEl.title = `the ${MAX_ETM}-move limit is counted in ETM, rotations included (WCA E2d1)`;
+    this.etmEl.title = t('the {n}-move limit is counted in ETM, rotations included (WCA E2d1)', { n: MAX_ETM });
     this.etmEl.classList.toggle('near', etm > MAX_ETM - 10 && etm <= MAX_ETM);
     this.etmEl.classList.toggle('over', etm > MAX_ETM);
 
-    const verdict = v.error ? '' : !v.moves ? '' : v.solved ? 'solved' : 'not solved';
+    const verdict = v.error ? '' : !v.moves ? '' : v.solved ? 'solved' : t('not solved');
     this.state.textContent = verdict;
     this.state.className = `fmc-state ${v.solved ? 'good' : verdict ? 'bad' : ''}`;
     this.why.textContent = v.error ? v.error.message : (v.warnings?.[0] || '');
@@ -294,7 +295,7 @@ export class Fmc {
           this.attempt.warned.push(at);
           // The same two-tone call inspection uses, answering the same setting.
           callout(at === 60 ? 12 : 8, this.app.settings?.callouts);
-          toast(at === 60 ? 'One minute left' : 'Five minutes left', { kind: 'bad', long: true });
+          toast(at === 60 ? t('One minute left') : t('Five minutes left'), { kind: 'bad', long: true });
         }
       }
       if (left <= 0) { this._stopTick(); this._timeUp(); }
@@ -308,7 +309,7 @@ export class Fmc {
   async _timeUp() {
     if (!this.attempt) return;
     const v = this.judge();
-    toast(v.ok ? 'Time — your solution counts' : 'Time — DNF', { kind: v.ok ? 'good' : 'bad', long: true });
+    toast(v.ok ? t('Time — your solution counts') : t('Time — DNF'), { kind: v.ok ? 'good' : 'bad', long: true });
     await this._finish(v);
   }
 

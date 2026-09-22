@@ -1,3 +1,4 @@
+import { t } from './i18n.js';
 /* ===========================================================
    Tagda Timer — IndexedDB layer (no dependencies)
    Stores: solves, sessions, kv (settings), assets (bg blobs),
@@ -311,7 +312,7 @@ export async function exportAll() {
 }
 
 export async function importAll(data, { merge = true } = {}) {
-  if (!data || !Array.isArray(data.solves)) throw new Error('Not a Tagda Timer backup');
+  if (!data || !Array.isArray(data.solves)) throw new Error(t('Not a Tagda Timer backup'));
   if (!merge) {
     const db = await openDB();
     await Promise.all(['solves', 'sessions'].map(name =>

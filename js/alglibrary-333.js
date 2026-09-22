@@ -1,3 +1,4 @@
+import { t } from './i18n.js';
 /* ===========================================================
    Tagda Timer — two-look OLL and two-look PLL.
 
@@ -37,14 +38,14 @@ const remap = (cases, source, library) => {
   return out;
 };
 
-const EO_DESC = { Dot: 'no edges facing up', L: 'two neighbouring edges up', Line: 'two opposite edges up' };
+const EO_DESC = { Dot: t('no edges facing up'), L: t('two neighbouring edges up'), Line: t('two opposite edges up') };
 
 export const SETS = {
   '2LOLL': {
     id: '2LOLL',
     event: '333',
     label: '2-Look OLL',
-    title: 'Orient the edges, then the corners',
+    title: t('Orient the edges, then the corners'),
     cases: [
       ...OLL_EO.map(c => ({ ...c, group: 'Edges', done: 'eo' })),
       ...OCLL.map(c => ({ ...c, group: 'Corners', done: 'oriented' })),
@@ -57,13 +58,13 @@ export const SETS = {
     groupOf: (c) => c.group,
     defaultGroup: null,
     caseLabel: (c) => (c.group === 'Edges' ? `${c.name} edges` : c.name),
-    describe: (c) => (c.group === 'Edges' ? EO_DESC[c.name] || 'orient the edges' : 'edges up — turn the corners up'),
+    describe: (c) => (c.group === 'Edges' ? EO_DESC[c.name] || t('orient the edges') : t('edges up — turn the corners up')),
   },
   '2LPLL': {
     id: '2LPLL',
     event: '333',
     label: '2-Look PLL',
-    title: 'Permute the corners, then the edges',
+    title: t('Permute the corners, then the edges'),
     cases: [
       ...PLL_CP.map(c => ({ ...c, group: 'Corners', done: 'cp' })),
       ...PLL_EP.map(c => ({ ...c, group: 'Edges' })),
@@ -77,9 +78,9 @@ export const SETS = {
     defaultGroup: null,
     caseLabel: (c) => (c.group === 'Corners' ? `${c.name} corners` : `${c.name} perm`),
     describe: (c) => (c.group === 'Corners'
-      ? (c.name === 'Adjacent' ? 'two neighbouring corners swap' : 'the two diagonals swap')
+      ? (c.name === 'Adjacent' ? t('two neighbouring corners swap') : t('the two diagonals swap'))
       : c.name === 'H' ? 'both edge pairs swap across the middle'
       : c.name === 'Z' ? 'both edge pairs swap side to side'
-      : 'three edges cycle, corners already done'),
+      : t('three edges cycle, corners already done')),
   },
 };

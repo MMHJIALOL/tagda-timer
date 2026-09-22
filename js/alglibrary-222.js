@@ -1,3 +1,4 @@
+import { t } from './i18n.js';
 /* ===========================================================
    Tagda Timer — 2x2 algorithm library: alternates per case.
 
@@ -798,7 +799,7 @@ export const SETS = {
     event: '222',
     n: 2,
     label: "OLL",
-    title: "Orient every corner — the first step of Ortega",
+    title: t("Orient every corner — the first step of Ortega"),
     cases: OLL_222,
     library: OLL_LIBRARY,
     done: "oriented2",
@@ -814,7 +815,7 @@ export const SETS = {
     event: '222',
     n: 2,
     label: "PBL",
-    title: "Permute both layers at once — the last step of Ortega",
+    title: t("Permute both layers at once — the last step of Ortega"),
     cases: PBL_222,
     library: PBL_LIBRARY,
     done: "solved",
@@ -832,7 +833,7 @@ export const SETS = {
     event: '222',
     n: 2,
     label: "CLL",
-    title: "Bottom layer done — finish the top in one algorithm",
+    title: t("Bottom layer done — finish the top in one algorithm"),
     cases: CLL_222,
     library: CLL_LIBRARY,
     done: "solved",
@@ -850,7 +851,7 @@ export const SETS = {
     event: '222',
     n: 2,
     label: "EG-1",
-    title: "Bottom layer oriented with one adjacent swap — finish in one algorithm",
+    title: t("Bottom layer oriented with one adjacent swap — finish in one algorithm"),
     cases: EG1_222,
     library: EG1_LIBRARY,
     done: "solved",
@@ -868,7 +869,7 @@ export const SETS = {
     event: '222',
     n: 2,
     label: "EG-2",
-    title: "Bottom layer oriented with a diagonal swap — finish in one algorithm",
+    title: t("Bottom layer oriented with a diagonal swap — finish in one algorithm"),
     cases: EG2_222,
     library: EG2_LIBRARY,
     done: "solved",

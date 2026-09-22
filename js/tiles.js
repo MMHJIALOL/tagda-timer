@@ -1,3 +1,4 @@
+import { t } from './i18n.js';
 /* ===========================================================
    Tagda Timer — dockable tiles
 
@@ -45,7 +46,7 @@ const HOST = {
    when you are done with it. */
 const ORDER = ['race', 'times', 'spotify', 'stats'];
 
-const ZONE_LABEL = { left: 'left rail', right: 'right rail', bottom: 'bottom bar' };
+const ZONE_LABEL = { left: t('left rail'), right: t('right rail'), bottom: t('bottom bar') };
 
 /**
  * Where each tile is allowed to live.

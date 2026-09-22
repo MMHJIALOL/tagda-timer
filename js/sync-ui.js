@@ -1,3 +1,4 @@
+import { t } from './i18n.js';
 /* ===========================================================
    Tagda Timer — account UI
 
@@ -34,7 +35,7 @@ onWrite('kv', ({ key, value }) => { if (key === 'settings') _username = (value?.
 refreshUsername();
 
 function displayNameOf(user) {
-  return _username || user?.displayName || user?.email || 'Signed in';
+  return _username || user?.displayName || user?.email || t('Signed in');
 }
 
 /**
@@ -46,20 +47,17 @@ function displayNameOf(user) {
 export function showMergeDialog({ localCount, cloudCount, totalCount, email, confirm }) {
   return new Promise((resolve) => {
     const scrim = el('div', { class: 'sync-merge-scrim' });
-    const btn = el('button', { class: 'btn primary', text: 'Merge and continue' });
+    const btn = el('button', { class: 'btn primary', text: t('Merge and continue') });
     const card = el('div', { class: 'sync-merge-card' },
-      el('h3', { text: 'Merging your solves' }),
-      el('p', { text: `This device has ${localCount} solves recorded before signing in. ` +
-                       `Your account (${email}) already has ${cloudCount} solves from other devices.` }),
-      el('p', { text: 'Signing in will combine both — nothing is deleted, overwritten, or ' +
-                       'replaced, here or in the cloud. Session names, penalties, and comments ' +
-                       'all come along with them.' }),
-      el('p', { text: `After this, you'll have ${totalCount} solves total, synced everywhere.` }),
+      el('h3', { text: t('Merging your solves') }),
+      el('p', { text: t('This device has {local} solves recorded before signing in. Your account ({email}) already has {cloud} solves from other devices.', { local: localCount, email, cloud: cloudCount }) }),
+      el('p', { text: t('Signing in will combine both — nothing is deleted, overwritten, or replaced, here or in the cloud. Session names, penalties, and comments all come along with them.') }),
+      el('p', { text: t("After this, you'll have {n} solves total, synced everywhere.", { n: totalCount }) }),
       btn,
     );
     btn.addEventListener('click', async () => {
       btn.disabled = true;
-      btn.textContent = 'Merging…';
+      btn.textContent = t('Merging…');
       await confirm();
       scrim.remove();
       card.remove();
@@ -106,9 +104,9 @@ export function buildAccountRow() {
       wrap.append(
         el('div', { class: 'lbl' },
           el('span', { text: displayNameOf(user) }),
-          el('span', { class: 'sub', text: `syncing as ${user.email}` })),
+          el('span', { class: 'sub', text: t('syncing as {email}', { email: user.email }) })),
         el('button', {
-          class: 'ghost-btn', text: 'sign out',
+          class: 'ghost-btn', text: t('sign out'),
           onclick: async () => {
             await signOutUser();
             toast('Signed out — your solves stay on this device', { kind: '' });
@@ -118,10 +116,10 @@ export function buildAccountRow() {
     } else {
       wrap.append(
         el('div', { class: 'lbl' },
-          el('span', { text: 'Cloud sync' }),
-          el('span', { class: 'sub', text: 'follow your solves across devices' })),
+          el('span', { text: t('Cloud sync') }),
+          el('span', { class: 'sub', text: t('follow your solves across devices') })),
         el('button', {
-          class: 'ghost-btn', text: 'sign in with Google',
+          class: 'ghost-btn', text: t('sign in with Google'),
           onclick: async () => {
             try {
               await signIn('google');
@@ -169,7 +167,7 @@ function renderAccountButton(btn, user) {
   if (user) {
     btn.classList.add('on');
     const name = displayNameOf(user);
-    btn.title = `Signed in as ${name}`;
+    btn.title = t('Signed in as {name}', { name });
     btn.append(
       user.photoURL
         ? el('img', { class: 'account-avatar', src: user.photoURL, alt: '', referrerpolicy: 'no-referrer' })
@@ -178,7 +176,7 @@ function renderAccountButton(btn, user) {
     );
   } else {
     btn.classList.remove('on');
-    btn.title = 'Sign in to sync your solves';
+    btn.title = t('Sign in to sync your solves');
     btn.append(el('span', { class: 'account-glyph', html: ACCOUNT_ICON }));
   }
 }
@@ -229,8 +227,8 @@ export function wireAccountButton(btn, { setSetting } = {}) {
     if (_topBarUser) {
       popover(btn, [
         { title: displayNameOf(_topBarUser) },
-        { label: 'Edit username', onSelect: () => editUsername(btn, setSetting) },
-        { label: 'Sign out', onSelect: async () => {
+        { label: t('Edit username'), onSelect: () => editUsername(btn, setSetting) },
+        { label: t('Sign out'), onSelect: async () => {
           await signOutUser();
           toast('Signed out — your solves stay on this device', { kind: '' });
         } },

@@ -1,3 +1,4 @@
+import { t } from './i18n.js';
 /* ===========================================================
    Tagda Timer — algorithm library core (no DOM in this file).
 
@@ -36,27 +37,27 @@ import { invert } from './util.js';
    to the picture. OLL takes its descriptor from the shape name algs.js
    already carries. */
 const PLL_DESC = {
-  Aa: 'three corners cycle one way, all four edges solved',
-  Ab: 'three corners cycle the other way, all four edges solved',
-  E:  'both corner pairs swap, edges stay',
-  F:  'two adjacent corners and two edges swap',
-  Ga: 'three corners and three edges cycle',
-  Gb: 'three corners and three edges cycle',
-  Gc: 'three corners and three edges cycle',
-  Gd: 'three corners and three edges cycle',
-  H:  'both edge pairs swap across the middle',
-  Ja: 'one adjacent corner and edge pair swaps',
-  Jb: 'one adjacent corner and edge pair swaps',
-  Na: 'two opposite corner and edge pairs swap',
-  Nb: 'two opposite corner and edge pairs swap',
-  Ra: 'two corners and two edges swap, one bar',
-  Rb: 'two corners and two edges swap, one bar',
-  T:  'adjacent corner swap plus opposite edge swap',
-  Ua: 'three edges cycle anticlockwise, corners solved',
-  Ub: 'three edges cycle clockwise, corners solved',
-  V:  'two adjacent corners and two edges swap',
-  Y:  'two adjacent corners and two opposite edges swap',
-  Z:  'both edge pairs swap side to side',
+  Aa: t('three corners cycle one way, all four edges solved'),
+  Ab: t('three corners cycle the other way, all four edges solved'),
+  E:  t('both corner pairs swap, edges stay'),
+  F:  t('two adjacent corners and two edges swap'),
+  Ga: t('three corners and three edges cycle'),
+  Gb: t('three corners and three edges cycle'),
+  Gc: t('three corners and three edges cycle'),
+  Gd: t('three corners and three edges cycle'),
+  H:  t('both edge pairs swap across the middle'),
+  Ja: t('one adjacent corner and edge pair swaps'),
+  Jb: t('one adjacent corner and edge pair swaps'),
+  Na: t('two opposite corner and edge pairs swap'),
+  Nb: t('two opposite corner and edge pairs swap'),
+  Ra: t('two corners and two edges swap, one bar'),
+  Rb: t('two corners and two edges swap, one bar'),
+  T:  t('adjacent corner swap plus opposite edge swap'),
+  Ua: t('three edges cycle anticlockwise, corners solved'),
+  Ub: t('three edges cycle clockwise, corners solved'),
+  V:  t('two adjacent corners and two edges swap'),
+  Y:  t('two adjacent corners and two opposite edges swap'),
+  Z:  t('both edge pairs swap side to side'),
 };
 
 export const SETS = {
@@ -64,7 +65,7 @@ export const SETS = {
     id: 'PLL',
     event: '333',
     label: 'PLL',
-    title: 'Permutation of the last layer',
+    title: t('Permutation of the last layer'),
     cases: PLL,
     library: PLL_LIBRARY,
     trained: true,
@@ -78,7 +79,7 @@ export const SETS = {
     id: 'OLL',
     event: '333',
     label: 'OLL',
-    title: 'Orientation of the last layer',
+    title: t('Orientation of the last layer'),
     cases: OLL,
     library: OLL_LIBRARY,
     trained: true,
@@ -145,7 +146,7 @@ export const ALG_EVENTS = [
   ] },
   { id: '222', label: '2x2', groups: [
     { label: 'Ortega', sets: ['222-OLL', '222-PBL'] },
-    { label: 'CLL & EG', sets: ['222-CLL', '222-EG1', '222-EG2'] },
+    { label: t('CLL & EG'), sets: ['222-CLL', '222-EG1', '222-EG2'] },
   ] },
   { id: '444', label: '4x4', groups: [{ sets: ['444-PLLP'] }] },
   { id: '333oh', label: 'OH', groups: [{ sets: ['OHCMLL'] }] },
@@ -165,14 +166,14 @@ export const SET_IDS = [...new Set(ALG_EVENTS.flatMap(e => e.sets))];
  * lives inside the module that has not loaded yet.
  */
 export const SET_LABELS = {
-  F2L: 'F2L', '2LOLL': '2-Look OLL', OLL: 'OLL', '2LPLL': '2-Look PLL', PLL: 'PLL',
+  F2L: 'F2L', '2LOLL': t('2-Look OLL'), OLL: 'OLL', '2LPLL': t('2-Look PLL'), PLL: 'PLL',
   WV: 'WV', COLL: 'COLL', OLLCP: 'OLLCP', ZBLL: 'ZBLL',
-  CMLL2L: '2-Look CMLL', CMLL: 'CMLL', LSEEO: 'LSE EO', LSEEOLR: 'EOLR', OHCMLL: 'OH CMLL',
+  CMLL2L: t('2-Look CMLL'), CMLL: 'CMLL', LSEEO: 'LSE EO', LSEEOLR: 'EOLR', OHCMLL: 'OH CMLL',
   '222-OLL': 'OLL', '222-PBL': 'PBL', '222-CLL': 'CLL', '222-EG1': 'EG-1', '222-EG2': 'EG-2',
-  '444-PLLP': 'PLL Parity',
-  'PYRA-LL': 'Last Layer', 'PYRA-L4E': 'L4E',
+  '444-PLLP': t('PLL Parity'),
+  'PYRA-LL': t('Last Layer'), 'PYRA-L4E': 'L4E',
   'SKEWB-SI': "Sarah's Intermediate", 'SKEWB-SA': "Sarah's Advanced",
-  'SQ1-SHAPE': 'Cube Shape', 'SQ1-CSP': 'CSP', 'SQ1-OBL': 'OBL', 'SQ1-EO': 'EO', 'SQ1-CP': 'CP', 'SQ1-EP': 'EP',
+  'SQ1-SHAPE': t('Cube Shape'), 'SQ1-CSP': 'CSP', 'SQ1-OBL': 'OBL', 'SQ1-EO': 'EO', 'SQ1-CP': 'CP', 'SQ1-EP': 'EP',
 };
 
 export const eventEntry = (eventId) => ALG_EVENTS.find(e => e.id === eventId) || null;
@@ -660,12 +661,12 @@ export async function addCustom(setId, caseId, alg) {
   const set = SETS[setId];
   const moves = puzzleOf(set) === 'cube' ? parseAlg(alg) : PUZ.parseMoves(set.puzzle, alg);
   const clean = (moves || []).join(' ');
-  if (!clean) return { ok: false, error: 'That is not move notation for this puzzle.' };
+  if (!clean) return { ok: false, error: t('That is not move notation for this puzzle.') };
   if (displayOrder(setId, caseId).some(a => a.alg === clean)) {
-    return { ok: false, error: 'That algorithm is already listed for this case.' };
+    return { ok: false, error: t('That algorithm is already listed for this case.') };
   }
   if (!verifyAlgForCase(setId, caseId, clean)) {
-    return { ok: false, error: 'That does not solve this case — checked on a simulated puzzle.' };
+    return { ok: false, error: t('That does not solve this case — checked on a simulated puzzle.') };
   }
   const list = (_custom.get(caseId) || []).concat({ alg: clean, moveCount: countFor(setId, clean) });
   _custom.set(caseId, list);

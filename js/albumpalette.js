@@ -1,3 +1,4 @@
+import { t } from './i18n.js';
 /* ===========================================================
    Tagda Timer — pull a usable pair of colours out of album art
 
@@ -58,7 +59,7 @@ export function loadArtwork(url) {
     const img = new Image();
     img.crossOrigin = 'anonymous';
     img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error('artwork failed to load'));
+    img.onerror = () => reject(new Error(t('artwork failed to load')));
     img.src = url;
   });
 }

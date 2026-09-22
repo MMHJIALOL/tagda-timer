@@ -1,3 +1,4 @@
+import { t } from './i18n.js';
 /* ===========================================================
    Tagda Timer — setup moves for a case.
 
@@ -261,7 +262,7 @@ export function auditSetups(sets) {
     if ((set.puzzle && set.puzzle !== 'cube') || (set.n || 3) !== 3) continue;
     for (const c of set.cases) {
       const s = setupFor(set.id, c.id);
-      if (!s) { bad.push({ set: set.id, caseId: c.id, why: 'no setup found' }); continue; }
+      if (!s) { bad.push({ set: set.id, caseId: c.id, why: t('no setup found') }); continue; }
       const alg = displayOrder(set.id, c.id)[0].alg;
       /* The same check every listed algorithm passes, started from the cube
          the setup builds instead of from the case's own scramble. */

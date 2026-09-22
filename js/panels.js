@@ -1,3 +1,4 @@
+import { t, lang, setLang } from './i18n.js';
 /* ===========================================================
    Tagda Timer — drawer contents
    Appearance · Settings · Statistics · All solves · Shortcuts · Cases
@@ -28,7 +29,7 @@ let current = null;
 
 export function openDrawer(title, buildFn, { wide = false } = {}) {
   const drawer = $('#drawer'), scrim = $('#scrim'), body = $('#drawer-body');
-  $('#drawer-title').textContent = title;
+  $('#drawer-title').textContent = t(title);
   drawer.classList.toggle('wide', wide);
   body.innerHTML = '';
   buildFn(body);
@@ -148,14 +149,14 @@ export function buildAppearance(app) {
         const inp = el('input', { class: 'inp', type: 'text', value: S.bgGradient, style: { flex: '1' } });
         inp.addEventListener('change', () => set('bgGradient', inp.value));
         bgExtra.append(el('div', { class: 'row stack' },
-          el('div', { class: 'lbl' }, el('span', { text: 'CSS gradient' })), inp));
+          el('div', { class: 'lbl' }, el('span', { text: t('CSS gradient') })), inp));
         bgExtra.append(el('div', { class: 'chips' },
           ...[
             'linear-gradient(135deg, #2b1055, #7597de)',
-            'linear-gradient(160deg, #0f0c29, #302b63, #24243e)',
-            'linear-gradient(135deg, #ff0844, #ffb199)',
-            'linear-gradient(135deg, #00c6ff, #0072ff)',
-            'radial-gradient(circle at 30% 20%, #4a00e0, #08001f)',
+            t('linear-gradient(160deg, #0f0c29, #302b63, #24243e)'),
+            t('linear-gradient(135deg, #ff0844, #ffb199)'),
+            t('linear-gradient(135deg, #00c6ff, #0072ff)'),
+            t('radial-gradient(circle at 30% 20%, #4a00e0, #08001f)'),
           ].map(g => {
             const c = el('button', { class: 'chip', style: { background: g, color: '#fff', minWidth: '44px' }, text: ' ' });
             c.addEventListener('click', () => { set('bgGradient', g); inp.value = g; });
@@ -164,7 +165,7 @@ export function buildAppearance(app) {
       } else if (m === 'solid') {
         const inp = el('input', { class: 'inp', type: 'color', value: S.bgSolid });
         inp.addEventListener('input', () => set('bgSolid', inp.value));
-        bgExtra.append(row('Colour', inp));
+        bgExtra.append(row(t('Colour'), inp));
       } else if (m === 'image' || m === 'video') {
         const file = el('input', { class: 'inp', type: 'file', accept: m === 'image' ? 'image/*' : 'video/*' });
         file.addEventListener('change', async () => {
@@ -173,16 +174,16 @@ export function buildAppearance(app) {
           if (f.size > 60 * 1024 * 1024) { toast('File is over 60 MB — pick something smaller', { kind: 'bad' }); return; }
           await Assets.put(m === 'image' ? 'bg-image' : 'bg-video', f);
           app.refreshBackground();
-          toast(`${m === 'image' ? 'Image' : 'Video'} set as background`, { kind: 'good' });
+          toast(t(m === 'image' ? 'Image set as background' : 'Video set as background'), { kind: 'good' });
         });
         bgExtra.append(
           el('div', { class: 'row stack' },
             el('div', { class: 'lbl' },
-              el('span', { text: m === 'image' ? 'Background image' : 'Background video' }),
-              el('span', { class: 'sub', text: 'stored locally in your browser — never uploaded' })),
+              el('span', { text: m === 'image' ? t('Background image') : t('Background video') }),
+              el('span', { class: 'sub', text: t('stored locally in your browser — never uploaded') })),
             file),
           el('div', { class: 'row' },
-            el('div', { class: 'lbl' }, el('span', { text: 'Remove' })),
+            el('div', { class: 'lbl' }, el('span', { text: t('Remove') })),
             el('button', {
               class: 'ghost-btn danger', text: 'clear',
               onclick: async () => {
@@ -196,87 +197,83 @@ export function buildAppearance(app) {
     renderBgExtra();
 
     body.append(
-      group('Theme', grid,
+      group(t('Theme'), grid,
         el('div', { class: 'color-grid' },
           colorItem('accent', 'accent', '#7c5cff'),
           colorItem('secondary', 'accent2', '#35e6c5')),
       ),
 
-      group('Background',
+      group(t('Background'),
         row('Source', chips([
-          { value: 'shader', label: 'Animated' },
-          { value: 'gradient', label: 'Gradient' },
-          { value: 'image', label: 'Image' },
-          { value: 'video', label: 'Video' },
-          { value: 'solid', label: 'Solid' },
+          { value: 'shader', label: t('Animated') },
+          { value: 'gradient', label: t('Gradient') },
+          { value: 'image', label: t('Image') },
+          { value: 'video', label: t('Video') },
+          { value: 'solid', label: t('Solid') },
         ], S.bgMode, v => { set('bgMode', v); renderBgExtra(); })),
         bgExtra,
-        row('Auto contrast', toggle(S.autoContrast, v => { set('autoContrast', v); app.refreshBackground(); }),
-          'switch to dark text when the background is bright'),
+        row(t('Auto contrast'), toggle(S.autoContrast, v => { set('autoContrast', v); app.refreshBackground(); }),
+          t('switch to dark text when the background is bright')),
         row('Dim', slider(S.bgDim, 0, 1, .01, v => set('bgDim', v), v => Math.round(v * 100) + '%')),
         row('Blur', slider(S.bgBlur, 0, 40, 1, v => set('bgBlur', v), v => v + 'px')),
         row('Saturation', slider(S.bgSat, 0, 2, .05, v => set('bgSat', v), v => v.toFixed(2))),
       ),
 
-      group('Timer',
-        row('Font', select(Object.keys(TIMER_FONTS).map(n => ({ value: n, label: n })), S.timerFont, v => set('timerFont', v))),
+      group(t('Timer'),
+        row(t('Font'), select(Object.keys(TIMER_FONTS).map(n => ({ value: n, label: n })), S.timerFont, v => set('timerFont', v))),
         row('Weight', slider(S.timerWeight, 300, 800, 100, v => set('timerWeight', v))),
         row('Size', slider(S.timerSize, 50, 160, 5, v => set('timerSize', v), v => v + '%')),
         row('Glow', slider(S.timerGlow, 0, 60, 1, v => set('timerGlow', v), v => v + 'px')),
       ),
 
-      group('Sizes',
-        row('Scramble', slider(S.scrambleSize, 60, 220, 5, v => set('scrambleSize', v), v => v + '%')),
-        row('Scramble preview', slider(S.cubeSize, 50, 260, 5, v => set('cubeSize', v), v => v + '%'),
-          'the cube in the corner — drag it anywhere'),
-        row('Sidebar width', slider(S.sidebarWidth, 170, 420, 2, v => set('sidebarWidth', v), v => v + 'px')),
-        row('Stats text', slider(S.sidebarText, 70, 160, 5, v => set('sidebarText', v), v => v + '%')),
-        row('Solve list', slider(S.timesSize, 70, 160, 5, v => set('timesSize', v), v => v + '%')),
+      group(t('Sizes'),
+        row(t('Scramble'), slider(S.scrambleSize, 60, 220, 5, v => set('scrambleSize', v), v => v + '%')),
+        row(t('Scramble preview'), slider(S.cubeSize, 50, 260, 5, v => set('cubeSize', v), v => v + '%'),
+          t('the cube in the corner — drag it anywhere')),
+        row(t('Sidebar width'), slider(S.sidebarWidth, 170, 420, 2, v => set('sidebarWidth', v), v => v + 'px')),
+        row(t('Stats text'), slider(S.sidebarText, 70, 160, 5, v => set('sidebarText', v), v => v + '%')),
+        row(t('Solve list'), slider(S.timesSize, 70, 160, 5, v => set('timesSize', v), v => v + '%')),
         el('div', { class: 'row' },
           el('div', { class: 'lbl' },
-            el('span', { text: 'Preview position' }),
-            el('span', { class: 'sub', text: 'drag the grip to move it, drag the cube to spin it' })),
+            el('span', { text: t('Preview position') }),
+            el('span', { class: 'sub', text: t('drag the grip to move it, drag the cube to spin it') })),
           el('div', { style: { display: 'flex', gap: '6px' } },
             el('button', { class: 'ghost-btn', text: 'position', onclick: () => app.resetCubePosition?.() }),
             el('button', { class: 'ghost-btn', text: 'angle', onclick: () => app.resetCubeOrbit?.() }))),
       ),
 
-      group('Layout',
-        row('Panel style', chips([
-          { value: 'widget', label: 'Widget' },
-          { value: 'flat', label: 'Flat' },
-        ], S.panelStyle, v => set('panelStyle', v)), 'cards with a background, or bare content'),
-        row('Statistics panel', toggle(S.showStats, v => set('showStats', v))),
-        row('Scramble preview', toggle(S.showCube, v => set('showCube', v))),
-        row('Times strip', toggle(S.showHistory, v => set('showHistory', v))),
-        row('Hint facelets', toggle(S.hintFacelets, v => set('hintFacelets', v)), 'ghost stickers on hidden faces'),
-        row('Yellow on top', toggle(S.yellowTop, v => set('yellowTop', v)),
-          'trainer cases drawn with the white cross underneath, the way you are holding it — WCA scrambles stay white on top'),
+      group(t('Layout'),
+        row(t('Panel style'), chips([
+          { value: 'widget', label: t('Widget') },
+          { value: 'flat', label: t('Flat') },
+        ], S.panelStyle, v => set('panelStyle', v)), t('cards with a background, or bare content')),
+        row(t('Statistics panel'), toggle(S.showStats, v => set('showStats', v))),
+        row(t('Scramble preview'), toggle(S.showCube, v => set('showCube', v))),
+        row(t('Times strip'), toggle(S.showHistory, v => set('showHistory', v))),
+        row(t('Hint facelets'), toggle(S.hintFacelets, v => set('hintFacelets', v)), t('ghost stickers on hidden faces')),
+        row(t('Yellow on top'), toggle(S.yellowTop, v => set('yellowTop', v)),
+          t('trainer cases drawn with the white cross underneath, the way you are holding it — WCA scrambles stay white on top')),
         row('Density', chips([
-          { value: 'compact', label: 'Compact' },
-          { value: 'comfortable', label: 'Comfortable' },
-          { value: 'spacious', label: 'Spacious' },
+          { value: 'compact', label: t('Compact') },
+          { value: 'comfortable', label: t('Comfortable') },
+          { value: 'spacious', label: t('Spacious') },
         ], S.density, v => set('density', v))),
         row('Motion', chips([
-          { value: 'full', label: 'Full' },
-          { value: 'reduced', label: 'Reduced' },
-          { value: 'off', label: 'Off' },
+          { value: 'full', label: t('Full') },
+          { value: 'reduced', label: t('Reduced') },
+          { value: 'off', label: t('Off') },
         ], S.motion, v => set('motion', v))),
         el('div', { class: 'hint-note', html:
-          'Drag the times list, the statistics panel, the now-playing card and the play bar ' +
-          'by the grip on their top edge. The <b>left rail</b>, the <b>right rail</b> and the ' +
-          '<b>bar across the bottom</b> light up while you are dragging — drop on one and the ' +
-          'panel clicks into it. Drop it anywhere else and it stays exactly where you let go. ' +
-          'On a phone the panels keep their fixed layout, because there is nowhere to put them.' }),
+          t('Drag the times list, the statistics panel, the now-playing card and the play bar by the grip on their top edge. The <b>left rail</b>, the <b>right rail</b> and the <b>bar across the bottom</b> light up while you are dragging — drop on one and the panel clicks into it. Drop it anywhere else and it stays exactly where you let go. On a phone the panels keep their fixed layout, because there is nowhere to put them.') }),
         el('div', { class: 'row' },
-          el('div', { class: 'lbl' }, el('span', { text: 'Panel layout' }),
-            el('span', { class: 'sub', text: 'put every panel back in its original rail' })),
+          el('div', { class: 'lbl' }, el('span', { text: t('Panel layout') }),
+            el('span', { class: 'sub', text: t('put every panel back in its original rail') })),
           el('button', { class: 'ghost-btn', text: 'reset', onclick: () => app.resetTiles?.() })),
       ),
 
-      group('Share',
+      group(t('Share'),
         el('div', { class: 'row' },
-          el('div', { class: 'lbl' }, el('span', { text: 'Theme file' }), el('span', { class: 'sub', text: 'send your look to a friend' })),
+          el('div', { class: 'lbl' }, el('span', { text: t('Theme file') }), el('span', { class: 'sub', text: t('send your look to a friend') })),
           el('div', { style: { display: 'flex', gap: '6px' } },
             el('button', {
               class: 'ghost-btn', text: 'export',
@@ -328,12 +325,12 @@ function timeCell(solve, trimmed) {
 /** The shareable block. Deliberately plain text — it has to survive a paste. */
 function statText(w) {
   const lines = [`${w.label}: ${fmtStat(w.value, movesSession(w.list))}`, '',
-               movesSession(w.list) ? 'Solutions:' : 'Time List:'];
+               movesSession(w.list) ? 'Solutions:' : t('Time List:')];
   w.list.forEach((s, i) => {
     const scramble = (s.scramble || '').replace(/\s+/g, ' ').trim();
     lines.push(`${i + 1}. ${timeCell(s, w.trimmed.has(w.start + i))}   ${scramble}`);
   });
-  lines.push('', 'Generated by Tagda Timer');
+  lines.push('', t('Generated by Tagda Timer'));
   return lines.join(NEWLINE);
 }
 
@@ -343,7 +340,7 @@ export function buildStatDetail(app, kind) {
 
     if (!w.list.length) {
       body.append(el('div', { class: 'hint-note', text:
-        `Not enough solves yet for ${w.label.toLowerCase()}. Keep going — it will fill in.` }));
+        t('Not enough solves yet for {what}. Keep going — it will fill in.', { what: t(w.label).toLowerCase() }) }));
       return;
     }
 
@@ -359,17 +356,17 @@ export function buildStatDetail(app, kind) {
           el('div', { class: 'sd-value', text: fmtStat(w.value, movesSession(w.list)) })),
         el('div', { class: 'sd-actions' },
           el('button', {
-            class: 'btn primary', text: 'share card',
-            title: 'A picture of this average — times and scrambles',
+            class: 'btn primary', text: t('share card'),
+            title: t('A picture of this average — times and scrambles'),
             onclick: () => app.shareAverageCard(kind),
           }),
-          copyBtn('copy all', statText(w), 'ghost-btn'),
-          copyBtn('times only', w.list.map((s, i) => timeCell(s, w.trimmed.has(w.start + i))).join(', ')),
-          copyBtn('scrambles only', w.list.map(s => (s.scramble || '').replace(/\s+/g, ' ').trim()).join(NEWLINE)),
+          copyBtn(t('copy all'), statText(w), 'ghost-btn'),
+          copyBtn(t('times only'), w.list.map((s, i) => timeCell(s, w.trimmed.has(w.start + i))).join(', ')),
+          copyBtn(t('scrambles only'), w.list.map(s => (s.scramble || '').replace(/\s+/g, ' ').trim()).join(NEWLINE)),
         )),
       w.trimmed.size
         ? el('div', { class: 'hint-note', text:
-            'Times in brackets are trimmed — the fastest and slowest of the set, which the average does not count.' })
+            t('Times in brackets are trimmed — the fastest and slowest of the set, which the average does not count.') })
         : null,
     );
 
@@ -391,12 +388,12 @@ export function buildStatDetail(app, kind) {
  */
 function solveRow(app, s, n, gi, { trimmed = false, pinned = false } = {}) {
   const scramble = (s.scramble || '').replace(/\s+/g, ' ').trim();
-  const penalty = s.penalty === '+2' ? '+2 penalty' : s.penalty === 'DNF' ? 'DNF' : 'no penalty';
+  const penalty = s.penalty === '+2' ? '+2 penalty' : s.penalty === 'DNF' ? 'DNF' : t('no penalty');
   return el('div', { class: `sd-row ${trimmed ? 'trimmed' : ''} ${s.penalty === 'DNF' ? 'dnf' : ''}` },
     el('span', { class: 'sd-i', text: String(n) }),
     el('span', { class: 'sd-t', text: timeCell(s, trimmed) }),
     el('div', { class: 'sd-body' },
-      el('div', { class: 'sd-scramble', text: scramble || '(no scramble recorded)' }),
+      el('div', { class: 'sd-scramble', text: scramble || t('(no scramble recorded)') }),
       el('div', { class: 'sd-meta', text: [
         `solve #${gi + 1}`,
         pinned ? penalty : '',
@@ -406,7 +403,7 @@ function solveRow(app, s, n, gi, { trimmed = false, pinned = false } = {}) {
       ].filter(Boolean).join(' · ') })),
     pinned ? null : el('button', {
       class: 'ghost-btn sm', text: 'copy',
-      title: 'Copy this scramble',
+      title: t('Copy this scramble'),
       onclick: () => app.copyToast(scramble, 'Scramble'),
     }),
   );
@@ -432,35 +429,31 @@ export function buildSpotify(app) {
          find, no dashboard to visit and no setup to read: the app is already
          registered, and its identifier is public by design. */
       body.append(
-        group('Spotify',
+        group(t('Spotify'),
           el('div', { class: `spot-hero ${connected && !st.denied ? 'on' : ''}` },
             el('div', { class: 'spot-hero-dot' }),
             el('div', {},
               el('div', { class: 'spot-hero-title', text:
-                st.denied ? 'Linked, but blocked'
-                : connected ? 'Connected' : 'Not connected' }),
+                st.denied ? t('Linked, but blocked')
+                : connected ? 'Connected' : t('Not connected') }),
               /* Nothing here when denied: an invitation to "link an account"
                  is nonsense to someone who just did, and the warning below
                  carries the whole message. */
               st.denied ? null
                 : el('div', { class: 'spot-hero-sub', text: connected
                     ? (st.artworkReadable === false
-                        ? 'Artwork colours are blocked by Spotify’s CDN, so the cover is used as a background instead.'
+                        ? t('Artwork colours are blocked by Spotify’s CDN, so the cover is used as a background instead.')
                         : st.artworkMono
-                          ? 'This cover is black and white, so the timer is too — there is no hue in it to borrow.'
-                          : 'The timer takes its colours from whatever you are playing.')
-                    : 'Link an account and the timer takes its colours from the album art of whatever you are playing.' }),
+                          ? t('This cover is black and white, so the timer is too — there is no hue in it to borrow.')
+                          : t('The timer takes its colours from whatever you are playing.'))
+                    : t('Link an account and the timer takes its colours from the album art of whatever you are playing.') }),
               !connected
                 ? el('div', { class: 'spot-hero-sub', text:
-                    `Worth knowing first: Spotify only lets ${st.devModeLimit} people use this `
-                    + 'connection, and they have to be added by hand by whoever runs this site. '
-                    + 'If you are not one of them, Connect will appear to work and then show '
-                    + 'nothing — set up your own connection below instead.' })
+                    t('Worth knowing first: Spotify only lets {n} people use this connection, and they have to be added by hand by whoever runs this site. If you are not one of them, Connect will appear to work and then show nothing — set up your own connection below instead.', { n: st.devModeLimit }) })
                 : null,
               connected && !st.canControl
                 ? el('div', { class: 'spot-hero-warn', text:
-                    'Reconnect to enable the play, next and previous buttons — this link '
-                    + 'was made before they existed.' })
+                    t('Reconnect to enable the play, next and previous buttons — this link was made before they existed.') })
                 : null,
               connected && st.blocked
                 ? el('div', { class: 'spot-hero-warn', text: st.blocked })
@@ -471,50 +464,42 @@ export function buildSpotify(app) {
                  place a visitor can find out what went wrong. */
               st.denied
                 ? el('div', { class: 'spot-hero-warn', text:
-                    'Spotify accepted the login but will not share what you are playing, '
-                    + 'because this account is not on this app’s guest list. That list is '
-                    + `capped at ${st.devModeLimit} people and only the site’s owner can add you. `
-                    + 'To use it anyway, set up your own connection below — you will need '
-                    + 'Spotify Premium for that.' })
+                    t('Spotify accepted the login but will not share what you are playing, because this account is not on this app’s guest list. That list is capped at {n} people and only the site’s owner can add you. To use it anyway, set up your own connection below — you will need Spotify Premium for that.', { n: st.devModeLimit }) })
                 : null),
             connected
-              ? el('button', { class: 'btn danger', text: 'Disconnect',
+              ? el('button', { class: 'btn danger', text: t('Disconnect'),
                   onclick: async () => { await app.disconnectSpotify(); render(); } })
-              : el('button', { class: 'btn primary', text: 'Connect Spotify',
+              : el('button', { class: 'btn primary', text: t('Connect Spotify'),
                   onclick: () => app.connectSpotify() }),
           ),
           st.problem ? el('div', { class: 'hint-note warn-note', text:
             st.problem.reason
             + (st.problem.openInstead
-                ? ` Open the timer at ${st.problem.openInstead} instead — that is a different origin, so it keeps its own solves.`
+                ? t(' Open the timer at {url} instead — that is a different origin, so it keeps its own solves.', { url: st.problem.openInstead })
                 : '') }) : null,
           el('div', { class: 'hint-note', text:
-            'Only "read what you are currently playing" and playback control are '
-            + 'requested — it cannot read your library or change anything about the '
-            + 'account. Revoke it any time at spotify.com/account/apps.' }),
+            t('Only "read what you are currently playing" and playback control are requested — it cannot read your library or change anything about the account. Revoke it any time at spotify.com/account/apps.') }),
         ),
       );
 
       /* ---- what it drives ---- */
       if (connected && !st.denied) {
-        body.append(group('What the album drives',
-          row('Tint', chips([
-            { value: 'accent', label: 'Colours' },
-            { value: 'background', label: 'Artwork' },
-            { value: 'both', label: 'Both' },
+        body.append(group(t('What the album drives'),
+          row(t('Tint'), chips([
+            { value: 'accent', label: t('Colours') },
+            { value: 'background', label: t('Artwork') },
+            { value: 'both', label: t('Both') },
           ], app.settings.spotifyTint, v => set('spotifyTint', v))),
-          row('Background gradient', toggle(app.settings.spotifyGradient !== false,
+          row(t('Background gradient'), toggle(app.settings.spotifyGradient !== false,
             v => set('spotifyGradient', v)),
-            'album colours in the animated and gradient backgrounds'),
-          row('Now playing panel', toggle(app.settings.showSpotifyPanel,
+            t('album colours in the animated and gradient backgrounds')),
+          row(t('Now playing panel'), toggle(app.settings.showSpotifyPanel,
             v => { set('showSpotifyPanel', v); app.syncSpotifyPanel?.(); }),
-            'the cover, track and controls in the sidebar'),
-          row('Track under the scramble', toggle(app.settings.spotifyNowPlaying,
-            v => set('spotifyNowPlaying', v)), 'a single line, off by default'),
+            t('the cover, track and controls in the sidebar')),
+          row(t('Track under the scramble'), toggle(app.settings.spotifyNowPlaying,
+            v => set('spotifyNowPlaying', v)), t('a single line, off by default')),
           el('div', { class: 'hint-note', text:
-            'Colours are never written into your saved theme, and never change '
-            + 'mid-solve — a new track waits for the timer to go idle. The status '
-            + 'colours for inspection are never touched at all.' }),
+            t('Colours are never written into your saved theme, and never change mid-solve — a new track waits for the timer to go idle. The status colours for inspection are never touched at all.') }),
         ));
       }
 
@@ -531,45 +516,33 @@ export function buildSpotify(app) {
       const adv = el('details', { class: 'adv' },
         el('summary', {},
           el('div', {},
-            el('div', { class: 'adv-title', text: 'Set up your own connection' }),
+            el('div', { class: 'adv-title', text: t('Set up your own connection') }),
             el('div', { class: 'adv-sub', text:
-              `Not one of the ${st.devModeLimit}? Make your own in about five minutes.` }))),
+              t('Not one of the {n}? Make your own in about five minutes.', { n: st.devModeLimit }) }))),
         el('div', { class: 'adv-body' },
           el('a', { class: 'btn spot-go', href: DASHBOARD, target: '_blank',
-            rel: 'noopener noreferrer', text: 'Open the Spotify Developer Dashboard ↗' }),
+            rel: 'noopener noreferrer', text: t('Open the Spotify Developer Dashboard ↗') }),
           el('div', { class: 'hint-note', text:
-            `Spotify only allows ${st.devModeLimit} people to use this site’s connection, and `
-            + 'there is no way to raise that — Spotify stopped granting bigger limits to '
-            + 'projects like this one. Everyone else has to make their own connection. It is '
-            + 'free, takes about five minutes, and only has to be done once.' }),
+            t('Spotify only allows {n} people to use this site’s connection, and there is no way to raise that — Spotify stopped granting bigger limits to projects like this one. Everyone else has to make their own connection. It is free, takes about five minutes, and only has to be done once.', { n: st.devModeLimit }) }),
           st.ownerNeedsPremium
             ? el('div', { class: 'hint-note warn-note', text:
-                'You need Spotify Premium for this. Anyone can create the connection, but '
-                + 'since early 2026 Spotify refuses to share your music with a connection '
-                + 'whose owner is not a Premium subscriber — and doing this makes you the '
-                + 'owner. On a free account the steps below will all appear to work, and '
-                + 'then nothing will play through. Ask the site’s owner to add you to the '
-                + 'guest list instead.' })
+                t('You need Spotify Premium for this. Anyone can create the connection, but since early 2026 Spotify refuses to share your music with a connection whose owner is not a Premium subscriber — and doing this makes you the owner. On a free account the steps below will all appear to work, and then nothing will play through. Ask the site’s owner to add you to the guest list instead.') })
             : null,
           el('div', { class: 'setup-steps' },
-            step(1, 'Create an app',
+            step(1, t('Create an app'),
               'Go to ', dashLink('developer.spotify.com/dashboard'),
-              ', sign in, and press Create app. Give it any name you like and tick "Web API".'),
-            step(2, 'Add the redirect address',
-              'In the app’s settings, paste the address below into "Redirect URIs" and save. '
-              + 'It has to match exactly, character for character.'),
-            step(3, 'Add yourself as a user',
-              'Open the User Management tab and add your own name and Spotify email. '
-              + 'This is easy to miss, and without it Spotify refuses everything — even '
-              + 'though the connection is yours.'),
-            step(4, 'Copy the Client ID',
-              'It is on the app’s settings page. Paste it in the box below. Ignore the '
-              + 'client secret — this site never uses one and never asks for one.'),
+              t(', sign in, and press Create app. Give it any name you like and tick "Web API".')),
+            step(2, t('Add the redirect address'),
+              t('In the app’s settings, paste the address below into "Redirect URIs" and save. It has to match exactly, character for character.')),
+            step(3, t('Add yourself as a user'),
+              t('Open the User Management tab and add your own name and Spotify email. This is easy to miss, and without it Spotify refuses everything — even though the connection is yours.')),
+            step(4, t('Copy the Client ID'),
+              t('It is on the app’s settings page. Paste it in the box below. Ignore the client secret — this site never uses one and never asks for one.')),
           ),
-          row('Redirect URI', el('div', { class: 'copy-field' },
+          row(t('Redirect URI'), el('div', { class: 'copy-field' },
             el('code', { text: st.redirectUri }),
             el('button', { class: 'ghost-btn sm', text: 'copy',
-              onclick: () => app.copyToast(st.redirectUri, 'Redirect URI') }))),
+              onclick: () => app.copyToast(st.redirectUri, t('Redirect URI')) }))),
           ownAppRow(app, st, render),
         ));
       if (st.usingOwnApp) adv.open = true;
@@ -585,7 +558,7 @@ export function buildSpotify(app) {
 /** The client-ID override, plus the way back to the built-in app. */
 function ownAppRow(app, st, render) {
   const input = el('input', {
-    class: 'inp', type: 'text', placeholder: 'client ID (leave blank to use the built-in app)',
+    class: 'inp', type: 'text', placeholder: t('client ID (leave blank to use the built-in app)'),
     value: app.settings.spotifyClientId || '', style: { flex: '1' },
   });
   input.addEventListener('change', async () => {
@@ -597,7 +570,7 @@ function ownAppRow(app, st, render) {
     app.setSetting('spotifyClientId', next);
     render();
   });
-  return row('Client ID', input, st.usingOwnApp ? 'using your own app' : 'using the built-in app');
+  return row(t('Client ID'), input, st.usingOwnApp ? t('using your own app') : t('using the built-in app'));
 }
 
 /** One numbered step in the setup list. */
@@ -618,136 +591,118 @@ export function buildSettings(app) {
     const set = (k, v) => app.setSetting(k, v);
 
     body.append(
-      group('Inspection',
-        row('WCA inspection', toggle(S.inspection, v => set('inspection', v)), '15s, +2 after 15, DNF after 17'),
-        row('Callouts', chips([
-          { value: 'beep', label: 'Beep' },
-          { value: 'off', label: 'Off' },
-        ], S.callouts, v => set('callouts', v)), 'a tone at 8 and 12 seconds'),
+      group(t('Inspection'),
+        row(t('WCA inspection'), toggle(S.inspection, v => set('inspection', v)), t('15s, +2 after 15, DNF after 17')),
+        row(t('Callouts'), chips([
+          { value: 'beep', label: t('Beep') },
+          { value: 'off', label: t('Off') },
+        ], S.callouts, v => set('callouts', v)), t('a tone at 8 and 12 seconds')),
       ),
 
-      group('Timing input',
-        row('Where times come from', chips([
-          { value: 'timer', label: 'Keyboard' },
-          { value: 'manual', label: 'Type them' },
-          { value: 'stackmat', label: 'Stackmat (aux)' },
-          { value: 'virtual', label: 'Virtual cube' },
+      group(t('Timing input'),
+        row(t('Where times come from'), chips([
+          { value: 'timer', label: t('Keyboard') },
+          { value: 'manual', label: t('Type them') },
+          { value: 'stackmat', label: t('Stackmat (aux)') },
+          { value: 'virtual', label: t('Virtual cube') },
         ], S.inputMode || 'timer', (v) => {
           set('inputMode', v);
           // The note under this row is different for every mode, so redraw.
           openDrawer('Settings', buildSettings(app));
         }),
-          'the spacebar, a time you type in, a Stackmat, or a cube you turn with the keyboard'),
+          t('the spacebar, a time you type in, a Stackmat, or a cube you turn with the keyboard')),
         S.inputMode === 'virtual'
           ? el('div', { class: 'hint-note', html:
-              'Turn the cube with csTimer&rsquo;s keys: <b>I K</b> R, <b>D E</b> L, <b>J F</b> U, ' +
-              '<b>S L</b> D, <b>H G</b> F, <b>W O</b> B, <b>U M</b> r, <b>V R</b> l, <b>5 X</b> M, ' +
-              '<b>T B</b> x, <b>; A</b> y, <b>P Q</b> z (full list under <b>?</b>). The first turn starts ' +
-              'the clock and a solved cube stops it; <b>Space</b> starts inspection, <b>Esc</b> resets. ' +
-              'While it is on, those letters are turns, not shortcuts &mdash; the rest are in ' +
-              '<b>Ctrl+K</b>. For 2x2 to 7x7 only' +
-              (virtualSize(S.event) ? '' : ' &mdash; this event stays on the spacebar') +
-              ', and its solves go in a &ldquo;Virtual&rdquo; session per event so they never mix ' +
-              'with your real averages.' })
+              t('Turn the cube with csTimer&rsquo;s keys: <b>I K</b> R, <b>D E</b> L, <b>J F</b> U, <b>S L</b> D, <b>H G</b> F, <b>W O</b> B, <b>U M</b> r, <b>V R</b> l, <b>5 X</b> M, <b>T B</b> x, <b>; A</b> y, <b>P Q</b> z (full list under <b>?</b>). The first turn starts the clock and a solved cube stops it; <b>Space</b> starts inspection, <b>Esc</b> resets. While it is on, those letters are turns, not shortcuts &mdash; the rest are in <b>Ctrl+K</b>. For 2x2 to 7x7 only') +
+              (virtualSize(S.event) ? '' : t(' &mdash; this event stays on the spacebar')) +
+              t(', and its solves go in a &ldquo;Virtual&rdquo; session per event so they never mix with your real averages.') })
           : null,
         S.inputMode === 'manual'
           ? el('div', { class: 'hint-note', html:
-              'Type the time under the clock and press <b>Enter</b>. It understands ' +
-              '<b>12.34</b>, <b>1:05.67</b>, bare digits (<b>1234</b> is 12.34), ' +
-              '<b>12.34+2</b> for a plus two, and <b>DNF</b>. Each entry records against the ' +
-              'scramble on screen and moves you to the next one.' })
+              t('Type the time under the clock and press <b>Enter</b>. It understands <b>12.34</b>, <b>1:05.67</b>, bare digits (<b>1234</b> is 12.34), <b>12.34+2</b> for a plus two, and <b>DNF</b>. Each entry records against the scramble on screen and moves you to the next one.') })
           : null,
         S.inputMode === 'stackmat'
           ? el('div', { class: 'hint-note', html:
-              'Run a 3.5&nbsp;mm cable from the timer&rsquo;s data port to this machine&rsquo;s ' +
-              '<b>microphone</b> input and allow the microphone when asked. The bar under the ' +
-              'clock says whether packets are actually arriving — if it stays on ' +
-              '&ldquo;no signal&rdquo;, raise the input level in your sound settings and check ' +
-              'the cable is in the mic socket, not line-out.' })
+              t('Run a 3.5&nbsp;mm cable from the timer&rsquo;s data port to this machine&rsquo;s <b>microphone</b> input and allow the microphone when asked. The bar under the clock says whether packets are actually arriving — if it stays on &ldquo;no signal&rdquo;, raise the input level in your sound settings and check the cable is in the mic socket, not line-out.') })
           : null,
         el('div', { class: 'hint-note', html:
-            '<b>Bluetooth smart timers are not supported.</b> Every model (GAN, QiYi, MoYu) ' +
-            'speaks its own encrypted protocol, and shipping an implementation that has never ' +
-            'been near the hardware would just be a button that fails silently. The aux route ' +
-            'above works with any Stackmat, which is what the Bluetooth timers emulate anyway.' }),
+            t('<b>Bluetooth smart timers are not supported.</b> Every model (GAN, QiYi, MoYu) speaks its own encrypted protocol, and shipping an implementation that has never been near the hardware would just be a button that fails silently. The aux route above works with any Stackmat, which is what the Bluetooth timers emulate anyway.') }),
       ),
 
-      group('Timer',
-        row('Hold time', chips([
-          { value: 0, label: 'Instant' },
-          { value: 300, label: '300 ms' },
-          { value: 500, label: '500 ms' },
-        ], S.holdTime, v => set('holdTime', +v)), 'instant starts on the press; the others arm first and start on release'),
-        row('Decimals', chips([{ value: 2, label: '0.00' }, { value: 3, label: '0.000' }], S.precision, v => set('precision', +v))),
-        row('Hide time while solving', toggle(S.hideWhileRunning, v => set('hideWhileRunning', v)), 'stops you watching the clock'),
-        row('Focus mode', toggle(S.focusMode, v => set('focusMode', v)), 'everything but the digits fades out'),
-        row('Pace ghost', toggle(S.paceGhost, v => set('paceGhost', v)), 'live bar racing your best'),
-        row('Pace reference', chips([{ value: 'pb', label: 'PB single' }, { value: 'ao5', label: 'Current ao5' }], S.paceRef, v => set('paceRef', v))),
-        row('Start with the mouse', toggle(S.mouseTimer, v => set('mouseTimer', v)), 'click the screen to start and stop — touch always works'),
-        row('Confirm misfires', toggle(S.confirmShortSolves, v => set('confirmShortSolves', v)), 'ask before recording a sub-0.5s solve'),
-        row('Sound on PB', toggle(S.soundOnPB, v => set('soundOnPB', v))),
-        row('Metronome', toggle(S.metronome, v => set('metronome', v)),
-          'a click on the beat while the timer runs — one move per beat to practise a smooth cross and F2L'),
-        row('Metronome speed', slider(S.metronomeBpm, 30, 240, 5, v => set('metronomeBpm', v), v => v + ' bpm')),
-        row('Metronome window', toggle(S.metroOpen, v => set('metroOpen', v)),
-          'a floating beat meter with its own start/stop and bpm — it keeps ticking with the timer idle, for drilling an algorithm to a beat. Drag it anywhere; same speed as the setting above.'),
-        row('Multiphase splits', chips([
-          { value: 0, label: 'Off' },
+      group(t('Timer'),
+        row(t('Hold time'), chips([
+          { value: 0, label: t('Instant') },
+          { value: 300, label: t('300 ms') },
+          { value: 500, label: t('500 ms') },
+        ], S.holdTime, v => set('holdTime', +v)), t('instant starts on the press; the others arm first and start on release')),
+        row('Decimals', chips([{ value: 2, label: t('0.00') }, { value: 3, label: '0.000' }], S.precision, v => set('precision', +v))),
+        row(t('Hide time while solving'), toggle(S.hideWhileRunning, v => set('hideWhileRunning', v)), t('stops you watching the clock')),
+        row(t('Focus mode'), toggle(S.focusMode, v => set('focusMode', v)), t('everything but the digits fades out')),
+        row(t('Pace ghost'), toggle(S.paceGhost, v => set('paceGhost', v)), t('live bar racing your best')),
+        row(t('Pace reference'), chips([{ value: 'pb', label: t('PB single') }, { value: 'ao5', label: t('Current ao5') }], S.paceRef, v => set('paceRef', v))),
+        row(t('Start with the mouse'), toggle(S.mouseTimer, v => set('mouseTimer', v)), t('click the screen to start and stop — touch always works')),
+        row(t('Confirm misfires'), toggle(S.confirmShortSolves, v => set('confirmShortSolves', v)), t('ask before recording a sub-0.5s solve')),
+        row(t('Sound on PB'), toggle(S.soundOnPB, v => set('soundOnPB', v))),
+        row(t('Metronome'), toggle(S.metronome, v => set('metronome', v)),
+          t('a click on the beat while the timer runs — one move per beat to practise a smooth cross and F2L')),
+        row(t('Metronome speed'), slider(S.metronomeBpm, 30, 240, 5, v => set('metronomeBpm', v), v => v + ' bpm')),
+        row(t('Metronome window'), toggle(S.metroOpen, v => set('metroOpen', v)),
+          t('a floating beat meter with its own start/stop and bpm — it keeps ticking with the timer idle, for drilling an algorithm to a beat. Drag it anywhere; same speed as the setting above.')),
+        row(t('Multiphase splits'), chips([
+          { value: 0, label: t('Off') },
           { value: 2, label: '2' },
           { value: 3, label: '3' },
           { value: 4, label: '4' },
           { value: 5, label: '5' },
         ], S.multiphase || 0, v => set('multiphase', +v)),
-          'press the split key mid-solve to close a phase instead of stopping — cross/F2L/OLL/PLL, whatever you use it for. Off on blind events, which already split memo/exec.'),
+          t('press the split key mid-solve to close a phase instead of stopping — cross/F2L/OLL/PLL, whatever you use it for. Off on blind events, which already split memo/exec.')),
       ),
 
-      group('Learn mode',
+      group(t('Learn mode'),
         el('div', { class: 'hint-note', html:
-            'On top of any trainer mode: a case you have never seen arrives with its ' +
-            'algorithm, after that you are asked to recall it, and how the solve went ' +
-            'decides when it comes back. Turn it on with <b>L</b>, or from the case picker.' }),
-        row('New cases per sitting', slider(S.learnNewPerSession, 1, 15, 1, v => set('learnNewPerSession', v)),
-          'how many cases you have never seen may be introduced before you switch it off and on again'),
-        row('Counts as slow', slider(S.learnSlowFactor, 1.1, 3, .1, v => set('learnSlowFactor', v), v => v.toFixed(1) + '×'),
-          'a solve this much slower than your own average on the case holds it back instead of advancing it'),
+            t('On top of any trainer mode: a case you have never seen arrives with its algorithm, after that you are asked to recall it, and how the solve went decides when it comes back. Turn it on with <b>L</b>, or from the case picker.') }),
+        row(t('New cases per sitting'), slider(S.learnNewPerSession, 1, 15, 1, v => set('learnNewPerSession', v)),
+          t('how many cases you have never seen may be introduced before you switch it off and on again')),
+        row(t('Counts as slow'), slider(S.learnSlowFactor, 1.1, 3, .1, v => set('learnSlowFactor', v), v => v.toFixed(1) + '×'),
+          t('a solve this much slower than your own average on the case holds it back instead of advancing it')),
       ),
 
-      group('Fewest Moves',
-        row('Attempt length', chips([
-          { value: 60, label: '60 min' },
-          { value: 30, label: '30 min' },
-          { value: 10, label: '10 min' },
-          { value: 1, label: '1 min' },
+      group(t('Fewest Moves'),
+        row(t('Attempt length'), chips([
+          { value: 60, label: t('60 min') },
+          { value: 30, label: t('30 min') },
+          { value: 10, label: t('10 min') },
+          { value: 1, label: t('1 min') },
         ], S.fmcMinutes ?? 60, v => set('fmcMinutes', +v)),
-          '60 minutes is the WCA limit (E2b). The shorter ones are practice — the result is still judged the same way.'),
+          t('60 minutes is the WCA limit (E2b). The shorter ones are practice — the result is still judged the same way.')),
       ),
 
-      group('Multi-blind',
-        row('Cubes per attempt', slider(S.multiCount, 2, 20, 1, v => set('multiCount', v))),
+      group(t('Multi-blind'),
+        row(t('Cubes per attempt'), slider(S.multiCount, 2, 20, 1, v => set('multiCount', v))),
       ),
 
-      group('Blindsolving',
+      group(t('Blindsolving'),
         el('div', { class: 'row' },
           el('div', { class: 'lbl' },
-            el('span', { text: 'Buffers, orientation, letters' }),
-            el('span', { class: 'sub', text: 'and the memo/execution split' })),
+            el('span', { text: t('Buffers, orientation, letters') }),
+            el('span', { class: 'sub', text: t('and the memo/execution split') })),
           el('button', {
             class: 'ghost-btn', text: 'open',
             onclick: () => openDrawer('Blindsolving', buildBlindsolving(app)),
           })),
         el('div', { class: 'row' },
           el('div', { class: 'lbl' },
-            el('span', { text: 'Letter pairs' }),
-            el('span', { class: 'sub', text: 'words, images and your own algs' })),
+            el('span', { text: t('Letter pairs') }),
+            el('span', { class: 'sub', text: t('words, images and your own algs') })),
           el('button', {
             class: 'ghost-btn', text: 'open',
-            onclick: () => openDrawer('Letter pairs', buildLetterPairs(app), { wide: true }),
+            onclick: () => openDrawer(t('Letter pairs'), buildLetterPairs(app), { wide: true }),
           })),
       ),
 
-      group('Data',
+      group(t('Data'),
         el('div', { class: 'row' },
-          el('div', { class: 'lbl' }, el('span', { text: 'Backup' }), el('span', { class: 'sub', text: 'every session and solve as JSON' })),
+          el('div', { class: 'lbl' }, el('span', { text: t('Backup') }), el('span', { class: 'sub', text: t('every session and solve as JSON') })),
           el('button', {
             class: 'ghost-btn', text: 'export',
             onclick: async () => {
@@ -765,27 +720,27 @@ export function buildSettings(app) {
             accept: '.json,.txt,text/plain,application/json',
             style: { display: 'none' },
           });
-          const status = el('div', { class: 'sub', text: 'Tagda backup (.json) or csTimer export (.txt)' });
-          const btn = el('button', { class: 'ghost-btn', text: 'choose file', onclick: () => f.click() });
+          const status = el('div', { class: 'sub', text: t('Tagda backup (.json) or csTimer export (.txt)') });
+          const btn = el('button', { class: 'ghost-btn', text: t('choose file'), onclick: () => f.click() });
 
           f.addEventListener('change', async () => {
             const file = f.files?.[0];
             if (!file) return;
             btn.disabled = true;
-            status.textContent = `reading ${file.name}…`;
+            status.textContent = t('reading {file}…', { file: file.name });
             try {
               const res = await app.importFile(file, {
-                onProgress: (n, name) => { status.textContent = `${n} solves… (${name})`; },
+                onProgress: (n, name) => { status.textContent = t('{n} solves… ({name})', { n, name }); },
               });
               status.textContent = res.kind === 'cstimer'
-                ? `${res.solves} solves in ${res.sessions} sessions from csTimer`
-                : `${res.solves} solves restored`;
+                ? t('{n} solves in {s} sessions from csTimer', { n: res.solves, s: res.sessions })
+                : t('{n} solves restored', { n: res.solves });
               toast(res.kind === 'cstimer'
-                ? `Imported ${res.solves} solves across ${res.sessions} csTimer sessions`
-                : `Restored ${res.solves} solves`, { kind: 'good' });
+                ? t('Imported {n} solves across {s} csTimer sessions', { n: res.solves, s: res.sessions })
+                : t('Restored {n} solves', { n: res.solves }), { kind: 'good' });
             } catch (e) {
-              status.textContent = 'nothing imported';
-              toast(`Could not import that file: ${e.message}`, { kind: 'bad' });
+              status.textContent = t('nothing imported');
+              toast(t('Could not import that file: {err}', { err: e.message }), { kind: 'bad' });
             } finally {
               btn.disabled = false;
               f.value = '';
@@ -793,36 +748,35 @@ export function buildSettings(app) {
           });
 
           return el('div', { class: 'row' },
-            el('div', { class: 'lbl' }, el('span', { text: 'Import solves' }), status),
+            el('div', { class: 'lbl' }, el('span', { text: t('Import solves') }), status),
             el('span', {}, btn, f));
         })(),
         el('div', { class: 'hint-note', html:
-          'Importing from <b>csTimer</b>: open csTimer, then <b>Export &rarr; Export to file</b>. ' +
-          'It saves a <b>.txt</b> — hand that file straight to the picker above. ' +
-          'Every session comes across with its own name, its times, its scrambles, ' +
-          'its comments and its penalties, and the event is read from the session&rsquo;s ' +
-          'scramble type where csTimer recorded one. Nothing already here is touched.' }),
+          t('Importing from <b>csTimer</b>: open csTimer, then <b>Export &rarr; Export to file</b>. It saves a <b>.txt</b> — hand that file straight to the picker above. Every session comes across with its own name, its times, its scrambles, its comments and its penalties, and the event is read from the session&rsquo;s scramble type where csTimer recorded one. Nothing already here is touched.') }),
         el('div', { class: 'row' },
-          el('div', { class: 'lbl' }, el('span', { text: 'Session as CSV' })),
+          el('div', { class: 'lbl' }, el('span', { text: t('Session as CSV') })),
           el('button', {
             class: 'ghost-btn', text: 'export',
             onclick: () => app.exportSessionCSV(),
           })),
       ),
 
-      group('Account', buildAccountRow(),
+      group(t('Language'),
+        row(t('Interface language'), select([
+          { value: 'en', label: t('English') },
+          { value: 'es', label: t('Español') }
+        ], lang, setLang))
+      ),
+      group(t('Account'), buildAccountRow(),
         el('div', { class: 'hint-note', html:
-            'Signing in follows your solves, sessions, settings and learn-mode progress to ' +
-            'any other device you sign into. Nothing about this is required — everything ' +
-            'above works the same with no account at all, and signing out never touches ' +
-            'what is already on this device.' }),
+            t('Signing in follows your solves, sessions, settings and learn-mode progress to any other device you sign into. Nothing about this is required — everything above works the same with no account at all, and signing out never touches what is already on this device.') }),
       ),
 
-      group('Start over',
+      group(t('Start over'),
         el('div', { class: 'row' },
           el('div', { class: 'lbl' },
-            el('span', { text: 'Restore defaults' }),
-            el('span', { class: 'sub', text: 'every setting back to the day you arrived' })),
+            el('span', { text: t('Restore defaults') }),
+            el('span', { class: 'sub', text: t('every setting back to the day you arrived') })),
           el('button', {
             class: 'ghost-btn danger', text: 'reset',
             onclick: async () => {
@@ -832,19 +786,15 @@ export function buildSettings(app) {
             },
           })),
         el('div', { class: 'hint-note', html:
-          'Resets the appearance, the background, the timer behaviour and where every panel ' +
-          'sits. <b>Your solves are not touched</b> — neither are your sessions, the event ' +
-          'you are on, the cases you have picked, or your Spotify client ID.' }),
+          t('Resets the appearance, the background, the timer behaviour and where every panel sits. <b>Your solves are not touched</b> — neither are your sessions, the event you are on, the cases you have picked, or your Spotify client ID.') }),
       ),
 
-      group('About',
+      group(t('About'),
         el('div', { class: 'hint-note', html:
-          'Tagda Timer generates official WCA scrambles with <b>cubing.js</b>, the same random-state ' +
-          'solvers the WCA scrambler uses. Everything you time is stored locally in your browser — ' +
-          'no account, no server.' }),
+          t('Tagda Timer generates official WCA scrambles with <b>cubing.js</b>, the same random-state solvers the WCA scrambler uses. Everything you time is stored locally in your browser — no account, no server.') }),
         el('div', { class: 'row' },
-          el('div', { class: 'lbl' }, el('span', { text: 'Built by' })),
-          el('a', { class: 'ghost-btn', href: 'https://instagram.com/cubingngagng', target: '_blank', rel: 'noopener', text: '@cubingngagng' })),
+          el('div', { class: 'lbl' }, el('span', { text: t('Built by') })),
+          el('a', { class: 'ghost-btn', href: 'https://instagram.com/cubingngagng', target: '_blank', rel: 'noopener', text: t('@cubingngagng') })),
       ),
     );
   };
@@ -876,11 +826,11 @@ function picker(value, groups, placeholder, onChange) {
     for (const v of g.values) parent.append(el('option', { value: v }, v));
     if (g.label) sel.append(parent);
   }
-  sel.append(el('option', { value: CUSTOM, text: 'something else — type it' }));
+  sel.append(el('option', { value: CUSTOM, text: t('something else — type it') }));
   sel.value = value ? (known ? value : CUSTOM) : '';
 
   const free = el('input', {
-    class: 'inp', placeholder: 'type it', value: known ? '' : (value || ''),
+    class: 'inp', placeholder: t('type it'), value: known ? '' : (value || ''),
     hidden: known || !value,
   });
 
@@ -914,22 +864,22 @@ const flat = (rows, key) => [{ label: '', values: [...new Set(rows.map(r => r[ke
 function gearForm(draft, seeds, saveLabel, after) {
   const set = (k, v) => { draft[k] = v; };
   return group(saveLabel,
-    row('Your name for it', el('input', {
-      class: 'inp', value: draft.name, placeholder: 'main 3x3',
+    row(t('Your name for it'), el('input', {
+      class: 'inp', value: draft.name, placeholder: t('main 3x3'),
       oninput: (e) => set('name', e.target.value.trim()),
-    }), 'optional — the brand and model are used if you leave it empty'),
-    row('Brand', picker(draft.brand, flat(seeds.cubes, 'brand'), 'pick a brand', v => set('brand', v)),
-      'not listed? pick “something else” and type it'),
-    row('Model', picker(draft.model, groupBy(seeds.cubes, 'brand', 'model'), 'pick a model', v => set('model', v))),
+    }), t('optional — the brand and model are used if you leave it empty')),
+    row('Brand', picker(draft.brand, flat(seeds.cubes, 'brand'), t('pick a brand'), v => set('brand', v)),
+      t('not listed? pick “something else” and type it')),
+    row('Model', picker(draft.model, groupBy(seeds.cubes, 'brand', 'model'), t('pick a model'), v => set('model', v))),
     row('Event', select(EVENT_ORDER.map(id => ({ value: id, label: EVENTS[id].name })), draft.event, v => set('event', v))),
     row('Tension', el('input', {
-      class: 'inp', value: draft.tension, placeholder: '4 out, 3 compression',
+      class: 'inp', value: draft.tension, placeholder: t('4 out, 3 compression'),
       oninput: (e) => set('tension', e.target.value.trim()),
     })),
-    row('Lube brand', picker(draft.lubeBrand, flat(seeds.lubes, 'brand'), 'pick a brand', v => set('lubeBrand', v))),
-    row('Lube', picker(draft.lube, groupBy(seeds.lubes, 'brand', 'name'), 'pick a lube', v => set('lube', v))),
-    row('Notes', el('input', {
-      class: 'inp', value: draft.notes, placeholder: 'anything worth remembering',
+    row(t('Lube brand'), picker(draft.lubeBrand, flat(seeds.lubes, 'brand'), t('pick a brand'), v => set('lubeBrand', v))),
+    row('Lube', picker(draft.lube, groupBy(seeds.lubes, 'brand', 'name'), t('pick a lube'), v => set('lube', v))),
+    row(t('Notes'), el('input', {
+      class: 'inp', value: draft.notes, placeholder: t('anything worth remembering'),
       oninput: (e) => set('notes', e.target.value.trim()),
     })),
     el('div', { class: 'row' }, el('div', { class: 'lbl' }), el('button', {
@@ -949,17 +899,13 @@ export function buildGear(app) {
     catch (err) {
       console.warn('[gear] collection unavailable', err);
       body.append(el('div', { class: 'hint-note', text:
-        'Your gear could not be read from this browser’s storage.' }));
+        t('Your gear could not be read from this browser’s storage.') }));
       return;
     }
     const activeId = app.gear?.activeId ?? null;
 
     body.append(el('div', { class: 'hint-note', html:
-      'The cube you mark <b>active</b> is tagged onto every solve you record from then on. ' +
-      'Past solves are left alone — they were done on whatever they were done on, and ' +
-      'back-filling them would invent the answer the statistics are supposed to give you. ' +
-      'Once you own a cube, the trend chart in <b>Statistics</b> can be filtered to it, with a ' +
-      'dashed line wherever you logged a change.' }));
+      t('The cube you mark <b>active</b> is tagged onto every solve you record from then on. Past solves are left alone — they were done on whatever they were done on, and back-filling them would invent the answer the statistics are supposed to give you. Once you own a cube, the trend chart in <b>Statistics</b> can be filtered to it, with a dashed line wherever you logged a change.') }));
 
     /* The log for one cube, redrawn on its own so adding an entry does not
        tear down and rebuild every card in the drawer. */
@@ -970,9 +916,9 @@ export function buildGear(app) {
       catch (err) { console.warn('[gear] log unavailable', err); return; }
 
       const kind = select(Object.entries(LOG_KINDS).map(([value, label]) => ({ value, label })), 'lubed', () => {});
-      const text = el('input', { class: 'inp', placeholder: 'what changed (optional)' });
+      const text = el('input', { class: 'inp', placeholder: t('what changed (optional)') });
       host.append(el('div', { class: 'row gear-log-add' }, kind, text, el('button', {
-        class: 'ghost-btn', text: 'log it',
+        class: 'ghost-btn', text: t('log it'),
         onclick: async () => {
           await GearLog.put(newLogEntry(g.id, { kind: kind.value, text: text.value.trim() }));
           text.value = '';
@@ -983,7 +929,7 @@ export function buildGear(app) {
       for (const e of log) {
         host.append(el('div', { class: 'row gear-log-row' },
           el('div', { class: 'lbl' },
-            el('span', { text: `${LOG_KINDS[e.kind] || e.kind}${e.text ? ' — ' + e.text : ''}` }),
+            el('span', { text: `${t(LOG_KINDS[e.kind] || e.kind)}${e.text ? ' — ' + e.text : ''}` }),
             el('span', { class: 'sub', text: fmtDate(e.at) })),
           el('button', {
             class: 'chip', text: 'remove',
@@ -993,12 +939,12 @@ export function buildGear(app) {
     }
 
     function editCube(g) {
-      openDrawer(`Gear — ${gearLabel(g)}`, (b) => {
+      openDrawer(t('Gear — {cube}', { cube: gearLabel(g) }), (b) => {
         b.append(
           el('div', { class: 'row' }, el('div', { class: 'lbl' }),
-            el('button', { class: 'ghost-btn', text: 'back to gear', onclick: redraw })),
+            el('button', { class: 'ghost-btn', text: t('back to gear'), onclick: redraw })),
           // Renaming the cube you are on has to move the topbar label with it.
-          gearForm({ ...g }, seeds, 'Save changes', (saved) => {
+          gearForm({ ...g }, seeds, t('Save changes'), (saved) => {
             if (app.gear?.activeId === saved.id) app.setGearLabel?.(gearLabel(saved));
             redraw();
           }),
@@ -1007,14 +953,14 @@ export function buildGear(app) {
     }
 
     const cards = el('div', { class: 'gear-list' });
-    if (!owned.length) cards.append(el('div', { class: 'sub', text: 'No cubes yet. Add one below.' }));
+    if (!owned.length) cards.append(el('div', { class: 'sub', text: t('No cubes yet. Add one below.') }));
 
     for (const g of owned) {
       const isActive = g.id === activeId;
       const bits = [
         EVENTS[g.event]?.short || g.event,
         [g.brand, g.model].filter(Boolean).join(' '),
-        g.tension ? `tension ${g.tension}` : '',
+        g.tension ? t('tension {v}', { v: g.tension }) : '',
         [g.lubeBrand, g.lube].filter(Boolean).join(' '),
       ].filter(Boolean).join(' · ');
 
@@ -1022,18 +968,18 @@ export function buildGear(app) {
       cards.append(el('div', { class: 'group gear-card' },
         el('div', { class: 'row' },
           el('div', { class: 'lbl' },
-            el('span', { text: gearLabel(g) + (isActive ? '  ·  active' : '') }),
+            el('span', { text: gearLabel(g) + (isActive ? t('  ·  active') : '') }),
             el('span', { class: 'sub', text: bits })),
           el('div', { class: 'chips' },
             el('button', {
               class: `chip ${isActive ? 'on' : ''}`,
-              text: isActive ? 'active' : 'make active',
+              text: isActive ? 'active' : t('make active'),
               onclick: async () => {
                 const next = isActive ? null : g.id;
                 await setActiveGearId(next);
                 app.gear = { ...(app.gear || {}), activeId: next };
                 app.setGearLabel?.(next ? gearLabel(g) : null);
-                toast(next ? `Solves are now tagged ${gearLabel(g)}` : 'Solves are no longer tagged',
+                toast(next ? t('Solves are now tagged {cube}', { cube: gearLabel(g) }) : t('Solves are no longer tagged'),
                   { kind: 'good' });
                 redraw();
               },
@@ -1058,8 +1004,8 @@ export function buildGear(app) {
       renderLog(g, logHost);
     }
 
-    body.append(group('Your cubes', cards));
-    body.append(gearForm(newGear({}), seeds, 'Add a cube', redraw));
+    body.append(group(t('Your cubes'), cards));
+    body.append(gearForm(newGear({}), seeds, t('Add a cube'), redraw));
   };
 }
 
@@ -1078,17 +1024,17 @@ export function buildStats(app) {
     const f = v => fmtResult(v, moves);
 
     body.append(
-      group('Session',
+      group(t('Session'),
         el('div', { class: 'big-stats' },
           cell('solves', String(st.count), `${st.dnfCount} DNF · ${st.plus2Count} +2`),
           cell('best', f(st.best)),
           cell('worst', f(st.worst)),
           cell('mean', f(st.mean)),
           cell('median', f(st.median)),
-          cell('std dev', f(st.stdev)),
+          cell(t('std dev'), f(st.stdev)),
           cell('mo3', f(st.mo3)),
-          cell('ao5', f(st.ao5), st.bestAo5 ? 'best ' + f(st.bestAo5) : ''),
-          cell('ao12', f(st.ao12), st.bestAo12 ? 'best ' + f(st.bestAo12) : ''),
+          cell('ao5', f(st.ao5), st.bestAo5 ? t('best ') + f(st.bestAo5) : ''),
+          cell('ao12', f(st.ao12), st.bestAo12 ? t('best ') + f(st.bestAo12) : ''),
           cell('ao50', f(st.ao50)),
           cell('ao100', f(st.ao100)),
           cell('ao1000', f(solves.length >= 1000 ? bestAvg(solves, 1000).value : null)),
@@ -1107,9 +1053,9 @@ export function buildStats(app) {
        none — the row appears only once there is something to choose between,
        so a session that has never touched the gear log looks exactly as it
        did before. */
-    const cubePick = el('select', { class: 'inp' }, el('option', { value: '', text: 'all cubes' }));
+    const cubePick = el('select', { class: 'inp' }, el('option', { value: '', text: t('all cubes') }));
     const cubeRow = el('div', { class: 'chart-filter', hidden: true },
-      el('span', { class: 'bs-sub', text: 'Cube' }), cubePick);
+      el('span', { class: 'bs-sub', text: t('Cube') }), cubePick);
 
     let shown = solves, chart = null, pinned = -1;
 
@@ -1122,11 +1068,11 @@ export function buildStats(app) {
       pickHost.replaceChildren(
         solveRow(app, s, gi + 1, gi, { pinned: true }),
         el('div', { class: 'sd-actions' },
-          el('button', { class: 'btn primary', text: 'Repeat this scramble', onclick: () => repeat(s) }),
+          el('button', { class: 'btn primary', text: t('Repeat this scramble'), onclick: () => repeat(s) }),
           // The workbench is a 3x3 one; a relay's legs are reconstructed one by one from the solve menu.
-          s.relay?.length ? null : el('button', { class: 'ghost-btn', text: 'Reconstruct', onclick: () => app.reconstructSolve(s) }),
-          el('button', { class: 'ghost-btn', text: 'Copy scramble', onclick: () => app.copyToast(s.scramble || '', 'Scramble') }),
-          el('span', { class: 'bs-sub', text: '← → neighbouring solve · Enter repeats' })));
+          s.relay?.length ? null : el('button', { class: 'ghost-btn', text: t('Reconstruct'), onclick: () => app.reconstructSolve(s) }),
+          el('button', { class: 'ghost-btn', text: t('Copy scramble'), onclick: () => app.copyToast(s.scramble || '', 'Scramble') }),
+          el('span', { class: 'bs-sub', text: t('← → neighbouring solve · Enter repeats') })));
     };
 
     const showRange = (a, b) => {
@@ -1139,12 +1085,12 @@ export function buildStats(app) {
       pickHost.replaceChildren(
         el('div', { class: 'big-stats' },
           cell('solves', String(g.count), `#${at.get(shown[a]) + 1}–#${at.get(shown[b]) + 1}`),
-          cell('mean', f(g.mean), g.dnf ? `${g.dnf} DNF left out` : ''),
+          cell('mean', f(g.mean), g.dnf ? t('{n} DNF left out', { n: g.dnf }) : ''),
           cell('best', f(g.best))),
         scrambles.length ? el('div', { class: 'sd-actions' },
           el('button', {
-            class: 'btn primary', text: 'Practise these scrambles again',
-            title: `Loads these ${scrambles.length} as your own scrambles, in order`,
+            class: 'btn primary', text: t('Practise these scrambles again'),
+            title: t('Loads these {n} as your own scrambles, in order', { n: scrambles.length }),
             onclick: () => app.setCustomScrambles(scrambles),
           })) : null);
     };
@@ -1167,8 +1113,8 @@ export function buildStats(app) {
 
     const trendCard = el('div', {
       class: 'chart-card', tabindex: 0,
-      'aria-label': 'Trend. Click a solve to pin it or drag across a range; arrow keys step the pinned solve, Enter repeats it.',
-    }, el('h4', { text: 'Trend — solves, ao5, ao12, PB' }), cubeRow, trendHost, hoverInfo, pickHost);
+      'aria-label': t('Trend. Click a solve to pin it or drag across a range; arrow keys step the pinned solve, Enter repeats it.'),
+    }, el('h4', { text: t('Trend — solves, ao5, ao12, PB') }), cubeRow, trendHost, hoverInfo, pickHost);
     trendCard.addEventListener('keydown', (e) => {
       if (!chart || e.target.closest('select')) return;
       const step = e.key === 'ArrowLeft' ? -1 : e.key === 'ArrowRight' ? 1 : 0;
@@ -1209,14 +1155,14 @@ export function buildStats(app) {
     })();
 
     const histHost = el('div');
-    body.append(el('div', { class: 'chart-card' }, el('h4', { text: 'Distribution' }), histHost));
+    body.append(el('div', { class: 'chart-card' }, el('h4', { text: t('Distribution') }), histHost));
     renderHistogram(histHost, solves);
 
     /* ---- when in the day, and how deep into a sitting ----
        Means leave DNFs out and count them beside the mean. A group short of
        MIN_GROUP finished solves is still drawn, but never named as a finding. */
-    const hourName = (h) => `${h % 12 || 12} ${h < 12 ? 'am' : 'pm'}`;
-    const plural = (n) => `${n} solve${n === 1 ? '' : 's'}`;
+    const hourName = (h) => `${h % 12 || 12} ${t(h < 12 ? 'am' : 'pm')}`;
+    const plural = (n) => t(n === 1 ? '{n} solve' : '{n} solves', { n });
     const groupText = (g, showMean, note) => [
       showMean && g.mean !== null ? f(g.mean) : '',
       plural(g.count) + (g.dnf ? ` (${g.dnf} DNF)` : ''),
@@ -1239,40 +1185,42 @@ export function buildStats(app) {
     };
 
     const hb = byHourOfDay(solves);
-    groupCard('When you’re fastest',
+    groupCard(t('When you’re fastest'),
       hb.best
-        ? `Fastest around ${hourName(hb.best.hour)} (mean ${f(hb.best.mean)} over ${plural(hb.best.valid)})`
-        : `No hour has ${MIN_GROUP} finished solves yet, so there is no fastest hour to name.`,
+        ? t('Fastest around {hour} (mean {mean} over {count})', { hour: hourName(hb.best.hour), mean: f(hb.best.mean), count: plural(hb.best.valid) })
+        : t('No hour has {n} finished solves yet, so there is no fastest hour to name.', { n: MIN_GROUP }),
       hb.hours.filter(h => h.count).map(h => {
         const few = h.valid < MIN_GROUP;
         return {
           label: hourName(h.hour), value: h.mean, faint: few, list: h.list,
-          text: groupText(h, true, h === hb.best ? 'fastest' : few ? 'too few to count' : ''),
+          text: groupText(h, true, h === hb.best ? t('fastest') : few ? t('too few to count') : ''),
         };
       }),
-      `local time · faded hours have under ${MIN_GROUP} finished solves · click a bar for its solves`);
+      t('local time · faded hours have under {n} finished solves · click a bar for its solves', { n: MIN_GROUP }));
 
     const sp = bySittingPosition(solves);
-    const stretch = (b) => b.hi === Infinity ? `solves ${b.lo}+` : `solves ${b.lo}–${b.hi}`;
-    let slowdown = `Not enough to compare yet — two stretches of a sitting need ${MIN_GROUP} finished solves each.`;
+    const stretch = (b) => b.hi === Infinity ? t('solves {a}+', { a: b.lo }) : t('solves {a}–{b}', { a: b.lo, b: b.hi });
+    let slowdown = t('Not enough to compare yet — two stretches of a sitting need {n} finished solves each.', { n: MIN_GROUP });
     if (sp.last) {
       const d = sp.delta;
-      const word = moves ? (d < 0 ? 'shorter' : 'longer') : (d < 0 ? 'faster' : 'slower');
+      const word = t(moves ? (d < 0 ? 'shorter' : 'longer') : (d < 0 ? 'faster' : 'slower'));
       slowdown = d === 0
-        ? `Later solves are no different — ${stretch(sp.last)} and ${stretch(sp.first)} both average ${f(sp.first.mean)}.`
-        : `Later solves are ${word}: ${stretch(sp.last)} average ${f(sp.last.mean)}, `
-          + `${f(Math.abs(d))}${moves ? ' moves' : ''} ${word} than ${stretch(sp.first)} (${f(sp.first.mean)}).`;
+        ? t('Later solves are no different — {a} and {b} both average {mean}.', { a: stretch(sp.last), b: stretch(sp.first), mean: f(sp.first.mean) })
+        : t('Later solves are {word}: {a} average {meanA}, {d}{unit} {word} than {b} ({meanB}).', {
+          word, a: stretch(sp.last), meanA: f(sp.last.mean), d: f(Math.abs(d)),
+          unit: moves ? t(' moves') : '', b: stretch(sp.first), meanB: f(sp.first.mean),
+        });
     }
-    groupCard('Do you slow down?', slowdown,
+    groupCard(t('Do you slow down?'), slowdown,
       solves.length ? sp.buckets.map(b => {
         // Too few to trust: no bar and no mean, rather than a guess drawn to scale.
         const few = b.valid < MIN_GROUP;
         return {
           label: stretch(b), value: few ? null : b.mean, faint: few, list: b.list,
-          text: groupText(b, !few, few ? 'too few to say' : ''),
+          text: groupText(b, !few, few ? t('too few to say') : ''),
         };
       }) : [],
-      `a sitting ends at a break of ${SITTING_GAP_MS / 60000} minutes or more · click a bar for its solves`);
+      t('a sitting ends at a break of {n} minutes or more · click a bar for its solves', { n: SITTING_GAP_MS / 60000 }));
 
     /* The heatmap reads the whole store rather than this session, so it is the
        one chart that can go stale while the panel is open: deleting solves
@@ -1281,7 +1229,7 @@ export function buildStats(app) {
        call it. */
     const heatHost = el('div', { class: 'heat-host' });
     body.append(el('div', { class: 'chart-card' },
-      el('h4', { text: 'Practice heatmap — all events, last 12 months' }), heatHost));
+      el('h4', { text: t('Practice heatmap — all events, last 12 months') }), heatHost));
     const drawHeat = () => app.allSolves().then(all => renderHeatmap(heatHost, all));
     heatHost.refresh = drawHeat;
     drawHeat();
@@ -1309,28 +1257,25 @@ export function buildStats(app) {
       }
 
       const verdict = drift === null
-        ? 'Not enough blind solves yet to say which way it is drifting.'
+        ? t('Not enough blind solves yet to say which way it is drifting.')
         : Math.abs(drift) < 3
-          ? 'Your split is holding steady across the session.'
+          ? t('Your split is holding steady across the session.')
           : drift > 0
-            ? 'Your memo is taking proportionally longer than it was earlier in the session — ' +
-              (bs.count >= 6 ? 'up ' + drift + ' points over the last ' + bs.window + ' solves.' : '')
-            : 'Execution is taking proportionally longer than it was earlier — ' +
-              'down ' + Math.abs(drift) + ' points over the last ' + bs.window + ' solves, so ' +
-              'your turning rather than your memo is the slower half tonight.';
+            ? t('Your memo is taking proportionally longer than it was earlier in the session — ') +
+              (bs.count >= 6 ? t('up {d} points over the last {n} solves.', { d: drift, n: bs.window }) : '')
+            : t('Execution is taking proportionally longer than it was earlier — down {d} points over the last {n} solves, so your turning rather than your memo is the slower half tonight.', { d: Math.abs(drift), n: bs.window });
 
       body.append(el('div', { class: 'chart-card' },
-        el('h4', { text: 'Memo and execution — ' + bs.count + ' blind solves' }),
+        el('h4', { text: t('Memo and execution — {n} blind solves', { n: bs.count }) }),
         el('div', { class: 'big-stats' },
-          cell('memo', fmt(bs.memo), pct(share) + '% of the solve'),
-          cell('exec', fmt(bs.exec), (100 - pct(share)) + '% of the solve'),
+          cell('memo', fmt(bs.memo), pct(share) + t('% of the solve')),
+          cell('exec', fmt(bs.exec), (100 - pct(share)) + t('% of the solve')),
           cell('split', pct(share) + '/' + (100 - pct(share)),
-            drift === null ? 'no trend yet' : (drift > 0 ? '+' : '') + drift + ' pts recently')),
+            drift === null ? t('no trend yet') : (drift > 0 ? '+' : '') + drift + t(' pts recently'))),
         bar,
-        el('div', { class: 'bs-sub', text: 'memo share, one bar per solve (last 40)' }),
+        el('div', { class: 'bs-sub', text: t('memo share, one bar per solve (last 40)') }),
         trend,
-        el('div', { class: 'hint-note', text: verdict + ' Elite blind solvers often sit near 30/70, ' +
-          'but that is a reference point, not a target — the number worth watching is your own drift.' })));
+        el('div', { class: 'hint-note', text: verdict + t(' Elite blind solvers often sit near 30/70, but that is a reference point, not a target — the number worth watching is your own drift.') })));
     }
 
     /* Per-puzzle breakdown for a relay session. The main figures above are the
@@ -1345,26 +1290,24 @@ export function buildStats(app) {
         el('span', {
           class: 'relay-bar-seg',
           style: { width: pct(l.share) + '%' },
-          title: `${eventOf(l.event).short} · ${pct(l.share)}% of the relay`,
+          title: t('{event} · {p}% of the relay', { event: eventOf(l.event).short, p: pct(l.share) }),
         })));
 
       body.append(el('div', { class: 'chart-card' },
-        el('h4', { text: `Per puzzle — ${rs.count} relay${rs.count === 1 ? '' : 's'}` }),
+        el('h4', { text: t(rs.count === 1 ? 'Per puzzle — {n} relay' : 'Per puzzle — {n} relays', { n: rs.count }) }),
         el('div', { class: 'big-stats' }, ...rs.legs.map((l, i) =>
           cell(`${i + 1}. ${eventOf(l.event).short}`, fmt(l.mean),
-            `best ${fmt(l.best)} · ${pct(l.share)}%`))),
+            t('best {time} · {p}%', { time: fmt(l.best), p: pct(l.share) })))),
         bar,
-        el('div', { class: 'bs-sub', text: 'share of the total, in solving order' }),
+        el('div', { class: 'bs-sub', text: t('share of the total, in solving order') }),
         el('div', { class: 'hint-note', text:
-          'Averages and personal bests above are the totals, exactly as they are for any ' +
-          'other event. These are the splits underneath them — the puzzle taking the ' +
-          'biggest share is where a relay is usually won or lost.' })));
+          t('Averages and personal bests above are the totals, exactly as they are for any other event. These are the splits underneath them — the puzzle taking the biggest share is where a relay is usually won or lost.') })));
     }
 
     if (cases.length) {
       const caseHost = el('div');
       body.append(el('div', { class: 'chart-card' },
-        el('h4', { text: 'Slowest cases in this session' }), caseHost));
+        el('h4', { text: t('Slowest cases in this session') }), caseHost));
       renderCaseBars(caseHost, cases);
     }
   };
@@ -1451,43 +1394,39 @@ export function buildBlindsolving(app) {
 
     body.append(
       el('div', { class: 'hint-note', html:
-        'These are the letters and buffers <b>you</b> learned. Nothing below is baked into the ' +
-        'tracer — change a buffer and every breakdown from the next scramble on is re-read against it.' }),
+        t('These are the letters and buffers <b>you</b> learned. Nothing below is baked into the tracer — change a buffer and every breakdown from the next scramble on is re-read against it.') }),
 
-      group('Buffers',
-        row('Edge buffer', select(bufferOptions(EDGE_STICKERS), bld().edgeBuffer,
-          v => set({ edgeBuffer: v })), 'the sticker you shoot from, not just the piece'),
-        row('Corner buffer', select(bufferOptions(CORNER_STICKERS), bld().cornerBuffer,
+      group(t('Buffers'),
+        row(t('Edge buffer'), select(bufferOptions(EDGE_STICKERS), bld().edgeBuffer,
+          v => set({ edgeBuffer: v })), t('the sticker you shoot from, not just the piece')),
+        row(t('Corner buffer'), select(bufferOptions(CORNER_STICKERS), bld().cornerBuffer,
           v => set({ cornerBuffer: v }))),
       ),
 
-      group('Orientation',
-        row('Up face', select(FACES.map(f => ({ value: f, label: faceLabel(f) })), up, (v) => {
+      group(t('Orientation'),
+        row(t('Up face'), select(FACES.map(f => ({ value: f, label: faceLabel(f) })), up, (v) => {
           const fronts = frontsFor(v);
           set({ orientation: { up: v, front: fronts.includes(front) ? front : fronts[0] } });
           redraw();
-        }), 'which face was up when you assigned the letters'),
-        row('Front face', select(frontsFor(up).map(f => ({ value: f, label: faceLabel(f) })), front,
+        }), t('which face was up when you assigned the letters')),
+        row(t('Front face'), select(frontsFor(up).map(f => ({ value: f, label: faceLabel(f) })), front,
           v => set({ orientation: { up, front: v } }))),
-        row('Turn it back before memo', toggle(bld().reorient !== false, v => set({ reorient: v })),
-          'on: the faces above always mean the same colours. off: you memo the cube exactly as the '
-          + 'scramble hands it to you, wide moves and all'),
+        row(t('Turn it back before memo'), toggle(bld().reorient !== false, v => set({ reorient: v })),
+          t('on: the faces above always mean the same colours. off: you memo the cube exactly as the scramble hands it to you, wide moves and all')),
         el('div', { class: 'hint-note', text:
-          'The default is the WCA one — white on top, green on front. A WCA blind scramble ends in '
-          + 'wide moves, so the cube arrives turned; leave the switch on and the tracer turns it back '
-          + 'the way you do, rather than renaming every letter.' }),
+          t('The default is the WCA one — white on top, green on front. A WCA blind scramble ends in wide moves, so the cube arrives turned; leave the switch on and the tracer turns it back the way you do, rather than renaming every letter.') }),
       ),
 
-      group('Letter scheme',
+      group(t('Letter scheme'),
         row('Scheme', el('div', { class: 'lbl' },
           el('span', { text: bld().scheme === 'custom' ? 'Custom' : 'Speffz' })),
-          'editing any cell below makes it custom'),
+          t('editing any cell below makes it custom')),
         el('div', { class: 'row' },
           el('div', { class: 'lbl' },
-            el('span', { text: 'Reset' }),
-            el('span', { class: 'sub', text: 'back to standard Speffz' })),
+            el('span', { text: t('Reset') }),
+            el('span', { class: 'sub', text: t('back to standard Speffz') })),
           el('button', {
-            class: 'ghost-btn', text: 'reset to Speffz',
+            class: 'ghost-btn', text: t('reset to Speffz'),
             onclick: () => {
               set({ scheme: 'speffz', letters: { ...DEFAULT_SPEFFZ_MAP } });
               redraw();
@@ -1498,28 +1437,26 @@ export function buildBlindsolving(app) {
         schemeGrid(EDGE_STICKER_KEYS, 'Edges'),
       ),
 
-      group('Breakdown',
-        row('Show breakdown by default', toggle(bld().showBreakdownByDefault, v => set({ showBreakdownByDefault: v })),
-          'off means the panel starts collapsed every session'),
-        row('Memo / execution split', toggle(bld().memoExecSplit, v => set({ memoExecSplit: v })),
-          'the first press mid-solve ends the memo instead of the solve'),
+      group(t('Breakdown'),
+        row(t('Show breakdown by default'), toggle(bld().showBreakdownByDefault, v => set({ showBreakdownByDefault: v })),
+          t('off means the panel starts collapsed every session')),
+        row(t('Memo / execution split'), toggle(bld().memoExecSplit, v => set({ memoExecSplit: v })),
+          t('the first press mid-solve ends the memo instead of the solve')),
       ),
 
-      group('Letter pairs',
+      group(t('Letter pairs'),
         el('div', { class: 'row' },
           el('div', { class: 'lbl' },
-            el('span', { text: 'Pair dictionary' }),
-            el('span', { class: 'sub', text: 'the words, images and algs behind your letters' })),
+            el('span', { text: t('Pair dictionary') }),
+            el('span', { class: 'sub', text: t('the words, images and algs behind your letters') })),
           el('button', {
             class: 'ghost-btn', text: 'open',
-            onclick: () => openDrawer('Letter pairs', buildLetterPairs(app), { wide: true }),
+            onclick: () => openDrawer(t('Letter pairs'), buildLetterPairs(app), { wide: true }),
           })),
       ),
 
       el('div', { class: 'hint-note', html:
-        '<b>Commutators are yours, not the app’s.</b> An &ldquo;optimal&rdquo; comm for a pair depends on ' +
-        'your buffer, your scheme and your fingers, so nothing here invents one. Save your own against ' +
-        'a pair in the dictionary and it shows up whenever that pair does.' }),
+        t('<b>Commutators are yours, not the app’s.</b> An &ldquo;optimal&rdquo; comm for a pair depends on your buffer, your scheme and your fingers, so nothing here invents one. Save your own against a pair in the dictionary and it shows up whenever that pair does.') }),
     );
   };
 }
@@ -1537,9 +1474,9 @@ export function buildLetterPairs(app, focus = '') {
       editor.textContent = '';
       const r = { pair: '', word: '', imageUrl: null, alg: '', notes: '', ...(rec || {}) };
       const pairInp = el('input', { class: 'inp', maxlength: 2, value: r.pair, placeholder: 'BK' });
-      const wordInp = el('input', { class: 'inp', value: r.word || '', placeholder: 'Book' });
-      const algInp  = el('input', { class: 'inp', value: r.alg || '', placeholder: "R U' R' ..." });
-      const noteInp = el('input', { class: 'inp', value: r.notes || '', placeholder: 'anything worth remembering' });
+      const wordInp = el('input', { class: 'inp', value: r.word || '', placeholder: t('Book') });
+      const algInp  = el('input', { class: 'inp', value: r.alg || '', placeholder: t("R U' R' ...") });
+      const noteInp = el('input', { class: 'inp', value: r.notes || '', placeholder: t('anything worth remembering') });
       const preview = el('div', { class: 'lp-img' });
       const paint = () => {
         preview.textContent = '';
@@ -1566,18 +1503,18 @@ export function buildLetterPairs(app, focus = '') {
           pair, word: wordInp.value.trim(), imageUrl: r.imageUrl,
           alg: algInp.value.trim(), notes: noteInp.value.trim(),
         });
-        toast('Saved ' + pair, { kind: 'good' });
+        toast(t('Saved {pair}', { pair }), { kind: 'good' });
         editor.textContent = '';
         await refresh();
       };
 
-      editor.append(group(r.pair ? 'Edit ' + r.pair : 'New pair',
-        row('Pair', pairInp),
-        row('Word', wordInp),
-        row('Algorithm', algInp, 'your own commutator for this pair'),
-        row('Notes', noteInp),
+      editor.append(group(r.pair ? t('Edit ') + r.pair : t('New pair'),
+        row(t('Pair'), pairInp),
+        row(t('Word'), wordInp),
+        row(t('Algorithm'), algInp, t('your own commutator for this pair')),
+        row(t('Notes'), noteInp),
         el('div', { class: 'row' },
-          el('div', { class: 'lbl' }, el('span', { text: 'Image' }), el('span', { class: 'sub', text: 'optional, under 512 KB' })),
+          el('div', { class: 'lbl' }, el('span', { text: t('Image') }), el('span', { class: 'sub', text: t('optional, under 512 KB') })),
           el('div', { class: 'lp-imgrow' },
             el('button', { class: 'ghost-btn', text: 'choose', onclick: () => file.click() }),
             r.imageUrl ? el('button', { class: 'ghost-btn', text: 'remove', onclick: () => { r.imageUrl = null; paint(); } }) : null,
@@ -1591,7 +1528,7 @@ export function buildLetterPairs(app, focus = '') {
             r.pair ? el('button', {
               class: 'ghost-btn danger', text: 'delete',
               onclick: async () => {
-                if (!await confirmToast('Delete ' + r.pair + '?', 'delete')) return;
+                if (!await confirmToast(t('Delete {pair}?', { pair: r.pair }), t('delete'))) return;
                 await LetterPairs.del(r.pair);
                 editor.textContent = '';
                 await refresh();
@@ -1601,7 +1538,7 @@ export function buildLetterPairs(app, focus = '') {
       editor.scrollIntoView?.({ block: 'nearest' });
     };
 
-    const search = el('input', { class: 'inp', placeholder: 'search a pair, a word, an alg' });
+    const search = el('input', { class: 'inp', placeholder: t('search a pair, a word, an alg') });
     const paintList = () => {
       const q = search.value.trim().toLowerCase();
       const rows = all.filter(r => !q || r.pair.toLowerCase().includes(q)
@@ -1609,8 +1546,8 @@ export function buildLetterPairs(app, focus = '') {
       list.textContent = '';
       if (!rows.length) {
         list.append(el('div', { class: 'hint-note', text: all.length
-          ? 'Nothing matches that.'
-          : 'No pairs saved yet. Add one here, or click any pair in the breakdown panel.' }));
+          ? t('Nothing matches that.')
+          : t('No pairs saved yet. Add one here, or click any pair in the breakdown panel.') }));
         return;
       }
       for (const r of rows) {
@@ -1618,7 +1555,7 @@ export function buildLetterPairs(app, focus = '') {
           el('b', { text: r.pair }),
           el('span', { class: 'lp-word', text: r.word || '—' }),
           r.alg ? el('span', { class: 'lp-alg', text: r.alg }) : null,
-          r.imageUrl ? el('span', { class: 'lp-dot', title: 'has an image' }) : null));
+          r.imageUrl ? el('span', { class: 'lp-dot', title: t('has an image') }) : null));
       }
     };
 
@@ -1626,18 +1563,18 @@ export function buildLetterPairs(app, focus = '') {
     search.addEventListener('input', paintList);
 
     body.append(
-      group('Your pairs',
-        row('Search', search),
+      group(t('Your pairs'),
+        row(t('Search'), search),
         el('div', { class: 'row' },
-          el('div', { class: 'lbl' }, el('span', { text: 'Add' }), el('span', { class: 'sub', text: 'two letters and whatever you see' })),
-          el('button', { class: 'ghost-btn', text: 'new pair', onclick: () => openEditor(null) })),
+          el('div', { class: 'lbl' }, el('span', { text: t('Add') }), el('span', { class: 'sub', text: t('two letters and whatever you see') })),
+          el('button', { class: 'ghost-btn', text: t('new pair'), onclick: () => openEditor(null) })),
         list),
       editor,
-      group('Import / export',
+      group(t('Import / export'),
         el('div', { class: 'row' },
           el('div', { class: 'lbl' },
-            el('span', { text: 'Export' }),
-            el('span', { class: 'sub', text: 'every pair as JSON' })),
+            el('span', { text: t('Export') }),
+            el('span', { class: 'sub', text: t('every pair as JSON') })),
           el('button', {
             class: 'ghost-btn', text: 'export',
             onclick: async () => {
@@ -1655,18 +1592,18 @@ export function buildLetterPairs(app, focus = '') {
               const rows = (Array.isArray(data) ? data : data.letterPairs || [])
                 .filter(r => r && /^[A-Za-z]{2}$/.test(String(r.pair || '')))
                 .map(r => ({ ...r, pair: String(r.pair).toUpperCase() }));
-              if (!rows.length) throw new Error('no pairs in that file');
+              if (!rows.length) throw new Error(t('no pairs in that file'));
               await LetterPairs.putMany(rows);
               await refresh();
-              toast('Imported ' + rows.length + ' pairs', { kind: 'good' });
+              toast(t('Imported {n} pairs', { n: rows.length }), { kind: 'good' });
             } catch (err) {
-              toast('Could not read that file: ' + err.message);
+              toast(t('Could not read that file: {err}', { err: err.message }));
             } finally { f.value = ''; }
           });
           return el('div', { class: 'row' },
             el('div', { class: 'lbl' },
-              el('span', { text: 'Import' }),
-              el('span', { class: 'sub', text: 'a sheet you already built elsewhere' })),
+              el('span', { text: t('Import') }),
+              el('span', { class: 'sub', text: t('a sheet you already built elsewhere') })),
             el('div', {}, el('button', { class: 'ghost-btn', text: 'import', onclick: () => f.click() }), f));
         })(),
       ),
@@ -1688,7 +1625,7 @@ export function buildPostMortem(app, solve) {
   return (body) => {
     const bld = solve.bld;
     if (!bld?.edges) {
-      body.append(el('div', { class: 'hint-note', text: 'No breakdown was stored with this solve.' }));
+      body.append(el('div', { class: 'hint-note', text: t('No breakdown was stored with this solve.') }));
       return;
     }
 
@@ -1732,8 +1669,8 @@ export function buildPostMortem(app, solve) {
         }
       }
       summary.textContent = wrong.length
-        ? 'Marked: ' + wrong.map(pieceName).join(', ')
-        : 'Click the pieces that were still wrong.';
+        ? t('Marked: ') + wrong.map(pieceName).join(', ')
+        : t('Click the pieces that were still wrong.');
     };
 
     canvas.addEventListener('click', (e) => {
@@ -1757,7 +1694,7 @@ export function buildPostMortem(app, solve) {
       const lines = diagnose(bld, wrong);
       out.textContent = '';
       if (!lines) {
-        out.append(el('div', { class: 'hint-note', text: 'Mark at least one piece first.' }));
+        out.append(el('div', { class: 'hint-note', text: t('Mark at least one piece first.') }));
         return;
       }
       for (const line of lines) out.append(el('div', { class: 'pm-line', text: line }));
@@ -1768,14 +1705,12 @@ export function buildPostMortem(app, solve) {
 
     body.append(
       el('div', { class: 'hint-note', html:
-        'The net below is a <b>solved</b> cube. Click the two or three pieces that were still wrong when ' +
-        'the blindfold came off, then ask for a read on it. This matches the pieces against the memo that ' +
-        'was stored with the solve — it is pattern-matching against known failure shapes, not a guess.' }),
-      group('What was left',
+        t('The net below is a <b>solved</b> cube. Click the two or three pieces that were still wrong when the blindfold came off, then ask for a read on it. This matches the pieces against the memo that was stored with the solve — it is pattern-matching against known failure shapes, not a guess.') }),
+      group(t('What was left'),
         canvas,
         summary,
         el('div', { class: 'row' },
-          el('div', { class: 'lbl' }, el('span', { text: 'Diagnosis' })),
+          el('div', { class: 'lbl' }, el('span', { text: t('Diagnosis') })),
           el('div', { class: 'lp-actions' },
             el('button', { class: 'ghost-btn', text: 'diagnose', onclick: run }),
             el('button', {
@@ -1783,12 +1718,12 @@ export function buildPostMortem(app, solve) {
               onclick: () => { wrong.length = 0; out.textContent = ''; paint(); },
             }))),
         out),
-      group('The memo this solve stored',
+      group(t('The memo this solve stored'),
         targets(bld.edges, 'edges'),
         targets(bld.corners, 'corners'),
-        bld.parity ? el('div', { class: 'hint-note', text: 'This scramble had parity.' }) : null,
+        bld.parity ? el('div', { class: 'hint-note', text: t('This scramble had parity.') }) : null,
         Number.isFinite(bld.memoMs)
-          ? el('div', { class: 'hint-note', text: 'memo ' + fmt(bld.memoMs) + '  ·  exec ' + fmt(bld.execMs) })
+          ? el('div', { class: 'hint-note', text: t('memo ') + fmt(bld.memoMs) + t('  ·  exec ') + fmt(bld.execMs) })
           : null),
     );
 
@@ -1814,7 +1749,7 @@ export function buildPostMortem(app, solve) {
 export function buildHistory(app) {
   return (body) => {
     const solves = [...app.solves].reverse();
-    if (!solves.length) { body.append(el('div', { class: 'hint-note', text: 'No solves in this session yet.' })); return; }
+    if (!solves.length) { body.append(el('div', { class: 'hint-note', text: t('No solves in this session yet.') })); return; }
     const best = Math.min(...app.solves.map(eff).filter(v => v !== DNF));
     const table = el('div', { class: 'solve-table' });
 
@@ -1824,7 +1759,7 @@ export function buildHistory(app) {
       const r = el('div', { class: `st-row ${cls}` },
         el('span', { class: 'st-i', text: String(solves.length - i) }),
         el('span', { class: 'st-t', text: v === DNF ? 'DNF' : fmtResult(v, isMoveResult(s)) + (s.penalty === '+2' ? '+' : '') }),
-        el('span', { class: 'st-s', text: s.scramble.replace(/\n/g, ' | ') }),
+        el('span', { class: 'st-s', text: s.scramble.replace(/\n/g, t(' | ')) }),
         el('span', { class: 'st-d', text: fmtDate(s.createdAt) }),
       );
       r.addEventListener('click', (e) => app.solveMenu(s, e.currentTarget));
@@ -1833,9 +1768,9 @@ export function buildHistory(app) {
 
     body.append(
       el('div', { class: 'row' },
-        el('div', { class: 'lbl' }, el('span', { text: `${solves.length} solves` }),
-          el('span', { class: 'sub', text: 'click a row for penalties, comment, delete' })),
-        el('button', { class: 'ghost-btn', text: 'copy all', onclick: () => app.copyToast(
+        el('div', { class: 'lbl' }, el('span', { text: t('{n} solves', { n: solves.length }) }),
+          el('span', { class: 'sub', text: t('click a row for penalties, comment, delete') })),
+        el('button', { class: 'ghost-btn', text: t('copy all'), onclick: () => app.copyToast(
           app.solves.map((s, i) => `${i + 1}. ${fmtResult(eff(s), isMoveResult(s))}   ${(s.scramble || '').replace(/\s+/g, ' ')}`).join(NEWLINE),
           'Session') }),
       ),
@@ -1863,19 +1798,19 @@ export function buildCustomScrambles(app) {
       rows: 12,
       spellcheck: 'false',
       placeholder: [
-        'One scramble per line — paste as many as you like.',
+        t('One scramble per line — paste as many as you like.'),
         '',
         "R U R' U' F' U F",
-        "D2 L2 F2 U' B2 U ...",
+        t("D2 L2 F2 U' B2 U ..."),
         '',
-        'Any "1)" or "1." numbering is stripped for you.',
+        t('Any "1)" or "1." numbering is stripped for you.'),
       ].join('\n'),
     });
 
-    const count = el('div', { class: 'sub', text: 'nothing pasted yet' });
+    const count = el('div', { class: 'sub', text: t('nothing pasted yet') });
     const recount = () => {
       const n = parseScrambleList(ta.value).length;
-      count.textContent = n ? `${n} scramble${n === 1 ? '' : 's'} ready to load` : 'nothing pasted yet';
+      count.textContent = n ? t(n === 1 ? '{n} scramble ready to load' : '{n} scrambles ready to load', { n }) : t('nothing pasted yet');
     };
     ta.addEventListener('input', recount);
 
@@ -1894,34 +1829,31 @@ export function buildCustomScrambles(app) {
     };
 
     body.append(
-      group('Load a list',
+      group(t('Load a list'),
         el('div', { class: 'hint-note', html:
-          'While a list is loaded the generator steps aside completely: every ' +
-          '<b>next</b> hands you the following line, in order, and each solve is ' +
-          'recorded against the scramble it was actually done on. When the list ' +
-          'runs out the timer goes back to generating its own.' }),
+          t('While a list is loaded the generator steps aside completely: every <b>next</b> hands you the following line, in order, and each solve is recorded against the scramble it was actually done on. When the list runs out the timer goes back to generating its own.') }),
         ta,
         el('div', { class: 'row' },
-          el('div', { class: 'lbl' }, el('span', { text: 'Ready' }), count),
+          el('div', { class: 'lbl' }, el('span', { text: t('Ready') }), count),
           el('span', {},
-            el('button', { class: 'ghost-btn', text: 'from a file', onclick: () => file.click() }),
+            el('button', { class: 'ghost-btn', text: t('from a file'), onclick: () => file.click() }),
             file)),
         el('div', { class: 'sd-actions' },
-          el('button', { class: 'btn primary', text: 'use these scrambles', onclick: load(false) }),
-          el('button', { class: 'ghost-btn', text: 'add to the current list', onclick: load(true) }),
+          el('button', { class: 'btn primary', text: t('use these scrambles'), onclick: load(false) }),
+          el('button', { class: 'ghost-btn', text: t('add to the current list'), onclick: load(true) }),
         ),
       ),
 
       c.list.length
-        ? group('Currently loaded',
+        ? group(t('Currently loaded'),
             el('div', { class: 'row' },
               el('div', { class: 'lbl' },
-                el('span', { text: `${c.list.length} scrambles` }),
+                el('span', { text: t('{n} scrambles', { n: c.list.length }) }),
                 el('span', { class: 'sub', text: remaining
-                  ? `on number ${Math.min(c.pos + 1, c.list.length)} — ${remaining} still to come`
-                  : 'all of them used' })),
+                  ? t('on number {i} — {n} still to come', { i: Math.min(c.pos + 1, c.list.length), n: remaining })
+                  : t('all of them used') })),
               el('span', {},
-                el('button', { class: 'ghost-btn', text: 'start over', onclick: () => { app.restartCustomScrambles(); closeDrawer(); } }),
+                el('button', { class: 'ghost-btn', text: t('start over'), onclick: () => { app.restartCustomScrambles(); closeDrawer(); } }),
                 el('button', { class: 'ghost-btn danger', text: 'discard', onclick: () => { app.clearCustomScrambles(); closeDrawer(); } }))),
             // A preview, capped: showing ten thousand rows would lock the drawer
             // for as long as it took to build them.
@@ -1932,7 +1864,7 @@ export function buildCustomScrambles(app) {
                 el('span', { class: 'cs-i', text: String(i + 1) }),
                 el('span', { class: 'cs-s', text: line }))),
               c.list.length > 60
-                ? el('div', { class: 'cs-line more', text: `…and ${c.list.length - 60} more` })
+                ? el('div', { class: 'cs-line more', text: t('…and {n} more', { n: c.list.length - 60 }) })
                 : null,
             ))
         : null,
@@ -1949,14 +1881,14 @@ export function buildCustomScrambles(app) {
 function learnSummary(app) {
   if (!app.learn?.enabled) return '';
   const s = app.learn.stats();
-  return `${s.due} due · ${s.new} unseen · ${s.mature} known of ${s.total}`;
+  return t('{due} due · {new} unseen · {known} known of {total}', { due: s.due, new: s.new, known: s.mature, total: s.total });
 }
 
 export function buildCases(app) {
   return (body) => {
     const modeId = app.settings.mode;
     const set = setFor(modeId);
-    if (!set) { body.append(el('div', { class: 'hint-note', text: 'This mode has no case list.' })); return; }
+    if (!set) { body.append(el('div', { class: 'hint-note', text: t('This mode has no case list.') })); return; }
 
     const allowed = new Set(app.settings.allowedCases[modeId] || set.map(c => c.id));
     const learnLine = el('span', { class: 'sub', text: learnSummary(app) });
@@ -1977,7 +1909,7 @@ export function buildCases(app) {
     const paint = () => {
       grid.innerHTML = '';
       const list = shown();
-      count.textContent = `${list.filter(c => allowed.has(c.id)).length} of ${list.length} on`;
+      count.textContent = t('{n} of {total} on', { n: list.filter(c => allowed.has(c.id)).length, total: list.length });
       for (const c of list) {
         const s = stats.get(c.id);
         const cell = el('div', { class: `case-cell ${allowed.has(c.id) ? 'on' : ''}` },
@@ -1989,7 +1921,7 @@ export function buildCases(app) {
           if (allowed.has(c.id)) allowed.delete(c.id); else allowed.add(c.id);
           if (!allowed.size) allowed.add(c.id);
           cell.classList.toggle('on', allowed.has(c.id));
-          count.textContent = `${shown().filter(x => allowed.has(x.id)).length} of ${shown().length} on`;
+          count.textContent = t('{n} of {total} on', { n: shown().filter(x => allowed.has(x.id)).length, total: shown().length });
           commit();
         });
         grid.append(cell);
@@ -2004,7 +1936,7 @@ export function buildCases(app) {
     const bulk = (fn) => () => { fn(); paint(); commit(); };
 
     const groupChips = !grouped ? null : el('div', { class: 'chips' },
-      ...[['', 'all groups'], ...groups.map(g => [g, labelOf(set, g)])].map(([g, text]) =>
+      ...[['', t('all groups')], ...groups.map(g => [g, labelOf(set, g)])].map(([g, text]) =>
         el('button', {
           class: `chip ${only === g ? 'on' : ''}`,
           text: `${text}${g ? ` · ${set.filter(c => c.group === g).length}` : ''}`,
@@ -2019,19 +1951,19 @@ export function buildCases(app) {
 
     body.append(
       el('div', { class: 'hint-note', text:
-        `${MODES[modeId].name} — pick which cases you want to drill. Times shown are your session average for that case.` }),
+        t('{mode} — pick which cases you want to drill. Times shown are your session average for that case.', { mode: MODES[modeId].name }) }),
       /* Learn mode works on exactly the cases switched on below, so the switch
          for it belongs here rather than three panels away. */
       el('div', { class: 'chips' },
         el('button', {
           class: `chip ${app.learn?.enabled ? 'on' : ''}`,
-          text: app.learn?.enabled ? 'learn mode is on' : 'learn these cases',
-          title: 'Show the algorithm for a case you have not seen, and bring back the ones you fumble  (L)',
+          text: app.learn?.enabled ? t('learn mode is on') : t('learn these cases'),
+          title: t('Show the algorithm for a case you have not seen, and bring back the ones you fumble  (L)'),
           onclick: (e) => {
             if (!app.learn) return;
             app.learn.setEnabled(!app.learn.enabled);
             e.currentTarget.classList.toggle('on', app.learn.enabled);
-            e.currentTarget.textContent = app.learn.enabled ? 'learn mode is on' : 'learn these cases';
+            e.currentTarget.textContent = app.learn.enabled ? t('learn mode is on') : t('learn these cases');
             learnLine.textContent = learnSummary(app);
           },
         }),
@@ -2044,7 +1976,7 @@ export function buildCases(app) {
           for (const c of shown()) { if (allowed.has(c.id)) allowed.delete(c.id); else allowed.add(c.id); }
           if (!allowed.size) allowed.add(shown()[0].id);
         }) }),
-        el('button', { class: 'chip', text: 'my worst 8', onclick: bulk(() => {
+        el('button', { class: 'chip', text: t('my worst 8'), onclick: bulk(() => {
           const ranked = byCase(app.solves).filter(r => r.avg !== null).sort((a, b) => b.avg - a.avg).slice(0, 8);
           if (!ranked.length) { toast('Do some solves first so I know what your worst cases are'); return; }
           allowed.clear(); ranked.forEach(r => allowed.add(r.caseId));
@@ -2065,61 +1997,61 @@ const labelOf = (set, group) => set.find(c => c.group === group)?.label || group
    ========================================================= */
 export const SHORTCUTS = [
   ['Timer', [
-    ['hold Space', 'start / stop the timer'],
-    ['Esc', 'cancel inspection'],
+    [t('hold Space'), t('start / stop the timer')],
+    ['Esc', t('cancel inspection')],
   ]],
-  ['Last solve', [
-    ['Delete', 'delete last solve'],
-    ['Ctrl + Z', 'undo the delete'],
-    ['2', 'toggle +2'],
-    ['D', 'toggle DNF'],
-    ['0', 'clear penalty'],
-    ['C', 'add a comment'],
-    ['R', 'solve its scramble again'],
+  [t('Last solve'), [
+    ['Delete', t('delete last solve')],
+    [t('Ctrl + Z'), t('undo the delete')],
+    ['2', t('toggle +2')],
+    ['D', t('toggle DNF')],
+    ['0', t('clear penalty')],
+    ['C', t('add a comment')],
+    ['R', t('solve its scramble again')],
   ]],
   ['Scramble', [
-    ['N', 'new scramble'],
-    ['Ctrl + C', 'copy scramble'],
-    ['←  →', 'previous / next scramble'],
-    ['X', 'enter your own scrambles'],
+    ['N', t('new scramble')],
+    [t('Ctrl + C'), t('copy scramble')],
+    [t('←  →'), t('previous / next scramble')],
+    ['X', t('enter your own scrambles')],
   ]],
   // Only on a relay; on any other event these do nothing.
   ['Relay', [
-    ['<  >', 'previous / next puzzle'],
-    ['Space', 'start, split to the next puzzle, stop'],
+    ['<  >', t('previous / next puzzle')],
+    ['Space', t('start, split to the next puzzle, stop')],
   ]],
   ['Go to', [
-    ['E', 'event picker'],
-    ['M', 'mode + trainer picker'],
+    ['E', t('event picker')],
+    ['M', t('mode + trainer picker')],
     ['S', 'sessions'],
     ['A', 'statistics'],
-    ['H', 'all solves'],
+    ['H', t('all solves')],
     ['T', 'appearance'],
     [',', 'settings'],
-    ['K', 'case picker'],
-    ['L', 'learn mode on / off'],
-    ['G', 'show the alg (counts as not knowing it)'],
-    ['Ctrl + K  or  /', 'command palette'],
-    ['?', 'this list'],
+    ['K', t('case picker')],
+    ['L', t('learn mode on / off')],
+    ['G', t('show the alg (counts as not knowing it)')],
+    [t('Ctrl + K  or  /'), t('command palette')],
+    ['?', t('this list')],
     ['B', 'about'],
   ]],
   ['View', [
-    ['Z', 'zen mode'],
+    ['Z', t('zen mode')],
     ['F', 'fullscreen'],
-    ['V', '3D / 2D preview'],
-    ['I', 'toggle inspection'],
+    ['V', t('3D / 2D preview')],
+    ['I', t('toggle inspection')],
   ]],
   ['Careful', [
-    ['Ctrl + Shift + Del', 'clear the whole session'],
+    [t('Ctrl + Shift + Del'), t('clear the whole session')],
   ]],
-  // Only while Settings > Timing input is "Virtual cube"; these letters then
+  // Only while Settings > Timing input is t("Virtual cube"); these letters then
   // turn the cube instead of doing what the lists above say.
-  ['Virtual cube', [
-    ['I  K', "R  /  R'"], ['D  E', "L  /  L'"], ['J  F', "U  /  U'"], ['S  L', "D  /  D'"],
-    ['H  G', "F  /  F'"], ['W  O', "B  /  B'"], ['U  M', "r  /  r'"], ['V  R', "l  /  l'"],
-    [',  C', "u  /  u'"], ['Z  /', "d  /  d'"], ['5  6  X  .', "M  /  M'"],
-    ['T  Y  B  N', "x  /  x'"], [';  A', "y  /  y'"], ['P  Q', "z  /  z'"],
-    ['Space', 'inspection'], ['Esc', 'reset the cube'],
+  [t('Virtual cube'), [
+    ['I  K', t("R  /  R'")], ['D  E', t("L  /  L'")], ['J  F', t("U  /  U'")], ['S  L', t("D  /  D'")],
+    ['H  G', t("F  /  F'")], ['W  O', t("B  /  B'")], ['U  M', t("r  /  r'")], ['V  R', t("l  /  l'")],
+    [t(',  C'), t("u  /  u'")], [t('Z  /'), t("d  /  d'")], [t('5  6  X  .'), t("M  /  M'")],
+    ['T  Y  B  N', t("x  /  x'")], [t(';  A'), t("y  /  y'")], ['P  Q', t("z  /  z'")],
+    ['Space', 'inspection'], ['Esc', t('reset the cube')],
   ]],
 ];
 
@@ -2136,7 +2068,7 @@ export function buildShortcuts() {
       list.append(col);
     }
     body.append(
-      el('div', { class: 'hint-note', text: 'Shortcuts are ignored while you are typing in a text field.' }),
+      el('div', { class: 'hint-note', text: t('Shortcuts are ignored while you are typing in a text field.') }),
       list,
     );
   };
@@ -2159,10 +2091,7 @@ export const AVATAR = 'assets/ishaan.jpg';
 export const OWNER_NAME = 'cubingngagng';
 
 export const OWNER_BIO =
-  'Speedcuber, and the person who built this timer. I post solves, reconstructions and ' +
-  'cubing bits on Instagram — come say hello. Tagda Timer is the timer I wanted for my own ' +
-  'practice: WCA-legal random-state scrambles, everything stored on your own machine by ' +
-  'default, with an optional account if you want your solves synced across devices.';
+  t('Speedcuber, and the person who built this timer. I post solves, reconstructions and cubing bits on Instagram — come say hello. Tagda Timer is the timer I wanted for my own practice: WCA-legal random-state scrambles, everything stored on your own machine by default, with an optional account if you want your solves synced across devices.');
 
 export function buildAbout(app) {
   return (body) => {
@@ -2182,7 +2111,7 @@ export function buildAbout(app) {
        can genuinely poll for it. What IS always current is the reels tab, and
        a pasted link stays under your control. */
     const reelInput = el('input', {
-      class: 'inp', type: 'url', placeholder: 'https://instagram.com/reel/…',
+      class: 'inp', type: 'url', placeholder: t('https://instagram.com/reel/…'),
       value: S.featuredReel || '', style: { flex: '1', minWidth: '0' },
     });
     const reelCard = el('div', { class: 'reel-card' });
@@ -2191,36 +2120,36 @@ export function buildAbout(app) {
       const url = app.settings.featuredReel;
       if (!url) {
         reelCard.append(el('div', { class: 'reel-empty', text:
-          'No reel pinned yet — paste one below, or use the button above for whatever is newest.' }));
+          t('No reel pinned yet — paste one below, or use the button above for whatever is newest.') }));
         return;
       }
-      reelCard.append(arrow(link('Featured reel', url, url.replace(/^https?:\/\//, '').slice(0, 46))));
+      reelCard.append(arrow(link(t('Featured reel'), url, url.replace(/^https?:\/\//, '').slice(0, 46))));
     };
     renderReel();
 
     body.append(
-      group('Ishaan',
+      group(t('Ishaan'),
         el('div', { class: 'about-hero' },
           el('img', { class: 'about-avatar', src: AVATAR, alt: 'Ishaan', width: 52, height: 52, loading: 'lazy', decoding: 'async' }),
           el('div', {},
-            el('div', { class: 'about-name', text: 'Ishaan' }),
+            el('div', { class: 'about-name', text: t('Ishaan') }),
             el('div', { class: 'about-handle', text: '@' + IG_HANDLE }))),
         el('div', { class: 'about-bio', text: OWNER_BIO }),
       ),
 
-      group('Find me',
+      group(t('Find me'),
         arrow(link('Instagram', IG_PROFILE, '@' + IG_HANDLE)),
-        arrow(link('Latest reels', IG_REELS, 'always opens on the newest one')),
+        arrow(link(t('Latest reels'), IG_REELS, t('always opens on the newest one'))),
         arrow(link('GitHub', GH_PROFILE, '@' + GH_HANDLE)),
       ),
 
-      group('Featured reel',
+      group(t('Featured reel'),
         reelCard,
         el('div', { class: 'row stack' },
           el('div', { class: 'lbl' },
-            el('span', { text: 'Pin a reel' }),
+            el('span', { text: t('Pin a reel') }),
             el('span', { class: 'sub', text:
-              'Instagram has no public feed to read without an app token, so this is set by hand.' })),
+              t('Instagram has no public feed to read without an app token, so this is set by hand.') })),
           el('div', { style: { display: 'flex', gap: '6px' } },
             reelInput,
             el('button', {
@@ -2233,7 +2162,7 @@ export function buildAbout(app) {
                 }
                 app.setSetting('featuredReel', v);
                 renderReel();
-                toast(v ? 'Reel pinned' : 'Reel cleared', { kind: 'good' });
+                toast(v ? t('Reel pinned') : t('Reel cleared'), { kind: 'good' });
               },
             }))),
       ),
@@ -2258,11 +2187,11 @@ export function buildAbout(app) {
 /* The shapes people actually relay. `2-4` reads better than "2x2, 3x3, 4x4"
    on a button and is the name every competition uses for it. */
 const RELAY_PRESETS = [
-  { label: '2–4 relay', list: ['222', '333', '444'] },
-  { label: '2–5 relay', list: ['222', '333', '444', '555'] },
-  { label: '2–7 relay', list: ['222', '333', '444', '555', '666', '777'] },
-  { label: '2×3x3',     list: ['333', '333'] },
-  { label: '5×2x2',     list: ['222', '222', '222', '222', '222'] },
+  { label: t('2–4 relay'), list: ['222', '333', '444'] },
+  { label: t('2–5 relay'), list: ['222', '333', '444', '555'] },
+  { label: t('2–7 relay'), list: ['222', '333', '444', '555', '666', '777'] },
+  { label: t('2×3x3'),     list: ['333', '333'] },
+  { label: t('5×2x2'),     list: ['222', '222', '222', '222', '222'] },
 ];
 
 export function buildRelay(app) {
@@ -2284,17 +2213,17 @@ export function buildRelay(app) {
         el('span', { class: 'rr-n', text: String(i + 1) }),
         el('span', { class: 'rr-name', text: eventOf(id).name }),
         el('button', {
-          class: 'ghost-btn sm icon', text: '↑', title: 'Move earlier',
+          class: 'ghost-btn sm icon', text: '↑', title: t('Move earlier'),
           disabled: i === 0,
           onclick: () => { [list[i - 1], list[i]] = [list[i], list[i - 1]]; render(); },
         }),
         el('button', {
-          class: 'ghost-btn sm icon', text: '↓', title: 'Move later',
+          class: 'ghost-btn sm icon', text: '↓', title: t('Move later'),
           disabled: i === list.length - 1,
           onclick: () => { [list[i + 1], list[i]] = [list[i], list[i + 1]]; render(); },
         }),
         el('button', {
-          class: 'ghost-btn sm icon danger', text: '×', title: 'Remove',
+          class: 'ghost-btn sm icon danger', text: '×', title: t('Remove'),
           onclick: () => { list.splice(i, 1); render(); },
         }),
       ));
@@ -2325,7 +2254,7 @@ export function buildRelay(app) {
           el('button', { class: 'ghost-btn sm icon', text: '+', onclick: () => step(1) }),
         ),
         el('button', {
-          class: 'btn sm', text: 'Add', disabled: full,
+          class: 'btn sm', text: t('Add'), disabled: full,
           onclick: () => {
             const room = RELAY_MAX - list.length;
             if (room <= 0) { toast(`A relay holds at most ${RELAY_MAX} puzzles`, { kind: 'bad' }); return; }
@@ -2338,17 +2267,17 @@ export function buildRelay(app) {
       );
 
       host.replaceChildren(
-        group('Presets',
+        group(t('Presets'),
           el('div', { class: 'chips' }, ...RELAY_PRESETS.map(p =>
             el('button', {
               class: 'chip', text: p.label,
               onclick: () => { list = [...p.list]; render(); },
             }))),
         ),
-        group(`The relay — ${list.length}/${RELAY_MAX} puzzles`,
+        group(t('The relay — {n}/{max} puzzles', { n: list.length, max: RELAY_MAX }),
           rows.length
             ? el('div', { class: 'relay-list' }, ...rows)
-            : el('div', { class: 'hint-note', text: 'Nothing in it yet. Take a preset, or add puzzles below.' }),
+            : el('div', { class: 'hint-note', text: t('Nothing in it yet. Take a preset, or add puzzles below.') }),
           adder,
         ),
       );
@@ -2368,24 +2297,19 @@ export function buildRelay(app) {
         el('div', { class: 'relay-preview', text: empty ? '' : relayLabel(list) }),
         el('div', { class: 'relay-actions' },
           canEdit ? el('button', {
-            class: 'btn full', text: 'Use it in this session', disabled: empty,
+            class: 'btn full', text: t('Use it in this session'), disabled: empty,
             onclick: async () => { await app.startRelay(list, { reuse: true, name }); closeDrawer(); },
           }) : null,
           el('button', {
             class: 'btn primary full', disabled: empty,
-            text: canEdit ? 'New session with this relay' : `New session · ${name || relayLabel(list) || 'relay'}`,
+            text: canEdit ? t('New session with this relay') : `New session · ${name || relayLabel(list) || 'relay'}`,
             onclick: async () => { await app.startRelay(list, { name }); closeDrawer(); },
           }),
         ),
         el('div', { class: 'hint-note', text:
-          'One attempt runs through every puzzle in order. Space starts it, each press after ' +
-          'that records a split and moves on, and the last press stops the clock — the result ' +
-          'is the total, with every puzzle stored too. Inspection, if it is on, happens once ' +
-          'before the first puzzle. Before the run, > and < step through the puzzles so you ' +
-          'can scramble each one against its own preview.' }),
+          t('One attempt runs through every puzzle in order. Space starts it, each press after that records a split and moves on, and the last press stops the clock — the result is the total, with every puzzle stored too. Inspection, if it is on, happens once before the first puzzle. Before the run, > and < step through the puzzles so you can scramble each one against its own preview.') }),
         app.relayEditable() ? null : el('div', { class: 'hint-note', text:
-          'This session already has solves, so its relay is fixed: times done on different ' +
-          'puzzle lists must never average together.' }),
+          t('This session already has solves, so its relay is fixed: times done on different puzzle lists must never average together.') }),
       );
     };
 
@@ -2399,9 +2323,9 @@ export function buildSessions(app) {
     const list = el('div', { class: 'solve-table' });
     for (const s of app.sessions) {
       const count = app.sessionCounts.get(s.id) || 0;
-      const r = el('div', { class: `st-row ${s.id === app.settings.sessionId ? 'pb' : ''}`, style: { gridTemplateColumns: '1fr auto auto' } },
+      const r = el('div', { class: `st-row ${s.id === app.settings.sessionId ? 'pb' : ''}`, style: { gridTemplateColumns: t('1fr auto auto') } },
         el('span', { class: 'st-t', style: { fontFamily: 'var(--font-ui)', fontWeight: '600' }, text: s.name }),
-        el('span', { class: 'st-d', text: `${EVENTS[s.event]?.short || s.event} · ${count} solves` }),
+        el('span', { class: 'st-d', text: t('{event} · {n} solves', { event: EVENTS[s.event]?.short || s.event, n: count }) }),
         el('span', { style: { display: 'flex', gap: '4px' } },
           el('button', {
             class: 'ghost-btn sm', text: 'rename',
@@ -2427,7 +2351,7 @@ export function buildSessions(app) {
       list.append(r);
     }
     body.append(
-      el('button', { class: 'btn primary full', text: '+ New session', onclick: () => { app.newSession(); closeDrawer(); } }),
+      el('button', { class: 'btn primary full', text: t('+ New session'), onclick: () => { app.newSession(); closeDrawer(); } }),
       list,
     );
   };
@@ -2461,24 +2385,22 @@ export function buildRace(app) {
       body.innerHTML = '';
 
       /* ---- where you are ---- */
-      body.append(group('Race',
+      body.append(group(t('Race'),
         el('div', { class: `race-hero ${inRoom ? 'on' : ''}` },
           el('div', { class: 'race-hero-dot' }),
           el('div', {},
-            el('div', { class: 'race-hero-title', text: inRoom ? `Room ${ctl.snap.roomId}` : 'Not in a room' }),
+            el('div', { class: 'race-hero-title', text: inRoom ? t('Room {id}', { id: ctl.snap.roomId }) : t('Not in a room') }),
             el('div', { class: 'race-hero-sub', text: inRoom
-              ? 'Everyone here races the same scramble. Nobody’s time appears until you have finished it too.'
-              : 'Same scramble for everyone in the room. You see their times only once you have solved it yourself — and they see yours on the same terms.' }),
+              ? t('Everyone here races the same scramble. Nobody’s time appears until you have finished it too.')
+              : t('Same scramble for everyone in the room. You see their times only once you have solved it yourself — and they see yours on the same terms.') }),
             !cloud ? el('div', { class: 'race-hero-warn', text:
-              'No Firebase project is configured on this deployment, so rooms are local: '
-              + 'other tabs of this browser can join, but nobody on another machine can. '
-              + 'See RACE.md to turn on real rooms.' }) : null,
+              t('No Firebase project is configured on this deployment, so rooms are local: other tabs of this browser can join, but nobody on another machine can. See RACE.md to turn on real rooms.') }) : null,
             !ok ? el('div', { class: 'race-hero-warn', text:
               `${EVENTS[S.event]?.name || S.event} cannot be raced — it does not end in one time to compare. `
-              + 'Switch to a normal speed event first.' }) : null,
+              + t('Switch to a normal speed event first.') }) : null,
           ),
           inRoom
-            ? el('button', { class: 'btn danger', text: 'Leave',
+            ? el('button', { class: 'btn danger', text: t('Leave'),
                 onclick: async () => { await ctl.leave(); render(); } })
             : null,
         ),
@@ -2490,15 +2412,14 @@ export function buildRace(app) {
         value: S.raceName || '',
       });
       nameInput.addEventListener('change', () => set('raceName', nameInput.value.trim().slice(0, 18)));
-      body.append(group('You',
-        row('Display name', nameInput, 'what the room calls you, on the leaderboard and everywhere else — ' +
-          'editable here or from the account icon in the top bar, and synced along with everything else once signed in'),
+      body.append(group(t('You'),
+        row(t('Display name'), nameInput, t('what the room calls you, on the leaderboard and everywhere else — editable here or from the account icon in the top bar, and synced along with everything else once signed in')),
       ));
 
       /* ---- joining ---- */
       if (!inRoom) {
         const code = el('input', {
-          class: 'inp', type: 'text', maxlength: 12, placeholder: 'room code',
+          class: 'inp', type: 'text', maxlength: 12, placeholder: t('room code'),
           value: S.raceLastRoom || '', spellcheck: 'false', autocapitalize: 'characters',
         });
         code.addEventListener('input', () => { code.value = normaliseCode(code.value); });
@@ -2513,55 +2434,52 @@ export function buildRace(app) {
             /* The toast has to stay short; the real cause (permission_denied,
                unauthorized-domain, a dropped socket) only exists here. */
             console.error('[race] join failed:', err);
-            const why = err?.message === 'room-full' ? `That room is full (${race.ROOM_MAX} max)`
-              : err?.message === 'bad-code' ? 'A room code is at least 3 characters'
-              : err?.message === 'no-config' ? 'Real rooms are not configured — see RACE.md'
-              : 'Could not join that room';
+            const why = err?.message === 'room-full' ? t('That room is full ({n} max)', { n: race.ROOM_MAX })
+              : err?.message === 'bad-code' ? t('A room code is at least 3 characters')
+              : err?.message === 'no-config' ? t('Real rooms are not configured — see RACE.md')
+              : t('Could not join that room');
             toast(why, { kind: 'bad' });
           }
         };
 
-        body.append(group('Join a room',
-          row('Room code', code),
+        body.append(group(t('Join a room'),
+          row(t('Room code'), code),
           el('div', { class: 'btn-row' },
-            el('button', { class: 'btn primary', text: 'Join', onclick: () => go(normaliseCode(code.value)) }),
-            el('button', { class: 'btn', text: 'Create a room', onclick: () => go(randomCode()) }),
+            el('button', { class: 'btn primary', text: t('Join'), onclick: () => go(normaliseCode(code.value)) }),
+            el('button', { class: 'btn', text: t('Create a room'), onclick: () => go(randomCode()) }),
           ),
           el('div', { class: 'hint-note', text:
-            'A room code is all anybody needs to get in — there is no sign-in and no account. '
-            + 'Anyone with the code can join, so treat it like the door key it is.' }),
+            t('A room code is all anybody needs to get in — there is no sign-in and no account. Anyone with the code can join, so treat it like the door key it is.') }),
         ));
       } else {
         const link = `${location.origin}${location.pathname}?race=${ctl.snap.roomId}`;
-        body.append(group('Invite',
-          row('Room code', el('div', { class: 'race-code-big', text: ctl.snap.roomId })),
+        body.append(group(t('Invite'),
+          row(t('Room code'), el('div', { class: 'race-code-big', text: ctl.snap.roomId })),
           el('div', { class: 'btn-row' },
-            el('button', { class: 'btn primary', text: 'Copy invite link',
-              onclick: () => app.copyToast(link, 'Invite link') }),
-            el('button', { class: 'btn', text: 'Copy code',
-              onclick: () => app.copyToast(ctl.snap.roomId, 'Room code') }),
+            el('button', { class: 'btn primary', text: t('Copy invite link'),
+              onclick: () => app.copyToast(link, t('Invite link')) }),
+            el('button', { class: 'btn', text: t('Copy code'),
+              onclick: () => app.copyToast(ctl.snap.roomId, t('Room code')) }),
           ),
           el('div', { class: 'hint-note', text: ctl.kind === 'local'
-            ? 'This is a local room. The link only works in another tab of this same browser.'
-            : 'Opening that link joins this room straight away.' }),
+            ? t('This is a local room. The link only works in another tab of this same browser.')
+            : t('Opening that link joins this room straight away.') }),
         ));
       }
 
       /* ---- how it behaves ---- */
-      body.append(group('While racing',
-        row('Give each room its own session',
+      body.append(group(t('While racing'),
+        row(t('Give each room its own session'),
           toggle(S.raceOwnSession, v => set('raceOwnSession', v)),
-          'keeps your practice averages clean — race times are still saved, in a session named after the room'),
+          t('keeps your practice averages clean — race times are still saved, in a session named after the room')),
         cloud ? row('Connection', chips([
-          { value: 'auto', label: 'Auto' },
-          { value: 'firebase', label: 'Online' },
-          { value: 'local', label: 'This browser' },
+          { value: 'auto', label: t('Auto') },
+          { value: 'firebase', label: t('Online') },
+          { value: 'local', label: t('This browser') },
         ], S.racePrefer, v => set('racePrefer', v)),
-          '“This browser” races other tabs on this machine — useful for testing') : null,
+          t('“This browser” races other tabs on this machine — useful for testing')) : null,
         el('div', { class: 'hint-note', text:
-          'Race mode never asks for a camera or a microphone. What it does check: the time you '
-          + 'submit is bound to the exact scramble it was solved on, it can only be written once, '
-          + 'and it is compared against the window the server itself timed it in.' }),
+          t('Race mode never asks for a camera or a microphone. What it does check: the time you submit is bound to the exact scramble it was solved on, it can only be written once, and it is compared against the window the server itself timed it in.') }),
       ));
     };
 
@@ -2581,7 +2499,7 @@ export function buildRace(app) {
 let _dailyUnsub = null;
 let _dailyTick = 0;
 
-const DAILY_PANEL = 'Scramble of the Day';
+const DAILY_PANEL = t('Scramble of the Day');
 
 export function buildDaily(app) {
   return (body) => {
@@ -2616,8 +2534,7 @@ export function buildDaily(app) {
       if (!cloud) {
         body.append(group(DAILY_PANEL,
           el('div', { class: 'race-hero-warn', text:
-            'No Firebase project is configured on this deployment, so there is no shared board to '
-            + 'read or write. See RACE.md — the Scramble of the Day rides on the same project Race mode does.' }),
+            t('No Firebase project is configured on this deployment, so there is no shared board to read or write. See RACE.md — the Scramble of the Day rides on the same project Race mode does.') }),
         ));
         return;
       }
@@ -2627,20 +2544,19 @@ export function buildDaily(app) {
 
       /* ---- today, and the way into the window ---- */
       const countdown = el('b', { text: '—' });
-      body.append(group('Today',
+      body.append(group(t('Today'),
         el('div', { class: 'race-hero', style: { alignItems: 'baseline' } },
           el('div', {},
             el('div', { class: 'race-hero-title', text: snap?.dayId || '—' }),
-            el('div', { class: 'race-hero-sub' }, 'resets in ', countdown),
+            el('div', { class: 'race-hero-sub' }, t('resets in '), countdown),
           ),
         ),
         el('div', { class: 'race-hero-sub', text:
-          'Same scramble as everyone else, once a day. One official attempt, like a competition single — '
-          + 'nobody’s time is visible to you until you have submitted your own.' }),
+          t('Same scramble as everyone else, once a day. One official attempt, like a competition single — nobody’s time is visible to you until you have submitted your own.') }),
         ctl.submittedToday
-          ? el('div', { class: 'hint-note', text: 'You have already submitted today’s attempt for this event.' })
+          ? el('div', { class: 'hint-note', text: t('You have already submitted today’s attempt for this event.') })
           : el('button', {
-              class: 'btn primary full', text: 'Open the Scramble of the Day',
+              class: 'btn primary full', text: t('Open the Scramble of the Day'),
               onclick: async () => {
                 /* The window solves in the timer's event (see Daily#engage), so
                    opening it on the event picked here means moving the timer
@@ -2675,14 +2591,14 @@ export function buildDaily(app) {
 
       if (!past) {
         const doneCount = ctl.submittedCount();
-        body.append(group('Today’s times', history.nav(today),
+        body.append(group(t('Today’s times'), history.nav(today),
           el('div', { class: 'race-hero-sub', text:
-            `${doneCount} ${doneCount === 1 ? 'person has' : 'people have'} done today’s scramble.` }),
+            t(doneCount === 1 ? '{n} person has done today’s scramble.' : '{n} people have done today’s scramble.', { n: doneCount }) }),
           ui.timeBoard(ctl.ranked(), ctl.revealed),
         ));
       } else {
         // The picker below carries the date, so the group title does not repeat it.
-        body.append(group('Times', history.nav(today), history.view(ctl.eventId)));
+        body.append(group(t('Times'), history.nav(today), history.view(ctl.eventId)));
       }
 
       /* ---- board two: who solved the most, of anything ----
@@ -2691,15 +2607,14 @@ export function buildDaily(app) {
          feature back on is one boolean, not an archaeology exercise. */
       if (mod.SHOW_COUNT_BOARD) {
         const mine = ctl.myCount();
-        body.append(group('Most solves today',
+        body.append(group(t('Most solves today'),
           el('div', { class: 'race-hero-sub', text:
-            'Every solve you record today, whatever the event — not just this one. '
-            + 'Resets with the board above, at midnight IST.' }),
+            t('Every solve you record today, whatever the event — not just this one. Resets with the board above, at midnight IST.') }),
           ui.countBoard(ctl.countBoard()),
           snap?.signedIn
-            ? el('div', { class: 'hint-note', text: `You have done ${mine} ${mine === 1 ? 'solve' : 'solves'} today.` })
+            ? el('div', { class: 'hint-note', text: t(mine === 1 ? 'You have done {n} solve today.' : 'You have done {n} solves today.', { n: mine }) })
             : el('div', { class: 'hint-note', text:
-                'Sign in with the account icon in the top bar to appear on either board.' }),
+                t('Sign in with the account icon in the top bar to appear on either board.') }),
         ));
       }
     };

@@ -1,3 +1,4 @@
+import { t } from './i18n.js';
 /* ===========================================================
    Tagda Timer — the share sheet
 
@@ -83,7 +84,7 @@ function present(media, { title, filename, text }) {
   const buttons = [];
 
   if (isCanvas) {
-    const copyBtn = el('button', { class: 'sh-act primary' }, svg(ICONS.copy), el('span', { text: 'Copy image' }));
+    const copyBtn = el('button', { class: 'sh-act primary' }, svg(ICONS.copy), el('span', { text: t('Copy image') }));
     copyBtn.addEventListener('click', busy(copyBtn, async () => {
       const blob = await getBlob();
       // Only Chromium-family browsers put a PNG on the clipboard. Everywhere
@@ -102,8 +103,8 @@ function present(media, { title, filename, text }) {
     buttons.push(copyBtn);
   }
 
-  const saveBtn = el('button', { class: isCanvas ? 'sh-act' : 'sh-act primary' },
-    svg(ICONS.save), el('span', { text: isCanvas ? 'Save image' : 'Save' }));
+  const saveBtn = el('button', { class: isCanvas ? 'sh-act' : t('sh-act primary') },
+    svg(ICONS.save), el('span', { text: isCanvas ? t('Save image') : 'Save' }));
   saveBtn.addEventListener('click', busy(saveBtn, async () => {
     const blob = await getBlob();
     if (!blob) { toast('Could not render the file', { kind: 'bad' }); return; }
@@ -112,7 +113,7 @@ function present(media, { title, filename, text }) {
   }));
   buttons.push(saveBtn);
 
-  const shareBtn = el('button', { class: 'sh-act' }, svg(ICONS.share), el('span', { text: 'Share' }));
+  const shareBtn = el('button', { class: 'sh-act' }, svg(ICONS.share), el('span', { text: t('Share') }));
   shareBtn.addEventListener('click', busy(shareBtn, async () => {
     const blob = await getBlob();
     const file = blob ? new File([blob], filename, { type: mime }) : null;
@@ -120,7 +121,7 @@ function present(media, { title, filename, text }) {
     // web share endpoint of its own. The links below are the fallback.
     if (file && navigator.canShare?.({ files: [file] })) {
       try {
-        await navigator.share({ files: [file], text, title: 'Tagda Timer' });
+        await navigator.share({ files: [file], text, title: t('Tagda Timer') });
         return;
       } catch (err) {
         if (err?.name === 'AbortError') return;
@@ -146,12 +147,12 @@ function present(media, { title, filename, text }) {
     el('div', { class: 'sh-box', role: 'dialog', 'aria-label': title },
       el('div', { class: 'sh-head' },
         el('h2', { text: title }),
-        el('button', { class: 'icon-btn', title: 'Close (Esc)', onclick: closeShare },
+        el('button', { class: 'icon-btn', title: t('Close (Esc)'), onclick: closeShare },
           svg('<path d="M6 6l12 12M18 6L6 18"/>')),
       ),
       stage,
       el('div', { class: `sh-acts${buttons.length < 3 ? ' two' : ''}` }, ...buttons),
-      el('div', { class: 'sh-share-row' }, el('span', { class: 'sh-share-lbl', text: 'share to' }), links),
+      el('div', { class: 'sh-share-row' }, el('span', { class: 'sh-share-lbl', text: t('share to') }), links),
       foot,
     ),
   );
@@ -164,34 +165,34 @@ const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(
 
 /** One solve: time, scramble, and the scrambled cube. */
 export async function shareSolve(solve, { index = null } = {}) {
-  toast('Rendering card…');
+  toast(t('Rendering card…'));
   const canvas = await drawSolveCard(solve, { index });
   const value = fmtResult(eff(solve), isMoveResult(solve));
   present(canvas, {
-    title: 'Share this solve',
+    title: t('Share this solve'),
     filename: `tagda-solve-${stamp(solve.createdAt)}.png`,
-    text: shareText('Single', value),
+    text: shareText(t('Single'), value),
   });
 }
 
 /** A reconstruction: the scramble, the cube it makes, and the solution. */
 export async function shareRecon({ scramble, title, steps, moves, zb = false }) {
-  toast('Rendering card…');
+  toast(t('Rendering card…'));
   const canvas = await drawReconCard({ scramble, title, steps, moves });
   present(canvas, {
-    title: 'Share this reconstruction',
+    title: t('Share this reconstruction'),
     filename: `tagda-reconstruction-${stamp()}.png`,
-    text: shareText('Reconstruction', `${moves} moves${zb ? ', ZBLL finish' : ''}`),
+    text: shareText(t('Reconstruction'), t('{n} moves', { n: moves }) + (zb ? t(', ZBLL finish') : '')),
   });
 }
 
 /** An average: only the counting times and their scrambles, as asked. */
 export async function shareAverage(solves, { label, value, trimmed } = {}) {
-  if (!solves?.length) { toast('Nothing to share yet'); return; }
-  toast('Rendering card…');
+  if (!solves?.length) { toast(t('Nothing to share yet')); return; }
+  toast(t('Rendering card…'));
   const canvas = await drawAverageCard(solves, { label, value, trimmed });
   present(canvas, {
-    title: `Share your ${label}`,
+    title: t('Share your {what}', { what: label }),
     filename: `tagda-${slug(label)}-${stamp(solves.at(-1).createdAt)}.png`,
     text: shareText(label, value),
   });

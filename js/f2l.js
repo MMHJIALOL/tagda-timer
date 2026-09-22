@@ -1,3 +1,4 @@
+import { t } from './i18n.js';
 /* ===========================================================
    Tagda Timer — the 41 F2L cases.
 
@@ -20,12 +21,12 @@
 const F = (n, group, alg) => ({ id: 'F2L' + n, name: String(n), label: F2L_GROUPS[group], group, alg });
 
 export const F2L_GROUPS = {
-  free:   'Free pair',
-  split:  'Split pair',
-  joined: 'Joined pair',
-  corner: 'Corner in slot',
-  edge:   'Edge in slot',
-  both:   'Both in slot',
+  free:   t('Free pair'),
+  split:  t('Split pair'),
+  joined: t('Joined pair'),
+  corner: t('Corner in slot'),
+  edge:   t('Edge in slot'),
+  both:   t('Both in slot'),
 };
 
 export const F2L = [

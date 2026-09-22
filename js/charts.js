@@ -1,3 +1,4 @@
+import { t } from './i18n.js';
 /* ===========================================================
    Tagda Timer — hand-built SVG charts
    No chart library: full control over theming and animation.
@@ -65,7 +66,7 @@ export function renderMiniTrend(svg, solves) {
   const pts = solves.map(eff).filter(v => v !== DNF);
   if (pts.length < 2) {
     svg.append(svgEl('text', { x: W / 2, y: H / 2 + 3, 'text-anchor': 'middle', class: 'axis-txt' }));
-    svg.lastChild.textContent = 'need 2+ solves';
+    svg.lastChild.textContent = t('need 2+ solves');
     return;
   }
   const recent = solves.slice(-60);
@@ -142,7 +143,7 @@ export function renderTrend(host, solves, onHover, { markers = [], onPin, onBrus
   host.innerHTML = '';
   const W = 660, H = 210, L = 46, R = 10, T = 12, B = 22;
   const svg = svgEl('svg', { viewBox: `0 0 ${W} ${H}` });
-  if (solves.length < 2) { host.append(hint('Not enough solves yet')); return; }
+  if (solves.length < 2) { host.append(hint(t('Not enough solves yet'))); return; }
 
   const vals = solves.map(eff);
   const label = axisFmt(solves);
@@ -302,7 +303,7 @@ export function renderTrend(host, solves, onHover, { markers = [], onPin, onBrus
  */
 export function renderGroupBars(host, rows, onPick) {
   host.innerHTML = '';
-  if (!rows.length) { host.append(hint('Not enough solves yet')); return; }
+  if (!rows.length) { host.append(hint(t('Not enough solves yet'))); return; }
   const RH = 24, W = 660, LBL = 78, BAR = W - LBL - 240, H = rows.length * RH;
   const max = Math.max(0, ...rows.map(r => r.value ?? 0)) || 1;
   const svg = svgEl('svg', { viewBox: `0 0 ${W} ${H}` });
@@ -313,7 +314,7 @@ export function renderGroupBars(host, rows, onPick) {
     const y = i * RH;
     const g = svgEl('g', { tabindex: 0, role: 'button', style: 'cursor: pointer; outline: none' });
     const title = svgEl('title');
-    title.textContent = `${r.label} · ${r.text} — click for the solves`;
+    title.textContent = t('{label} · {text} — click for the solves', { label: r.label, text: r.text });
     // The whole row is the hit target, not just the bar, which can be a sliver.
     const bg = svgEl('rect', { x: 0, y, width: W, height: RH, rx: 4, fill: 'var(--text)', 'fill-opacity': 0 });
     bgs.push(bg);
@@ -356,7 +357,7 @@ export function renderHistogram(host, solves) {
   host.innerHTML = '';
   const vals = solves.map(eff).filter(v => v !== DNF);
   const label = axisFmt(solves);
-  if (vals.length < 4) { host.append(hint('Not enough solves yet')); return; }
+  if (vals.length < 4) { host.append(hint(t('Not enough solves yet'))); return; }
   const W = 660, H = 150, L = 8, R = 8, T = 8, B = 20;
   const svg = svgEl('svg', { viewBox: `0 0 ${W} ${H}` });
   const min = Math.min(...vals), max = Math.max(...vals);
@@ -376,7 +377,7 @@ export function renderHistogram(host, solves) {
     rect.style.transformOrigin = `0 ${H - B}px`;
     rect.animate([{ transform: 'scaleY(0)' }, { transform: 'scaleY(1)' }],
       { duration: 520, delay: i * 18, easing: 'cubic-bezier(.22,1,.36,1)', fill: 'backwards' });
-    const title = svgEl('title'); title.textContent = `${c} solve${c === 1 ? '' : 's'}`;
+    const title = svgEl('title'); title.textContent = t(c === 1 ? '{n} solve' : '{n} solves', { n: c });
     rect.append(title);
     svg.append(rect);
   });
@@ -396,8 +397,8 @@ export function renderHistogram(host, solves) {
   // The tallest bar is the only number worth stating outright; the rest are
   // read by comparison, and a label on every bar is noise.
   host.append(legend([
-    { color: 'var(--accent)', label: `${bins} bins · busiest ${peak} solve${peak === 1 ? '' : 's'}` },
-    { color: 'var(--accent-2)', label: `mean ${label(mean)}`, dash: 'dashed' },
+    { color: 'var(--accent)', label: t(peak === 1 ? '{bins} bins · busiest {n} solve' : '{bins} bins · busiest {n} solves', { bins, n: peak }) },
+    { color: 'var(--accent-2)', label: t('mean {v}', { v: label(mean) }), dash: 'dashed' },
   ]));
 }
 
@@ -411,7 +412,7 @@ export function renderHistogram(host, solves) {
    --------------------------------------------------------- */
 
 const DAY_MS = 86400000;
-const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'].map(m => t(m));
 
 const startOfDay = (d) => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; };
 const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
@@ -516,11 +517,11 @@ export function renderHeatmap(host, solves, { months = 12 } = {}) {
 
   /* ---- weekday gutter ---- */
   for (const [row, label] of [[1, 'Mon'], [3, 'Wed'], [5, 'Fri']]) {
-    const t = svgEl('text', {
+    const day = svgEl('text', {
       class: 'hm-day', x: GUTTER - 7, y: HEAD + row * PITCH + CELL - 1, 'text-anchor': 'end',
     });
-    t.textContent = label;
-    svg.append(t);
+    day.textContent = t(label);
+    svg.append(day);
   }
 
   /* ---- cells ---- */
@@ -543,11 +544,11 @@ export function renderHeatmap(host, solves, { months = 12 } = {}) {
         width: CELL, height: CELL,
         fill: LEVEL_FILL[lv], 'fill-opacity': LEVEL_OPACITY[lv],
       });
-      const t = svgEl('title');
-      t.textContent = c
-        ? `${c} solve${c === 1 ? '' : 's'} - ${longDate(day)}`
-        : `No solves - ${longDate(day)}`;
-      cell.append(t);
+      const tip = svgEl('title');
+      tip.textContent = c
+        ? t(c === 1 ? '{n} solve - {date}' : '{n} solves - {date}', { n: c, date: longDate(day) })
+        : t('No solves - {date}', { date: longDate(day) });
+      cell.append(tip);
       svg.append(cell);
     }
   }
@@ -560,7 +561,7 @@ export function renderHeatmap(host, solves, { months = 12 } = {}) {
   const legW = 5 * (CELL + 2);
   const legX = W - legW - 34;
   const less = svgEl('text', { class: 'hm-key', x: legX - 6, y: legY + CELL - 1, 'text-anchor': 'end' });
-  less.textContent = 'Less';
+  less.textContent = t('Less');
   svg.append(less);
   for (let lv = 0; lv < 5; lv++) {
     svg.append(svgEl('rect', {
@@ -570,13 +571,13 @@ export function renderHeatmap(host, solves, { months = 12 } = {}) {
     }));
   }
   const more = svgEl('text', { class: 'hm-key', x: legX + legW + 2, y: legY + CELL - 1 });
-  more.textContent = 'More';
+  more.textContent = t('More');
   svg.append(more);
 
   /* ---- summary, counted over exactly the range that is drawn ---- */
   const sum = svgEl('text', { class: 'hm-key', x: GUTTER, y: legY + CELL - 1 });
-  sum.textContent = `${total.toLocaleString()} solves \u00b7 ${activeDays} active day${activeDays === 1 ? '' : 's'}`
-    + ` \u00b7 streak ${current}, best ${longest}`;
+  sum.textContent = t(activeDays === 1 ? '{n} solves · {d} active day' : '{n} solves · {d} active days', { n: total.toLocaleString(), d: activeDays })
+    + t(' · streak {c}, best {b}', { c: current, b: longest });
   svg.append(sum);
 
   host.append(svg);
@@ -591,7 +592,7 @@ export function renderHeatmap(host, solves, { months = 12 } = {}) {
 export function renderCaseBars(host, rows) {
   host.innerHTML = '';
   const valid = rows.filter(r => r.avg !== null).sort((a, b) => b.avg - a.avg);
-  if (!valid.length) { host.append(hint('No trainer solves in this session yet')); return; }
+  if (!valid.length) { host.append(hint(t('No trainer solves in this session yet'))); return; }
   const show = valid.slice(0, 16);
   const max = show[0].avg;
   const RH = 22, W = 660, H = show.length * RH + 6;

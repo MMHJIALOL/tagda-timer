@@ -1,3 +1,4 @@
+import { t } from './i18n.js';
 /* ===========================================================
    Tagda Timer — Spotify link (read what is playing, nothing else)
 
@@ -74,7 +75,7 @@ export function redirectProblem() {
   if (u.hostname === '127.0.0.1') return null;
   if (u.hostname === 'localhost' || u.hostname === '[::1]') {
     return {
-      reason: 'Spotify rejects localhost — it only allows http on a loopback IP.',
+      reason: t('Spotify rejects localhost — it only allows http on a loopback IP.'),
       openInstead: `http://127.0.0.1:${u.port || 80}${u.pathname}`,
     };
   }
@@ -124,7 +125,7 @@ export class Spotify extends EventTarget {
 
   /** Send the browser to Spotify's consent page. */
   async connect(clientId) {
-    if (!clientId) throw new Error('No client ID');
+    if (!clientId) throw new Error(t('No client ID'));
     const verifier = randomVerifier();
     // sessionStorage, not memory: the whole point is that we are about to
     // leave the page and come back as a fresh document.
@@ -160,7 +161,7 @@ export class Spotify extends EventTarget {
     const verifier = sessionStorage.getItem('tdt_pkce');
     sessionStorage.removeItem('tdt_pkce');
     if (err) { this.emit('status', { state: 'error', detail: err }); return false; }
-    if (!verifier) { this.emit('status', { state: 'error', detail: 'lost the PKCE verifier' }); return false; }
+    if (!verifier) { this.emit('status', { state: 'error', detail: t('lost the PKCE verifier') }); return false; }
 
     try {
       const t = await this._token({
@@ -219,12 +220,12 @@ export class Spotify extends EventTarget {
   async _refresh() {
     const rt = this.tokens?.refresh_token;
     if (!rt) throw new Error('not connected');
-    const t = await this._token({
+    const tok = await this._token({
       grant_type: 'refresh_token',
       refresh_token: rt,
       client_id: this.clientId,
     });
-    await this._store(t);
+    await this._store(tok);
   }
 
   /** A valid access token, refreshed a minute early to avoid racing expiry. */

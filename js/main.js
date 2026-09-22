@@ -1,3 +1,4 @@
+import { t, translateDOM } from './i18n.js';
 /* ===========================================================
    Tagda Timer — application wiring
    =========================================================== */
@@ -169,8 +170,8 @@ function syncSotdChip() {
   const done = sotdDoneToday();
   btn.classList.toggle('done', done);
   btn.title = done
-    ? 'Scramble of the Day — today’s board'
-    : 'Scramble of the Day';
+    ? t('Scramble of the Day — today’s board')
+    : t('Scramble of the Day');
 }
 
 /* ---------------------------------------------------------
@@ -221,7 +222,7 @@ async function enterSotd() {
   let mod, ui;
   try {
     [mod, ui] = await Promise.all([loadDaily(), loadSotdUi()]);
-  } catch (err) { return lazyFailed('the Scramble of the Day', err); }
+  } catch (err) { return lazyFailed(t('the Scramble of the Day'), err); }
 
   if (!mod.cloudAvailable()) {
     toast('No leaderboard is configured on this deployment — see RACE.md', { kind: 'bad', long: true });
@@ -229,7 +230,7 @@ async function enterSotd() {
   }
   const ctl = mod.getDaily(app);
   try { await ctl.connect(); }
-  catch (err) { return lazyFailed('the Scramble of the Day', err); }
+  catch (err) { return lazyFailed(t('the Scramble of the Day'), err); }
 
   if (!ctl.snap?.signedIn) {
     toast('Sign in with the account icon to take part in today’s scramble', { long: true });
@@ -300,7 +301,7 @@ async function enterSotd() {
 /** Nothing to open is better than a click that silently does nothing. */
 function lazyFailed(what, err) {
   console.warn(`[lazy] could not load ${what}`, err);
-  toast(`Could not open ${what} — check your connection and try again`, { kind: 'bad' });
+  toast(t('Could not open {what} — check your connection and try again', { what }), { kind: 'bad' });
 }
 
 /* =========================================================
@@ -355,7 +356,7 @@ const closeXp1    = () => _xp1 ? _xp1.closeXp1() : false;
 async function openXp1() {
   let m;
   try { m = await loadXp1(); }
-  catch (err) { return lazyFailed('the Cross + 1 trainer', err); }
+  catch (err) { return lazyFailed(t('the Cross + 1 trainer'), err); }
   timer.reset?.();
   return m.openXp1({ timerScramble: () => app.scramble?.scramble || '', library: reconLibrary() });
 }
@@ -368,7 +369,7 @@ async function openXp1() {
 async function openRecon(opts) {
   let m;
   try { m = await loadRecon(); }
-  catch (err) { return lazyFailed('the reconstructor', err); }
+  catch (err) { return lazyFailed(t('the reconstructor'), err); }
   timer.reset?.();
   return m.openRecon(opts);
 }
@@ -446,6 +447,7 @@ function bootFailure(err) {
 
 async function init() {
   app.settings = await loadSettings();
+  translateDOM();
   applyTheme(app.settings);
 
   /* Your alg-library order decides which alg a trainer scramble is built from
@@ -464,7 +466,7 @@ async function init() {
   /* The pill in the topbar says which cube is being tagged onto your solves,
      so the answer is on screen rather than one drawer away. Called again by
      the Gear panel whenever you make a different one active. */
-  app.setGearLabel = (text) => { $('#gear-label').textContent = text || 'Cube'; };
+  app.setGearLabel = (text) => { $('#gear-label').textContent = text || t('Cube'); };
   if (app.gear.activeId) {
     Gear.get(app.gear.activeId)
       .then(g => app.setGearLabel(g ? gearLabel(g) : null))
@@ -474,7 +476,7 @@ async function init() {
   // sessions
   app.sessions = await Sessions.all();
   if (!app.sessions.length) {
-    const s = { id: uid(), name: 'Session 1', event: app.settings.event, createdAt: Date.now(), order: 0 };
+    const s = { id: uid(), name: t('Session 1'), event: app.settings.event, createdAt: Date.now(), order: 0 };
     await Sessions.put(s);
     app.sessions = [s];
     app.settings.sessionId = s.id;
@@ -585,7 +587,7 @@ async function init() {
     if (app.scramble) showScramble(app.scramble, true);
   }).catch((err) => {
     console.warn('[cube] failed to initialise', err);
-    cube.showFallback('preview unavailable');
+    cube.showFallback(t('preview unavailable'));
   });
 
   window.addEventListener('resize', debounce(() => {
@@ -645,7 +647,7 @@ function bootAnimation() {
     // page is alive — exactly when the scrambler and the cube module are
     // competing for the same main thread. Opacity and transform are free.
     p.animate(
-      [{ opacity: 0, transform: 'translateY(12px) scale(.99)' },
+      [{ opacity: 0, transform: t('translateY(12px) scale(.99)') },
        { opacity: 1, transform: 'none' }],
       { duration: 460, delay: 40 + i * 45, easing: 'cubic-bezier(.22,1,.36,1)', fill: 'backwards' });
   });
@@ -700,7 +702,7 @@ let relayShown = null;
 function relayProgress(done, total) {
   if (!relayWarming) return;
   const node = $('#scramble-text');
-  if (node) node.textContent = `${done}/${total} scrambles ready…`;
+  if (node) node.textContent = t('{done}/{total} scrambles ready…', { done, total });
 }
 
 /** Jump to one puzzle before the run — `>` / `<`, or a click on a chip. */
@@ -742,7 +744,7 @@ function renderRelayRail() {
     const chip = el('button', {
       class: `rr-chip${i === relayPos ? ' active' : ''}${done ? ' done' : ''}`,
       type: 'button',
-      title: `${eventOf(id).name} · puzzle ${i + 1} of ${list.length}`,
+      title: t('{event} · puzzle {i} of {n}', { event: eventOf(id).name, i: i + 1, n: list.length }),
     }, el('b', { text: eventOf(id).short }),
        done ? el('i', { text: fmt(relaySplits[i]) }) : null);
     if (i === relayPos) chip.setAttribute('aria-current', 'step');
@@ -757,7 +759,7 @@ function renderRelayRail() {
        scoresheet, which is the one thing a one-at-a-time rail cannot do. */
     el('button', {
       class: `rr-all${relayAll ? ' on' : ''}`, type: 'button', text: 'all',
-      title: relayAll ? 'Back to one puzzle at a time' : 'Show every scramble as text',
+      title: relayAll ? t('Back to one puzzle at a time') : t('Show every scramble as text'),
       onclick: () => { relayAll = !relayAll; if (app.scramble) showScramble(app.scramble, true); },
     }),
   );
@@ -820,8 +822,8 @@ async function nextScramble({ clear = false } = {}) {
     // A relay reports its progress leg by leg — see relayProgress.
     relayWarming = relayOn();
     node.textContent = relayWarming
-      ? `0/${relayList().length} scrambles ready…`
-      : 'generating scramble…';
+      ? t('{done}/{total} scrambles ready…', { done: 0, total: relayList().length })
+      : t('generating scramble…');
     node.classList.remove('multiline', 'long');
     $('#case-label').hidden = true;
   }
@@ -926,8 +928,8 @@ async function nextScramble({ clear = false } = {}) {
    that one. Stepping the scramble under it would leave the two disagreeing. */
 /** Why the scramble will not step. Two features hold it, for two reasons. */
 const spokenForWhy = () => (fmcAttempting()
-  ? 'Your attempt is on this scramble — submit or abandon it first'
-  : 'Today’s scramble is the only one in here');
+  ? t('Your attempt is on this scramble — submit or abandon it first')
+  : t('Today’s scramble is the only one in here'));
 
 const scrambleIsSpokenFor = () =>
   document.body.classList.contains('sotd') || !!dailyCtl()?.engaged || fmcAttempting();
@@ -960,7 +962,7 @@ function takeCustom() {
   saveCustom();
   updateCustomBar();
   if (c.pos >= c.list.length) {
-    toast(`Last of your ${c.list.length} scrambles — generated after this one`);
+    toast(t('Last of your {n} scrambles — generated after this one', { n: c.list.length }));
   }
   return { scramble: c.list[i], official: false, custom: true, customIndex: i + 1, customTotal: c.list.length };
 }
@@ -981,7 +983,7 @@ function updateCustomBar() {
   const live = c.list.length > 0 && (c.pos < c.list.length || !!app.scramble?.custom);
   bar.hidden = !live;
   if (live) {
-    $('#custom-pos').textContent = `custom ${Math.min(c.pos, c.list.length)} / ${c.list.length}`;
+    $('#custom-pos').textContent = t('custom {i} / {n}', { i: Math.min(c.pos, c.list.length), n: c.list.length });
     bar.classList.toggle('spent', c.pos >= c.list.length);
   }
 }
@@ -1008,7 +1010,7 @@ app.setCustomScrambles = (text, { append = false } = {}) => {
   closeDrawer();
   // Show the first one straight away rather than making you press next.
   if (!append || c.pos >= c.list.length - list.length) nextScramble();
-  toast(`${list.length} scramble${list.length === 1 ? '' : 's'} loaded`, { kind: 'good' });
+  toast(t(list.length === 1 ? '{n} scramble loaded' : '{n} scrambles loaded', { n: list.length }), { kind: 'good' });
   return list.length;
 };
 
@@ -1060,7 +1062,7 @@ function showScramble(s, silent = false) {
     node.style.fontSize = '';
     $('#case-label').hidden = true;
     updateCustomBar();
-    node.title = 'Nothing to solve yet — the room is still racing';
+    node.title = t('Nothing to solve yet — the room is still racing');
     /* The preview goes with it. A cube still showing the scramble you just
        solved is the same wrong instruction in a different shape — and it is
        still configured for the event, because a hold can be the first thing a
@@ -1125,7 +1127,7 @@ function showScramble(s, silent = false) {
     const bar = $('#custom-bar');
     if (bar) {
       bar.hidden = false;
-      $('#custom-pos').textContent = `custom ${s.customIndex} / ${s.customTotal}`;
+      $('#custom-pos').textContent = t('custom {i} / {n}', { i: s.customIndex, n: s.customTotal });
     }
   } else updateCustomBar();
 
@@ -1150,8 +1152,8 @@ function showScramble(s, silent = false) {
   resetVcube();
 
   if (s.official === false && mode.kind === 'wca' && !cubingAvailable()) {
-    node.title = 'Offline fallback scramble — not competition legal';
-  } else node.title = 'click to copy';
+    node.title = t('Offline fallback scramble — not competition legal');
+  } else node.title = t('click to copy');
 
   // A new scramble is a new breakdown. Still nothing is traced unless the
   // panel happens to be open — renderBld only reaches the engine when it is.
@@ -1595,7 +1597,7 @@ function wirePhaseZone() {
   const applyCollapsed = (collapsed) => {
     panel.hidden = collapsed;
     toggle.setAttribute('aria-expanded', String(!collapsed));
-    toggle.textContent = collapsed ? 'Show breakdown' : 'Hide breakdown';
+    toggle.textContent = collapsed ? t('Show breakdown') : t('Hide breakdown');
   };
   applyCollapsed(app.settings.phasesCollapsed !== false);
   toggle.addEventListener('click', () => {
@@ -1618,7 +1620,7 @@ function renderBldInner() {
 
   const btn = $('#btn-bld-toggle');
   const panel = $('#bld-panel');
-  btn.textContent = bldOpen ? 'Hide breakdown' : 'Show breakdown';
+  btn.textContent = bldOpen ? t('Hide breakdown') : t('Show breakdown');
   btn.setAttribute('aria-expanded', String(bldOpen));
   panel.hidden = !bldOpen;
   if (!bldOpen) return;
@@ -1637,10 +1639,8 @@ function renderBldInner() {
     // nothing: multi-blind is 3x3 cubes but several scrambles at once, while
     // the big blind events have pieces this app does not model at all.
     note.textContent = app.settings.event === '333mbf'
-      ? 'Multi-blind hands you several scrambles at once, and a breakdown of one of them is not '
-        + 'the memo you are building. Trace an attempt on 3BLD instead.'
-      : eventOf(app.settings.event).name + ' is not traced: only the 3x3 is modelled, and inventing '
-        + 'wing and centre cycles would be worse than saying so.';
+      ? t('Multi-blind hands you several scrambles at once, and a breakdown of one of them is not the memo you are building. Trace an attempt on 3BLD instead.')
+      : eventOf(app.settings.event).name + t(' is not traced: only the 3x3 is modelled, and inventing wing and centre cycles would be worse than saying so.');
     return;
   }
 
@@ -1655,34 +1655,33 @@ function renderBldInner() {
     const b = app.settings.bld || {};
     const letters = { ...DEFAULT_SPEFFZ_MAP, ...(b.letters || {}) };
     const name = (st) => `${letters[st] || '?'} (${st})`;
-    const colour = (f) => `${FACE_COLOURS[f] || '?'} (${f})`;
+    const colour = (f) => `${t(FACE_COLOURS[f] || '?')} (${f})`;
     $('#bld-setup-now').textContent =
       `${name(b.edgeBuffer || 'UF')} / ${name(b.cornerBuffer || 'UFR')}, `
-      + `${colour(b.orientation?.up || 'U')} on top with ${colour(b.orientation?.front || 'F')} in front, `
-      + `${b.scheme === 'custom' ? 'your own letters' : 'Speffz'}`;
+      + t('{up} on top with {front} in front, ', { up: colour(b.orientation?.up || 'U'), front: colour(b.orientation?.front || 'F') })
+      + `${b.scheme === 'custom' ? t('your own letters') : 'Speffz'}`;
     return;
   }
   setup.hidden = true;
 
-  const t = bldOf(app.scramble);
+  const tr = bldOf(app.scramble);
   show(true);
-  if (!t) {
+  if (!tr) {
     $('#bld-edges').textContent = '';
     $('#bld-corners').textContent = '';
     $('#bld-parity').hidden = true;
     note.hidden = false;
-    note.textContent = 'This scramble could not be read as 3x3 notation.';
+    note.textContent = t('This scramble could not be read as 3x3 notation.');
     return;
   }
 
-  bldChips($('#bld-edges'), t.edges);
-  bldChips($('#bld-corners'), t.corners);
-  $('#bld-parity').hidden = !t.parity;
-  const odd = (t.edges.targets.length % 2) || (t.corners.targets.length % 2);
+  bldChips($('#bld-edges'), tr.edges);
+  bldChips($('#bld-corners'), tr.corners);
+  $('#bld-parity').hidden = !tr.parity;
+  const odd = (tr.edges.targets.length % 2) || (tr.corners.targets.length % 2);
   note.hidden = !odd;
   if (odd) {
-    note.textContent = 'The odd target needs your own parity algorithm. Which one that is depends '
-      + 'on your buffer and scheme, so the timer flags it rather than guessing.';
+    note.textContent = t('The odd target needs your own parity algorithm. Which one that is depends on your buffer and scheme, so the timer flags it rather than guessing.');
   }
 }
 
@@ -1760,25 +1759,25 @@ function bldFitOnce() {
 function bldChips(host, group) {
   host.textContent = '';
   if (!group.targets.length) {
-    host.append(el('span', { class: 'bld-none', text: 'nothing to shoot' }));
+    host.append(el('span', { class: 'bld-none', text: t('nothing to shoot') }));
     return;
   }
   const breaks = new Set(group.breaks);
   for (let i = 0; i < group.targets.length; i += 2) {
     const pair = group.targets.slice(i, i + 2);
     const chip = el('button', { class: 'bld-chip' + (pair.length < 2 ? ' odd' : ''), type: 'button' });
-    pair.forEach((t, k) => {
+    pair.forEach((tg, k) => {
       const cls = ['bld-l'];
-      if (t.inPlace) cls.push('inplace');
+      if (tg.inPlace) cls.push('inplace');
       if (breaks.has(i + k)) cls.push('brk');
       chip.append(el('b', {
         class: cls.join(' '),
-        text: t.letter,
+        text: tg.letter,
         title: [
-          'target ' + (i + k + 1),
-          breaks.has(i + k) ? 'starts a new cycle - a break, which costs an extra target' : null,
-          t.inPlace ? 'second shot at the same piece: a flip or twist put right in place' : null,
-        ].filter(Boolean).join('  -  '),
+          t('target ') + (i + k + 1),
+          breaks.has(i + k) ? t('starts a new cycle - a break, which costs an extra target') : null,
+          tg.inPlace ? t('second shot at the same piece: a flip or twist put right in place') : null,
+        ].filter(Boolean).join(t('  -  ')),
       }));
     });
     const key = pair.map(t => t.letter).join('');
@@ -1793,21 +1792,21 @@ async function bldPairPopover(anchor, pair) {
   let rec = null;
   if (!single) { try { rec = await LetterPairs.get(pair); } catch { /* not worth failing over */ } }
 
-  const items = [{ title: single ? pair + ' - odd target' : pair }];
+  const items = [{ title: single ? pair + t(' - odd target') : pair }];
   if (rec?.word) items.push({ label: rec.word });
   if (rec?.imageUrl) items.push({ node: el('img', { class: 'pop-img', src: rec.imageUrl, alt: rec.word || pair }) });
   if (rec?.alg) items.push({ label: rec.alg, badge: 'alg' });
   if (rec?.notes) items.push({ label: rec.notes });
 
   if (single) {
-    items.push({ label: 'Pairs with the next leftover, or needs parity' });
+    items.push({ label: t('Pairs with the next leftover, or needs parity') });
   } else if (!rec || (!rec.word && !rec.alg && !rec.notes && !rec.imageUrl)) {
-    items.push({ label: 'No memo saved for this pair yet' });
+    items.push({ label: t('No memo saved for this pair yet') });
   }
   if (!single) {
     items.push({ sep: true });
     items.push({
-      label: rec ? 'Edit this pair' : 'Add a memo',
+      label: rec ? t('Edit this pair') : t('Add a memo'),
       onSelect: () => openPanel('Letter pairs', 'buildLetterPairs', { wide: true }, app, pair),
     });
   }
@@ -1831,7 +1830,7 @@ function relayNow() {
   const list = relayList();
   if (!now || !list) return;
   now.hidden = false;
-  now.textContent = `on ${eventOf(list[relayPos])?.short} · ${relayPos + 1} of ${list.length}`;
+  now.textContent = t('on {event} · {i} of {n}', { event: eventOf(list[relayPos])?.short, i: relayPos + 1, n: list.length });
 }
 
 function phaseStart() {
@@ -1850,7 +1849,7 @@ function phaseStart() {
     $('#timer-display').classList.add('phase-memo');
     const r = $('#phase-readout');
     r.hidden = false;
-    $('#phase-name').textContent = 'memo';
+    $('#phase-name').textContent = t('memo');
     $('#phase-times').textContent = '';
     return;
   }
@@ -1885,8 +1884,8 @@ function phaseSplit({ atMs, phaseMs, index }) {
     const d = $('#timer-display');
     d.classList.remove('phase-memo');
     d.classList.add('phase-exec');
-    $('#phase-name').textContent = 'exec';
-    $('#phase-times').textContent = 'memo ' + fmt(atMs);
+    $('#phase-name').textContent = t('exec');
+    $('#phase-times').textContent = t('memo ') + fmt(atMs);
     return;
   }
   if (multiphaseOn()) {
@@ -1922,7 +1921,7 @@ function renderPhaseBreakdown(phasesMs, timeMs) {
         el('b', { text: `P${i + 1}` }),
         el('i', { text: fmt(ms) }))),
     ),
-    el('div', { class: 'phase-total', text: `total ${fmt(timeMs)}` }),
+    el('div', { class: 'phase-total', text: t('total {time}', { time: fmt(timeMs) }) }),
   );
 }
 
@@ -1952,7 +1951,7 @@ async function onSolveFinished(res) {
     // A misfire is obvious the instant it happens — you felt the stack move.
     // No answer means keep the solve. It stays up long enough to read, and
     // starting the next solve closes it early (see the timer 'state' listener).
-    pendingMisfire = confirmToast(`${fmt(res.timeMs)} — misfire? Discard it?`, 'discard', { timeout: 5000 });
+    pendingMisfire = confirmToast(t('{time} — misfire? Discard it?', { time: fmt(res.timeMs) }), t('discard'), { timeout: 5000 });
     const discard = await pendingMisfire;
     pendingMisfire = null;
     if (discard) { timer.reset(); nextScramble(); return; }
@@ -2050,7 +2049,7 @@ async function recordSolve({ timeMs, penalty = 'none', inspectionMs = 0, splits 
     ...(relayParts ? { relay: relayParts } : {}),
   };
   if (bld?.memoMs != null) {
-    $('#phase-times').textContent = `memo ${fmt(bld.memoMs)} · exec ${fmt(bld.execMs)}`;
+    $('#phase-times').textContent = t('memo {m} · exec {e}', { m: fmt(bld.memoMs), e: fmt(bld.execMs) });
   }
   if (phasesMs) renderPhaseBreakdown(phasesMs, timeMs);
   // The last chip has been waiting for the stopping press to give it a time.
@@ -2150,7 +2149,7 @@ function showDelta(solve, prevBest) {
   const d = cur - prev;
   node.hidden = false;
   node.className = d <= 0 ? 'better' : 'worse';
-  node.textContent = `${d <= 0 ? '▼' : '▲'} ${fmtResult(Math.abs(d), isMoveResult(solve))} vs last`;
+  node.textContent = t('{arrow} {d} vs last', { arrow: d <= 0 ? '▼' : '▲', d: fmtResult(Math.abs(d), isMoveResult(solve)) });
   void prevBest;
 }
 
@@ -2195,7 +2194,7 @@ function editSession(anchor, s) {
   const name = el('input', { class: 'inp', type: 'text', value: s.name, maxlength: '120' });
   const target = el('input', {
     class: 'inp', type: 'text', inputmode: 'decimal',
-    placeholder: moves ? 'moves, e.g. 30' : 'e.g. 12 or 1:05.2',
+    placeholder: moves ? t('moves, e.g. 30') : t('e.g. 12 or 1:05.2'),
     value: s.goal ? goalTarget(s.goal.value, moves) : '',
   });
   const stat = el('select', { class: 'inp' },
@@ -2207,7 +2206,7 @@ function editSession(anchor, s) {
     let goal = null;
     if (raw) {
       const value = parseGoal(raw, moves);
-      if (value === null) { err.textContent = moves ? 'Type a move count, like 30' : 'Type a time, like 12 or 1:05.2'; return; }
+      if (value === null) { err.textContent = moves ? t('Type a move count, like 30') : t('Type a time, like 12 or 1:05.2'); return; }
       goal = { value, stat: stat.value };
     }
     closePopover();
@@ -2230,15 +2229,15 @@ function editSession(anchor, s) {
 
   const form = el('div', { class: 'pop-form' },
     el('label', {}, 'Name', name),
-    el('label', {}, moves ? 'Goal (moves)' : 'Goal', el('div', { class: 'pf-row' }, target, stat)),
+    el('label', {}, moves ? t('Goal (moves)') : 'Goal', el('div', { class: 'pf-row' }, target, stat)),
     err,
     el('div', { class: 'pf-btns' },
-      el('button', { class: 'btn small', type: 'button', text: 'Cancel', onclick: closePopover }),
-      el('button', { class: 'btn small primary', type: 'button', text: 'Save', onclick: save })),
+      el('button', { class: 'btn small', type: 'button', text: t('Cancel'), onclick: closePopover }),
+      el('button', { class: 'btn small primary', type: 'button', text: t('Save'), onclick: save })),
   );
   // Esc is the popover's own: it closes, which is cancel.
   form.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); save(); } });
-  popover(anchor, [{ title: 'Edit session' }, { node: form }]);
+  popover(anchor, [{ title: t('Edit session') }, { node: form }]);
   name.focus();
   name.select();
 }
@@ -2257,7 +2256,7 @@ function celebratePB(kind, value, title) {
         power: 0.7 + intensity * 0.5 });
     flash(c.gold);
   }
-  const label = title || (kind === 'single' ? 'New personal best!' : `Best ${kind} of the session!`);
+  const label = title || (kind === 'single' ? t('New personal best!') : `Best ${kind} of the session!`);
   toast(label, { kind: 'good', hold: true });
   const d = $('#timer-display');
 
@@ -2267,7 +2266,7 @@ function celebratePB(kind, value, title) {
   ticker.className = 'pb-marquee' + (motion === 'off' ? ' still' : '');
   ticker.setAttribute('aria-hidden', 'true');
   const line = document.createElement('span');
-  line.textContent = `${title ? 'goal' : 'best'} ${kind} · ${fmtNow(value)}`;
+  line.textContent = `${t(title ? 'goal' : 'best')} ${kind} · ${fmtNow(value)}`;
   ticker.append(line);
   d.append(ticker);
   setTimeout(() => ticker.remove(), 5000);
@@ -2321,7 +2320,7 @@ function renderStats() {
     lastStats[k] = v;
   }
 
-  $('#stat-count').textContent = `${st.count} solve${st.count === 1 ? '' : 's'}`;
+  $('#stat-count').textContent = t(st.count === 1 ? '{n} solve' : '{n} solves', { n: st.count });
   const cons = st.consistency;
   $('#cons-fill').style.width = cons === null ? '0%' : Math.round(cons * 100) + '%';
   $('#cons-val').textContent = cons === null ? '—' : Math.round(cons * 100) + '%';
@@ -2515,8 +2514,11 @@ function historyRowData(i) {
         text: a === null ? '·' : fmtNow(a),
         has: a !== null,
         best: isBest,
-        title: a === null ? `needs ${n} solves`
-          : `${movesStats() && n === 3 ? 'mo3' : 'ao' + n} after solve ${i + 1}${isBest ? ' — best of the session' : ''} — click for the ${n} solves`,
+        title: a === null ? t('needs {n} solves', { n })
+          : t('{avg} after solve {i}{best} — click for the {n} solves', {
+            avg: movesStats() && n === 3 ? 'mo3' : 'ao' + n, i: i + 1, n,
+            best: isBest ? t(' — best of the session') : '',
+          }),
       };
     }),
   };
@@ -2532,9 +2534,9 @@ function historyChip(i, data) {
      still carries the same entry, which is the only way in on a touch screen,
      where this column is dropped entirely. */
   const recon = el('button', {
-    class: 'chip-recon', title: 'Reconstruct this solve  (Y)',
+    class: 'chip-recon', title: t('Reconstruct this solve  (Y)'),
     html: '<svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 108-8"/><path d="M12 4L9 7l3 3"/></svg>'
-        + '<i>reconstruct</i>',
+        + `<i>${t('reconstruct')}</i>`,
   });
   recon.addEventListener('click', (e) => { e.stopPropagation(); reconstructSolve(d.solve); });
 
@@ -2553,7 +2555,7 @@ function historyChip(i, data) {
     cell.setAttribute('role', 'button');
     const open = (e) => {
       e.stopPropagation();
-      openPanel(`Average of ${a.n} · to solve #${i + 1}`, 'buildStatDetail', { wide: true },
+      openPanel(t('Average of {n} · to solve #{i}', { n: a.n, i: i + 1 }), 'buildStatDetail', { wide: true },
         app, `ao${a.n}@${i}`);
     };
     cell.addEventListener('click', open);
@@ -2565,7 +2567,7 @@ function historyChip(i, data) {
     el('span', { class: 'idx', text: d.idx }),
     el('span', {
       class: 't', text: d.time,
-      title: d.solve.phases?.length ? 'Has a phase breakdown — click for the split' : '',
+      title: d.solve.phases?.length ? t('Has a phase breakdown — click for the split') : '',
     }),
     ...cells,
     recon,
@@ -2590,7 +2592,7 @@ function appendHistoryRows(list, from, to, sigs = null, sigAt = 0) {
   list.querySelector('.hist-end')?.remove();
   list.append(frag);
   if (to === 0) {
-    list.append(el('div', { class: 'hist-end', text: 'start of the session' }));
+    list.append(el('div', { class: 'hist-end', text: t('start of the session') }));
   }
 }
 
@@ -2605,7 +2607,7 @@ function appendSortedRows(list, from, to) {
   list.querySelector('.hist-end')?.remove();
   list.append(frag);
   if (to >= histOrdered.length) {
-    list.append(el('div', { class: 'hist-end', text: `all ${histOrdered.length} solves, by ${histSort === 'time' ? 'time' : 'ao' + histSort.slice(3)}` }));
+    list.append(el('div', { class: 'hist-end', text: t('all {n} solves, by {sort}', { n: histOrdered.length, sort: histSort === 'time' ? t('time') : 'ao' + histSort.slice(3) }) }));
   }
 }
 
@@ -2663,9 +2665,9 @@ function renderHistory() {
     list.innerHTML = '';
     // Same device test as the hint under the digits: a phone has no spacebar.
     list.append(el('div', { class: 'hist-empty', text: movesMode()
-      ? 'No attempts yet — press Start attempt.'
-      : COARSE.matches ? 'No times yet — tap anywhere and go.'
-      : 'No times yet — hold space and go.' }));
+      ? t('No attempts yet — press Start attempt.')
+      : COARSE.matches ? t('No times yet — tap anywhere and go.')
+      : t('No times yet — hold space and go.') }));
     return;
   }
 
@@ -2771,7 +2773,7 @@ function renderHistory() {
 
   // The marker only belongs there while the window really does reach solve #1.
   const end = list.querySelector('.hist-end');
-  if (lo === 0 && !end) list.append(el('div', { class: 'hist-end', text: 'start of the session' }));
+  if (lo === 0 && !end) list.append(el('div', { class: 'hist-end', text: t('start of the session') }));
   else if (lo !== 0 && end) end.remove();
 }
 
@@ -2818,7 +2820,7 @@ function syncSortHeaders() {
 function applyHistGrid(count) {
   const panel = $('#panel-times');
   if (!panel) return;
-  const avg = ' var(--ao-col)'.repeat(count);
+  const avg = t(' var(--ao-col)').repeat(count);
   panel.style.setProperty('--hist-grid', `24px minmax(0, 1fr)${avg} 20px`);
   panel.style.setProperty('--hist-grid-touch', `24px minmax(0, 1fr)${avg}`);
 }
@@ -2830,12 +2832,12 @@ function avgHeading(n) {
   const name = (movesStats() && n === 3) ? 'mo3' : `ao${n}`;
   const sort = el('button', {
     type: 'button', class: 'col-sort', 'data-sort': `avg${n}`,
-    title: `Sort by ${name} — click again for solve order`, text: name,
+    title: t('Sort by {name} — click again for solve order', { name }), text: name,
   });
   const edit = el('button', {
     type: 'button', class: 'col-edit', 'data-edit': String(n),
-    title: `Show a different average here — anything from ao${AVG_MIN} up`,
-    'aria-label': `Change the ao${n} column`, text: '✎',
+    title: t('Show a different average here — anything from ao{n} up', { n: AVG_MIN }),
+    'aria-label': t('Change the ao{n} column', { n }), text: '✎',
   });
   return el('span', { class: 'col-avg' }, sort, edit);
 }
@@ -2853,8 +2855,8 @@ function editAvgColumn(cell, n) {
   if (cell.querySelector('input')) return;
   const input = el('input', {
     type: 'number', class: 'col-num', min: String(AVG_MIN), max: String(AVG_MAX),
-    step: '1', value: String(n), 'aria-label': 'Average of how many solves',
-    title: `Any average from ${AVG_MIN} to ${AVG_MAX}`,
+    step: '1', value: String(n), 'aria-label': t('Average of how many solves'),
+    title: t('Any average from {a} to {b}', { a: AVG_MIN, b: AVG_MAX }),
   });
   const prev = [...cell.childNodes];
   cell.replaceChildren(input);
@@ -2867,13 +2869,13 @@ function editAvgColumn(cell, n) {
     if (done) return;
     const v = Math.round(Number(input.value));
     if (!Number.isFinite(v) || v < AVG_MIN || v > AVG_MAX) {
-      toast(`An average is between ${AVG_MIN} and ${AVG_MAX} solves.`, { kind: 'warn' });
+      toast(t('An average is between {a} and {b} solves.', { a: AVG_MIN, b: AVG_MAX }), { kind: 'warn' });
       cancel();
       return;
     }
     const cols = avgCols();
     if (v !== n && cols.includes(v)) {
-      toast(`ao${v} is already one of the columns.`, { kind: 'warn' });
+      toast(t('ao{n} is already one of the columns.', { n: v }), { kind: 'warn' });
       cancel();
       return;
     }
@@ -2920,7 +2922,7 @@ function renderHistCols() {
     el('span'),
     el('button', {
       type: 'button', 'data-sort': 'time',
-      title: 'Sort by time — click again for solve order', text: 'time',
+      title: t('Sort by time — click again for solve order'), text: 'time',
     }),
     ...cols.map(avgHeading),
     el('span'),
@@ -2965,13 +2967,13 @@ function updateHint() {
   // nothing. Same two states, described with the input the device actually has.
   if (COARSE.matches) {
     node.innerHTML = app.settings.holdTime > 0
-      ? 'hold anywhere, release to start'
-      : 'tap anywhere, release to start';
+      ? t('hold anywhere, release to start')
+      : t('tap anywhere, release to start');
     return;
   }
   node.innerHTML = app.settings.holdTime > 0
-    ? 'hold <kbd>space</kbd>, release to start'
-    : 'tap <kbd>space</kbd>, release to start';
+    ? t('hold <kbd>space</kbd>, release to start')
+    : t('tap <kbd>space</kbd>, release to start');
 }
 
 function updateLabels() {
@@ -2981,8 +2983,8 @@ function updateLabels() {
   $('#mode-label').textContent = mode.name;
   $('#session-label').textContent = app.session.name;
   $('#btn-mode').classList.toggle('active-mode', app.settings.mode !== 'wca');
-  $('#hist-title').textContent = `Times · ${ev.short}`;
-  $$('#view-toggle button').forEach(b => b.classList.toggle('on', b.dataset.view === app.settings.cubeView));
+  $('#hist-title').textContent = t('Times · {event}', { event: ev.short });
+  $$(t('#view-toggle button')).forEach(b => b.classList.toggle('on', b.dataset.view === app.settings.cubeView));
 }
 
 /* =========================================================
@@ -2997,7 +2999,7 @@ function solveMenu(solve, anchor) {
   };
   popover(anchor, [
     { title: `#${app.solves.indexOf(solve) + 1} · ${fmtResult(eff(solve), isMoveResult(solve))}` },
-    { label: 'No penalty', on: solve.penalty === 'none', onSelect: () => setPenalty('none') },
+    { label: t('No penalty'), on: solve.penalty === 'none', onSelect: () => setPenalty('none') },
     { label: '+2', badge: '2', on: solve.penalty === '+2', onSelect: () => setPenalty('+2') },
     { label: 'DNF', badge: 'D', on: solve.penalty === 'DNF', onSelect: () => setPenalty('DNF') },
     { sep: true },
@@ -3006,15 +3008,15 @@ function solveMenu(solve, anchor) {
        it is the only way to find out what went wrong. */
     ...(solve.fmcSolution ? [
       { sep: true },
-      { title: solve.fmcNotes ? `Solution · ${solve.fmcNotes}` : 'Solution' },
+      { title: solve.fmcNotes ? t('Solution · {notes}', { notes: solve.fmcNotes }) : t('Solution') },
       { node: el('div', { class: 'pop-solution', text: solve.fmcSolution }) },
-      { label: 'Copy solution', onSelect: () => copyToast(solve.fmcSolution, 'Solution') },
+      { label: t('Copy solution'), onSelect: () => copyToast(solve.fmcSolution, 'Solution') },
       { sep: true },
     ] : []),
-    { label: 'Copy scramble', badge: '', onSelect: () => copyToast(solve.scramble, 'Scramble') },
-    { label: 'Share as a card', badge: 'S', onSelect: () => app.shareSolveCard(solve) },
-    { label: solve.comment ? 'Edit comment' : 'Add comment', badge: 'C', onSelect: () => commentOn(solve) },
-    { label: 'Repeat this scramble', badge: 'R', onSelect: () => repeatScramble(solve) },
+    { label: t('Copy scramble'), badge: '', onSelect: () => copyToast(solve.scramble, 'Scramble') },
+    { label: t('Share as a card'), badge: 'S', onSelect: () => app.shareSolveCard(solve) },
+    { label: solve.comment ? t('Edit comment') : t('Add comment'), badge: 'C', onSelect: () => commentOn(solve) },
+    { label: t('Repeat this scramble'), badge: 'R', onSelect: () => repeatScramble(solve) },
     /* Reconstruction only understands a 3x3, so a relay offers its 3x3 legs
        one by one and nothing else — a "reconstruct" that opened a 5x5
        scramble in a 3x3 workbench would just be broken. */
@@ -3023,22 +3025,22 @@ function solveMenu(solve, anchor) {
           .map((p, i) => ({ p, i }))
           .filter(({ p }) => p.event === '333' || p.event === '333oh')
           .map(({ p, i }) => ({
-            label: `Reconstruct puzzle ${i + 1} (${eventOf(p.event).short})`,
+            label: t('Reconstruct puzzle {i} ({event})', { i: i + 1, event: eventOf(p.event).short }),
             onSelect: () => reconstructSolve(solve, p.scramble),
           }))
-      : [{ label: solve.recon ? 'Open the reconstruction' : 'Reconstruct this solve', badge: 'Y', onSelect: () => reconstructSolve(solve) }]),
+      : [{ label: solve.recon ? t('Open the reconstruction') : t('Reconstruct this solve'), badge: 'Y', onSelect: () => reconstructSolve(solve) }]),
     // Offered, never automatic: a DNF you already know the cause of does not
     // need a dialog thrown at it the moment you press D.
     ...(solve.penalty === 'DNF' && solve.bld?.edges ? [{
-      label: 'Diagnose this DNF',
-      onSelect: () => openPanel('DNF post-mortem', 'buildPostMortem', { wide: true }, app, solve),
+      label: t('Diagnose this DNF'),
+      onSelect: () => openPanel(t('DNF post-mortem'), 'buildPostMortem', { wide: true }, app, solve),
     }] : []),
     // Any solve with phases recorded gets its breakdown right here — the zone
     // under the clock only ever shows the one you just did, so this is the
     // only way back into an older solve's split.
     ...(solve.phases?.length ? [
       { sep: true },
-      { title: 'Phase breakdown' },
+      { title: t('Phase breakdown') },
       { node: el('div', { class: 'phase-row pop-phases' }, ...solve.phases.map((ms, i) =>
           el('div', { class: 'phase-chip' }, el('b', { text: `P${i + 1}` }), el('i', { text: fmt(ms) })))) },
     ] : []),
@@ -3047,7 +3049,7 @@ function solveMenu(solve, anchor) {
        joined copy above is the only other place they exist. */
     ...(solve.relay?.length ? [
       { sep: true },
-      { title: `Relay · ${solve.relay.map(p => eventOf(p.event).short).join(' · ')}` },
+      { title: t('Relay · {events}', { events: solve.relay.map(p => eventOf(p.event).short).join(' · ') }) },
       { node: el('div', { class: 'relay-legs' }, ...solve.relay.map((p, i) =>
           el('div', { class: 'relay-leg' },
             el('div', { class: 'rl-head' },
@@ -3056,7 +3058,7 @@ function solveMenu(solve, anchor) {
             el('div', { class: 'rl-scramble', text: p.scramble })))) },
     ] : []),
     { sep: true },
-    { label: 'Delete solve', badge: 'Del', onSelect: () => deleteThrottled(solve) },
+    { label: t('Delete solve'), badge: 'Del', onSelect: () => deleteThrottled(solve) },
   ]);
 }
 app.solveMenu = solveMenu;
@@ -3082,12 +3084,12 @@ async function repeatScramble(solve) {
       ? { parts: solve.relay.map(p => ({ event: p.event, scramble: p.scramble })) }
       : {}),
   });
-  toast(`Repeating solve #${app.solves.indexOf(solve) + 1}`, { kind: 'good' });
+  toast(t('Repeating solve #{n}', { n: app.solves.indexOf(solve) + 1 }), { kind: 'good' });
 }
 app.repeatScramble = repeatScramble;
 
 function commentOn(solve) {
-  const text = prompt('Comment on this solve', solve.comment || '');
+  const text = prompt(t('Comment on this solve'), solve.comment || '');
   if (text === null) return;
   solve.comment = text;
   Solves.put(solve).then(() => toast('Comment saved'));
@@ -3115,11 +3117,11 @@ async function deleteSolve(solve) {
   if (i === -1) return;
   app.solves.splice(i, 1);
   await Solves.del(solve.id);
-  app.lastDeleted = { solves: [solve], sessionId: app.session.id, label: '1 solve' };
+  app.lastDeleted = { solves: [solve], sessionId: app.session.id, label: t('1 solve') };
   app.sessionCounts.set(app.session.id, app.solves.length);
   renderAll();
   syncTimerDisplay();
-  toast(`Deleted ${eff(solve) === DNF ? 'DNF' : fmt(eff(solve))} — Ctrl+Z`, {
+  toast(t('Deleted {what} — Ctrl+Z', { what: eff(solve) === DNF ? 'DNF' : fmt(eff(solve)) }), {
     action: 'undo',
     onAction: undoDelete,
   });
@@ -3148,7 +3150,7 @@ async function undoDelete() {
     syncTimerDisplay();
   }
   app.sessionCounts.set(rec.sessionId, (app.sessionCounts.get(rec.sessionId) || 0) + rec.solves.length);
-  toast(`Restored ${rec.label}`);
+  toast(t('Restored {what}', { what: rec.label }));
 }
 
 /* =========================================================
@@ -3181,7 +3183,7 @@ app.switchSession = async (id) => {
   // event alone does not settle whether the scramble has to be thrown away.
   refreshQueue(); nextScramble({ clear: changedEvent || wasRelay || relayOn() });
   renderAll();
-  toast(`Switched to ${s.name}`);
+  toast(t('Switched to {name}', { name: s.name }));
 };
 
 app.newSession = async () => {
@@ -3321,14 +3323,14 @@ app.refreshLayout = debounce(() => measureLayout(), 200);
 app.joinRace = async (code) => {
   let m;
   try { m = await loadRace(); }
-  catch (err) { return lazyFailed('race mode', err); }
+  catch (err) { return lazyFailed(t('race mode'), err); }
   const ctl = m.getRace(app);
   try {
     const id = await ctl.join(code);
-    toast(`Joined ${id}`, { kind: 'good' });
+    toast(t('Joined {room}', { room: id }), { kind: 'good' });
   } catch (err) {
     console.error('[race] join failed:', err);
-    toast(err?.message === 'room-full' ? 'That room is full' : 'Could not join that room', { kind: 'bad' });
+    toast(err?.message === 'room-full' ? t('That room is full') : 'Could not join that room', { kind: 'bad' });
   }
 };
 
@@ -3342,7 +3344,7 @@ app.deleteSession = async (id) => {
 
 async function clearSession() {
   if (!app.solves.length) { toast('Session is already empty'); return; }
-  if (!await confirmToast(`Delete all ${app.solves.length} solves in "${app.session.name}"?`, 'clear it')) return;
+  if (!await confirmToast(t('Delete all {n} solves in "{name}"?', { n: app.solves.length, name: app.session.name }), t('clear it'))) return;
   const backup = [...app.solves];
   await Solves.clearSession(app.session.id);
   app.solves = [];
@@ -3354,9 +3356,9 @@ async function clearSession() {
   app.lastDeleted = {
     solves: backup,
     sessionId: app.session.id,
-    label: `${backup.length} solves`,
+    label: t('{n} solves', { n: backup.length }),
   };
-  toast(`Cleared ${backup.length} solves — Ctrl+Z`, { action: 'undo', onAction: undoDelete });
+  toast(t('Cleared {n} solves — Ctrl+Z', { n: backup.length }), { action: 'undo', onAction: undoDelete });
 }
 
 
@@ -3424,12 +3426,12 @@ function applyInputMode(changed) {
   else $('#manual-input')?.blur();
 
   if (changed && app.settings.inputMode === 'virtual' && mode !== 'virtual') {
-    toast(`The virtual cube is 2x2 to 7x7 — ${eventOf(app.settings.event).short} stays on the spacebar`, { long: true });
+    toast(t('The virtual cube is 2x2 to 7x7 — {event} stays on the spacebar', { event: eventOf(app.settings.event).short }), { long: true });
   }
   syncVirtualSession().then((moved) => {
     if (!moved) return;
     renderAll();
-    if (changed) toast(virtualLive() ? `Virtual solves go in ${app.session.name}` : `Back to ${app.session.name}`);
+    if (changed) toast(t(virtualLive() ? 'Virtual solves go in {name}' : 'Back to {name}', { name: app.session.name }));
   }).catch(err => console.warn('[vcube] session switch failed', err));
 }
 app.applyInputMode = applyInputMode;
@@ -3442,7 +3444,7 @@ const loadVcube = lazy(async () => {
   const { VirtualCube } = await import('./vcube.js');
   const view = new CubeView($('#vcube-holder'), null);
   view.backView = 'none';     // csTimer shows the one cube, no floating rear view
-  if (!await view.init()) throw new Error('twisty-player unavailable');
+  if (!await view.init()) throw new Error(t('twisty-player unavailable'));
   view.setHints(false);
   view.colors = app.settings.cubeColors;
   // The preview is static on purpose (tempo 0); this one has to show each turn.
@@ -3565,8 +3567,8 @@ async function wireStackmat() {
   };
 
   stackmat.addEventListener('signal', (e) => {
-    if (e.detail.ok) say('Stackmat connected', 'live');
-    else say('listening — no signal yet, check the cable and the input level', 'wait');
+    if (e.detail.ok) say(t('Stackmat connected'), 'live');
+    else say(t('listening — no signal yet, check the cable and the input level'), 'wait');
   });
 
   stackmat.addEventListener('time', (e) => {
@@ -3599,13 +3601,13 @@ async function wireStackmat() {
 async function startStackmat() {
   let stackmat;
   try { stackmat = await wireStackmat(); }
-  catch (err) { return lazyFailed('the Stackmat driver', err); }
+  catch (err) { return lazyFailed(t('the Stackmat driver'), err); }
   try {
     await stackmat.start();
     toast('Listening on the microphone input');
   } catch (err) {
     console.warn('[stackmat] could not start', err);
-    toast(`Could not open the audio input: ${err.message}`, { kind: 'bad' });
+    toast(t('Could not open the audio input: {err}', { err: err.message }), { kind: 'bad' });
     app.settings.inputMode = 'timer';
     persist();
     applyInputMode();
@@ -3805,10 +3807,10 @@ function wireSpotify() {
   spotify.addEventListener('blocked', (e) => {
     const { reason, detail } = e.detail;
     const msg = {
-      premium:     'Spotify only allows apps to control playback on Premium accounts.',
-      nodevice:    'No active Spotify device — start playing something on your phone or desktop app first.',
-      reconnect:   'Reconnect Spotify to allow playback control (the controls were added after you linked).',
-      ratelimited: 'Spotify is rate limiting — try again in a moment.',
+      premium:     t('Spotify only allows apps to control playback on Premium accounts.'),
+      nodevice:    t('No active Spotify device — start playing something on your phone or desktop app first.'),
+      reconnect:   t('Reconnect Spotify to allow playback control (the controls were added after you linked).'),
+      ratelimited: t('Spotify is rate limiting — try again in a moment.'),
     }[reason] || `Spotify could not do that${detail ? ` — ${detail}` : ''}.`;
     // A permanent limitation belongs in the card, not in a toast that vanishes.
     if (reason === 'premium' || reason === 'reconnect') {
@@ -3907,8 +3909,8 @@ function syncSpotifyPanel() {
 
   const st = $('#np-state');
   if (st) {
-    st.textContent = !spotify?.connected ? 'not connected'
-      : npAt?.playing ? 'playing' : npAt ? 'paused' : 'nothing playing';
+    st.textContent = !spotify?.connected ? t('not connected')
+      : npAt?.playing ? t('playing') : npAt ? t('paused') : t('nothing playing');
     st.classList.toggle('live', !!npAt?.playing);
   }
 
@@ -3933,7 +3935,7 @@ function paintNowPlaying(track) {
   if (!track) {
     art.removeAttribute('src');
     art.hidden = true;
-    title.textContent = 'Nothing playing';
+    title.textContent = t('Nothing playing');
     artist.textContent = '';
     if (card) { card.removeAttribute('href'); card.classList.remove('has-track'); }
     if (prog) prog.hidden = true;
@@ -4140,7 +4142,7 @@ app.spotifyState = () => {
   let problem = null;
   if (u.protocol !== 'https:' && u.hostname !== '127.0.0.1') {
     problem = (u.hostname === 'localhost' || u.hostname === '[::1]')
-      ? { reason: 'Spotify rejects localhost — it only allows http on a loopback IP.',
+      ? { reason: t('Spotify rejects localhost — it only allows http on a loopback IP.'),
           openInstead: `http://127.0.0.1:${u.port || 80}${u.pathname}` }
       : { reason: `Spotify needs https for redirect URIs; this page is ${u.protocol}//`, openInstead: null };
   }
@@ -4167,7 +4169,7 @@ app.spotifyState = () => {
    matter once someone actually asks for a card, so they arrive on the click. */
 app.shareSolveCard = async (solve) => {
   let m;
-  try { m = await loadShare(); } catch (err) { return lazyFailed('the share card', err); }
+  try { m = await loadShare(); } catch (err) { return lazyFailed(t('the share card'), err); }
   return m.shareSolve(solve, { index: app.solves.indexOf(solve) + 1 });
 };
 
@@ -4180,12 +4182,12 @@ app.shareSolveCard = async (solve) => {
  */
 app.shareAverageCard = async (kind) => {
   let m;
-  try { m = await loadShare(); } catch (err) { return lazyFailed('the share card', err); }
+  try { m = await loadShare(); } catch (err) { return lazyFailed(t('the share card'), err); }
 
   const w = statWindow(app.solves, kind);
   if (!w.list.length || w.value === null || w.value === undefined) {
     const n = parseInt(kind.replace(/^best-/, '').slice(2), 10);
-    toast(n ? `Needs ${n} solves` : 'No solves yet');
+    toast(n ? t('Needs {n} solves', { n }) : t('No solves yet'));
     return;
   }
 
@@ -4344,7 +4346,7 @@ async function syncFmc() {
   const on = movesMode();
   if (!on && !_fmc) { document.body.classList.remove('fmc', 'fmc-attempting'); return; }
   try { await loadFmcModule(); }
-  catch (err) { return lazyFailed('the Fewest Moves workspace', err); }
+  catch (err) { return lazyFailed(t('the Fewest Moves workspace'), err); }
   await _fmc.getFmc(app, FMC_HOOKS).sync(on);
   updateHint();
 }
@@ -4490,8 +4492,8 @@ async function applyTrainerHandoff() {
 
   persist();
   toast(wanted.length
-    ? `${mode.name} — ${wanted.length} case${wanted.length === 1 ? '' : 's'} loaded`
-    : `${mode.name} — all ${set.length} cases`, { kind: 'good' });
+    ? t(wanted.length === 1 ? '{mode} — {n} case loaded' : '{mode} — {n} cases loaded', { mode: mode.name, n: wanted.length })
+    : t('{mode} — all {n} cases', { mode: mode.name, n: set.length }), { kind: 'good' });
 }
 
 app.setEvent = setEvent;
@@ -4587,7 +4589,7 @@ app.importCsTimer = async (data, { onProgress } = {}) => {
   const keys = Object.keys(data)
     .filter(k => /^session\d+$/.test(k) && Array.isArray(data[k]) && data[k].length)
     .sort((a, b) => (+a.slice(7)) - (+b.slice(7)));
-  if (!keys.length) throw new Error('no csTimer sessions in that file');
+  if (!keys.length) throw new Error(t('no csTimer sessions in that file'));
 
   let imported = 0;
   let order = app.sessions.length;
@@ -4645,7 +4647,7 @@ app.importCsTimer = async (data, { onProgress } = {}) => {
     imported += solves.length;
   }
 
-  if (!imported) throw new Error('those sessions had no readable solves');
+  if (!imported) throw new Error(t('those sessions had no readable solves'));
   await refreshCounts();
   return { solves: imported, sessions: added.length, first: added[0] };
 };
@@ -4659,7 +4661,7 @@ app.importFile = async (file, { onProgress } = {}) => {
   const text = (await file.text()).replace(/^\uFEFF/, '').trim();
   let data;
   try { data = JSON.parse(text); }
-  catch { throw new Error('that file is not a timer export — it is not readable as JSON'); }
+  catch { throw new Error(t('that file is not a timer export — it is not readable as JSON')); }
 
   if (data && data.app === 'tagdatimer' && Array.isArray(data.solves)) {
     const n = await importAll(data);
@@ -4671,7 +4673,7 @@ app.importFile = async (file, { onProgress } = {}) => {
     await app.reload();
     return { kind: 'cstimer', ...res };
   }
-  throw new Error('unrecognised export — expected a Tagda backup or a csTimer file');
+  throw new Error(t('unrecognised export — expected a Tagda backup or a csTimer file'));
 };
 
 /* =========================================================
@@ -4875,7 +4877,7 @@ function wireInput() {
 /** Copy, then say what actually happened rather than assuming it worked. */
 async function copyToast(text, label = 'Copied') {
   if (!text) { toast('Nothing to copy'); return; }
-  if (await copy(text)) toast(`${label} copied`, { kind: 'good' });
+  if (await copy(text)) toast(t('{what} copied', { what: t(label) }), { kind: 'good' });
   else toast('Your browser blocked the clipboard', { kind: 'bad' });
 }
 app.copyToast = copyToast;
@@ -4901,9 +4903,9 @@ function wireChrome() {
       onSelect: () => setMode(id),
     }));
     if (setFor(app.settings.mode)) {
-      list.push({ sep: true }, { label: 'Pick cases…', badge: 'K', onSelect: () => openPanel('Cases', 'buildCases', undefined, app) });
+      list.push({ sep: true }, { label: t('Pick cases…'), badge: 'K', onSelect: () => openPanel('Cases', 'buildCases', undefined, app) });
     }
-    popover(e.currentTarget, [{ title: 'Scramble mode' }, ...list]);
+    popover(e.currentTarget, [{ title: t('Scramble mode') }, ...list]);
   });
 
   $('#btn-session').addEventListener('click', (e) => {
@@ -4913,22 +4915,22 @@ function wireChrome() {
       on: s.id === app.session.id,
       onSelect: () => app.switchSession(s.id),
       action: {
-        title: `Edit ${s.name}`,
+        title: t('Edit {name}', { name: s.name }),
         icon: '<svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg>',
         onClick: () => editSession(anchor, s),
       },
     }));
     const anchor = e.currentTarget;
     popover(anchor, [
-      { title: 'Sessions' }, ...list, { sep: true },
-      { label: '+ New session', onSelect: () => app.newSession() },
+      { title: t('Sessions') }, ...list, { sep: true },
+      { label: t('+ New session'), onSelect: () => app.newSession() },
       { label: 'Manage…', onSelect: () => openPanel('Sessions', 'buildSessions', undefined, app) },
     ]);
   });
 
   $('#btn-recon').addEventListener('click', () => openRecon({
     scramble: app.scramble?.scramble || '',
-    title: 'Reconstruct',
+    title: t('Reconstruct'),
     library: reconLibrary(),
   }));
   $('#btn-xp1').addEventListener('click', () => openXp1());
@@ -4943,9 +4945,9 @@ function wireChrome() {
   // daily.js fires this the moment a result lands, so the chip goes without
   // waiting for the window to be closed.
   window.addEventListener('sotd-done', syncSotdChip);
-  $('#btn-help').addEventListener('click', () => openPanel('Keyboard shortcuts', 'buildShortcuts', { wide: true }));
+  $('#btn-help').addEventListener('click', () => openPanel(t('Keyboard shortcuts'), 'buildShortcuts', { wide: true }));
   $('#btn-about').addEventListener('click', () => openPanel('About', 'buildAbout', undefined, app));
-  $('#btn-open-history').addEventListener('click', () => openPanel('All solves', 'buildHistory', { wide: true }, app));
+  $('#btn-open-history').addEventListener('click', () => openPanel(t('All solves'), 'buildHistory', { wide: true }, app));
 
   /* Mobile topbar menu. The panel is the icon row itself (see the CSS at the
      bottom of components.css), so there is nothing to build here — only the
@@ -4977,7 +4979,7 @@ function wireChrome() {
   const applyStatsCollapsed = (collapsed) => {
     statsPanel.dataset.collapsed = String(collapsed);
     statsToggle.setAttribute('aria-expanded', String(!collapsed));
-    statsToggle.title = collapsed ? 'Show statistics' : 'Hide statistics';
+    statsToggle.title = collapsed ? t('Show statistics') : t('Hide statistics');
   };
   applyStatsCollapsed(app.settings.statsCollapsed !== false);
   statsToggle.addEventListener('click', () => {
@@ -4994,7 +4996,7 @@ function wireChrome() {
   // button for pasting the lot somewhere else.
   $$('.stat[data-k]').forEach((cell) => {
     const k = cell.dataset.k;
-    cell.title = 'See the solves behind this';
+    cell.title = t('See the solves behind this');
     cell.addEventListener('click', () => openPanel(STAT_LABELS[k] || k, 'buildStatDetail', { wide: true }, app, k));
   });
   /* And the session bests, which until now were figures you could read but not
@@ -5002,7 +5004,7 @@ function wireChrome() {
      to share a card of. Same drawer, same share button, `best-` window. */
   $$('.bst[data-b]').forEach((cell) => {
     const k = 'best-' + cell.dataset.b;
-    cell.title = 'See the solves behind this — and share it';
+    cell.title = t('See the solves behind this — and share it');
     cell.addEventListener('click', () => openPanel(STAT_LABELS[k] || k, 'buildStatDetail', { wide: true }, app, k));
   });
 
@@ -5017,11 +5019,11 @@ function wireChrome() {
   $('#btn-next-scramble').addEventListener('click', forwardScramble);
   $('#btn-prev-scramble').addEventListener('click', prevScramble);
   $('#btn-copy-scramble').addEventListener('click', () => copyToast(app.scramble?.scramble || '', 'Scramble'));
-  $('#btn-custom-scramble').addEventListener('click', () => openPanel('Your scrambles', 'buildCustomScrambles', undefined, app));
+  $('#btn-custom-scramble').addEventListener('click', () => openPanel(t('Your scrambles'), 'buildCustomScrambles', undefined, app));
   $('#btn-custom-exit').addEventListener('click', () => app.clearCustomScrambles());
   $('#scramble-text').addEventListener('click', () => copyToast(app.scramble?.scramble || '', 'Scramble'));
 
-  $$('#view-toggle button[data-view="3D"], #view-toggle button[data-view="2D"]').forEach(b =>
+  $$(t('#view-toggle button[data-view="3D"], #view-toggle button[data-view="2D"]')).forEach(b =>
     b.addEventListener('click', () => app.setSetting('cubeView', b.dataset.view)));
 
   /* Hide the preview from the preview itself. The same switch the settings
@@ -5116,7 +5118,7 @@ function wireMascot() {
   const mascotDrag = makeDraggable(box, {
     get: () => app.settings.mascotPos,
     set: (pos) => { app.settings.mascotPos = pos; persist(); },
-    ignore: '#mascot-bar button',
+    ignore: t('#mascot-bar button'),
   });
 
   const show = (on) => {
@@ -5201,7 +5203,7 @@ function wireShortcuts() {
       await Solves.put(last);
       renderAll();
       syncTimerDisplay();
-      toast(last.penalty === 'none' ? 'Penalty cleared' : `${last.penalty} applied`);
+      toast(last.penalty === 'none' ? t('Penalty cleared') : t('{p} applied', { p: last.penalty }));
     };
 
     switch (k) {
@@ -5230,7 +5232,7 @@ function wireShortcuts() {
         // A relay needs one scramble per puzzle; a pasted list is a queue of
         // single ones, so there is nothing sensible to do with it here.
         if (relayOn()) { toast('Your own scrambles are not available on a relay'); break; }
-        openPanel('Your scrambles', 'buildCustomScrambles', undefined, app);
+        openPanel(t('Your scrambles'), 'buildCustomScrambles', undefined, app);
         break;
       case 'ArrowLeft':  e.preventDefault(); prevScramble(); break;
       case 'ArrowRight': e.preventDefault(); forwardScramble(); break;
@@ -5284,7 +5286,7 @@ function wireShortcuts() {
       case 'i': case 'I':
         e.preventDefault();
         app.setSetting('inspection', !app.settings.inspection);
-        toast(`Inspection ${app.settings.inspection ? 'on' : 'off'}`);
+        toast(t(app.settings.inspection ? 'Inspection on' : 'Inspection off'));
         break;
       default: break;
     }
@@ -5311,45 +5313,45 @@ function openPaletteWithCommands() {
     }
     out.push(
       { kind: 'go', label: 'Statistics', key: 'A', run: () => $('#btn-stats').click() },
-      { kind: 'go', label: 'All solves', key: 'H', run: () => $('#btn-open-history').click() },
+      { kind: 'go', label: t('All solves'), key: 'H', run: () => $('#btn-open-history').click() },
       { kind: 'go', label: 'Appearance', key: 'T', run: () => $('#btn-theme').click() },
       { kind: 'go', label: 'Settings', key: ',', run: () => $('#btn-settings').click() },
-      { kind: 'go', label: 'Gear', key: 'U', keywords: 'cube lube tension magnets hardware collection', run: () => $('#btn-gear').click() },
-      { kind: 'go', label: 'Keyboard shortcuts', key: '?', run: () => $('#btn-help').click() },
+      { kind: 'go', label: 'Gear', key: 'U', keywords: t('cube lube tension magnets hardware collection'), run: () => $('#btn-gear').click() },
+      { kind: 'go', label: t('Keyboard shortcuts'), key: '?', run: () => $('#btn-help').click() },
       { kind: 'go', label: 'About', key: 'B', run: () => $('#btn-about').click() },
-      { kind: 'go', label: 'Reconstruct a scramble', key: 'Y', run: () => $('#btn-recon').click() },
-      { kind: 'go', label: 'Cross + 1 trainer', key: 'L', keywords: 'cross plus one f2l lookahead first pair', run: () => $('#btn-xp1').click() },
-      { kind: 'go', label: 'Race', keywords: 'room multiplayer versus head to head', run: () => $('#btn-race').click() },
-      { kind: 'go', label: 'Scramble of the Day', keywords: 'leaderboard daily global scramble competition single sotd', run: () => $('#btn-daily').click() },
-      { kind: 'go', label: 'Daily leaderboards', keywords: 'board times solves ranking daily', run: () => openPanel('Scramble of the Day', 'buildDaily', undefined, app) },
-      { kind: 'do', label: 'Reconstruct the last solve', run: () => app.solves.at(-1) ? reconstructSolve(app.solves.at(-1)) : toast('No solves yet') },
-      { kind: 'go', label: 'Pick trainer cases', key: 'K', run: () => setFor(app.settings.mode) ? openPanel('Cases', 'buildCases', undefined, app) : toast('Current mode has no case list') },
-      { kind: 'do', key: 'L', keywords: 'learn spaced repetition algorithm memorise drill teach',
-        label: learn.enabled ? 'Turn off learn mode' : 'Learn mode — teach me these cases',
+      { kind: 'go', label: t('Reconstruct a scramble'), key: 'Y', run: () => $('#btn-recon').click() },
+      { kind: 'go', label: t('Cross + 1 trainer'), key: 'L', keywords: t('cross plus one f2l lookahead first pair'), run: () => $('#btn-xp1').click() },
+      { kind: 'go', label: 'Race', keywords: t('room multiplayer versus head to head'), run: () => $('#btn-race').click() },
+      { kind: 'go', label: 'Scramble of the Day', keywords: t('leaderboard daily global scramble competition single sotd'), run: () => $('#btn-daily').click() },
+      { kind: 'go', label: t('Daily leaderboards'), keywords: t('board times solves ranking daily'), run: () => openPanel('Scramble of the Day', 'buildDaily', undefined, app) },
+      { kind: 'do', label: t('Reconstruct the last solve'), run: () => app.solves.at(-1) ? reconstructSolve(app.solves.at(-1)) : toast('No solves yet') },
+      { kind: 'go', label: t('Pick trainer cases'), key: 'K', run: () => setFor(app.settings.mode) ? openPanel('Cases', 'buildCases', undefined, app) : toast('Current mode has no case list') },
+      { kind: 'do', key: 'L', keywords: t('learn spaced repetition algorithm memorise drill teach'),
+        label: learn.enabled ? t('Turn off learn mode') : t('Learn mode — teach me these cases'),
         run: () => learn.setEnabled(!learn.enabled) },
-      { kind: 'do', label: 'New session', run: () => app.newSession() },
-      { kind: 'do', label: 'New scramble', key: 'N', run: forwardScramble },
-      { kind: 'do', label: 'Copy scramble', run: () => copyToast(app.scramble?.scramble || '', 'Scramble') },
-      { kind: 'do', label: 'Enter your own scrambles', key: 'X', run: () => openPanel('Your scrambles', 'buildCustomScrambles', undefined, app) },
-      { kind: 'do', label: 'Share last solve as a card', run: () => app.solves.at(-1) ? app.shareSolveCard(app.solves.at(-1)) : toast('No solves yet') },
-      { kind: 'do', label: 'Share current ao5 as a card', run: () => app.shareAverageCard('ao5') },
-      { kind: 'do', label: 'Share current ao12 as a card', run: () => app.shareAverageCard('ao12') },
-      { kind: 'do', label: 'Share best ao5 as a card', run: () => app.shareAverageCard('best-ao5') },
-      { kind: 'do', label: 'Share best ao12 as a card', run: () => app.shareAverageCard('best-ao12') },
-      { kind: 'do', label: 'Share best single as a card', run: () => app.shareAverageCard('best-single') },
-      { kind: 'do', label: 'Reset panel layout', run: () => app.resetTiles?.() },
-      { kind: 'do', label: 'Restore default settings', run: () => app.resetSettings?.() },
-      { kind: 'do', label: 'Toggle inspection', key: 'I', run: () => { app.setSetting('inspection', !app.settings.inspection); toast(`Inspection ${app.settings.inspection ? 'on' : 'off'}`); } },
-      { kind: 'do', label: 'Zen mode', key: 'Z', run: () => document.body.classList.toggle('zen') },
+      { kind: 'do', label: t('New session'), run: () => app.newSession() },
+      { kind: 'do', label: t('New scramble'), key: 'N', run: forwardScramble },
+      { kind: 'do', label: t('Copy scramble'), run: () => copyToast(app.scramble?.scramble || '', 'Scramble') },
+      { kind: 'do', label: t('Enter your own scrambles'), key: 'X', run: () => openPanel(t('Your scrambles'), 'buildCustomScrambles', undefined, app) },
+      { kind: 'do', label: t('Share last solve as a card'), run: () => app.solves.at(-1) ? app.shareSolveCard(app.solves.at(-1)) : toast('No solves yet') },
+      { kind: 'do', label: t('Share current ao5 as a card'), run: () => app.shareAverageCard('ao5') },
+      { kind: 'do', label: t('Share current ao12 as a card'), run: () => app.shareAverageCard('ao12') },
+      { kind: 'do', label: t('Share best ao5 as a card'), run: () => app.shareAverageCard('best-ao5') },
+      { kind: 'do', label: t('Share best ao12 as a card'), run: () => app.shareAverageCard('best-ao12') },
+      { kind: 'do', label: t('Share best single as a card'), run: () => app.shareAverageCard('best-single') },
+      { kind: 'do', label: t('Reset panel layout'), run: () => app.resetTiles?.() },
+      { kind: 'do', label: t('Restore default settings'), run: () => app.resetSettings?.() },
+      { kind: 'do', label: t('Toggle inspection'), key: 'I', run: () => { app.setSetting('inspection', !app.settings.inspection); toast(t(app.settings.inspection ? 'Inspection on' : 'Inspection off')); } },
+      { kind: 'do', label: t('Zen mode'), key: 'Z', run: () => document.body.classList.toggle('zen') },
       { kind: 'do', label: 'Fullscreen', key: 'F', run: () => document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen?.() },
-      { kind: 'do', label: 'Export backup', run: () => $('#btn-settings').click() },
-      { kind: 'do', label: 'Clear this session', run: clearSession },
+      { kind: 'do', label: t('Export backup'), run: () => $('#btn-settings').click() },
+      { kind: 'do', label: t('Clear this session'), run: clearSession },
     );
     for (const [id, p] of Object.entries({
       nebula: 'Nebula', carbon: 'Carbon', vaporwave: 'Vaporwave', ice: 'Ice',
       terminal: 'Terminal', speedcube: 'Speedcube', paper: 'Paper',
     })) {
-      out.push({ kind: 'theme', label: p, run: () => { app.setSetting('accent', ''); app.setSetting('accent2', ''); app.setSetting('theme', id); toast(`${p} theme`); } });
+      out.push({ kind: 'theme', label: p, run: () => { app.setSetting('accent', ''); app.setSetting('accent2', ''); app.setSetting('theme', id); toast(t('{name} theme', { name: p })); } });
     }
     return out;
   });
