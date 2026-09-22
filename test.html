@@ -651,6 +651,27 @@ section('reconstruction');
   check('the solver can talk itself through a whole CFOP solve',
     done.solved && !stuck, `${steps} steps to solved`);
 
+  /* Roux, the same way. The M slice is the part that can go wrong: this model
+     never moves a centre, so an M looks like L' R to it, and a finished block
+     has to be recognised under any turn of its own layer. */
+  const rouxRank = (alg) => C.rouxStatus(run(alg), 'L', 'D').rank;
+  check('Roux milestones are read with the M slice free',
+    rouxRank('') === 7 && rouxRank('M') === 6 && rouxRank('R') === 1 &&
+    rouxRank("R U R' U'") === 2 && rouxRank('U') === 3 && rouxRank('F') === 0,
+    ['', 'M', 'R', "R U R' U'", 'U', 'F'].map(rouxRank).join(' '));
+  let rp = C.applyAlg(C.SOLVED, scr), rSteps = 0, rose = true;
+  for (let i = 0; i < 12; i++) {
+    const a = C.analyseRoux(rp.state, null, rp.frame);
+    if (a.solved) break;
+    const res = SV.suggest(rp.state, rp.frame, a, { limit: 3 });
+    if (!res.list.length) break;
+    rp = C.applyAlg(rp.state, res.list[0].alg, rp.frame);
+    if (C.analyseRoux(rp.state, null, rp.frame).rank <= a.rank) rose = false;
+    rSteps++;
+  }
+  check('the solver can talk itself through a whole Roux solve, a milestone a step',
+    C.analyseRoux(rp.state).solved && rose, `${rSteps} steps to solved`);
+
   /* The same thing on real scrambles, because the position that used to defeat
      it was always the last F2L slot: three pairs in, and every line that fixes
      the fourth without scattering them is nine or ten moves deep. */

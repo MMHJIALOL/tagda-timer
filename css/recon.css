@@ -177,6 +177,11 @@ body.recon-open #bg-root { opacity: 0; }
 }
 .rc-rot:disabled { opacity: .4; cursor: default; }
 
+/* CFOP or Roux, in the Position header: it decides how every line below is
+   cut and what gets suggested, so it sits above all of it. */
+.rc-method { display: flex; gap: 4px; margin-left: auto; letter-spacing: normal; text-transform: none; }
+.rc-method .rc-rot { height: 22px; font-family: inherit; font-size: .68rem; }
+
 /* Which F2L slot the suggestions are for. */
 .rc-slots { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
 .rc-slots[hidden] { display: none; }
