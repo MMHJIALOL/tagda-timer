@@ -875,22 +875,22 @@ function rouxFirstBlock(state, frame, a, { limit, lead, started, timeMs }) {
     const { best, solutions } = solveGoal(state, goal, c.h, { want: 30, slack: 1, maxDepth: cap, budget, lead });
     if (budget.left <= 0) out.partial = true;
     if (best >= 0 && (out.best < 0 || best < out.best)) out.best = best;
-    const name = `${COLOUR[c.side]} side, ${COLOUR[c.bottom]} bottom`;
+    const name = t('{side} side, {bottom} bottom', { side: t(COLOUR[c.side]), bottom: t(COLOUR[c.bottom]) });
     for (const p of solutions) {
-      for (const v of variants(p, frame)) all.push({ alg: v.alg, moves: v.moves, awkward: v.awkward, label: 'First block', note: gripNote(name, v.rot) });
+      for (const v of variants(p, frame)) all.push({ alg: v.alg, moves: v.moves, awkward: v.awkward, label: t('First block'), note: gripNote(name, v.rot) });
     }
   }
   /* A block too deep to find in time still has a square in it, and a square is
      what most people build first anyway. */
   if (!all.length) {
     const c = cands[0];
-    const name = `${COLOUR[c.side]} side, ${COLOUR[c.bottom]} bottom`;
+    const name = t('{side} side, {bottom} bottom', { side: t(COLOUR[c.side]), bottom: t(COLOUR[c.bottom]) });
     for (const h of [c.hf, c.hb]) {
       const budget = { left: NODE_BUDGET / 4 };
       const { best, solutions } = solveGoal(state, (s) => h(s) === 0, h, { want: 15, slack: 1, maxDepth: 8, budget, lead });
       if (best >= 0 && (out.best < 0 || best < out.best)) out.best = best;
       for (const p of solutions) {
-        for (const v of variants(p, frame)) all.push({ alg: v.alg, moves: v.moves, awkward: v.awkward, label: 'First block square', note: gripNote(name, v.rot) });
+        for (const v of variants(p, frame)) all.push({ alg: v.alg, moves: v.moves, awkward: v.awkward, label: t('First block square'), note: gripNote(name, v.rot) });
       }
     }
   }
@@ -922,7 +922,7 @@ function suggestRoux(state, frame, a, { limit = 20, timeMs = 1500, lead = [] }) 
   const add = (solutions, label, note) => {
     for (const p of solutions) {
       const alg = write(p);
-      found.push({ alg, moves: faceTurns(alg), awkward: rot ? 1 : 0, label, note: rot ? `${note} · ${rot} first` : note });
+      found.push({ alg, moves: faceTurns(alg), awkward: rot ? 1 : 0, label, note: rot ? t('{note} · {rot} first', { note, rot }) : note });
     }
   };
 
@@ -937,14 +937,14 @@ function suggestRoux(state, frame, a, { limit = 20, timeMs = 1500, lead = [] }) 
         const { best, solutions } = solvePhys(state, moves, (s) => h(s) === 0 && status(s)[which], h,
           { want: 20, slack: 1, maxDepth: 11, budget: { left: NODE_BUDGET / 2 } });
         if (best >= 0 && (out.best < 0 || best < out.best)) out.best = best;
-        add(solutions, `Second block ${squareSide(state, grip.frame, set)} square`, 'U R r M');
+        add(solutions, t(squareSide(state, grip.frame, set) === 'front' ? 'Second block front square' : 'Second block back square'), 'U R r M');
       }
     } else {
       const h = (s) => Math.max(tf(s), tb(s));
       const { best, solutions } = solvePhys(state, moves, (s) => h(s) === 0 && status(s).sb, h,
         { want: 30, slack: 1, maxDepth: 12, budget });
       out.best = best;
-      add(solutions, 'Second block', 'finishes the block · U R r M');
+      add(solutions, t('Second block'), t('finishes the block') + ' · U R r M');
     }
     out.partial = budget.left <= 0;
     out.list = dedupe(found).sort(byNiceness).slice(0, limit);
@@ -955,7 +955,7 @@ function suggestRoux(state, frame, a, { limit = 20, timeMs = 1500, lead = [] }) 
     const ok = (s) => status(s).cmll;
     const skip = AUFS.slice(1).map(u => tidy([rot, u].filter(Boolean).join(' ')))
       .filter(alg => ok(applyAlg(state, alg, frame).state))
-      .map(alg => ({ alg, moves: faceTurns(alg), awkward: 0, kind: 'CMLL', label: 'CMLL skip', note: 'the corners only need the AUF' }));
+      .map(alg => ({ alg, moves: faceTurns(alg), awkward: 0, kind: 'CMLL', label: 'CMLL skip', note: t('the corners only need the AUF') }));
     const list = skip.length ? skip : hits(CMLL_SET, state, frame, rot, ok, AUFS, 'CMLL', e => e.name).sort(byNiceness);
     out.list = list.slice(0, limit);
     out.best = list.length ? list[0].moves : -1;
@@ -965,9 +965,9 @@ function suggestRoux(state, frame, a, { limit = 20, timeMs = 1500, lead = [] }) 
   /* The last six edges, a step at a time. */
   const moves = physMoves(grip.frame, ['U', 'M']);
   const step = {
-    eo: [5, 'LSE edge orientation', 'EO'],
-    ulur: [6, 'UL and UR', 'UL/UR'],
-    lse: [7, 'the last four edges', 'LSE'],
+    eo: [5, t('LSE edge orientation'), 'EO'],
+    ulur: [6, t('UL and UR'), 'UL/UR'],
+    lse: [7, t('the last four edges'), 'LSE'],
   }[a.phase];
   const { best, solutions } = solvePhys(state, moves, (s) => status(s).rank >= step[0], zero,
     { want: 20, slack: 1, maxDepth: 13, budget });

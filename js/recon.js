@@ -274,13 +274,13 @@ const crossLabel = (a) => t(`${colourOf(a.face)?.name || a.face} cross`);
 
 function paintCrossPicker() {
   const roux = S.method === 'roux';
-  ui.crossLbl.textContent = roux ? 'bottom' : 'cross';
+  ui.crossLbl.textContent = t(roux ? 'bottom' : 'cross');
   for (const b of ui.crossSwatches.children) {
     b.classList.toggle('on', b.dataset.face === S.prefs[S.method]);
     const name = colourOf(b.dataset.face)?.name;
     const tip = b.dataset.face === 'auto'
-      ? (roux ? 'Work out which block you are building from the cube' : 'Work out the cross colour from the cube')
-      : (roux ? `First block with ${name} on the bottom` : `${name} cross`);
+      ? t(roux ? 'Work out which block you are building from the cube' : 'Work out the cross colour from the cube')
+      : (roux ? t('First block with {colour} on the bottom', { colour: t(name) }) : t(`${name} cross`));
     b.title = tip;
     b.setAttribute('aria-label', tip);
   }
@@ -915,7 +915,7 @@ function build() {
       el('span', { text: t('Position') }),
       /* How the moves are read: where one step ends and the next begins, and
          what gets suggested. The moves themselves are the same either way. */
-      ui.methodBtns = el('span', { class: 'rc-method', role: 'group', 'aria-label': 'Solving method' },
+      ui.methodBtns = el('span', { class: 'rc-method', role: 'group', 'aria-label': t('Solving method') },
         ...[['cfop', 'CFOP'], ['roux', 'Roux']].map(([m, label]) => el('button', {
           class: 'rc-rot', text: label, dataset: { method: m },
           title: t('Read the solve as {method}', { method: label }), onclick: () => setMethod(m),
@@ -926,7 +926,7 @@ function build() {
     el('div', { class: 'rc-cube-tools' },
       ui.replayBtn,
       el('span', { class: 'rc-cross-pick' },
-        ui.crossLbl = el('span', { text: 'cross' }),
+        ui.crossLbl = el('span', { text: t('cross') }),
         ui.crossSwatches = el('span', { class: 'rc-swatches' },
           ...CROSS_COLOURS.map(c => el('button', {
             class: 'rc-swatch', title: t(`${c.name} cross`), 'aria-label': t(`${c.name} cross`),
