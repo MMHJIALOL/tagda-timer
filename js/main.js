@@ -3698,7 +3698,13 @@ async function startCloudSync() {
   // the same values.
   onWrite('kv', ({ key, value }) => {
     if (key !== 'settings' || !value || value === app.settings) return;
+    // Our own push comes back as a new object with the same contents; applying
+    // that would reset a multi-phase solve already under way for nothing.
+    if (JSON.stringify({ ...app.settings, ...value }) === JSON.stringify(app.settings)) return;
     Object.assign(app.settings, value);
+    // Adopted but not applied, a theme changed on the phone only showed up
+    // here after a reload.
+    applyAll();
   });
 }
 

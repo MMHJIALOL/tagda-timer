@@ -57,6 +57,11 @@
         "settings": { ".validate": "newData.hasChildren() || !newData.exists()" },
         "learn": { ".validate": "newData.hasChildren() || !newData.exists()" },
 
+        "gear":        { "$id":   { ".validate": "newData.hasChildren(['id']) && newData.child('id').val() === $id" } },
+        "gearLog":     { "$id":   { ".validate": "newData.hasChildren(['id', 'gearId']) && newData.child('id').val() === $id" } },
+        "letterPairs": { "$pair": { ".validate": "newData.hasChildren(['pair']) && newData.child('pair').val() === $pair" } },
+        "kv":          { "$key":  { ".validate": "$key.beginsWith('alglib') || $key === 'xp1Settings' || $key === 'xp1History'" } },
+
         "$other": { ".validate": false }
       }
     },
