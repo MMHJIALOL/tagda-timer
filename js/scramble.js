@@ -15,6 +15,7 @@ import { OLL_222, PBL_222, CLL_222, EG1_222, EG2_222 } from './algs2.js';
 import { ZBLL_SET } from './zbll.js';
 import { invert, tidy, pick } from './util.js';
 import { preferredAlg, loadSet } from './alglibrary.js';
+import { clockScramble } from './sidescramble.js';
 
 // Local copy first (works offline — see tools/mirror_cubing.py), CDN as backup.
 const SOURCES = [
@@ -51,6 +52,49 @@ export const cubingAvailable = () => !_cubingFailed;
 // before settings, sessions and IndexedDB have been read — so the work happens
 // while the rest of the app is still booting instead of after it.
 cubing().catch(() => { /* the fallback generator covers this */ });
+/* The square-1 tables take a couple of seconds to build. They build on their
+   own thread, so start now: by the time anyone picks square-1 they are there.
+   ponytail: every visit pays ~2 s of one background core and ~11 MB for this;
+   build on first use instead if that ever matters on low-end phones. */
+setTimeout(() => sq1(true), 0);
+
+/* ---------------------------------------------------------
+   Square-1 and clock: made here, not in cubing.js
+   --------------------------------------------------------- */
+
+/* See js/sidescramble.js for why. Square-1 builds ~11 MB of tables the first
+   time and then searches, so it runs in a worker of its own: never on the
+   page, where it would stall the timer, and never in cubing.js's worker,
+   where it would hold up every other puzzle. */
+const OWN = { clock: () => clockScramble(), sq1: () => sq1() };
+
+let sq1Worker = null;
+const sq1Waiting = new Map();
+let sq1Seq = 0;
+
+function sq1(warmOnly = false) {
+  if (sq1Worker === null) {
+    try {
+      sq1Worker = new Worker(new URL('./sidescramble.worker.js', import.meta.url), { type: 'module' });
+      sq1Worker.onmessage = ({ data }) => { sq1Waiting.get(data.id)?.resolve(data.scramble); sq1Waiting.delete(data.id); };
+      sq1Worker.onerror = (err) => {
+        console.warn('[scramble] square-1 worker failed — making them on the page', err.message);
+        sq1Worker = false;
+        for (const w of sq1Waiting.values()) sq1().then(w.resolve);
+        sq1Waiting.clear();
+      };
+    } catch {
+      sq1Worker = false;          // no module workers: the page makes them
+    }
+  }
+  if (warmOnly) { if (sq1Worker) sq1Worker.postMessage({ warm: true }); return null; }
+  if (!sq1Worker) return import('./sidescramble.js').then(m => m.sq1Scramble());
+  return new Promise((resolve) => {
+    const id = ++sq1Seq;
+    sq1Waiting.set(id, { resolve });
+    sq1Worker.postMessage({ id });
+  });
+}
 
 /* ---------------------------------------------------------
    Fallback generator — only used when the CDN cannot be reached.
@@ -272,6 +316,8 @@ export async function generate(eventId, modeId = 'wca', opts = {}) {
 
   // wca + wca-goal: official random-state scramble
   const ev = EVENTS[eventId] || EVENTS['333'];
+  // Nothing to wait for: these never touch cubing.js.
+  if (OWN[eventId]) return { scramble: await OWN[eventId](), official: true };
   const gen = await cubing();
 
   if (ev.multi) {
@@ -312,6 +358,7 @@ export async function generate(eventId, modeId = 'wca', opts = {}) {
 }
 
 async function one(gen, eventId) {
+  if (OWN[eventId]) return OWN[eventId]();
   if (!gen) return fallbackScramble(eventId);
   try {
     const alg = await gen(eventId);
@@ -325,7 +372,7 @@ async function one(gen, eventId) {
 /* ---------------------------------------------------------
    Queue — always keeps N scrambles ready for the active mode
    --------------------------------------------------------- */
-const WARM = ['222', 'pyram', 'skewb', 'sq1', 'clock'];
+const WARM = ['pyram', 'skewb', '222', 'sq1', 'clock'];
 
 export class ScrambleQueue {
   constructor(depth = 3) {
@@ -380,6 +427,10 @@ export class ScrambleQueue {
         this.items.push(s);
         this._release();
         if (this.items.length === 1 && this.onReady) this.onReady();
+        /* One in hand is enough to be going on with: warm the other puzzles
+           now rather than after two more of this one, so a switch in the
+           first seconds after loading does not wait behind them. */
+        if (this.items.length === 1) await this.warm(key);
       }
       if (key === this.key) await this.warm(key);
     } finally {
@@ -394,10 +445,10 @@ export class ScrambleQueue {
   }
 
   /**
-   * Once the active queue is full, make one scramble for each of the quick
-   * WCA puzzles. cubing.js builds each puzzle's solver the first time it is
-   * asked -- a second or so for pyraminx or square-1, and behind whatever
-   * the worker is already doing -- which is what made switching event sit on
+   * Once the active queue has one ready, make one scramble for each of the
+   * quick WCA puzzles. cubing.js builds each puzzle's solver the first time
+   * it is asked -- up to a few seconds for pyraminx in Firefox, and behind
+   * whatever the worker is already doing -- which is what made switching sit on
    * "generating scramble…". Paid here, while you are solving, it is gone by
    * the time you switch.
    */
@@ -410,7 +461,7 @@ export class ScrambleQueue {
       const s = await generate(id, 'wca', this.opts);
       if (key === this.key) { this.items.push(s); continue; }  // switched to it meanwhile
       this.stash.set(key, [...(this.stash.get(key) || []), s]);
-      if (this.items.length < this.depth) return; // the active queue comes first
+      if (!this.items.length) return;           // the active queue comes first
     }
   }
 

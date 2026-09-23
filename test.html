@@ -584,8 +584,11 @@ const sample = async (mode, n, test) => {
   check('switching event mid-fill still hands out the new event\'s scramble',
     !!s && !/[FD]/.test(s.scramble), s ? s.scramble : 'timed out after 20s');
   // Switching away and back hands out what was already made, not a cold start.
+  // The pyraminx that was in flight lands in its stash once it finishes.
   q.setContext('skewb', 'wca');
   await q.next();
+  const pk = G.ScrambleQueue.keyOf('pyram', 'wca');
+  for (let i = 0; i < 200 && !q.stash.get(pk)?.length; i++) await new Promise(r => setTimeout(r, 50));
   q.setContext('pyram', 'wca');
   check('switching back to an event reuses its queued scrambles', q.ready);
 }
@@ -616,6 +619,32 @@ for (const [ev, [lo, hi]] of Object.entries(EXPECT)) {
   const len = s.scramble.trim().split(/\s+/).length;
   check(`${ev} scramble is official, ${lo}-${hi} moves`,
     s.official && len >= lo && len <= hi, `${len} moves, official=${s.official}`);
+}
+{
+  /* Square-1 and clock are made in js/sidescramble.js, not cubing.js. Every
+     square-1 slash has to be one the puzzle can actually make, and undoing
+     the scramble has to land back on solved -- or it is not a scramble. */
+  const Q = await import('./js/sidescramble.js');
+  const undo = s => s.split('/').reverse()
+    .map(p => { const m = p.match(/-?\d+/g); return m ? `(${-m[0]}, ${-m[1]})` : ''; }).join(' / ');
+  let bad = 0, slashes = 0, worst = 0;
+  for (let i = 0; i < 40; i++) {
+    const t0 = performance.now();
+    const s = Q.sq1Scramble();
+    worst = Math.max(worst, performance.now() - t0);
+    const r = Q.sq1Apply(s);
+    const back = r && Q.sq1Apply(undo(s), r.state);
+    if (!back || back.state.join() !== Q.SQ1_SOLVED.join() || back.mid !== r.mid || s.includes('/ /')) bad++;
+    slashes += (s.match(/\//g) || []).length;
+  }
+  check('square-1 scrambles are legal and undo to solved', bad === 0,
+    `${bad}/40 bad · ${(slashes / 40).toFixed(1)} slashes on average · slowest ${Math.round(worst)} ms`);
+  const sq = await G.generate('sq1', 'wca');
+  check('the app\'s square-1 scramble comes from the worker, legal', sq.official && !!Q.sq1Apply(sq.scramble), sq.scramble);
+  const c = Q.clockScramble();
+  check('a clock scramble is the 15 WCA moves, every dial -5..6',
+    /^UR\d[+-] DR\d[+-] DL\d[+-] UL\d[+-] U\d[+-] R\d[+-] D\d[+-] L\d[+-] ALL\d[+-] y2 U\d[+-] R\d[+-] D\d[+-] L\d[+-] ALL\d[+-]$/.test(c)
+    && !/[7-9][+-]|6-/.test(c), c);
 }
 
 /* ---------------- the reconstruction model and solver ---------------- */
