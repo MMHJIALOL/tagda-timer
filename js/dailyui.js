@@ -122,17 +122,7 @@ export function timeBoard(rows, revealed) {
   }
   if (!rows.length) return el('div', { class: 'db-empty', text: t('Nobody has posted a time yet today.') });
 
-  const board = el('div', { class: 'db-board' }, rows.slice(0, 50).map((r, i) => timeRow(r, i)));
-
-  /* Somebody in 63rd place still wants to know they are in 63rd place, and
-     the board is capped at 50 so the drawer does not become a scroll. */
-  const mine = rows.findIndex(r => r.isMe);
-  if (mine >= 50) {
-    return el('div', { class: 'db-stack' }, board,
-      el('div', { class: 'db-yours' },
-        el('div', { class: 'db-yours-label', text: t('Your rank') }), timeRow(rows[mine], mine)));
-  }
-  return board;
+  return el('div', { class: 'db-board' }, rows.map((r, i) => timeRow(r, i)));
 }
 
 function timeRow(r, i) {
@@ -369,7 +359,7 @@ export function countBoard(rows) {
   if (!rows.length) {
     return el('div', { class: 'db-empty', text: t('No solves counted yet today. Yours would be the first.') });
   }
-  return el('div', { class: 'db-board' }, rows.slice(0, 50).map((r, i) =>
+  return el('div', { class: 'db-board' }, rows.map((r, i) =>
     el('div', { class: 'db-row', dataset: { me: String(r.isMe), rank: String(i + 1) } },
       el('span', { class: 'db-rank', text: String(i + 1) }),
       avatar(r.name, r.photo),
