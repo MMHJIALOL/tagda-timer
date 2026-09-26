@@ -9,7 +9,7 @@ import { $, el, fmt, fmtResult, fmtDate, download, parseScrambleList } from './u
 import { PRESETS, TIMER_FONTS, exportTheme, importTheme } from './theme.js';
 import { SHADER_NAMES } from './bg.js';
 import { summarize, byCase, eff, DNF, isMoveResult, bestAvg, statWindow, bldSummary, relaySummary,
-         groupStats, byHourOfDay, bySittingPosition, MIN_GROUP, SITTING_GAP_MS } from './stats.js';
+         groupStats, byHourOfDay, bySittingPosition, MIN_GROUP, SITTING_GAP_MS, sessionReport } from './stats.js';
 import { renderTrend, renderHistogram, renderHeatmap, renderCaseBars, renderGroupBars } from './charts.js';
 import { MODES, EVENTS, EVENT_ORDER, eventOf, virtualSize, relayLegEvents, relayLabel, RELAY_MAX } from './events.js';
 import { setFor } from './scramble.js';
@@ -1093,7 +1093,13 @@ export function buildStats(app) {
           cell('ao50', f(st.ao50)),
           cell('ao100', f(st.ao100)),
           cell('ao1000', f(solves.length >= 1000 ? bestAvg(solves, 1000).value : null)),
-        )),
+        ),
+        solves.length ? el('div', { class: 'sd-actions' },
+          el('button', { class: 'btn primary', text: t('Copy current session stats'),
+            onclick: () => app.copyToast(sessionReport(solves), 'Session stats') }),
+          el('button', { class: 'btn', text: t('Download current session (.txt)'),
+            onclick: () => download(`${app.session.name.replace(/\W+/g, '-')}-stats.txt`, sessionReport(solves), 'text/plain') }),
+        ) : null),
     );
 
     // Where each solve sits in the session, for "solve #" labels on any subset.
