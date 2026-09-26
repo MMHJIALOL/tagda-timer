@@ -31,11 +31,26 @@ float fbm(vec2 p){
 }`;
 
 const SHADERS = {
+  aurora: `${HEAD}
+void main(){
+  vec2 uv = gl_FragCoord.xy / u_res.xy;
+  vec2 q = uv; q.x *= u_res.x / u_res.y;
+  float t = u_t * 0.06 * u_speed;
+  float f1 = fbm(q * 2.2 + vec2(t, t * 0.6));
+  float f2 = fbm(q * 3.1 - vec2(t * 0.8, t * 1.3) + f1);
+  float band = smoothstep(0.15, 0.95, f2 + uv.y * 0.55);
+  vec3 col = mix(u_c1, u_c2, band);
+  col = mix(col, u_c3, smoothstep(0.55, 1.0, f1 * 1.25));
+  float glow = pow(1.0 - abs(uv.y - 0.45) * 1.4, 3.0);
+  col += u_c3 * glow * 0.14 * u_amount;
+  gl_FragColor = vec4(col * u_amount, 1.0);
+}`,
+
   /* Curtains, the way the real thing hangs: each one has a lower edge that
      ripples slowly along its length and is brightest right there, then thins
      out upward in vertical rays. The rays come from noise that varies along x
      only, which is what makes them read as light falling rather than smoke. */
-  aurora: `${HEAD}
+  curtains: `${HEAD}
 vec3 curtain(vec2 q, float base, float seed, float t){
   float x = q.x + 0.06 * sin(q.y * 4.0 + q.x * 1.7 + t * 0.9 + seed);
   float edge = base

@@ -1657,6 +1657,7 @@ export const es = {
   "Zen mode": "Modo zen",
   "Aurora": "Aurora",
   "Beams": "Haces",
+  "Curtains": "Cortinas",
   "Grid": "Cuadrícula",
   "Mesh": "Malla",
   "Plasma": "Plasma",
