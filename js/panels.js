@@ -9,8 +9,9 @@ import { $, el, fmt, fmtResult, fmtDate, download, parseScrambleList } from './u
 import { PRESETS, TIMER_FONTS, exportTheme, importTheme } from './theme.js';
 import { SHADER_NAMES } from './bg.js';
 import { summarize, byCase, eff, DNF, isMoveResult, bestAvg, statWindow, bldSummary, relaySummary,
-         groupStats, byHourOfDay, bySittingPosition, MIN_GROUP, SITTING_GAP_MS } from './stats.js';
-import { renderTrend, renderHistogram, renderHeatmap, renderCaseBars, renderGroupBars } from './charts.js';
+         groupStats, byHourOfDay, bySittingPosition, MIN_GROUP, SITTING_GAP_MS,
+         consistencySeries, CONS_SPREAD } from './stats.js';
+import { renderTrend, renderHistogram, renderHeatmap, renderCaseBars, renderGroupBars, renderConsistency } from './charts.js';
 import { MODES, EVENTS, EVENT_ORDER, eventOf, virtualSize, relayLegEvents, relayLabel, RELAY_MAX } from './events.js';
 import { setFor } from './scramble.js';
 import { toast, confirmToast } from './toast.js';
@@ -1095,6 +1096,23 @@ export function buildStats(app) {
           cell('ao1000', f(solves.length >= 1000 ? bestAvg(solves, 1000).value : null)),
         )),
     );
+
+    /* The consistency tile's figure, worked through with this session's own
+       numbers, and how it moved solve by solve. */
+    const pct = (v, d = 0) => (v * 100).toFixed(d) + '%';
+    const consHost = el('div');
+    const calc = st.consistency === null
+      ? [t('Needs 2 or more finished solves.')]
+      : [
+        t('spread = std dev ÷ mean = {sd} ÷ {mean} = {spread}', { sd: f(st.stdev), mean: f(st.mean), spread: pct(st.stdev / st.mean, 1) }),
+        t('consistency = 1 − spread ÷ {cap} = 1 − {spread} ÷ {cap} = {cons}', { cap: pct(CONS_SPREAD), spread: pct(st.stdev / st.mean, 1), cons: pct(st.consistency) }),
+      ];
+    body.append(el('div', { class: 'chart-card', id: 'cons-card' },
+      el('h4', { text: t('Consistency — {v}', { v: st.consistency === null ? '—' : pct(st.consistency) }) }),
+      ...calc.map(line => el('div', { text: line, style: { fontSize: '.84rem', color: 'var(--text-dim)', fontVariantNumeric: 'tabular-nums' } })),
+      consHost,
+      el('div', { class: 'bs-sub', text: t('Every finished solve this session counts, +2s at their penalised time; DNFs are left out. No spread reads 100%, a spread of {cap} or more reads 0%.', { cap: pct(CONS_SPREAD) }) })));
+    renderConsistency(consHost, consistencySeries(solves, 12), 12);
 
     // Where each solve sits in the session, for "solve #" labels on any subset.
     const at = new Map(solves.map((s, i) => [s, i]));

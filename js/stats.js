@@ -246,6 +246,38 @@ export function median(solves) {
   return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2;
 }
 
+/** Spread (sd ÷ mean) at which consistency reads 0%. */
+export const CONS_SPREAD = 0.45;
+
+/** 0–1, higher is more consistent: 1 − (sd ÷ mean) ÷ CONS_SPREAD, clamped. */
+export function consistencyOf(sd, mean) {
+  return (sd !== null && mean) ? Math.max(0, Math.min(1, 1 - (sd / mean) / CONS_SPREAD)) : null;
+}
+
+/**
+ * Consistency after each solve, aligned with `solves`: `session` is the
+ * figure the stats panel would have shown right then (every finished solve so
+ * far), `recent` the same sum over only the last `n` solves. DNFs are left
+ * out of both, as they are from the headline figure.
+ */
+export function consistencySeries(solves, n = 12) {
+  const e = solves.map(eff);
+  const session = [], recent = [];
+  let k = 0, sum = 0, sq = 0;
+  const of = (vals) => {
+    if (vals.length < 2) return null;
+    const m = vals.reduce((a, b) => a + b, 0) / vals.length;
+    return consistencyOf(Math.sqrt(vals.reduce((a, b) => a + (b - m) ** 2, 0) / vals.length), m);
+  };
+  for (let i = 0; i < e.length; i++) {
+    if (e[i] !== DNF) { k++; sum += e[i]; sq += e[i] ** 2; }
+    const m = sum / k;
+    session.push(k < 2 ? null : consistencyOf(Math.sqrt(Math.max(0, sq / k - m * m)), m));
+    recent.push(i + 1 < n ? null : of(e.slice(i + 1 - n, i + 1).filter(v => v !== DNF)));
+  }
+  return { session, recent };
+}
+
 /**
  * Everything the UI needs.
  *
@@ -304,8 +336,7 @@ export function summarize(solves) {
     mean,
     median: med,
     stdev: sd,
-    /** 0–1, higher is more consistent (sd relative to mean). */
-    consistency: (sd !== null && mean) ? Math.max(0, Math.min(1, 1 - (sd / mean) / 0.45)) : null,
+    consistency: consistencyOf(sd, mean),
     ao5:   ao(5),
     ao12:  ao(12),
     ao50:  ao(50),
