@@ -64,10 +64,15 @@ function providerFor(authMod, name) {
    moment an account appears, and fetching it only then put a second download
    between closing the Google popup and the merge dialog. */
 let _dbMod = null;
+/* Chrome remembers a failed import() for the life of the page and answers
+   every later import of the same URL with that failure, so retrying the plain
+   URL could never succeed without a reload. Each retry asks for a new URL. */
+let _dbTries = 0;
 function loadDatabaseModule() {
   if (!_dbMod) {
-    _dbMod = import(/* @vite-ignore */ `https://www.gstatic.com/firebasejs/${FIREBASE_VERSION}/firebase-database.js`);
-    _dbMod.catch(() => { _dbMod = null; });
+    const retry = _dbTries ? `?retry=${_dbTries}` : '';
+    _dbMod = import(/* @vite-ignore */ `https://www.gstatic.com/firebasejs/${FIREBASE_VERSION}/firebase-database.js${retry}`);
+    _dbMod.catch(() => { _dbMod = null; _dbTries++; });
   }
   return _dbMod;
 }

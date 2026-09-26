@@ -727,47 +727,96 @@ let _generation = 0;
 
 /**
  * Starting sync needs the network — the SDK comes from gstatic and
- * mergeOnSignIn() reads the account — so a tab opened offline cannot do it.
- * Both halves therefore retry on the next 'online' event rather than giving
- * up for the life of the page: without that, solves recorded in a tab that
- * booted offline sat in IndexedDB until the next reload, even once the
- * connection was back. Once start() has run the existing write queue takes
- * over and this is never needed again.
+ * mergeOnSignIn() reads the account — so it can fail. A failure used to be
+ * retried only on the next 'online' event, which never comes for a tab that
+ * was online all along and just hit a blip (a dropped socket, a slow token
+ * right after the popup closed). Sync then stayed off, the merge dialog never
+ * appeared, and reloading was the only way to try again. Now it also retries
+ * on a timer, backing off from 2 s to a minute, whichever comes first.
  */
-function retryWhenOnline(run) {
-  window.addEventListener('online', run, { once: true });
+let _retryTimer = 0;
+let _retryDelay = 0;
+let _retry = null;
+
+function retrySoon(run) {
+  clearTimeout(_retryTimer);
+  _retryDelay = Math.min(_retryDelay ? _retryDelay * 2 : 2000, 60000);
+  _retry = run;
+  _retryTimer = setTimeout(fireRetry, _retryDelay);
+  window.addEventListener('online', fireRetry);
 }
 
-/** Call once at boot. Resolves the Firebase SDK lazily — only signing in (or already being signed in) pulls it in. */
-export async function initSync({ onMergeNeeded } = {}) {
-  const handleUser = async (user) => {
-    const gen = ++_generation;
-    stop();
-    if (!user) return;
+function fireRetry() {
+  clearTimeout(_retryTimer);
+  window.removeEventListener('online', fireRetry);
+  const run = _retry;
+  _retry = null;
+  run?.();
+}
+
+let _user = null;      // who the engine is running, or starting, for
+let _bringUp = null;   // that start's promise
+let _onMergeNeeded = null;
+
+/**
+ * Brings the engine up for `user` (or down, for null). The auth listener can
+ * report the same account twice in a row — once from onAuthChange()'s
+ * immediate call and once from the SDK's own first callback — and a second
+ * bring-up would tear down the first halfway and download the account again,
+ * so the same account is only restarted when `force` asks for it.
+ * Resolves once sync is live; rejects (after scheduling a retry) if it could not start.
+ */
+function handleUser(user, force = false) {
+  if (!force && user && _bringUp && _user?.uid === user.uid) return _bringUp;
+  const gen = ++_generation;
+  stop();
+  _user = user;
+  if (!user) { _bringUp = null; return Promise.resolve(); }
+  _bringUp = (async () => {
     try {
       _uid = user.uid;
       _sdk = await getDatabaseHandle();
       if (gen !== _generation) return;
       const mergeInfo = await mergeOnSignIn(user);
       if (gen !== _generation) return;
-      if (mergeInfo && onMergeNeeded) {
-        await onMergeNeeded(mergeInfo);
+      if (mergeInfo && _onMergeNeeded) {
+        await _onMergeNeeded(mergeInfo);
         if (gen !== _generation) return;
       }
       await start();
+      _retryDelay = 0;
     } catch (err) {
       // A newer sign-in already owns the engine — its own failure will do the
       // retrying, and a second retry here would fight it.
       if (gen !== _generation) return;
-      console.warn('[sync] could not start, will retry when back online', err?.code || err);
-      retryWhenOnline(() => { if (gen === _generation) handleUser(user); });
+      _bringUp = null;
+      console.warn('[sync] could not start, retrying', err?.code || err);
+      retrySoon(() => { if (gen === _generation) handleUser(user).catch(() => {}); });
+      throw err;
     }
-  };
+  })();
+  return _bringUp;
+}
+
+/**
+ * The settings drawer's "sync now": reads the whole account again, merges it
+ * with this device both ways, reattaches the live listeners and flushes
+ * anything queued. Resolves with how many writes are still waiting to go up.
+ */
+export async function syncNow() {
+  if (!_user) throw new Error('signed-out');
+  await handleUser(_user, true);
+  return ((await KV.get(QUEUE_KEY, [])) || []).length;
+}
+
+/** Call once at boot. Resolves the Firebase SDK lazily — only signing in (or already being signed in) pulls it in. */
+export async function initSync({ onMergeNeeded } = {}) {
+  _onMergeNeeded = onMergeNeeded;
   try {
-    await onAuthChange(handleUser);
+    await onAuthChange((user) => { handleUser(user).catch(() => {}); });
   } catch (err) {
     // The SDK itself never loaded, so there is no auth listener at all yet.
-    retryWhenOnline(() => initSync({ onMergeNeeded }).catch(() => {}));
+    retrySoon(() => initSync({ onMergeNeeded }).catch(() => {}));
     throw err;
   }
 }
