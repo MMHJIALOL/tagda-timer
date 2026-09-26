@@ -11,7 +11,7 @@ import { el } from './util.js';
 import { toast } from './toast.js';
 import { popover } from './popover.js';
 import { onAuthChange, signIn, signOutUser } from './sync-auth.js';
-import { initSync } from './sync.js';
+import { initSync, syncNow } from './sync.js';
 import { KV, onWrite } from './db.js';
 
 let _initStarted = false;
@@ -115,6 +115,10 @@ export function buildAccountRow() {
           el('span', { text: displayNameOf(user) }),
           el('span', { class: 'sub', text: t('syncing as {email}', { email: user.email }) })),
         el('button', {
+          class: 'ghost-btn', text: t('sync now'),
+          onclick: (e) => syncNowAndSay(e.currentTarget),
+        }),
+        el('button', {
           class: 'ghost-btn', text: t('sign out'),
           onclick: async () => {
             await signOutUser();
@@ -160,6 +164,24 @@ function signInAndSay() {
   return signIn('google')
     .then((user) => { if (user) toast(t('Signed in — syncing your solves…')); })
     .catch(reportSignInFailure);
+}
+
+/* The manual fallback for when live sync has stalled: re-reads the account
+   and merges both ways, the same as a fresh sign-in would. */
+async function syncNowAndSay(btn) {
+  btn.disabled = true;
+  btn.textContent = t('syncing…');
+  try {
+    const pending = await syncNow();
+    if (pending) toast(t('Synced — {n} changes still waiting to upload', { n: pending }));
+    else toast(t('Synced'), { kind: 'good' });
+  } catch (err) {
+    console.warn('[sync] manual sync failed', err?.code || err);
+    toast(t('Could not sync — check your connection and try again'), { kind: 'bad' });
+  } finally {
+    btn.disabled = false;
+    btn.textContent = t('sync now');
+  }
 }
 
 const ACCOUNT_ICON = '<svg viewBox="0 0 24 24"><circle cx="12" cy="8.5" r="3.4"/><path d="M4.8 20a7.2 7.2 0 0114.4 0"/></svg>';
