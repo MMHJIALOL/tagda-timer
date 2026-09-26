@@ -219,10 +219,21 @@ async function queueWrite(entry) {
   });
 }
 
+/* Paths this device has written and the server has not yet accepted. A
+   rejected write — say rules for a new node not yet published — makes the
+   SDK roll back its optimistic copy, and that rollback arrives as an
+   ordinary child_removed. Taken at face value it deleted the local row: a
+   cube added while signed in was gone after the next reload. A removal on a
+   path listed here is that rollback, not another device's delete. */
+const _unconfirmed = new Set();
+const isUnconfirmed = (...parts) => _unconfirmed.has(userPath(...parts));
+
 async function pushOrQueue(path, value) {
+  if (value != null) _unconfirmed.add(path);
   if (!_sdk || navigator.onLine === false) { await queueWrite({ kind: 'set', path, value }); return; }
   try {
     await _sdk.set(_sdk.ref(_sdk.db, path), value);
+    _unconfirmed.delete(path);
   } catch (err) {
     console.warn('[sync] push failed, queued for retry', path, err?.code || err);
     await queueWrite({ kind: 'set', path, value });
@@ -241,9 +252,11 @@ async function removeOrQueue(path) {
 
 async function pushUpdateOrQueue(updates) {
   if (!Object.keys(updates).length) return;
+  for (const [path, value] of Object.entries(updates)) if (value != null) _unconfirmed.add(path);
   if (!_sdk || navigator.onLine === false) { await queueWrite({ kind: 'update', updates }); return; }
   try {
     await _sdk.update(_sdk.ref(_sdk.db), updates);
+    for (const path of Object.keys(updates)) _unconfirmed.delete(path);
   } catch (err) {
     console.warn('[sync] batch push failed, queued for retry', err?.code || err);
     await queueWrite({ kind: 'update', updates });
@@ -433,7 +446,7 @@ const applyRemoteSession = (session) => queueIncoming('sessions', session);
  * delete that applies would push the removal a second time, forever.
  */
 async function applyRemoteSolveRemoved(id) {
-  if (!id) return;
+  if (!id || isUnconfirmed('solves', id)) return;
   _incoming.solves.delete(id);
   if (!(await Solves.get(id))) return; // our own delete coming back
   _lastRemoteJSON.set(`solvesDel:${id}`, JSON.stringify(null));
@@ -442,7 +455,7 @@ async function applyRemoteSolveRemoved(id) {
 }
 
 async function applyRemoteSessionRemoved(id) {
-  if (!id) return;
+  if (!id || isUnconfirmed('sessions', id)) return;
   _incoming.sessions.delete(id);
   if (!(await Sessions.get(id))) return;
   _lastRemoteJSON.set(`sessionsDel:${id}`, JSON.stringify(null));
@@ -458,7 +471,7 @@ async function applyRemoteRec(store, rec) {
 }
 
 async function applyRemoteRecRemoved(store, id) {
-  if (!id) return;
+  if (!id || isUnconfirmed(store, id)) return;
   await wrap((await tx(store, 'readwrite')).delete(id));
 }
 
