@@ -3270,11 +3270,6 @@ body.focus #dock-bottom, body.focus #tile-float-layer { opacity: 0; pointer-even
 /* ---------------- the boards themselves ---------------- */
 
 .db-board { display: flex; flex-direction: column; gap: 2px; }
-.db-stack { display: flex; flex-direction: column; gap: 12px; }
-.db-yours-label {
-  font-size: .6rem; font-weight: 700; letter-spacing: .18em; text-transform: uppercase;
-  color: var(--text-faint); margin-bottom: 4px;
-}
 
 .db-row {
   display: grid;
