@@ -403,6 +403,38 @@ export function renderHistogram(host, solves) {
 }
 
 /* ---------------------------------------------------------
+   Consistency over the session, 0–100%
+   --------------------------------------------------------- */
+/** `session` and `recent` are consistencySeries() output, 0–1 or null. */
+export function renderConsistency(host, { session, recent }, n) {
+  host.innerHTML = '';
+  if (session.filter(v => v !== null).length < 2) { host.append(hint(t('Not enough solves yet'))); return; }
+  const W = 660, H = 150, L = 34, R = 8, T = 8, B = 8;
+  const svg = svgEl('svg', { viewBox: `0 0 ${W} ${H}` });
+  const x = i => L + (i / Math.max(1, session.length - 1)) * (W - L - R);
+  const y = v => T + (1 - v) * (H - T - B);
+
+  for (const v of [0, 0.5, 1]) {
+    svg.append(svgEl('line', { x1: L, x2: W - R, y1: y(v), y2: y(v), stroke: 'var(--text)', 'stroke-opacity': .08 }));
+    const lbl = svgEl('text', { class: 'axis-txt', x: L - 6, y: y(v) + 3, 'text-anchor': 'end' });
+    lbl.textContent = Math.round(v * 100) + '%';
+    svg.append(lbl);
+  }
+  const line = (vals, attrs) => {
+    const pts = [];
+    vals.forEach((v, i) => { if (v !== null) pts.push([x(i), y(v)]); });
+    if (pts.length > 1) svg.append(svgEl('path', { d: path(pts), fill: 'none', 'stroke-width': 1.8, 'stroke-linejoin': 'round', ...attrs }));
+  };
+  line(recent, { stroke: 'var(--accent-2)', 'stroke-dasharray': '4 3' });
+  line(session, { stroke: 'var(--accent)' });
+  host.append(svg);
+
+  const items = [{ color: 'var(--accent)', label: t('session so far') }];
+  if (recent.some(v => v !== null)) items.push({ color: 'var(--accent-2)', label: t('last {n} solves', { n }), dash: 'dashed' });
+  host.append(legend(items));
+}
+
+/* ---------------------------------------------------------
    Practice heatmap - a year of days, laid out by month
 
    Reads like LeetCode's: weeks are columns, weekdays are rows, and a busier

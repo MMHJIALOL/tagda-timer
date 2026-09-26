@@ -5160,6 +5160,13 @@ function wireChrome() {
 
   $('#mini-chart-btn')?.addEventListener('click', () =>
     openPanel('Statistics', 'buildStats', { wide: true }, app));
+  // Consistency is a whole-session figure, so it opens Statistics at the card that works it out.
+  const consTile = $('#stat-cons');
+  consTile.title = t('How this is worked out');
+  consTile.addEventListener('click', async () => {
+    await openPanel('Statistics', 'buildStats', { wide: true }, app);
+    $('#cons-card')?.scrollIntoView({ block: 'start' });
+  });
 
   $('#btn-clear-session').addEventListener('click', clearSession);
 
