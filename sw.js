@@ -7,12 +7,20 @@
    fixes. Race rooms, Scramble of the Day, sign-in and Spotify still need a
    connection and are deliberately never cached.
 
-   Nothing here is content-hashed except vendor/ and the fonts, so app files
-   are network-first: the cache is a fallback for being offline, never a
-   source of a stale half-deploy.
+   App files are served from the cache, and only the page itself goes to the
+   network on each visit. Every file fetched from Vercel is a billed edge
+   request, and revalidating ~80 modules per visit was burning through the
+   Hobby quota. The cache is dropped wholesale (never file by file, so a visit
+   never mixes two deploys) when the page's HTML changes or when it is older
+   than MAX_AGE, which catches deploys that only touched JS.
    =========================================================== */
 
 const CACHE = 'tagda-v1';
+
+/* ponytail: time-based pickup of JS-only deploys; a build-step version file
+   would make it instant if 6 h ever feels too slow. */
+const MAX_AGE = 6 * 60 * 60 * 1000;
+const STAMP = '/__sw-filled-at';
 
 /* The document is all that has to be in place before the first offline load;
    everything else lands in the cache the first time the page actually fetches
@@ -81,9 +89,49 @@ async function networkFirst(request) {
   }
 }
 
+/** Serve the app from the cache; the network only for what it lacks. */
+async function appFirst(request) {
+  return (await caches.match(request)) || networkFirst(request);
+}
+
+/** Whether the cached app is from an older deploy than `res`, the page just fetched. */
+async function isStale(cache, request, res) {
+  const stamp = await cache.match(STAMP);
+  if (!stamp || Date.now() - Number(await stamp.text()) > MAX_AGE) return true;
+  const old = await cache.match(request, { ignoreSearch: true });
+  return !!old && (await old.text()) !== (await res.text());
+}
+
+/** Forget every cached app file (vendor/ and fonts stay) and restart the clock. */
+async function dropApp(cache) {
+  for (const key of await cache.keys()) {
+    if (!isImmutable(new URL(key.url))) await cache.delete(key);
+  }
+  await cache.put(STAMP, new Response(String(Date.now())));
+}
+
+/**
+ * The page always comes from the network (one request), and decides whether
+ * the cached modules still belong to it. Dropping them before responding means
+ * every file this load asks for next is fetched fresh from the same deploy.
+ */
+async function navigate(request) {
+  let res;
+  try { res = await fetch(request); }
+  catch { return networkFirst(request); }   // offline: the cached page, via its fallback
+  if (!res.ok) return res;
+  const cache = await caches.open(CACHE);
+  if (await isStale(cache, request, res.clone())) await dropApp(cache);
+  await store(cache, request, res.clone());
+  return res;
+}
+
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE)
     .then(async (cache) => {
+      // A new worker means a new deploy: start its app cache empty, stamped now,
+      // so the page's 'cache' report below fills it and the next visit keeps it.
+      await dropApp(cache);
       for (const url of PRECACHE) {
         // One at a time and forgiving: addAll() fails the whole install if any
         // single URL 404s, which would leave the site with no worker at all.
@@ -103,7 +151,8 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   if (!isCacheable(url, e.request)) return;   // straight to the network, unseen
-  e.respondWith(isImmutable(url) ? cacheFirst(e.request) : networkFirst(e.request));
+  e.respondWith(e.request.mode === 'navigate' ? navigate(e.request)
+    : isImmutable(url) ? cacheFirst(e.request) : appFirst(e.request));
 });
 
 /**
