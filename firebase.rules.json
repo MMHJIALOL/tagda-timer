@@ -162,6 +162,20 @@
             ".validate": "newData.isString() && newData.val().length <= 600"
           },
 
+          "backupClaim": {
+            "$uid": {
+              ".read": "auth != null && auth.uid === $uid",
+              ".write": "auth != null && auth.uid === $uid && !data.exists() && root.child('daily/' + $dayStart + '/' + $event + '/progress/' + $uid).exists() && !root.child('daily/' + $dayStart + '/' + $event + '/results/' + $uid).exists()",
+              ".validate": "newData.isNumber() && newData.val() <= now + 2000"
+            }
+          },
+
+          "backup": {
+            ".read": "auth != null && root.child('daily/' + $dayStart + '/' + $event + '/backupClaim/' + auth.uid).exists()",
+            ".write": "auth != null && !data.exists() && root.child('daily/' + $dayStart + '/' + $event + '/backupClaim/' + auth.uid).exists()",
+            ".validate": "newData.isString() && newData.val().length <= 600"
+          },
+
           "progress": {
             ".read": true,
             "$uid": {
@@ -180,7 +194,7 @@
             "$uid": {
               ".write": "auth != null && auth.uid === $uid && !data.exists()",
 
-              ".validate": "newData.hasChildren(['timeMs']) && (!root.child('daily/' + $dayStart + '/' + $event + '/progress/' + auth.uid + '/startedAt').exists() || !root.child('daily/' + $dayStart + '/' + $event + '/progress/' + auth.uid + '/finishedAt').exists() || newData.child('timeMs').val() >= (root.child('daily/' + $dayStart + '/' + $event + '/progress/' + auth.uid + '/finishedAt').val() - root.child('daily/' + $dayStart + '/' + $event + '/progress/' + auth.uid + '/startedAt').val()) * 0.75 - 4000)",
+              ".validate": "newData.hasChildren(['timeMs']) && (!root.child('daily/' + $dayStart + '/' + $event + '/backupClaim/' + $uid).exists() || newData.child('backup').val() === true) && (!root.child('daily/' + $dayStart + '/' + $event + '/progress/' + auth.uid + '/startedAt').exists() || !root.child('daily/' + $dayStart + '/' + $event + '/progress/' + auth.uid + '/finishedAt').exists() || newData.child('timeMs').val() >= (root.child('daily/' + $dayStart + '/' + $event + '/progress/' + auth.uid + '/finishedAt').val() - root.child('daily/' + $dayStart + '/' + $event + '/progress/' + auth.uid + '/startedAt').val()) * 0.75 - 4000)",
 
               "timeMs":      { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 36000000" },
               "penalty":     { ".validate": "newData.isString() && newData.val().length <= 8" },
@@ -188,6 +202,7 @@
               "note":        { ".write": "auth != null && auth.uid === $uid", ".validate": "newData.isString() && newData.val().length <= 80" },
               "photo":       { ".validate": "newData.isString() && newData.val().length <= 300 && newData.val().matches(/^https:[/][/]lh[0-9]+[.]googleusercontent[.]com[/]/)" },
               "suspect":     { ".validate": "newData.isBoolean() || !newData.exists()" },
+              "backup":      { ".validate": "newData.val() === true && root.child('daily/' + $dayStart + '/' + $event + '/backupClaim/' + $uid).exists()" },
               "submittedAt": { ".validate": "newData.isNumber()" },
               "$other":      { ".validate": false }
             }

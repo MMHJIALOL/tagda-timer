@@ -131,6 +131,30 @@ export function safePhotoUrl(url) {
   return /^https:\/\/lh[0-9]+\.googleusercontent\.com\//.test(String(url || '')) ? url : null;
 }
 
+/* ---------------------------------------------------------
+   Misfires on today's scramble
+   ---------------------------------------------------------
+
+   What happens to a solve of the day's MAIN scramble when the timer stops,
+   judged on the raw time before any penalty: a +2 does not lift a 1.5 s
+   misfire over the line. Under AUTO_DISCARD_MS nobody really solved it, so
+   the solve is thrown away and the backup scramble comes up on its own.
+   Under ASK_MS it could be either, so the solver is asked. Anything longer
+   is kept without a word. A solve of the backup is always kept — see
+   Daily#misfireCheck.
+
+   Here rather than in daily.js because this half loads in Node, which is
+   where tools/verify-misfire.mjs checks it. daily.js re-exports it.
+   --------------------------------------------------------- */
+
+export const AUTO_DISCARD_MS = 2000;
+export const ASK_MS = 5000;
+
+/** @returns {'discard' | 'ask' | 'keep'} */
+export function misfireAction(timeMs) {
+  return timeMs < AUTO_DISCARD_MS ? 'discard' : timeMs < ASK_MS ? 'ask' : 'keep';
+}
+
 /** How many of `solves` were recorded inside the IST day beginning at `dayStart`. */
 export function countSolvesForDay(solves, dayStart) {
   if (!Array.isArray(solves)) return 0;

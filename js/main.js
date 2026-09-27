@@ -282,6 +282,9 @@ async function enterSotd() {
 
   ui.openSotd(app, ctl, {
     onExit: () => {
+      /* Leaving with the misfire question up answers it Keep. Leaving must
+         never be a way to put the main scramble back for another go. */
+      pendingMisfire?.dismiss();
       ctl.disengage();
       refit();
       syncSotdChip();
@@ -789,6 +792,8 @@ function refreshQueue() {
 }
 app.refreshQueue = () => { refreshQueue(); nextScramble(); };
 app.nextScramble = (opts) => nextScramble(opts);
+// For daily.js, to keep a misfire whose question the page closed on.
+app.recordSolve = (solve) => recordSolve(solve);
 
 /**
  * One scramble for the race host to publish to the room.
@@ -1997,7 +2002,41 @@ async function onSolveFinished(res) {
     }
   }
 
-  if (res.suspicious && app.settings.confirmShortSolves) {
+  /* Today's Scramble of the Day has its own misfire rule, whatever
+     confirmShortSolves says: under 2 s the solve is thrown away and the
+     backup scramble comes up; under 5 s you are asked; a backup solve is
+     always kept. It replaces the generic question below rather than joining
+     it — the generic "discard" put today's main scramble straight back up for
+     a free second go. */
+  const daily = dailyCtl();
+  const sotd = daily?.misfireCheck(res.timeMs) || null;
+  if (sotd === 'discard' || sotd === 'ask') {
+    const held = daily.holdMisfire(res);
+    let backup = sotd === 'discard';
+    if (!backup) {
+      // Same shape as the generic question: no answer, or starting the next
+      // solve, means keep. So does leaving the window (see enterSotd).
+      pendingMisfire = confirmToast(t('{time} — misfire?', { time: fmt(res.timeMs) }), t('Use backup'),
+        { timeout: 5000, cancelLabel: t('Keep') });
+      backup = await pendingMisfire;
+      pendingMisfire = null;
+    }
+    if (backup && await daily.switchToBackup()) {
+      if (sotd === 'discard') toast(t('Misfire — switched to your backup scramble'), { long: true });
+      // Thrown away means off the digits too, not left there as though it counted.
+      timer.reset(); syncTimerDisplay(); nextScramble(); return;
+    }
+    daily.releaseMisfire();
+    // The scramble it was solved on, named: leaving the window has already
+    // put a practice scramble on screen by the time a Keep gets here.
+    await recordSolve({
+      timeMs: res.timeMs, penalty: res.penalty,
+      inspectionMs: res.inspectionMs, splits: res.splits, scramble: held.scramble,
+    });
+    return;
+  }
+
+  if (!sotd && res.suspicious && app.settings.confirmShortSolves) {
     // A misfire is obvious the instant it happens — you felt the stack move.
     // No answer means keep the solve. It stays up long enough to read, and
     // starting the next solve closes it early (see the timer 'state' listener).

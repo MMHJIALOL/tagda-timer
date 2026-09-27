@@ -104,11 +104,21 @@ microphone, no screen recording. Ever.
 | `results` readable only once your own exists | Reading the day's times before you've earned them |
 | `results/<uid>` write-once (except `note`) | Submitting a decoy, peeking, then editing your time down |
 | `timeMs` checked against the server-stamped solve window | Pausing the app and typing in a fabricated number afterwards |
+| `backup` readable only once your own `backupClaim` exists | Looking at the backup scramble without giving up the main attempt |
+| a claim forces `backup: true` on your result, and `backup: true` needs a claim | Peeking at the backup and then submitting as though you never did |
+
+The last two are §7.
 
 The timing check is the same formula Race mode's rounds use: your submitted time against the
 gap between the `startedAt` and `finishedAt` stamps written with `ServerValue.TIMESTAMP`,
 generous by 25% plus 4 seconds because those stamps are bracketed by network round-trips. The
 job is to make fabricating a time inconvenient, not to referee a competition.
+
+`finishedAt` is stamped when the timer **stops** (progress status `stopped`), not when the
+result is sent. It used to be stamped at submit, which was harmless while submitting followed
+the stop by a few milliseconds. The misfire question in §7 can put minutes between the two (a
+reload before answering it), and all of that would have counted as solving time, so the check
+would have refused a time that was kept.
 
 ### Heuristic only — Tier 2
 
@@ -163,6 +173,7 @@ transaction result and adopts it without waiting for the listener.
 | `js/dailyui.js` | The window, and the two board renderers both it and the panel draw through |
 | `js/panels.js`'s `buildDaily` | The drawer panel — event picker, countdown, both boards, no solving |
 | `firebase.rules.json` | The rules that make §1's guarantees real, alongside Race mode's |
+| `tools/verify-misfire.mjs` | `node` check of the misfire thresholds in `js/dayid.js` (§7) |
 
 > **Republish `firebase.rules.json` before deploying this.** The previous rules end `results`
 > with `"$other": { ".validate": false }` and know nothing about `photo`, so a client that
@@ -198,7 +209,8 @@ of today's scramble. Two consequences worth knowing:
 
 - **Leaving cancels an armed attempt.** Not the only defensible choice, but the honest one: an
   attempt you cannot see is an attempt that can be spent by accident, and today's is the only
-  one you get.
+  one you get. The exception is a solve already done and waiting on the misfire question
+  (§7): leaving answers that question **Keep**, and the time is submitted.
 - **The window arms itself when the scramble arrives**, not when it opens. Today's scramble is
   usually a beat late — somebody has to generate and publish it — and an earlier version
   checked once on the way in and never again, so the usual case was a window that never armed:
@@ -360,3 +372,101 @@ with the countdown stuck on "under a minute", because the reset it was counting 
 already been and gone. `Daily#checkRollover` is now called from the same one-second tick that
 draws that countdown, in both the window and the panel, so the thing that would show the
 problem is the thing that fixes it.
+
+---
+
+## 7. Misfires and the backup scramble
+
+A stackmat or spacebar misfire on today's scramble used to cost the day: the attempt was
+recorded and submitted however it ended. Now a short solve of the **main** scramble can be
+traded for a **backup** scramble, once per day per event.
+
+### The thresholds
+
+Judged on the raw time **before** any penalty — a +2 does not lift a 1.5 s misfire over the
+line. `misfireAction` in [`js/dayid.js`](js/dayid.js) (re-exported by `daily.js`, checked by
+`node tools/verify-misfire.mjs`):
+
+| Time | What happens |
+|---|---|
+| < 2.00 s (`AUTO_DISCARD_MS`) | Thrown away: not recorded locally, not submitted. The backup comes up at once, with a toast. |
+| 2.00–4.99 s (`ASK_MS`) | "{time} — misfire? **Use backup** / **Keep**". No answer within 5 s, starting the next solve, or leaving the window all mean Keep. |
+| ≥ 5.00 s | Unchanged: recorded and submitted straight away. |
+
+This applies whatever the Confirm misfires setting says, and inside the window it **replaces**
+the generic "Discard it?" question rather than joining it. That generic discard was itself a
+hole: it put today's main scramble straight back up for a free second go.
+
+A solve **of the backup** is always kept and submitted immediately, whatever its time. There
+is nothing left to fall back to. Taking the backup spends the first attempt for good; you can
+never pick the better of the two, because the first one was never recorded anywhere.
+
+The bar says `backup scramble — final attempt` (in the warn colour) while you are on it.
+
+### Where the backup lives, and why nobody can read it early
+
+```
+daily/<dayKey>/<event>/
+  backupClaim/<uid>   server ms. Write-once, own uid only, only while progress/<uid> exists
+                      and results/<uid> does not. Readable by its owner (so a reload knows).
+  backup              the scramble. Readable ONLY by a uid whose backupClaim exists.
+                      Writable once, and only by a claimer.
+  results/<uid>/backup  true, or absent. A claim requires it; it requires a claim.
+```
+
+Hiding the backup in the UI would be nothing: the database is readable from the console and
+over REST. The read rule is what makes it private, and it has no way round it — the parent
+nodes (`daily/<dayKey>`, `daily/<dayKey>/<event>`) have no `.read` at all, so a whole-node or
+`?shallow=true` read is refused too.
+
+**The claim comes before the read, on purpose.** Claiming is the point of no return: until
+it lands the backup cannot be read, and once it has, the rules only accept a result marked
+`backup: true`. So seeing the backup always costs the main attempt and always shows on your
+row, however the database is reached. There is no way to look at both and choose.
+
+**Nobody can generate it in advance.** The first claimer generates it (the same official
+random-state generator) and writes it with a transaction that never replaces an existing
+value, exactly like the main scramble in §3. Everybody who claims later reads the same one.
+It cannot be published alongside the main scramble, because then whoever published it would
+have seen it without claiming.
+
+**The clock check still holds for a backup solve.** Switching removes `startedAt` and
+`finishedAt` from your progress, and the backup solve stamps its own. Without that, the check
+would compare the backup time against a window that began with the solve thrown away.
+
+### Loopholes closed
+
+- **Reload or close the tab with the question up.** The solve is noted in `localStorage`
+  (`tdt.sotd.held`, keyed by account, day and event) before the question is asked. The next
+  time the window opens, that note is answered Keep and submitted — instead of arming a fresh
+  attempt at a scramble already solved once. The same note covers the moment between a
+  sub-2 s stop and its claim landing.
+- **Esc or Leave with the question up** answers it Keep.
+- **A claimed backup survives a reload.** On connect the controller reads
+  `backupClaim/<uid>` before arming anything; if it exists and there is no result, the backup
+  is armed, not the main scramble.
+- **The day rolling over** (`checkRollover`) resets all backup state.
+
+**Not closed, and pre-existing:** a solve that has *started* on the main scramble can still be
+abandoned — Esc mid-solve, the Leave button mid-solve, or a reload — and the main scramble is
+armed again. Progress says `solving`, but nothing reads it on the way back in. Closing that
+needs a decision about what an abandoned attempt counts as (a DNF, like a competition), so it
+is tracked separately rather than folded into this.
+
+### Until firebase.rules.json is republished
+
+The rules above are not live until they are pasted into the Firebase console. Until then the
+claim is refused, and the client degrades to exactly what it did before: a toast says
+**"Backup scramble isn't available yet — your time was kept"**, the main solve is recorded and
+submitted (even a sub-2 s one), and the window lands on "attempt submitted". Reading
+`backupClaim` on connect is refused too, which is read as "no claim". A backup result refused
+for its unknown `backup` field is retried without it, the same way `photo` is.
+
+### Tested
+
+Rules: 44 checks against the Realtime Database emulator (firebase-tools 13, real anonymous
+Auth-emulator tokens) covering every read and write path above, plus the old rules refusing
+claims and `backup: true`. Client: Playwright in Chrome and Firefox against the emulators —
+auto-switch at 1.2 s, Keep and Use backup at 3.5 s, the same backup for a second user after
+(and only after) claiming, reload and Esc with the question up, 8 s straight through, the tag
+on today's board and on the history view, and the fallback under the old rules.

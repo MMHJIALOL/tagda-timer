@@ -321,7 +321,11 @@ export class DailyTransport extends EventTarget {
     if (!dayKey || !event || !uid) return;
     const out = { ...patch };
     if (patch.status === 'solving') out.startedAt = S.serverTimestamp();
-    if (patch.status === 'done') out.finishedAt = S.serverTimestamp();
+    /* Stamped when the timer stops, not when the result is sent. A kept
+       misfire waits on a question first, and a reload can put that answer off
+       for minutes; stamped at submit, all of that counted as solving time and
+       the rules' clock check refused the time that was kept. */
+    if (patch.status === 'stopped') out.finishedAt = S.serverTimestamp();
     await S.update(this._ref(`daily/${dayKey}/${event}/progress/${uid}`), out);
   }
 
@@ -350,6 +354,49 @@ export class DailyTransport extends EventTarget {
     const body = cleanNote(text);
     await this._sdk.set(this._ref(`daily/${dayKey}/${event}/results/${uid}/note`), body);
     return body;
+  }
+
+  /**
+   * Give up the main attempt for the backup scramble. Write-once, and the
+   * rules only accept it from somebody who has started an attempt and not
+   * yet sent a result. This comes BEFORE the backup can be read at all: the
+   * `backup` node is readable only once this exists, so seeing the backup
+   * always costs the first attempt, however the database is reached.
+   */
+  async claimBackup({ dayKey, event, uid } = this.target()) {
+    if (!dayKey || !event || !uid) throw new Error('not-signed-in');
+    await this._sdk.set(this._ref(`daily/${dayKey}/${event}/backupClaim/${uid}`), this._sdk.serverTimestamp());
+  }
+
+  /** Whether this uid has claimed today's backup. Same null/false split as hasOwnResult. */
+  async hasBackupClaim() {
+    const { event, uid } = this.snap;
+    if (!this._dayKey || !event || !uid) return null;
+    try {
+      return (await this._sdk.get(this._ref(`daily/${this._dayKey}/${event}/backupClaim/${uid}`))).exists();
+    } catch (err) {
+      /* Refused means rules from before backups existed, where nobody can
+         have claimed one. */
+      return /permission.denied/i.test(String(err?.code || err?.message || err)) ? false : null;
+    }
+  }
+
+  /**
+   * The day's backup scramble, publishing `make()`'s if nobody has yet.
+   *
+   * Only works after claimBackup. Whoever claims first generates it, the
+   * same way the main scramble is published: a transaction that never
+   * replaces what is there, so two claimers racing both end up with the
+   * winner's. It cannot be generated in advance by whoever publishes the main
+   * one, because then that person would have seen it without claiming.
+   */
+  async backupScramble(make, { dayKey, event } = this.target()) {
+    const ref = this._ref(`daily/${dayKey}/${event}/backup`);
+    const have = (await this._sdk.get(ref)).val();
+    if (have) return have;
+    const mine = await make();
+    const out = await this._sdk.runTransaction(ref, (cur) => (cur === null ? mine : undefined));
+    return out?.snapshot?.val() || null;
   }
 
   /**

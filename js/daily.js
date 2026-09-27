@@ -17,6 +17,7 @@ import { t } from './i18n.js';
    =========================================================== */
 
 import { toast } from './toast.js';
+import { fmt } from './util.js';
 import { eventOf } from './events.js';
 import { eff, bestAvg } from './stats.js';
 import { generate } from './scramble.js';
@@ -25,7 +26,7 @@ import {
   DailyTransport, cloudAvailable,
   CLOCK_SLACK_MS, CLOCK_SLACK_RATIO,
   countSolvesForDay, rankByCount, dayStartMs, safePhotoUrl, cleanNote,
-  markSotdDone, clearSotdDone, sotdDoneOn,
+  markSotdDone, clearSotdDone, sotdDoneOn, misfireAction,
 } from './daily-net.js';
 import { SUSPECT_RATIO } from './raceapp.js';
 
@@ -82,6 +83,21 @@ const READ_WAIT_TRIES = 4;
 /** A write that has not landed by now is not landing on this connection. */
 const PUBLISH_TIMEOUT_MS = 15000;
 
+/** How long a misfire waits on the backup claim before keeping the time instead. */
+const CLAIM_TIMEOUT_MS = 8000;
+
+/**
+ * A 2–4.99 s solve of the main scramble whose "Keep / Use backup" question
+ * has not been answered yet. Kept in the browser so that closing or reloading
+ * the page on the question is answered Keep the next time the window opens,
+ * rather than handing back a fresh attempt at a scramble already solved once.
+ */
+const HELD_KEY = 'tdt.sotd.held';
+
+const within = (p, ms, why) => Promise.race([
+  p, new Promise((_, rej) => setTimeout(() => rej(new Error(why)), ms)),
+]);
+
 /** An event only counts as a daily challenge if "one scramble, one time" describes it. */
 export function dailyEligible(eventId) {
   const ev = eventOf(eventId);
@@ -134,6 +150,17 @@ export class Daily extends EventTarget {
     this._readWait = 0;
     /** The count last written, so an unchanged total is not rewritten. */
     this._lastCount = -1;
+
+    /** Whether today's attempt has moved to the backup scramble, and that scramble once fetched. */
+    this.onBackup = false;
+    this.backupScramble = null;
+    this.backupError = null;
+    this._backupTries = 0;
+    this._backupRetry = 0;
+    /** The claim is in flight; the timer stays shut until it lands or is refused. */
+    this._switching = false;
+    /** A misfire question is on screen — see holdMisfire. */
+    this._held = false;
   }
 
   get revealed() { return this.submittedToday; }
@@ -163,6 +190,7 @@ export class Daily extends EventTarget {
     this.submittedToday = false;
     this._resultChecked = false;
     this._resetPublishState();
+    this._resetBackup();
     this.net?.watch(eventId);
     this._checkOwnResult();
     this._changed();
@@ -327,6 +355,7 @@ export class Daily extends EventTarget {
       this._resultChecked = false;
       this.submittedToday = false;
       this.attempting = false;
+      this._resetBackup();
     }
     /* Once per key, not once per snapshot. Every snapshot lands here —
        anybody's progress, the clock offset, the results listener — and each
@@ -334,6 +363,10 @@ export class Daily extends EventTarget {
     if (!key || !this.net || this._resultChecked || this._checking === key) return;
     this._checking = key;
     const has = await this.net.hasOwnResult();
+    /* A backup claimed before a reload is still claimed, and the attempt is
+       on the backup — asked before anything is armed, or the main scramble
+       would come back for a moment first. */
+    const claimed = has === false && this.net.hasBackupClaim ? await this.net.hasBackupClaim() : false;
     if (this._checking === key) this._checking = null;
     /* `null` is "could not ask", which is not "no". The first snapshot arrives
        before watch() has chosen a day or an event, and that "no" used to be
@@ -342,10 +375,15 @@ export class Daily extends EventTarget {
        the reset". Left unchecked and asked again shortly, because a quiet day
        may bring no further snapshot to ask on. */
     if (this._ownKey() !== key) return;
-    if (has === null) {
+    if (has === null || claimed === null) {
       clearTimeout(this._recheck);
       this._recheck = setTimeout(() => this._checkOwnResult(), RECHECK_MS);
       return;
+    }
+    if (has || claimed) this._dropHeld();
+    if (claimed && !this.onBackup) {
+      this.onBackup = true;
+      this._loadBackup();
     }
     this.submittedToday = has;
     this._resultChecked = true;
@@ -439,14 +477,145 @@ export class Daily extends EventTarget {
   disengage() {
     if (!this.engaged) return;
     this.engaged = false;
-    this.attempting = false;
+    /* Except one already solved and waiting on the misfire question: leaving
+       answers it Keep (main.js dismisses it on the way out), and that answer
+       still has to be able to submit. */
+    if (!this._held) this.attempting = false;
     this.app.nextScramble?.();
     this._changed();
   }
 
   _armIfPossible() {
     if (this.attempting || !this.canAttempt()) return;
+    /* The page closed on a misfire question. It is answered Keep here, on the
+       way back in, instead of arming the main scramble for a second go. */
+    const held = !this.onBackup && this._heldNote();
+    if (held && this.app.recordSolve) {
+      this.attempting = true;
+      this.releaseMisfire();
+      toast(t('Kept your {time} — the page closed before you answered the misfire question', { time: fmt(held.timeMs) }), { long: true });
+      this.app.recordSolve({
+        timeMs: held.timeMs, penalty: held.penalty, inspectionMs: held.inspectionMs, scramble: held.scramble,
+      }).catch(err => console.warn('[daily] could not keep the held solve', err));
+      return;
+    }
     this.attempt();
+  }
+
+  /* ---------------- misfires and the backup scramble ---------------- */
+
+  /** The scramble today's attempt is on: the main one, or the backup once it has been claimed. */
+  currentScramble() {
+    return this.onBackup ? this.backupScramble : (this.snap?.scramble || null);
+  }
+
+  /**
+   * What main.js should do with a solve that just stopped, or null when it
+   * was not today's attempt and this feature has no say. A solve of the
+   * backup is always kept: there is nothing left to fall back to.
+   */
+  misfireCheck(timeMs) {
+    if (!this.engaged || !this.attempting) return null;
+    return this.onBackup ? 'keep' : misfireAction(timeMs);
+  }
+
+  /** A misfire question is going up: note the solve, so leaving the page cannot un-ask it. */
+  holdMisfire(res) {
+    this._held = true;
+    const held = {
+      key: this._ownKey(), scramble: this.snap?.scramble || '',
+      timeMs: res.timeMs, penalty: res.penalty || 'none', inspectionMs: res.inspectionMs || 0,
+    };
+    try { localStorage.setItem(HELD_KEY, JSON.stringify(held)); } catch { /* private mode */ }
+    return held;
+  }
+
+  /** The question is answered, either way. */
+  releaseMisfire() {
+    this._held = false;
+    this._dropHeld();
+  }
+
+  _dropHeld() {
+    try { localStorage.removeItem(HELD_KEY); } catch { /* private mode */ }
+  }
+
+  _heldNote() {
+    try {
+      const held = JSON.parse(localStorage.getItem(HELD_KEY));
+      return held?.key && held.key === this._ownKey() ? held : null;
+    } catch { return null; }
+  }
+
+  /**
+   * Spend the main attempt on the backup scramble.
+   *
+   * The claim is written first and is the point of no return: the backup
+   * cannot even be read until it lands, and once it has, the rules only
+   * take a result marked `backup`. Refused means the rules that allow it are
+   * not published yet; the caller then keeps the main solve, so a misfire on
+   * such a deployment costs nothing it did not cost before.
+   */
+  async switchToBackup() {
+    if (!this.net || this.onBackup) return false;
+    const at = this.net.target?.();
+    this._switching = true;
+    this._changed();
+    try {
+      await within(this.net.claimBackup(at), CLAIM_TIMEOUT_MS, 'claim-timeout');
+    } catch (err) {
+      this._switching = false;
+      console.warn('[daily] backup claim refused', err);
+      toast(t('Backup scramble isn’t available yet — your time was kept'), { kind: 'bad', long: true });
+      this._changed();
+      return false;
+    }
+    this.releaseMisfire();
+    this._switching = false;
+    this.onBackup = true;
+    this._lastStatus = null;
+    // Left the window while the claim was in flight: re-entering arms the backup.
+    if (!this.engaged) this.attempting = false;
+    /* The rules' clock check measures the result against startedAt and
+       finishedAt, which still bracket the solve just thrown away. The backup
+       solve stamps its own when it starts and stops. */
+    this.net.setProgress({ status: 'inspecting', startedAt: null, finishedAt: null }, at)
+      .catch(err => console.warn('[daily] progress reset refused', err));
+    this._loadBackup(at);
+    this._changed();
+    return true;
+  }
+
+  async _loadBackup(at = this.net?.target?.()) {
+    clearTimeout(this._backupRetry);
+    const key = this._ownKey();
+    const make = () => within(generate(at.event, 'wca'), GENERATE_TIMEOUT_MS, 'generator-timeout').then(s => s.scramble);
+    try {
+      const s = await this.net.backupScramble(make, at);
+      if (!s) throw new Error('empty-after-write');
+      if (this._ownKey() !== key || !this.onBackup) return;
+      this.backupScramble = s;
+      this.backupError = null;
+    } catch (err) {
+      if (this._ownKey() !== key || !this.onBackup) return;
+      this.backupError = err?.code || String(err?.message || err);
+      console.warn('[daily] backup scramble failed', err);
+      if (this._backupTries < PUBLISH_BACKOFF_MS.length) {
+        this._backupRetry = setTimeout(() => this._loadBackup(at), PUBLISH_BACKOFF_MS[this._backupTries++]);
+      }
+    }
+    this._changed();
+  }
+
+  /** A new day, event or account starts with the main scramble again. */
+  _resetBackup() {
+    clearTimeout(this._backupRetry);
+    this._backupRetry = 0;
+    this._backupTries = 0;
+    this.onBackup = false;
+    this.backupScramble = null;
+    this.backupError = null;
+    this._switching = false;
   }
 
   cancelAttempt() {
@@ -461,6 +630,7 @@ export class Daily extends EventTarget {
     if (!this.snap?.signedIn) return 'signed-out';
     if (this.submittedToday) return 'done';
     if (!this.snap.scramble) return 'waiting';
+    if (this.onBackup) return 'backup';
     if (this.attempting) return 'ready';
     return 'waiting';
   }
@@ -478,13 +648,14 @@ export class Daily extends EventTarget {
        this window that let the generator fill that gap was indistinguishable
        from an ordinary timer: the scramble changed on every solve, none of
        them counted, and nothing ever reached the board. */
-    if (!this.attempting || !this.snap?.scramble) {
+    const scramble = this.attempting && this.snap?.scramble ? this.currentScramble() : null;
+    if (!scramble) {
       const hold = this.holdText();
       this._shownHold = hold;
       return { scramble: '', hold, official: true, daily: true };
     }
     this._shownHold = null;
-    return { scramble: this.snap.scramble, official: true, daily: true };
+    return { scramble, official: true, daily: true };
   }
 
   /**
@@ -504,8 +675,10 @@ export class Daily extends EventTarget {
    * that fires a handful of times a minute.
    */
   _changed() {
-    if (this.engaged && !this.attempting) {
-      const now = this.holdText();
+    if (this.engaged) {
+      /* null when a real scramble belongs on screen: the backup arriving
+         after "Fetching your backup scramble…" is the case that needs it. */
+      const now = this.attempting && this.snap?.scramble && this.currentScramble() ? null : this.holdText();
       /* `undefined` means nothing has been shown yet, and there is nothing to
          repaint over. `null` means a real scramble is on screen right now —
          checking it against `null` here, the same as against any other stale
@@ -551,6 +724,12 @@ export class Daily extends EventTarget {
       }
       return t('Publishing today’s scramble…');
     }
+    if (this.onBackup) {
+      if (!this.backupError) return t('Fetching your backup scramble…');
+      return this._backupTries < PUBLISH_BACKOFF_MS.length
+        ? t('Still fetching your backup scramble ({err})…', { err: this.backupError })
+        : t('Your backup scramble could not be fetched ({err}) — reload to try again.', { err: this.backupError });
+    }
     // Today's scramble is here; whether you may still attempt it is not known yet.
     if (!this._resultChecked) return t('Checking whether today’s attempt is already in…');
     return t('Nothing to solve right now');
@@ -577,13 +756,16 @@ export class Daily extends EventTarget {
     if (!this.engaged) return false;
     if (!this.snap?.signedIn) return true;
     if (!this.snap.scramble) return true;
+    // Claiming the backup, or waiting for it: there is nothing to solve yet.
+    if (this._switching || (this.onBackup && !this.backupScramble)) return true;
     return this.submittedToday;
   }
 
   onTimerState(state) {
     if (!this.attempting) return;
     const map = { inspecting: 'inspecting', holding: 'inspecting', ready: 'inspecting', running: 'solving' };
-    const status = map[state];
+    // Leaving `running` any other way is the stop, which stamps finishedAt.
+    const status = map[state] || (this._lastStatus === 'solving' ? 'stopped' : null);
     if (!status || status === this._lastStatus) return;
     this._lastStatus = status;
     this.net.setProgress({ status }).catch(() => {});
@@ -591,16 +773,18 @@ export class Daily extends EventTarget {
 
   /** A finished solve of today's scramble becomes this event's result. */
   async onSolveRecorded(solve) {
-    if (!this.attempting || !this.snap?.scramble) return;
+    const scramble = this.currentScramble();
+    if (!this.attempting || !this.snap?.scramble || !scramble) return;
     // Only a solve of TODAY's scramble counts — guards the small window where
     // the event or the day could have moved on mid-attempt.
-    if (String(solve.scramble || '').trim() !== String(this.snap.scramble).trim()) return;
+    if (String(solve.scramble || '').trim() !== String(scramble).trim()) return;
 
     /* Where this solve belongs, pinned before the first await: the progress
        write and its retries leave room for the board to move to another event
        or day, and the result must still land on the one it was solved in. */
     const at = this.net.target?.();
     const { dayId } = this.snap;
+    const backup = this.onBackup;
     this.attempting = false;
     this.submittedToday = true;
     this._lastStatus = null;
@@ -620,28 +804,25 @@ export class Daily extends EventTarget {
       name: this._name(),
       suspect: this._looksSuspect(solve) || null,
     };
-    let landed = true;
-    try {
-      await this._retry(() => this.net.submitResult({ ...result, photo: this._photo() }, at));
-    } catch (err) {
-      /* Once more without the avatar.
+    /* Then once more without the avatar, and for a backup solve once more
+       without the `backup` mark.
 
-         `results` rejects any field it does not know about ("$other": false),
-         so a deployment still running the rules from before avatars existed
-         refuses the WHOLE write because of one cosmetic field — and the time
-         you just did is lost to a picture. Dropping it and trying again turns
-         a rules version skew into a missing face instead of a missing result,
-         which is the right way round: the face is decoration, the time is the
-         entire point. */
-      console.warn('[daily] result refused, retrying without the avatar', err);
-      try {
-        await this._retry(() => this.net.submitResult(result, at));
-      } catch (err2) {
-        landed = false;
-        console.warn('[daily] result refused', err2);
-        toast('Today’s board would not accept that time', { kind: 'bad' });
-      }
+       `results` rejects any field it does not know about ("$other": false),
+       so a deployment still running the rules from before avatars existed
+       refuses the WHOLE write because of one cosmetic field — and the time
+       you just did is lost to a picture. Dropping it and trying again turns
+       a rules version skew into a missing face instead of a missing result,
+       which is the right way round: the face is decoration, the time is the
+       entire point. The backup mark is the same story one rules version on. */
+    const tries = backup
+      ? [{ ...result, backup: true, photo: this._photo() }, { ...result, backup: true }, result]
+      : [{ ...result, photo: this._photo() }, result];
+    let landed = false;
+    for (const r of tries) {
+      try { await this._retry(() => this.net.submitResult(r, at)); landed = true; break; }
+      catch (err) { console.warn('[daily] result refused', err); }
     }
+    if (!landed) toast('Today’s board would not accept that time', { kind: 'bad' });
     /* Only a result that landed retires the day. The note used to be written
        before the submit, so a time the board never took still skipped the
        intro and dimmed the chip as though today were done. */
@@ -670,6 +851,7 @@ export class Daily extends EventTarget {
     if (!this.net || !this.snap?.nextResetMs) return;
     if (this.net.serverNow() < this.snap.nextResetMs) return;
     this.submittedToday = false;
+    this._resetBackup();    // yesterday's backup was yesterday's
     this._lastCount = -1;   // the new day starts your count over
     this.net.watch(this.eventId);
   }
@@ -850,6 +1032,7 @@ export class Daily extends EventTarget {
   destroy() {
     clearTimeout(this._publishRetry);
     clearTimeout(this._recheck);
+    clearTimeout(this._backupRetry);
     this._authUnsub?.();
     this.net?.destroy();
     this.net = null;
@@ -871,3 +1054,4 @@ export function getDaily(app) {
 
 export { cloudAvailable } from './daily-net.js';
 export { dayIdFromServerMs, nextResetMs, formatCountdown, shiftDayId } from './daily-net.js';
+export { misfireAction, AUTO_DISCARD_MS, ASK_MS } from './daily-net.js';
