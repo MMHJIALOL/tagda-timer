@@ -404,9 +404,11 @@ This applies whatever the Confirm misfires setting says, and inside the window i
 the generic "Discard it?" question rather than joining it. That generic discard was itself a
 hole: it put today's main scramble straight back up for a free second go.
 
-A solve **of the backup** is always kept and submitted immediately, whatever its time. There
-is nothing left to fall back to. Taking the backup spends the first attempt for good; you can
-never pick the better of the two, because the first one was never recorded anywhere.
+A solve **of the backup** is always submitted immediately, with no question: there is nothing
+left to fall back to. One under 2 s goes in as a **DNF**, not as its time — submitted as-is, a
+1.5 s misfire on the backup was the best time on the board. Taking the backup spends the first
+attempt for good; you can never pick the better of the two, because the first one was never
+recorded anywhere.
 
 The bar says `backup scramble — final attempt` (in the warn colour) while you are on it.
 

@@ -2049,6 +2049,12 @@ async function onSolveFinished(res) {
     return;
   }
 
+  if (sotd === 'dnf') {
+    res = { ...res, penalty: 'DNF' };
+    $('#time-penalty').textContent = 'DNF';
+    toast(t('Misfire on your backup — that was the last attempt, so it counts as a DNF'), { kind: 'bad', hold: true });
+  }
+
   if (!sotd && res.suspicious && app.settings.confirmShortSolves) {
     // A misfire is obvious the instant it happens — you felt the stack move.
     // No answer means keep the solve. It stays up long enough to read, and

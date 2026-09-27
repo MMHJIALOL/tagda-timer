@@ -515,11 +515,16 @@ export class Daily extends EventTarget {
   /**
    * What main.js should do with a solve that just stopped, or null when it
    * was not today's attempt and this feature has no say. A solve of the
-   * backup is always kept: there is nothing left to fall back to.
+   * backup is always submitted — there is nothing left to fall back to — but
+   * one short enough to be thrown away on the main scramble goes in as a DNF,
+   * not as a time: submitted as-is, a 1.5 s misfire on the backup was the
+   * best time on the board.
    */
   misfireCheck(timeMs) {
     if (!this.engaged || !this.attempting) return null;
-    return this.onBackup ? 'keep' : misfireAction(timeMs, this.eventId);
+    const act = misfireAction(timeMs, this.eventId);
+    if (!this.onBackup) return act;
+    return act === 'discard' ? 'dnf' : 'keep';
   }
 
   /** A misfire question is going up: note the solve, so leaving the page cannot un-ask it. */
