@@ -389,9 +389,16 @@ line. `misfireAction` in [`js/dayid.js`](js/dayid.js) (re-exported by `daily.js`
 
 | Time | What happens |
 |---|---|
-| < 2.00 s (`AUTO_DISCARD_MS`) | Thrown away: not recorded locally, not submitted. The backup comes up at once, with a toast. |
-| 2.00–4.99 s (`ASK_MS`) | "{time} — misfire? **Use backup** / **Keep**". No answer within 5 s, starting the next solve, or leaving the window all mean Keep. |
+| < 2.00 s (`AUTO_DISCARD_MS`) | Thrown away: not recorded locally, not submitted — **ever**. The backup comes up at once, with a 5 s toast. If the backup can't be had (rules not published), today's scramble comes back instead. |
+| 2.00–4.99 s (`ASK_MS`) | "{time} — misfire? **Use backup** / **Keep**". No answer within 5 s, leaving the window, or reloading all mean Keep. The timer is shut while the question is up, so space can't start a stray solve. |
 | ≥ 5.00 s | Unchanged: recorded and submitted straight away. |
+
+**2x2, Pyraminx, Skewb and Clock are exempt** (`FAST_EVENTS`): real solves come in under 2 s
+there, and a 2–5 s question would come up on nearly every one. They behave as before.
+
+Toasts about the attempt (thrown away, switched, kept, refused) stay up 5 s — the `hold`
+lifetime. At 1.5 s the one explaining a kept misfire was gone before anybody had read it,
+behind the post-solve fade.
 
 This applies whatever the Confirm misfires setting says, and inside the window it **replaces**
 the generic "Discard it?" question rather than joining it. That generic discard was itself a
@@ -456,11 +463,19 @@ is tracked separately rather than folded into this.
 ### Until firebase.rules.json is republished
 
 The rules above are not live until they are pasted into the Firebase console. Until then the
-claim is refused, and the client degrades to exactly what it did before: a toast says
-**"Backup scramble isn't available yet — your time was kept"**, the main solve is recorded and
-submitted (even a sub-2 s one), and the window lands on "attempt submitted". Reading
-`backupClaim` on connect is refused too, which is read as "no claim". A backup result refused
-for its unknown `backup` field is retried without it, the same way `photo` is.
+claim is refused, and:
+
+- **under 2 s** the solve is still thrown away, and **today's main scramble is armed again**
+  (toast: "Misfire — thrown away. The backup scramble isn't available yet, so today's
+  scramble is yours again"). The first version kept and submitted it, which is how a 0.62
+  reached the top of the live board on 2026-09-27. A sub-2 s 3x3 is never a real solve and
+  the main scramble is public anyway, so a second go at it gives nothing away.
+- **2–4.99 s with Use backup** keeps and submits the time, and says so for 5 s ("Backup
+  scramble isn't available yet — your time was kept"). This could be a real solve, so it is
+  not thrown away without somewhere to go.
+
+Reading `backupClaim` on connect is refused too, which is read as "no claim". A backup result
+refused for its unknown `backup` field is retried without it, the same way `photo` is.
 
 ### Tested
 
@@ -468,5 +483,7 @@ Rules: 44 checks against the Realtime Database emulator (firebase-tools 13, real
 Auth-emulator tokens) covering every read and write path above, plus the old rules refusing
 claims and `backup: true`. Client: Playwright in Chrome and Firefox against the emulators —
 auto-switch at 1.2 s, Keep and Use backup at 3.5 s, the same backup for a second user after
-(and only after) claiming, reload and Esc with the question up, 8 s straight through, the tag
-on today's board and on the history view, and the fallback under the old rules.
+(and only after) claiming, reload and Esc with the question up, space doing nothing while it
+is up, 8 s straight through, the tag on today's board and on the history view, how long each
+toast stays up, and both fallbacks under the old rules (sub-2 s thrown away with the main
+scramble re-armed; Use backup kept).

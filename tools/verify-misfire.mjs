@@ -19,4 +19,13 @@ assert.equal(misfireAction(5000), 'keep');
 const plusTwo = { timeMs: 1500, penalty: '+2' };
 assert.equal(misfireAction(plusTwo.timeMs), 'discard');
 
-console.log('PASS misfire thresholds: <2 s discard, 2-4.99 s ask, >=5 s keep, penalty ignored');
+/* 3x3 and the slow events use the cut-offs; the events where a real solve can
+   be under 2 s never do, or a genuine 1.8 s 2x2 would be thrown away. */
+assert.equal(misfireAction(1200, '333'), 'discard');
+assert.equal(misfireAction(3500, '444'), 'ask');
+for (const ev of ['222', 'pyram', 'skewb', 'clock']) {
+  assert.equal(misfireAction(1200, ev), 'keep', ev);
+  assert.equal(misfireAction(3500, ev), 'keep', ev);
+}
+
+console.log('PASS misfire thresholds: <2 s discard, 2-4.99 s ask, >=5 s keep, penalty ignored, fast events exempt');

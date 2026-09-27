@@ -150,8 +150,12 @@ export function safePhotoUrl(url) {
 export const AUTO_DISCARD_MS = 2000;
 export const ASK_MS = 5000;
 
+/** Events where real solves come in under 2 s, so these cut-offs would throw them away. */
+export const FAST_EVENTS = new Set(['222', 'pyram', 'skewb', 'clock']);
+
 /** @returns {'discard' | 'ask' | 'keep'} */
-export function misfireAction(timeMs) {
+export function misfireAction(timeMs, eventId) {
+  if (FAST_EVENTS.has(eventId)) return 'keep';
   return timeMs < AUTO_DISCARD_MS ? 'discard' : timeMs < ASK_MS ? 'ask' : 'keep';
 }
 

@@ -1687,6 +1687,7 @@ export const es = {
   "Use backup": "Usar la de reserva",
   "Keep": "Conservar",
   "Misfire — switched to your backup scramble": "Arranque fallido: pasas a tu mezcla de reserva",
+  "Misfire — thrown away. The backup scramble isn’t available yet, so today’s scramble is yours again": "Arranque fallido: descartado. La mezcla de reserva aún no está disponible, así que la mezcla de hoy vuelve a ser tuya",
   "Backup scramble isn’t available yet — your time was kept": "La mezcla de reserva aún no está disponible: se ha conservado tu tiempo",
   "Fetching your backup scramble…": "Obteniendo tu mezcla de reserva…",
   "Still fetching your backup scramble ({err})…": "Todavía obteniendo tu mezcla de reserva ({err})…",

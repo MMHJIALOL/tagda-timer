@@ -17,7 +17,11 @@ import { $, el } from './util.js';
  */
 const SHORT_MS = 1000;
 const LONG_MS = 1500;      // { long: true } — a moment more
-const HOLD_MS = 5000;      // { hold: true } — a new best single or average, and nothing else
+/* { hold: true } — a new best single or average, and what happened to today's
+   Scramble of the Day attempt (a misfire thrown away, the backup, a time the
+   board refused). Those change what you are about to solve, and a second and
+   a half was gone before anybody had read them. Nothing else. */
+const HOLD_MS = 5000;
 
 export function toast(message, { action, onAction, kind = '', long = false, hold = false } = {}) {
   const host = $('#toasts');
