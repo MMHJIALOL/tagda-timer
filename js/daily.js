@@ -466,10 +466,13 @@ export class Daily extends EventTarget {
        reload. setEvent ignores an event the daily challenge does not run. */
     this.setEvent(this.app.settings.event);
     this.engaged = true;
+    // Still armed from before leaving (a misfire answered on the way out):
+    // attempt() will not run, so nothing else puts today's scramble back.
+    const wasArmed = this.attempting;
     this._armIfPossible();
     // Even when there is nothing to arm yet, the scramble on screen has to
     // stop being an ordinary one immediately — see takeScramble's hold.
-    if (!this.attempting) this.app.nextScramble?.();
+    if (!this.attempting || wasArmed) this.app.nextScramble?.();
     this._changed();
   }
 
@@ -493,7 +496,7 @@ export class Daily extends EventTarget {
     if (held && this.app.recordSolve) {
       this.attempting = true;
       this.releaseMisfire();
-      toast(t('Kept your {time} — the page closed before you answered the misfire question', { time: fmt(held.timeMs) }), { long: true });
+      toast(t('Kept your {time} — the page closed before you answered the misfire question', { time: fmt(held.timeMs) }), { hold: true });
       this.app.recordSolve({
         timeMs: held.timeMs, penalty: held.penalty, inspectionMs: held.inspectionMs, scramble: held.scramble,
       }).catch(err => console.warn('[daily] could not keep the held solve', err));
@@ -512,11 +515,16 @@ export class Daily extends EventTarget {
   /**
    * What main.js should do with a solve that just stopped, or null when it
    * was not today's attempt and this feature has no say. A solve of the
-   * backup is always kept: there is nothing left to fall back to.
+   * backup is always submitted — there is nothing left to fall back to — but
+   * one short enough to be thrown away on the main scramble goes in as a DNF,
+   * not as a time: submitted as-is, a 1.5 s misfire on the backup was the
+   * best time on the board.
    */
   misfireCheck(timeMs) {
     if (!this.engaged || !this.attempting) return null;
-    return this.onBackup ? 'keep' : misfireAction(timeMs);
+    const act = misfireAction(timeMs, this.eventId);
+    if (!this.onBackup) return act;
+    return act === 'discard' ? 'dnf' : 'keep';
   }
 
   /** A misfire question is going up: note the solve, so leaving the page cannot un-ask it. */
@@ -553,8 +561,8 @@ export class Daily extends EventTarget {
    * The claim is written first and is the point of no return: the backup
    * cannot even be read until it lands, and once it has, the rules only
    * take a result marked `backup`. Refused means the rules that allow it are
-   * not published yet; the caller then keeps the main solve, so a misfire on
-   * such a deployment costs nothing it did not cost before.
+   * not published yet; the caller decides what happens to the solve then
+   * (main.js: thrown away under 2 s, kept otherwise).
    */
   async switchToBackup() {
     if (!this.net || this.onBackup) return false;
@@ -566,7 +574,6 @@ export class Daily extends EventTarget {
     } catch (err) {
       this._switching = false;
       console.warn('[daily] backup claim refused', err);
-      toast(t('Backup scramble isn’t available yet — your time was kept'), { kind: 'bad', long: true });
       this._changed();
       return false;
     }
@@ -756,8 +763,11 @@ export class Daily extends EventTarget {
     if (!this.engaged) return false;
     if (!this.snap?.signedIn) return true;
     if (!this.snap.scramble) return true;
-    // Claiming the backup, or waiting for it: there is nothing to solve yet.
-    if (this._switching || (this.onBackup && !this.backupScramble)) return true;
+    /* The misfire question is up, the backup is being claimed, or it is still
+       on its way: nothing to solve yet. Shut during the question in particular,
+       or a press of space answered it Keep AND started a stray solve on the
+       "already done" line that replaced the scramble. */
+    if (this._held || this._switching || (this.onBackup && !this.backupScramble)) return true;
     return this.submittedToday;
   }
 
@@ -822,7 +832,7 @@ export class Daily extends EventTarget {
       try { await this._retry(() => this.net.submitResult(r, at)); landed = true; break; }
       catch (err) { console.warn('[daily] result refused', err); }
     }
-    if (!landed) toast('Today’s board would not accept that time', { kind: 'bad' });
+    if (!landed) toast('Today’s board would not accept that time', { kind: 'bad', hold: true });
     /* Only a result that landed retires the day. The note used to be written
        before the submit, so a time the board never took still skipped the
        intro and dimmed the chip as though today were done. */

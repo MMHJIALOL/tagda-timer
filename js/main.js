@@ -2014,18 +2014,31 @@ async function onSolveFinished(res) {
     const held = daily.holdMisfire(res);
     let backup = sotd === 'discard';
     if (!backup) {
-      // Same shape as the generic question: no answer, or starting the next
-      // solve, means keep. So does leaving the window (see enterSotd).
+      // No answer means keep, and so does leaving the window (see enterSotd).
+      // The timer stays shut until it is answered — see Daily#locked.
       pendingMisfire = confirmToast(t('{time} — misfire?', { time: fmt(res.timeMs) }), t('Use backup'),
         { timeout: 5000, cancelLabel: t('Keep') });
       backup = await pendingMisfire;
       pendingMisfire = null;
     }
-    if (backup && await daily.switchToBackup()) {
-      if (sotd === 'discard') toast(t('Misfire — switched to your backup scramble'), { long: true });
+    const switched = backup && await daily.switchToBackup();
+    /* Under 2 s nothing is ever kept, backup or not. When the backup cannot be
+       claimed (firebase.rules.json not published yet) today's scramble comes
+       back instead: a sub-2 s "solve" was never a solve, and that scramble is
+       public anyway, so a second go at it gives nothing away. Submitting it
+       instead is how a 0.62 landed at the top of the board. */
+    if (switched || sotd === 'discard') {
+      if (!switched) daily.releaseMisfire();
+      if (sotd === 'discard') {
+        toast(switched ? t('Misfire — switched to your backup scramble')
+                       : t('Misfire — thrown away. The backup scramble isn’t available yet, so today’s scramble is yours again'),
+              { hold: true });
+      }
       // Thrown away means off the digits too, not left there as though it counted.
       timer.reset(); syncTimerDisplay(); nextScramble(); return;
     }
+    // Asked for the backup and could not have it: the time stands, and says so.
+    if (backup) toast(t('Backup scramble isn’t available yet — your time was kept'), { kind: 'bad', hold: true });
     daily.releaseMisfire();
     // The scramble it was solved on, named: leaving the window has already
     // put a practice scramble on screen by the time a Keep gets here.
@@ -2034,6 +2047,12 @@ async function onSolveFinished(res) {
       inspectionMs: res.inspectionMs, splits: res.splits, scramble: held.scramble,
     });
     return;
+  }
+
+  if (sotd === 'dnf') {
+    res = { ...res, penalty: 'DNF' };
+    $('#time-penalty').textContent = 'DNF';
+    toast(t('Misfire on your backup — that was the last attempt, so it counts as a DNF'), { kind: 'bad', hold: true });
   }
 
   if (!sotd && res.suspicious && app.settings.confirmShortSolves) {
