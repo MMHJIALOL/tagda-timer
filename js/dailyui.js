@@ -149,7 +149,10 @@ function timeRow(r, i) {
           ? 'The submitted time is shorter than the window the server timed it in'
           : 'Far faster than this player’s own recent average' })
       : null,
-    el('span', { class: 'db-time', text: shown }),
+    el('span', { class: 'db-time', text: shown },
+      /* Ranked like any other time; the tag only says which scramble it was. */
+      res.backup ? el('span', { class: 'db-flag db-backup', text: t('backup'),
+        title: t('Solved on the backup scramble after a misfire') }) : null),
   );
 }
 
@@ -414,6 +417,7 @@ const STATE_TEXT = {
   'signed-out': t('sign in to take part'),
   waiting: t('waiting for today’s scramble'),
   ready: t('this is today’s scramble — one attempt'),
+  backup: t('backup scramble — final attempt'),
   done: t('attempt submitted'),
 };
 

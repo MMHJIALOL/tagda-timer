@@ -54,7 +54,7 @@ export function toast(message, { action, onAction, kind = '', long = false, hold
  * The returned promise carries `dismiss()`, which answers "no" early — for when
  * whatever the question was about has already moved on.
  */
-export function confirmToast(message, confirmLabel = 'Confirm', { timeout = 9000 } = {}) {
+export function confirmToast(message, confirmLabel = 'Confirm', { timeout = 9000, cancelLabel = 'cancel' } = {}) {
   let dismiss;
   const answer = new Promise((resolve) => {
     const host = $('#toasts');
@@ -66,7 +66,7 @@ export function confirmToast(message, confirmLabel = 'Confirm', { timeout = 9000
     dismiss = () => done(false);
     node.append(
       el('button', { class: 't-act', text: confirmLabel, onclick: () => done(true) }),
-      el('button', { class: 't-act', style: { color: 'var(--text-faint)' }, text: 'cancel', onclick: () => done(false) }),
+      el('button', { class: 't-act', style: { color: 'var(--text-faint)' }, text: cancelLabel, onclick: () => done(false) }),
     );
     host.append(node);
     setTimeout(() => done(false), timeout);
