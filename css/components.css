@@ -769,6 +769,10 @@ select.inp, input.inp, textarea.inp {
 textarea.inp { height: auto; padding: 8px 10px; resize: vertical; font-family: var(--font-mono); font-size: .78rem; }
 select.inp:focus, input.inp:focus, textarea.inp:focus { border-color: var(--accent); }
 select.inp { cursor: pointer; max-width: 190px; }
+/* The open list is drawn by the browser on its own (light) background but the
+   options inherit our text colour, so on dark themes they vanished. Paint them
+   from the same pair of tokens as everything else. */
+select option, select optgroup { background: var(--surface); color: var(--text); }
 input.inp[type="color"] { padding: 2px; width: 44px; cursor: pointer; }
 input.inp[type="file"] { height: auto; padding: 7px; font-size: .74rem; }
 

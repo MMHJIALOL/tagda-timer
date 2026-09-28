@@ -5378,6 +5378,7 @@ function wireMascot() {
 /* =========================================================
    Keyboard shortcuts
    ========================================================= */
+const STRAY_KEY_MS = 400;
 function wireShortcuts() {
   document.addEventListener('keydown', async (e) => {
     if (isTyping()) return;
@@ -5410,6 +5411,10 @@ function wireShortcuts() {
 
     if (mod || e.altKey || modalOpen()) return;
     if (timer.state !== 'idle' && timer.state !== 'cooldown') return;
+    // Slapping the keyboard to stop a solve often lands a second key a beat
+    // after the one that stopped it. That key is part of the stop, not an
+    // instruction, so plain-key shortcuts wait out a short grace window.
+    if (performance.now() - (timer.stoppedAt ?? -Infinity) < STRAY_KEY_MS) return;
 
     const last = app.solves.at(-1);
     const setPen = async (p) => {
