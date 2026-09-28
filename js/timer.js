@@ -232,6 +232,7 @@ export class Timer extends EventTarget {
     const end = at ?? performance.now();
     cancelAnimationFrame(this._raf);
     this.elapsed = end - this.solveStart;
+    this.stoppedAt = end;
     this._setState('cooldown');
 
     const result = {
