@@ -588,6 +588,33 @@ body[data-input="virtual"] #timer-display { font-size: min(var(--timer-size), 5.
   color: var(--text-dim); font-weight: 600;
 }
 
+/* Touch only. A keyboard has Escape and the last-solve keys, a mouse has the
+   solve menu; a phone had neither, only a tap on the solve chip. */
+#inspect-cancel, #last-actions { display: none; }
+@media (pointer: coarse) {
+  /* Hung below the countdown rather than in it, so the number sits exactly
+     where it did before this existed. */
+  #inspect-cancel {
+    display: inline-flex;
+    position: absolute; top: 100%; left: 50%; transform: translateX(-50%);
+    margin-top: 18px;
+    pointer-events: auto;
+    color: var(--text-dim);
+    border-color: color-mix(in srgb, var(--text) 18%, transparent);
+  }
+  /* Always in the flow, hidden with visibility: taking it in and out of the
+     layout would move the digits every time a solve started or ended. */
+  /* Tight on purpose: every pixel of width here is width the scramble preview
+     has to find beside the timer. The 44px touch targets still stand. */
+  #last-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 2px; }
+  #last-actions .ghost-btn { color: var(--text-dim); padding: 0 6px; }
+  #last-actions [aria-pressed="true"] {
+    color: var(--danger);
+    background: color-mix(in srgb, var(--danger) 13%, transparent);
+  }
+  #last-actions.empty, #timer-display:not(.state-idle) ~ #last-actions { visibility: hidden; }
+}
+
 #timer-hint {
   /* --text-dim, not --text-faint: the faint tone sank into the aurora behind it,
      and on a phone this line is the only instruction for starting a solve. */
@@ -791,9 +818,11 @@ body.inspecting #last-delta, body.focus #last-delta { display: none; }
 
 /* On a small phone the scramble preview parks beside the digits, and the hint
    under them is wider than the digits — "start" ran underneath the cube. Kept
-   to the width the preview leaves free, it wraps to two lines instead. */
+   to the width the preview leaves free, it wraps to two lines instead. The
+   touch row under the digits follows the same rule for the same reason. */
 @media (max-width: 400px) {
   #timer-hint { max-width: calc(100vw - 190px); height: auto; min-height: 1.2em; text-align: center; text-wrap: balance; }
+  #last-actions { max-width: calc(100vw - 190px); }
 }
 
 /* The session picker used to be dropped here, on the grounds that S and the

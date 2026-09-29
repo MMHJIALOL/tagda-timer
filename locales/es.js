@@ -385,6 +385,7 @@ export const es = {
   "Comfortable": "Cómoda",
   "command palette": "paleta de comandos",
   "Comment on this solve": "Comentario sobre esta resolución",
+  "Comment": "Comentar",
   "Comment saved": "Comentario guardado",
   "Compact": "Compacta",
   "Confirm": "Confirmar",
