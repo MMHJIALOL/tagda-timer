@@ -458,6 +458,9 @@
         <div id="inspect-readout" hidden>
           <div id="inspect-num">15</div>
           <div id="inspect-hint">inspection</div>
+          <!-- Escape and right-click both abandon inspection; a phone has
+               neither, so a stray tap used to be a solve you had to finish. -->
+          <button type="button" class="ghost-btn sm" id="inspect-cancel">cancel</button>
         </div>
 
         <div id="timer-display" class="state-idle">
@@ -466,6 +469,20 @@
                The digits at 12% opacity were still perfectly readable, which
                is the one thing the setting exists to prevent. -->
           <span id="solving-label" aria-hidden="true">solving</span>
+        </div>
+
+        <!-- The last-solve keys (2, D, C, S, Delete) for a screen with no
+             keyboard. Touch only; see #last-actions in base.css. Icons for the
+             last three because the width is not free: the row widens
+             #timer-core, and on a phone the scramble preview has to fit beside
+             it (placePreview() in tiles.js). Written out, the row pushed the
+             preview on top of it. -->
+        <div id="last-actions" role="toolbar" aria-label="Last solve">
+          <button type="button" class="ghost-btn sm" data-act="+2">+2</button>
+          <button type="button" class="ghost-btn sm" data-act="DNF">DNF</button>
+          <button type="button" class="ghost-btn sm" data-act="comment" aria-label="Comment" title="Comment"><svg viewBox="0 0 24 24"><path d="M20 15a2 2 0 01-2 2H8l-4 4V6a2 2 0 012-2h12a2 2 0 012 2z"/></svg></button>
+          <button type="button" class="ghost-btn sm" data-act="share" aria-label="Share" title="Share"><svg viewBox="0 0 24 24"><path d="M4 12v7a2 2 0 002 2h12a2 2 0 002-2v-7M12 3v13M8 7l4-4 4 4"/></svg></button>
+          <button type="button" class="ghost-btn sm danger" data-act="delete" aria-label="Delete" title="Delete"><svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg></button>
         </div>
 
         <!-- Memo/exec phase readout. Lives inside the timer block rather than

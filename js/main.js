@@ -513,6 +513,7 @@ async function init() {
   wireInput();
   wireChrome();
   wireShortcuts();
+  wireLastActions();
   wireManualEntry();
   wireHistoryScroll();
   wireHistorySort();
@@ -2229,15 +2230,7 @@ async function recordSolve({ timeMs, penalty = 'none', inspectionMs = 0, splits 
  */
 function syncTimerDisplay() {
   if (timer && timer.state !== 'idle' && timer.state !== 'cooldown') return;
-  /* Inside the Scramble of the Day window the digits start empty and stay
-     empty until today's attempt has actually been made. The number they would
-     otherwise carry in is the last solve of the practice session, which has
-     nothing to do with this scramble — and a time already sitting on the
-     display of a one-shot attempt reads as though the attempt were over.
-     Once it IS over, `submittedToday` is true and the last solve is that
-     attempt, so from then on the ordinary line below is exactly right. */
-  const sotdBlank = document.body.classList.contains('sotd') && !dailyCtl()?.submittedToday;
-  const last = sotdBlank ? null : app.solves.at(-1);
+  const last = shownSolve();
   const v = last ? eff(last) : null;
   $('#time-main').style.opacity = '';
   // Per solve, not per session: the digits are showing one result, and which
@@ -2247,6 +2240,61 @@ function syncTimerDisplay() {
   $('#time-penalty').textContent = last && last.penalty === '+2' ? '+2'
     : last && last.penalty === 'DNF' ? 'DNF' : '';
   $('#last-delta').hidden = true;
+  syncLastActions();
+}
+
+/**
+ * The solve the digits are showing, or null.
+ *
+ * Inside the Scramble of the Day window the digits start empty and stay
+ * empty until today's attempt has actually been made. The number they would
+ * otherwise carry in is the last solve of the practice session, which has
+ * nothing to do with this scramble — and a time already sitting on the
+ * display of a one-shot attempt reads as though the attempt were over.
+ * Once it IS over, `submittedToday` is true and the last solve is that
+ * attempt, so from then on the ordinary answer is exactly right.
+ */
+function shownSolve() {
+  const sotdBlank = document.body.classList.contains('sotd') && !dailyCtl()?.submittedToday;
+  return sotdBlank ? null : app.solves.at(-1) || null;
+}
+
+/** The 2 / D / 0 keys, and the touch row under the digits. */
+async function penalizeLast(p) {
+  const last = app.solves.at(-1);
+  if (!last) return toast('No solves yet');
+  last.penalty = last.penalty === p ? 'none' : p;
+  await Solves.put(last);
+  renderAll();
+  syncTimerDisplay();
+  toast(last.penalty === 'none' ? t('Penalty cleared') : t('{p} applied', { p: last.penalty }));
+}
+
+/** Which solve the touch row acts on, and which penalty it already carries. */
+function syncLastActions() {
+  const row = $('#last-actions');
+  const last = shownSolve();
+  row.classList.toggle('empty', !last);
+  for (const b of row.querySelectorAll('[data-act="+2"], [data-act="DNF"]')) {
+    b.setAttribute('aria-pressed', String(last?.penalty === b.dataset.act));
+  }
+}
+
+function wireLastActions() {
+  $('#last-actions').addEventListener('click', (e) => {
+    const act = e.target.closest('[data-act]')?.dataset.act;
+    const last = shownSolve();
+    if (!act || !last || (timer.state !== 'idle' && timer.state !== 'cooldown')) return;
+    if (act === '+2' || act === 'DNF') penalizeLast(act);
+    else if (act === 'comment') commentOn(last);
+    else if (act === 'share') app.shareSolveCard(last);
+    else if (act === 'delete') deleteThrottled(last);   // a double tap is one delete, not two
+  });
+  // Escape for a screen without one. The virtual cube also has to be put back
+  // on the scramble, which is what its own Escape handler does.
+  $('#inspect-cancel').addEventListener('click', () => {
+    if (timer.cancel() && vcube && virtualLive()) vcube.restart();
+  });
 }
 
 function showDelta(solve, prevBest) {
@@ -2402,6 +2450,7 @@ function renderAll() {
   updateLabels();
   updateHint();
   refreshHeatmap();
+  syncLastActions();
 }
 app.renderAll = renderAll;
 
@@ -5417,14 +5466,6 @@ function wireShortcuts() {
     if (performance.now() - (timer.stoppedAt ?? -Infinity) < STRAY_KEY_MS) return;
 
     const last = app.solves.at(-1);
-    const setPen = async (p) => {
-      if (!last) return toast('No solves yet');
-      last.penalty = last.penalty === p ? 'none' : p;
-      await Solves.put(last);
-      renderAll();
-      syncTimerDisplay();
-      toast(last.penalty === 'none' ? t('Penalty cleared') : t('{p} applied', { p: last.penalty }));
-    };
 
     switch (k) {
       case 'Delete': case 'Backspace':
@@ -5433,9 +5474,9 @@ function wireShortcuts() {
         if (!last) toast('No solves yet');
         else if (!deleteThrottled(last)) toast('One at a time — undo is Ctrl+Z');
         break;
-      case '2': e.preventDefault(); setPen('+2'); break;
-      case 'd': case 'D': e.preventDefault(); setPen('DNF'); break;
-      case '0': e.preventDefault(); setPen('none'); break;
+      case '2': e.preventDefault(); penalizeLast('+2'); break;
+      case 'd': case 'D': e.preventDefault(); penalizeLast('DNF'); break;
+      case '0': e.preventDefault(); penalizeLast('none'); break;
       case 'c': case 'C': e.preventDefault(); if (last) commentOn(last); break;
       case 'r': case 'R':
         e.preventDefault();
