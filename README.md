@@ -482,6 +482,9 @@ The layout rebuilds itself for a phone: tap anywhere to start and stop, the pick
 move under the logo, the rest of the top bar folds into a menu, and the panels stack
 under the clock.
 
+The screen stays on while you practise: each attempt holds a screen wake lock, and it is
+let go ten minutes after the last one, so a long memo or inspection never dims the phone.
+
 ### Album theming (Spotify)
 Connect Spotify (`P`) and the timer **tints itself from the album art of whatever is
 playing**. Two colours are pulled from the cover and written into the accent colours,
