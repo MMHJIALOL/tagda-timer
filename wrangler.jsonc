@@ -1,0 +1,17 @@
+// Cloudflare Workers deploy: the repo root is served as static assets, which
+// are not metered. Only /__/auth/* runs worker.js (the Firebase sign-in proxy,
+// see raceapp.js); everything else is answered straight from the asset store.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "tagda-timer",
+  "compatibility_date": "2026-09-26",
+  "main": "worker.js",
+  "assets": {
+    "directory": ".",
+    "binding": "ASSETS",
+    "run_worker_first": ["/__/auth/*"],
+    // /algs.html -> /algs, like cleanUrls did on Vercel.
+    "html_handling": "auto-trailing-slash"
+  },
+  "observability": { "enabled": true }
+}

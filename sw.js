@@ -12,14 +12,15 @@
    request, and revalidating ~80 modules per visit was burning through the
    Hobby quota. The cache is dropped wholesale (never file by file, so a visit
    never mixes two deploys) when the page's HTML changes or when it is older
-   than MAX_AGE, which catches deploys that only touched JS.
+   than MAX_AGE, which catches deploys that only touched JS. Bump ?v= in
+   index.html on every deploy so users get it on their next visit instead.
    =========================================================== */
 
 const CACHE = 'tagda-v1';
 
 /* ponytail: time-based pickup of JS-only deploys; a build-step version file
-   would make it instant if 6 h ever feels too slow. */
-const MAX_AGE = 6 * 60 * 60 * 1000;
+   would make it instant if 3 days ever feels too slow. */
+const MAX_AGE = 3 * 24 * 60 * 60 * 1000;
 const STAMP = '/__sw-filled-at';
 
 /* The document is all that has to be in place before the first offline load;
