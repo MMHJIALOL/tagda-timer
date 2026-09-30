@@ -17,6 +17,7 @@ import { CubeView } from './cube.js';
 import { makeDraggable } from './drag.js';
 import { flash, shockwave, confetti, chime, callout, beep } from './fx.js';
 import { mountMetro, metroExternal } from './metro.js';
+import { keepAwake } from './wakelock.js';
 import { summarize, eff, DNF, isMoveResult, bestSingle, bestAvg, trimmedIndices, byCase, sessionBests, rollingSeries, statWindow, STAT_LABELS, goalProgress } from './stats.js';
 import { renderMiniTrend } from './charts.js';
 import { DEFAULTS, loadSettings, saveSettings, applyTheme, applyBackground, themeColors, setAlbumTint, paintBackgroundColors } from './theme.js';
@@ -1327,6 +1328,7 @@ function wireTimer() {
 
   timer.addEventListener('state', (e) => {
     const st = e.detail.state;
+    keepAwake();
     // Starting the next attempt answers a still-open misfire prompt: keep it.
     if (st !== 'idle' && st !== 'cooldown') pendingMisfire?.dismiss();
     /* The room learns that you are inspecting or solving, and never how far
