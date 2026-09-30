@@ -33,6 +33,7 @@ import { toast, confirmToast } from './toast.js';
 // dependencies of its own to drag in with it.
 import { dayIdFromServerMs, sotdDoneOn, clearSotdDone } from './dayid.js';
 import { openPalette, closePalette, paletteOpen } from './palette.js';
+import { initFeedback, feedbackOpen } from './feedback.js';
 // The *.vercel.app "we moved" banner, and the tagdatimer.me end of its data move.
 import './moved.js';
 /* panels.js, sharedlg.js (which drags in sharecard.js and cubenet.js) and
@@ -513,6 +514,7 @@ async function init() {
     useInspection: !eventOf(app.settings.event).noInspection,
   });
   wireTimer();
+  initFeedback(timer);
   wireInput();
   wireChrome();
   wireShortcuts();
@@ -4928,7 +4930,7 @@ const isTyping = () => {
   // whole keyboard — spacebar included — goes dead.
   return editable && a.offsetParent !== null;
 };
-const modalOpen = () => drawerOpen() || paletteOpen() || popoverOpen() || shareOpen() || reconOpen() || xp1Open();
+const modalOpen = () => drawerOpen() || paletteOpen() || popoverOpen() || shareOpen() || reconOpen() || xp1Open() || feedbackOpen();
 
 function wireInput() {
   let spaceDown = false;
