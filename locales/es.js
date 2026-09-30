@@ -1698,4 +1698,12 @@ export const es = {
   "backup scramble — final attempt": "mezcla de reserva — último intento",
   "backup": "reserva",
   "Solved on the backup scramble after a misfire": "Resuelto con la mezcla de reserva tras un arranque fallido",
+  "Tagda Timer has moved to tagdatimer.me": "Tagda Timer se ha mudado a tagdatimer.me",
+  "Hide": "Ocultar",
+  "Move my solves": "Mover mis resoluciones",
+  "Moving your solves…": "Moviendo tus resoluciones…",
+  "Could not move your solves.": "No se pudieron mover tus resoluciones.",
+  "Try again": "Reintentar",
+  "Moved ✓ — open tagdatimer.me": "Movido ✓ — abrir tagdatimer.me",
+  "✓ {n} solves moved": "✓ {n} resoluciones movidas",
 };

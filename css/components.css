@@ -989,6 +989,11 @@ body:has(#timer-display.state-running) #goal-line { opacity: 0; }
 .toast.good { border-color: color-mix(in srgb, var(--ok) 45%, transparent); }
 .toast.bad  { border-color: color-mix(in srgb, var(--danger) 45%, transparent); }
 
+/* the *.vercel.app "we moved" banner (js/moved.js): a toast that stays, under the others */
+.moved-banner { flex-wrap: wrap; justify-content: center; }
+.moved-banner .moved-x { color: var(--text-faint); }
+.moved-banner a.t-act { text-decoration: none; }
+
 /* new best single / average — a ticker across the top of the digits (js/main.js celebratePB) */
 .pb-marquee {
   position: absolute; left: 0; right: 0; bottom: 100%;

@@ -32,6 +32,8 @@ import { toast, confirmToast } from './toast.js';
 // dependencies of its own to drag in with it.
 import { dayIdFromServerMs, sotdDoneOn, clearSotdDone } from './dayid.js';
 import { openPalette, closePalette, paletteOpen } from './palette.js';
+// The *.vercel.app "we moved" banner, and the tagdatimer.me end of its data move.
+import './moved.js';
 /* panels.js, sharedlg.js (which drags in sharecard.js and cubenet.js) and
    stackmat.js are imported where they are first needed, not here — see
    "Lazily loaded modules" below. Between them they were about 82KB of the
