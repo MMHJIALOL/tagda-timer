@@ -18,7 +18,7 @@ import { el } from './util.js';
 const FORM_ID = 'feedback-1';
 const FORM_URL = 'https://docs.google.com/forms/d/e/1FAIpQLScQ9uZRzZke7bBtlw3lkCW41-UXi9cZ-DksEKKliibsM5UCPQ/viewform';
 /* 24 h from deploy. ponytail: hardcoded; edit and redeploy to extend. */
-const END_AT = Date.parse('2026-10-01T12:01:00Z');
+const END_AT = Date.parse('2026-10-01T12:15:00Z');
 
 const POPUP_KEY = `tagda.fb.popup.${FORM_ID}`;
 const PILL_KEY = `tagda.fb.pill.${FORM_ID}`;
