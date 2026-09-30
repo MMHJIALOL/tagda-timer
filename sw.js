@@ -120,7 +120,9 @@ async function navigate(request) {
   let res;
   try { res = await fetch(request); }
   catch { return networkFirst(request); }   // offline: the cached page, via its fallback
-  if (!res.ok) return res;
+  // A server error (a paused host, a bad deploy) must not replace the app for
+  // someone who already has it: serve the cached page, and leave the cache alone.
+  if (!res.ok) return (await caches.match('/')) || (await caches.match('/index.html')) || res;
   const cache = await caches.open(CACHE);
   if (await isStale(cache, request, res.clone())) await dropApp(cache);
   await store(cache, request, res.clone());
