@@ -122,6 +122,9 @@ async function navigate(request) {
   catch { return networkFirst(request); }   // offline: the cached page, via its fallback
   // A server error (a paused host, a bad deploy) must not replace the app for
   // someone who already has it: serve the cached page, and leave the cache alone.
+  // A redirect (Cloudflare sends /algs.html to /algs) comes back to a navigation
+  // as an opaqueredirect with ok false; hand it to the browser to follow.
+  if (res.type === 'opaqueredirect') return res;
   if (!res.ok) return (await caches.match('/')) || (await caches.match('/index.html')) || res;
   const cache = await caches.open(CACHE);
   if (await isStale(cache, request, res.clone())) await dropApp(cache);
