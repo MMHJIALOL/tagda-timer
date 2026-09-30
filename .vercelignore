@@ -5,3 +5,7 @@
 # reads the sync log. That is a thing to run locally against your own data, not
 # a page to leave reachable on the deployed site.
 sync-test.html
+_headers
+.assetsignore
+wrangler.jsonc
+worker.js

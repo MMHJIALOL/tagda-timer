@@ -1,0 +1,10 @@
+# Files in the repo root that must not be served by the Cloudflare deploy
+# (the asset directory is the whole repo). The worker's own source and config
+# are bundled separately, and .git would otherwise be downloadable.
+.git
+.wrangler
+node_modules
+wrangler.jsonc
+worker.js
+# Same reason as .vercelignore: it writes to whoever's synced data is signed in.
+sync-test.html
