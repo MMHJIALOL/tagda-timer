@@ -15,10 +15,10 @@ import { t } from './i18n.js';
 
 import { el } from './util.js';
 
-const FORM_ID = 'feedback-1';
+const FORM_ID = 'feedback-2';
 const FORM_URL = 'https://docs.google.com/forms/d/e/1FAIpQLScQ9uZRzZke7bBtlw3lkCW41-UXi9cZ-DksEKKliibsM5UCPQ/viewform';
 /* 24 h from deploy. ponytail: hardcoded; edit and redeploy to extend. */
-const END_AT = Date.parse('2026-10-01T12:15:00Z');
+const END_AT = Date.parse('2026-10-01T12:22:00Z');
 
 const POPUP_KEY = `tagda.fb.popup.${FORM_ID}`;
 const PILL_KEY = `tagda.fb.pill.${FORM_ID}`;
@@ -39,6 +39,7 @@ function openForm() {
 }
 
 function closeDlg() {
+  set(POPUP_KEY);
   if (dlg) { dlg.close(); dlg.remove(); dlg = null; }
 }
 
@@ -47,7 +48,6 @@ function removePill() {
 }
 
 function showPopup() {
-  set(POPUP_KEY);
   dlg = el('dialog', { class: 'fb-dlg', 'aria-labelledby': 'fb-title' },
     el('div', { class: 'fb-card' },
       el('h2', { id: 'fb-title', text: 'Help shape Tagda Timer' }),
@@ -58,12 +58,16 @@ function showPopup() {
       ),
       el('p', { class: 'fb-note', text: 'You will only see this once. The form stays on the main screen until you close it.' }),
     ));
-  // Escape and backdrop clicks close it too; the pill stays as the reminder.
-  dlg.addEventListener('close', () => { if (dlg) { dlg.remove(); dlg = null; } });
+  // Seen only once it has been dismissed (button, Escape or backdrop), never merely shown:
+  // a keypress mid-solve habit must not spend the one popup. The pill stays as the reminder.
+  dlg.addEventListener('close', () => { set(POPUP_KEY); if (dlg) { dlg.remove(); dlg = null; } });
   dlg.addEventListener('click', (e) => { if (e.target === dlg) closeDlg(); });
   document.body.append(dlg);
   dlg.showModal();
-  dlg.querySelector('.fb-primary').focus();
+  // Focus the card, not a button, so a stray Space/Enter from solving does not press one.
+  const card = dlg.querySelector('.fb-card');
+  card.tabIndex = -1;
+  card.focus();
 }
 
 function showPill() {
@@ -86,22 +90,22 @@ export function initFeedback(timer) {
 
   const idle = () => timer.state === 'idle' || timer.state === 'cooldown';
   const clear = () => !document.hidden && idle() && !document.querySelector('.sotd-intro, dialog[open]');
-  let waiting = null;
-  const tick = () => {
-    clearTimeout(waiting);
-    if (!live() || get(POPUP_KEY) || dlg || !clear()) return;
-    waiting = setTimeout(() => { if (clear() && !dlg) showPopup(); }, 1500);
-  };
-  document.addEventListener('visibilitychange', tick);
-  timer.addEventListener('state', tick);
-  setTimeout(tick, 2500);
+  // Polled, not event-driven: a single check at load missed the window whenever the
+  // boot, the intro or a solve was in the way, and nothing ever asked again.
+  // Two clear polls in a row (~4 s) means the user is genuinely idle.
+  let ok = 0;
+  const iv = setInterval(() => {
+    if (!live() || get(POPUP_KEY)) return clearInterval(iv);
+    ok = !dlg && clear() ? ok + 1 : 0;
+    if (ok >= 2) { clearInterval(iv); showPopup(); }
+  }, 2000);
 }
 
 const css = document.createElement('style');
 css.textContent = `
 .fb-dlg{position:fixed;inset:0;margin:auto;width:max-content;height:max-content;border:0;padding:0;background:transparent;max-width:min(92vw,440px);color:var(--text)}
 .fb-dlg::backdrop{background:rgba(0,0,0,.6);backdrop-filter:blur(3px)}
-.fb-card{background:var(--panel,var(--surface));border:1px solid var(--border);border-radius:var(--radius,14px);padding:26px 26px 20px;box-shadow:0 20px 60px rgba(0,0,0,.5)}
+.fb-card{outline:0;background:var(--panel,var(--surface));border:1px solid var(--border);border-radius:var(--radius,14px);padding:26px 26px 20px;box-shadow:0 20px 60px rgba(0,0,0,.5)}
 .fb-card h2{margin:0 0 10px;font-size:20px}
 .fb-card p{margin:0 0 18px;line-height:1.5;color:var(--text-dim)}
 .fb-card .fb-note{margin:14px 0 0;font-size:12px;color:var(--text-faint)}
