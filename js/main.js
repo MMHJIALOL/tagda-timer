@@ -12,7 +12,7 @@ import { EVENTS, EVENT_ORDER, MODES, modesForEvent, eventOf, modeOf, virtualSize
 import { ScrambleQueue, setFor, loadSetFor, previewOf, cubingAvailable, generate } from './scramble.js';
 import { createLearn } from './learnmode.js';
 import { Timer, INSPECT_MS } from './timer.js';
-import { Background } from './bg.js';
+import { Background, softwareGL } from './bg.js';
 import { CubeView } from './cube.js';
 import { makeDraggable } from './drag.js';
 import { flash, shockwave, confetti, chime, callout, beep } from './fx.js';
@@ -425,6 +425,14 @@ const queue = new ScrambleQueue(3);
 const learn = createLearn(app);
 app.learn = learn;
 const bg = new Background($('#bg-shader'), $('#bg-media'));
+// Asked once: what "Reduce effects" means when nobody has set it by hand.
+app.softwareGL = softwareGL();
+/** Reduce effects: a still background and no glass blur (body.lite in components.css). */
+function applyLite() {
+  const lite = app.settings.reduceEffects ?? app.softwareGL;
+  document.body.classList.toggle('lite', lite);
+  bg.setLite(lite);
+}
 
 /* A celebration is a full-screen canvas of moving flakes, a shockwave scaling
    across the viewport and a re-rendered times list, all on one frame. The
@@ -572,6 +580,7 @@ async function init() {
 
   // A broken shader, a missing blob, a browser with WebGL switched off — none
   // of that is a reason for the timer not to start.
+  applyLite();
   applyBackground(bg, app.settings).catch(err => console.warn('[bg] could not apply background', err));
 
   // Album theming, if it was ever linked. Also picks up the ?code= we may have
@@ -906,7 +915,34 @@ async function nextScramble({ clear = false } = {}) {
     return;
   }
 
-  const s = await queue.next();
+  /* Never wait forever. A generation that hangs or throws used to leave
+     "generating scramble…" up until a reload; now it gets one restart, and
+     then a button that says so. Generous limits — a cold big-cube or relay
+     search is slow, not stuck. */
+  const ev = eventOf(app.settings.event);
+  const limit = ev.relay || ev.multi || /^[4-7]/.test(app.settings.event) ? 60000 : 15000;
+  const take = () => Promise.race([
+    queue.next(),
+    new Promise((_, reject) => setTimeout(() => reject(new Error('scramble timed out')), limit)),
+  ]);
+  let s;
+  try { s = await take(); } catch (err) {
+    if (token !== scrambleToken) return;
+    console.warn('[scramble]', err.message, '— restarting the queue');
+    queue.restart();
+    try { s = await take(); } catch {
+      if (token !== scrambleToken) return;
+      const node = $('#scramble-text');
+      node.classList.remove('multiline', 'long');
+      node.replaceChildren(el('button', {
+        type: 'button', class: 'scramble-retry',
+        text: t('Couldn’t make a scramble. Tap to retry.'),
+        // Not also a click on the box, which copies the scramble that isn't there.
+        onclick: (e) => { e.stopPropagation(); nextScramble({ clear: true }); },
+      }));
+      return;
+    }
+  }
   if (token !== scrambleToken) return;   // a newer request overtook this one
   app.scrambleHistory.push(s);
   if (app.scrambleHistory.length > 40) app.scrambleHistory.shift();
@@ -1328,6 +1364,23 @@ function wireTimer() {
   const pace = $('#pace-ghost');
   const paceFill = $('#pace-fill');
 
+  /* Above the phone breakpoint the timer is pinned to the middle of the
+     viewport, which knows nothing about how tall the bar and the scramble
+     above it are. On an iPad the bar wraps, a big scramble wraps, and its
+     bottom ran into the digits. Push the timer down just far enough instead
+     (--timer-top, read by components.css) — and only between attempts: focus mode
+     collapses the scramble row on the press, and the digits must not follow. */
+  const core = $('#timer-core');
+  const zone = $('#scramble-zone');
+  const placeTimer = () => {
+    if (timer.state !== 'idle' && timer.state !== 'cooldown') return;
+    const top = Math.max(innerHeight / 2, zone.getBoundingClientRect().bottom + core.offsetHeight / 2 + 12);
+    document.documentElement.style.setProperty('--timer-top', `${Math.round(top)}px`);
+  };
+  const placeRO = new ResizeObserver(placeTimer);
+  for (const n of [$('#topbar'), zone, core]) placeRO.observe(n);
+  addEventListener('resize', placeTimer);
+
   timer.addEventListener('state', (e) => {
     const st = e.detail.state;
     keepAwake();
@@ -1351,6 +1404,7 @@ function wireTimer() {
     // mid-attempt. Only a finished or cancelled attempt brings it back.
     document.body.classList.toggle('focus',
       app.settings.focusMode && FOCUS_STATES.has(st));
+    if (st === 'idle') placeTimer();
 
     // Arming feedback. During inspection the digits are hidden behind the
     // countdown, so the colour change on them was invisible and holding felt
@@ -2984,9 +3038,13 @@ function applyHistGrid(count) {
   const panel = $('#panel-times');
   if (!panel) return;
   const avg = t(' var(--ao-col)').repeat(count);
+  // Wide enough for the longest solve number: a flat 24px holds three digits,
+  // and "10000" ran into the time beside it. .45rem is one .68rem mono digit
+  // plus a little slack.
+  const idx = `max(24px, ${String(app.solves.length).length * .45}rem)`;
   // --idx-col: the stylesheet folds the solve-number column away on the narrowest phones.
-  panel.style.setProperty('--hist-grid', `var(--idx-col, 24px) minmax(0, 1fr)${avg} 20px`);
-  panel.style.setProperty('--hist-grid-touch', `var(--idx-col, 24px) minmax(0, 1fr)${avg}`);
+  panel.style.setProperty('--hist-grid', `var(--idx-col, ${idx}) minmax(0, 1fr)${avg} 20px`);
+  panel.style.setProperty('--hist-grid-touch', `var(--idx-col, ${idx}) minmax(0, 1fr)${avg}`);
 }
 
 /** One average column heading: a sort button, and a pencil that changes it. */
@@ -3067,9 +3125,11 @@ function editAvgColumn(cell, n) {
    it when the answer has changed — restoring settings or importing a backup can
    change it without going through the editor. */
 let histColsSig = null;
+// The digit count is in it too, so the number column widens at 1000, 10000…
+const histColsKey = () => `${shownCols().join(',')}|${String(app.solves.length).length}`;
 
 function syncHistCols() {
-  if (shownCols().join(',') === histColsSig) { syncSortHeaders(); return; }
+  if (histColsKey() === histColsSig) { syncSortHeaders(); return; }
   renderHistCols();
 }
 
@@ -3078,7 +3138,7 @@ function renderHistCols() {
   const host = document.querySelector('.hist-cols');
   if (!host) return;
   const cols = shownCols();
-  histColsSig = cols.join(',');
+  histColsSig = histColsKey();
   applyHistGrid(cols.length);
   // Sorting by a column someone has edited away falls back to solve order.
   if (histSort && histSort !== 'time' && !cols.includes(Number(histSort.slice(3)))) histSort = null;
@@ -3762,7 +3822,7 @@ async function wireStackmat() {
   stackmat.addEventListener('ready', () => {
     // Reset mid-solve abandons it. A reset during inspection is just the mat
     // being zeroed for this attempt, so the countdown carries on.
-    if (timer.state === 'running') { timer.reset(); timer.emit('cancel'); }
+    if (timer.state === 'running') timer.reset();
     if (timer.state !== 'idle') return;
     $('#timer-display').className = 'state-idle';
     syncTimerDisplay();
@@ -4467,7 +4527,7 @@ app.persist = persist;
    app looks; and re-entering a Spotify client ID to undo a colour change would
    be a nasty surprise. Nothing in the database is touched either way. */
 const RESET_KEEPS = [
-  'event', 'mode', 'sessionId', 'allowedCases', 'multiCount',
+  'event', 'mode', 'sessionId', 'returnSessionId', 'allowedCases', 'multiCount',
   'spotifyClientId', 'featuredReel',
   // A buffer and a letter scheme are years of memorisation, not a look.
   'bld',
@@ -4515,6 +4575,7 @@ function applyAll(changed) {
   // bgSolid and bgGradient were missing here, so editing the background colour
   // or the gradient string did nothing at all until some unrelated setting
   // happened to trigger a re-apply.
+  if (!changed || changed === 'reduceEffects') applyLite();
   if (!changed || ['bgMode','bgShader','bgSpeed','bgAmount','theme','accent','accent2','bg2',
                    'bgDim','bgSolid','bgGradient','autoContrast',
                    'spotifyGradient','spotifyTint'].includes(changed)) {
@@ -4659,10 +4720,18 @@ async function setEvent(id) {
  * times instead of in whatever session happened to be open. Race and virtual
  * sessions are never picked up.
  */
-async function trainingSession(modeId, event) {
+function trainerName(modeId, event) {
   const mode = MODES[modeId];
   const short = eventOf(event).short;
-  const name = event === '333' || mode.name.startsWith(short) ? mode.name : `${short} ${mode.name}`;
+  return event === '333' || mode.name.startsWith(short) ? mode.name : `${short} ${mode.name}`;
+}
+
+/** Whether a session is one trainingSession() made, judged the way it finds them. */
+const isTrainerSession = (s) => !s.race && !s.virtual &&
+  modesForEvent(s.event).some(id => MODES[id].kind === 'case' && trainerName(id, s.event) === s.name);
+
+async function trainingSession(modeId, event) {
+  const name = trainerName(modeId, event);
   let s = app.sessions.find(x => x.name === name && x.event === event && !x.race && !x.virtual);
   if (!s) {
     s = { id: uid(), name, event, createdAt: Date.now(), order: app.sessions.length };
@@ -4680,7 +4749,17 @@ async function setMode(id) {
   /* Two picks whose case lists load at different speeds: the last one clicked
      wins, not the last one to arrive. */
   if (modeWanted !== id) return;
-  if (trainer && trainer.id !== app.session.id) await app.switchSession(trainer.id);
+  if (trainer && trainer.id !== app.session.id) {
+    /* Remember where you came from, in settings so a reload keeps it. Leaving
+       the trainer used to leave you in its session, doing ordinary solves in
+       "OLL" with your own session's times nowhere to be seen. */
+    if (!isTrainerSession(app.session)) app.settings.returnSessionId = app.session.id;
+    await app.switchSession(trainer.id);
+  } else if (!trainer && isTrainerSession(app.session)) {
+    const back = app.settings.returnSessionId;
+    app.settings.returnSessionId = null;
+    if (back && back !== app.session.id && app.sessions.some(x => x.id === back)) await app.switchSession(back);
+  }
   app.settings.mode = id;
   persist();
   timer.reset();
@@ -4720,6 +4799,8 @@ async function applyTrainerHandoff() {
        and the solve list exist, so it only points at the session — boot loads
        its solves next. */
     const s = await trainingSession(modeId, event);
+    // Same as setMode: picking Random state afterwards puts you back here.
+    if (app.session && s.id !== app.session.id && !isTrainerSession(app.session)) app.settings.returnSessionId = app.session.id;
     app.session = s;
     app.settings.sessionId = s.id;
   }
@@ -4951,9 +5032,7 @@ function wireInput() {
       if (!vcube.armed || (timer.state === 'idle' && !vcube.moved)) return;
       e.preventDefault();
       e.stopImmediatePropagation();
-      const was = timer.state;
       timer.reset();
-      if (was !== 'idle') timer.emit('cancel');
       vcube.restart();
       return;
     }
@@ -5124,7 +5203,14 @@ function wireInput() {
   // would otherwise never deliver its pointerup to #stage, and the solve would
   // keep running with nothing left to stop it.
   addEventListener('pointerup', up);
-  addEventListener('pointercancel', up);
+  // A cancel is not a release. The browser cancels a touch it has taken for a
+  // scroll, a palm or a system gesture, and treating that as the release
+  // started a solve in the middle of inspection that nobody let go for.
+  addEventListener('pointercancel', (e) => {
+    if (!e.isPrimary || !tracking) return;
+    tracking = false;
+    timer.abortPress();
+  });
 
   window.addEventListener('blur', () => {
     spaceDown = false;

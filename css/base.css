@@ -481,6 +481,9 @@ body.zen #learn-bar { display: none; }
   position: relative; z-index: 5;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   min-width: 0; user-select: none;
+  /* Nothing in here scrolls, and a touch the browser may claim for panning is
+     one it may cancel mid-hold — see the pointercancel handler in main.js. */
+  touch-action: none;
 }
 #timer-core {
   position: relative;
@@ -492,7 +495,8 @@ body.zen #learn-bar { display: none; }
    its own row lands visibly above the middle of the screen. Pin it to the
    viewport instead — it stays put while everything around it fades in and out.
    Only above the mobile breakpoint: below it the sidebar owns the bottom third
-   of the screen and true centring would sit the digits underneath it. */
+   of the screen and true centring would sit the digits underneath it.
+   (#timer-core's `top` is finally set in components.css, next to --bld-shift.) */
 @media (min-width: 861px) {
   #timer-core, #inspect-readout {
     position: fixed; left: 50%; top: 50%;

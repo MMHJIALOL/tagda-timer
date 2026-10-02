@@ -125,6 +125,21 @@ export class Timer extends EventTarget {
     }
   }
 
+  /**
+   * A press the browser took back (pointercancel: it decided the touch was a
+   * scroll, a palm or a system gesture). Not a release — undo the press without
+   * acting on it, so a cancelled touch can never start a solve.
+   */
+  abortPress() {
+    this._ignoreUp = false;
+    if (this.state === 'holding' || this.state === 'ready') {
+      clearTimeout(this._holdTimer);
+      this._setState(this._returnTo || 'idle');
+    } else if (this.state === 'cooldown') {
+      this._setState('idle');
+    }
+  }
+
   /** Escape / right-click — abandon inspection or a pending hold. */
   cancel() {
     if (this.state === 'running') return false;
@@ -278,8 +293,14 @@ export class Timer extends EventTarget {
     this._raf = requestAnimationFrame(step);
   }
 
-  /** Hard reset (used when switching event/session mid-inspection). */
+  /**
+   * Hard reset (used when switching event/session mid-inspection, and on blur).
+   * An attempt it throws away is announced as a cancel: inspection hides the
+   * digits and tints the background, and only the cancel listeners put them
+   * back — a silent reset left the timer blank until the next solve.
+   */
   reset() {
+    const wasBusy = this.state !== 'idle' && this.state !== 'cooldown';
     clearTimeout(this._holdTimer);
     cancelAnimationFrame(this._raf);
     this._ignoreUp = false;
@@ -288,5 +309,6 @@ export class Timer extends EventTarget {
     this.elapsed = 0;
     this.splits = [];
     this._setState('idle');
+    if (wasBusy) this.emit('cancel');
   }
 }

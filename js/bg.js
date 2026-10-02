@@ -183,6 +183,23 @@ function hexToRgb(hex) {
   return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
 }
 
+/**
+ * Whether WebGL here would be drawn by the CPU: hardware acceleration switched
+ * off, or a software driver. Then a full-screen shader every frame (and every
+ * glass blur over it) is the whole machine's worth of work — Opera and Brave
+ * with acceleration off lagged the timer itself.
+ */
+export function softwareGL() {
+  try {
+    const gl = document.createElement('canvas').getContext('webgl', { failIfMajorPerformanceCaveat: true });
+    if (!gl) return true;
+    const info = gl.getExtension('WEBGL_debug_renderer_info');
+    const name = info ? String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL)) : '';
+    gl.getExtension('WEBGL_lose_context')?.loseContext();
+    return /swiftshader|llvmpipe|softpipe|software|basic render/i.test(name);
+  } catch { return true; }
+}
+
 export class Background {
   constructor(canvas, mediaEl) {
     this.canvas = canvas;
@@ -200,6 +217,7 @@ export class Background {
     this._minStep = 0;
     this._raf = null;
     this.mode = 'shader';
+    this.lite = false;            // one still frame instead of an animation — see softwareGL()
 
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) this.stop(); else if (this.mode === 'shader') this.start();
@@ -269,6 +287,7 @@ export class Background {
       this.canvas.width = w; this.canvas.height = h;
     }
     this.gl.viewport(0, 0, w, h);
+    this._still();
   }
 
   /* ---------------- config ---------------- */
@@ -276,9 +295,20 @@ export class Background {
   setShader(name) {
     this.shader = name;
     if (this.gl) this._compile(name);
+    this._still();
   }
 
-  setColors(c1, c2, c3) { this.colors = [c1, c2, c3]; }
+  setColors(c1, c2, c3) { this.colors = [c1, c2, c3]; this._still(); }
+
+  /** Reduce effects: draw one frame and stop, or go back to animating. */
+  setLite(on) {
+    this.lite = on;
+    this.stop();
+    this.start();
+  }
+
+  /** In lite mode nothing redraws on its own, so a change has to. */
+  _still() { if (this.lite && this.mode === 'shader' && this.gl) this.draw(); }
 
   /** 1 = normal, <1 = calmed down (used during a solve). */
   setSlow(v) { this.slow = v; }
@@ -319,6 +349,7 @@ export class Background {
   start() {
     if (this._raf || this.mode !== 'shader') return;
     if (!this.init()) return;
+    if (this.lite) { this.draw(); return; }
     this._last = performance.now();
     const step = (now) => {
       const dt = Math.min(0.05, (now - this._last) / 1000);

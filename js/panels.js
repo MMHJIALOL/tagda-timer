@@ -310,6 +310,8 @@ export function buildAppearance(app) {
           { value: 'reduced', label: t('Reduced') },
           { value: 'off', label: t('Off') },
         ], S.motion, v => set('motion', v))),
+        row(t('Reduce effects'), toggle(S.reduceEffects ?? app.softwareGL, v => set('reduceEffects', v)),
+          t('a still background and no glass blur — for slow or software-rendered graphics')),
         el('div', { class: 'hint-note', html:
           t('Drag the times list, the statistics panel, the now-playing card and the play bar by the grip on their top edge. The <b>left rail</b>, the <b>right rail</b> and the <b>bar across the bottom</b> light up while you are dragging — drop on one and the panel clicks into it. Drop it anywhere else and it stays exactly where you let go. On a phone the panels keep their fixed layout, because there is nowhere to put them.') }),
         el('div', { class: 'row' },
@@ -2187,24 +2189,13 @@ export function buildAbout(app) {
 
     /* The featured reel. Instagram has no public endpoint that hands over a
        creator's newest post without an app token and review, so nothing here
-       can genuinely poll for it. What IS always current is the reels tab, and
-       a pasted link stays under your control. */
-    const reelInput = el('input', {
-      class: 'inp', type: 'url', placeholder: t('https://instagram.com/reel/…'),
-      value: S.featuredReel || '', style: { flex: '1', minWidth: '0' },
-    });
+       can genuinely poll for it. It is set in code (FEATURED_REEL in theme.js);
+       what IS always current is the reels tab. */
     const reelCard = el('div', { class: 'reel-card' });
-    const renderReel = () => {
-      reelCard.innerHTML = '';
-      const url = app.settings.featuredReel;
-      if (!url) {
-        reelCard.append(el('div', { class: 'reel-empty', text:
-          t('No reel pinned yet — paste one below, or use the button above for whatever is newest.') }));
-        return;
-      }
-      reelCard.append(arrow(link(t('Featured reel'), url, url.replace(/^https?:\/\//, '').slice(0, 46))));
-    };
-    renderReel();
+    const url = app.settings.featuredReel;
+    reelCard.append(url
+      ? arrow(link(t('Featured reel'), url, url.replace(/^https?:\/\//, '').slice(0, 46)))
+      : el('div', { class: 'reel-empty', text: t('No reel pinned yet — the button above always opens the newest one.') }));
 
     body.append(
       group(t('Ishaan'),
@@ -2222,29 +2213,7 @@ export function buildAbout(app) {
         arrow(link('GitHub', GH_PROFILE, '@' + GH_HANDLE)),
       ),
 
-      group(t('Featured reel'),
-        reelCard,
-        el('div', { class: 'row stack' },
-          el('div', { class: 'lbl' },
-            el('span', { text: t('Pin a reel') }),
-            el('span', { class: 'sub', text:
-              t('Instagram has no public feed to read without an app token, so this is set by hand.') })),
-          el('div', { style: { display: 'flex', gap: '6px' } },
-            reelInput,
-            el('button', {
-              class: 'btn primary', text: 'save',
-              onclick: () => {
-                const v = reelInput.value.trim();
-                if (v && !/^https?:\/\/(www\.)?instagram\.com\//i.test(v)) {
-                  toast('That is not an instagram.com link', { kind: 'bad' });
-                  return;
-                }
-                app.setSetting('featuredReel', v);
-                renderReel();
-                toast(v ? t('Reel pinned') : t('Reel cleared'), { kind: 'good' });
-              },
-            }))),
-      ),
+      group(t('Featured reel'), reelCard),
     );
   };
 }
