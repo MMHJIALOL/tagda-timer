@@ -2047,7 +2047,7 @@ body.celebrating .toast {
 body:is([data-glass="frosted"], [data-glass="liquid"]) {
   --glass-fx: blur(18px) saturate(1.8) brightness(1.04);
 }
-body:is([data-glass="frosted"], [data-glass="liquid"]) :is(.panel, .seg-btn, .scramble, #timer-avgs) {
+body:is([data-glass="frosted"], [data-glass="liquid"]) :is(.panel, .seg-btn, .scramble) {
   background:
     linear-gradient(180deg, color-mix(in srgb, #fff 10%, transparent), color-mix(in srgb, #fff 2%, transparent) 45%),
     color-mix(in srgb, var(--surface) 32%, transparent);
@@ -2059,7 +2059,6 @@ body:is([data-glass="frosted"], [data-glass="liquid"]) :is(.panel, .seg-btn, .sc
   backdrop-filter: var(--glass-fx);
   -webkit-backdrop-filter: var(--glass-fx);
 }
-body:is([data-glass="frosted"], [data-glass="liquid"]) #timer-avgs { padding: 6px 16px; border-radius: 14px; }
 body[data-glass="liquid"] { --glass-fx: url(#tt-glass) blur(5px) saturate(1.8) brightness(1.04); }
 
 /* Reduce effects (body.lite — on by itself when softwareGL() in bg.js says the
