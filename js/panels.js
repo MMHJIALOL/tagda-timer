@@ -868,7 +868,7 @@ export function buildSettings(app) {
             accept: '.json,.txt,text/plain,application/json',
             style: { display: 'none' },
           });
-          const status = el('div', { class: 'sub', text: t('Tagda backup (.json) or csTimer export (.txt)') });
+          const status = el('div', { class: 'sub', text: t('Tagda backup (.json), csTimer or CubeDesk export (.txt)') });
           const btn = el('button', { class: 'ghost-btn', text: t('choose file'), onclick: () => f.click() });
 
           f.addEventListener('change', async () => {
@@ -880,11 +880,13 @@ export function buildSettings(app) {
               const res = await app.importFile(file, {
                 onProgress: (n, name) => { status.textContent = t('{n} solves… ({name})', { n, name }); },
               });
-              status.textContent = res.kind === 'cstimer'
-                ? t('{n} solves in {s} sessions from csTimer', { n: res.solves, s: res.sessions })
+              const src = { cstimer: 'csTimer', cubedesk: 'CubeDesk' }[res.kind];
+              const dup = res.skipped ? ' ' + t('({k} already here, skipped)', { k: res.skipped }) : '';
+              status.textContent = src
+                ? t('{n} solves in {s} sessions from {src}', { n: res.solves, s: res.sessions, src }) + dup
                 : t('{n} solves restored', { n: res.solves });
-              toast(res.kind === 'cstimer'
-                ? t('Imported {n} solves across {s} csTimer sessions', { n: res.solves, s: res.sessions })
+              toast(src
+                ? t('Imported {n} solves across {s} {src} sessions', { n: res.solves, s: res.sessions, src }) + dup
                 : t('Restored {n} solves', { n: res.solves }), { kind: 'good' });
             } catch (e) {
               status.textContent = t('nothing imported');
@@ -901,6 +903,8 @@ export function buildSettings(app) {
         })(),
         el('div', { class: 'hint-note', html:
           t('Importing from <b>csTimer</b>: open csTimer, then <b>Export &rarr; Export to file</b>. It saves a <b>.txt</b> — hand that file straight to the picker above. Every session comes across with its own name, its times, its scrambles, its comments and its penalties, and the event is read from the session&rsquo;s scramble type where csTimer recorded one. Nothing already here is touched.') }),
+        el('div', { class: 'hint-note', html:
+          t('Importing from <b>CubeDesk</b>: export your data from CubeDesk&rsquo;s settings and hand the <b>.txt</b> it saves to the picker above. Each CubeDesk session becomes its own session with times, scrambles, penalties and the real solve dates. Solves already imported are skipped.') }),
         el('div', { class: 'row' },
           el('div', { class: 'lbl' }, el('span', { text: t('Session as CSV') })),
           el('button', {

@@ -5000,8 +5000,89 @@ app.importCsTimer = async (data, { onProgress } = {}) => {
   return { solves: imported, sessions: added.length, first: added[0] };
 };
 
+/* ---------------- CubeDesk import ----------------
+   CubeDesk's data export is also JSON in a .txt:
+     { "sessions": [ { id, name, order, created_at } ],
+       "solves":   [ { raw_time, time, cube_type, session_id, scramble,
+                       dnf, plus_two, created_at, started_at, ended_at } ] }
+   raw_time is seconds without the penalty (time is -1 on a DNF), and
+   created_at is when the row was written, so a bulk upload stamps its whole
+   history with one day; ended_at is when the solve actually happened.
+   ------------------------------------------------ */
+
+app.importCubeDesk = async (data, { onProgress } = {}) => {
+  const bySess = new Map();
+  for (const s of data.solves) {
+    if (!s || !isFinite(s.raw_time)) continue;
+    const k = s.session_id || '';
+    if (!bySess.has(k)) bySess.set(k, []);
+    bySess.get(k).push(s);
+  }
+  // Re-importing the same export would double every session; a solve with the
+  // same moment and time as one already here is that solve.
+  // ponytail: loads every solve once; fine for an import button.
+  const seen = new Set((await Solves.all()).map(s => `${s.createdAt}|${s.timeMs}`));
+  const meta = new Map((data.sessions || []).map(s => [s.id, s]));
+  const keys = [...bySess.keys()].sort((a, b) => (meta.get(a)?.order ?? 1e9) - (meta.get(b)?.order ?? 1e9));
+
+  let imported = 0, skipped = 0;
+  let order = app.sessions.length;
+  const added = [];
+
+  for (const key of keys) {
+    const rows = bySess.get(key);
+    const counts = {};
+    for (const r of rows) counts[r.cube_type] = (counts[r.cube_type] || 0) + 1;
+    const event = eventFromScrType(Object.keys(counts).sort((a, b) => counts[b] - counts[a])[0]);
+    const name = String(meta.get(key)?.name || '').trim();
+    const sess = {
+      id: uid(),
+      // CubeDesk users often name a session "3" for 3x3; bare digits say nothing here.
+      name: name && !/^\d+$/.test(name) ? name : `CubeDesk ${name || eventOf(event).short}`,
+      event,
+      createdAt: Date.now(),
+      order: order++,
+    };
+
+    const solves = [];
+    for (const r of rows) {
+      const timeMs = Math.round(r.raw_time * 1000);
+      const createdAt = r.ended_at || Date.parse(r.created_at) || Date.now();
+      if (seen.has(`${createdAt}|${timeMs}`)) { skipped++; continue; }
+      solves.push({
+        id: uid(),
+        sessionId: sess.id,
+        event: eventFromScrType(r.cube_type),
+        mode: 'wca',
+        scramble: r.scramble || '',
+        timeMs,
+        penalty: r.dnf ? 'DNF' : r.plus_two ? '+2' : 'none',
+        comment: '',
+        caseId: null, caseName: null,
+        createdAt,
+      });
+    }
+    if (!solves.length) continue;
+
+    await Sessions.put(sess);
+    for (let i = 0; i < solves.length; i += 1000) {
+      await Solves.putMany(solves.slice(i, i + 1000));
+      onProgress?.(imported + Math.min(i + 1000, solves.length), sess.name);
+    }
+    app.sessions.push(sess);
+    added.push(sess);
+    imported += solves.length;
+  }
+
+  if (!imported) throw new Error(skipped
+    ? t('every solve in that file is already here')
+    : t('those sessions had no readable solves'));
+  await refreshCounts();
+  return { solves: imported, sessions: added.length, skipped, first: added[0] };
+};
+
 /**
- * One importer for both file types. csTimer exports are JSON in a .txt, and a
+ * One importer for every file type. csTimer exports are JSON in a .txt, and a
  * Tagda backup is JSON in a .json, so sniffing the contents is both simpler
  * and more forgiving than trusting the extension.
  */
@@ -5021,7 +5102,13 @@ app.importFile = async (file, { onProgress } = {}) => {
     await app.reload();
     return { kind: 'cstimer', ...res };
   }
-  throw new Error(t('unrecognised export — expected a Tagda backup or a csTimer file'));
+  if (data && Array.isArray(data.solves) && Array.isArray(data.sessions)
+      && data.solves.some(s => s && 'raw_time' in s)) {
+    const res = await app.importCubeDesk(data, { onProgress });
+    await app.reload();
+    return { kind: 'cubedesk', ...res };
+  }
+  throw new Error(t('unrecognised export — expected a Tagda backup, a csTimer or a CubeDesk file'));
 };
 
 /* =========================================================
