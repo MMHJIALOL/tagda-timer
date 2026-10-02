@@ -303,6 +303,30 @@ function subgroupScramble(poolName, [lo, hi]) {
   return { scramble: out.join(' ') };
 }
 
+/* 4x4 with every centre solved, for practising edge pairing and the 3x3 stage.
+   Practice, not random-state. Each round is a wide turn, a quarter turn of a
+   face it disturbed, a turn of the wide turn's own axis, then both undone:
+   Rw U R U' Rw'. Outer turns only ever spin a face's centres in place, and the
+   one face whose centres the wide turn mixed is turned back before it is
+   undone, so every centre comes home while the edge pairs it split do not.
+   A random-state 3x3 on the outer layers then mixes corners and edges. */
+const WIDE_AXES = [['R', 'L', 'UFDB'], ['U', 'D', 'FRBL'], ['F', 'B', 'URDL']];
+const INV = { '': "'", "'": '', '2': '2' };
+export function centresSolved444(threeByThree, rounds = 5) {
+  const out = [];
+  let last = -1;
+  for (let i = 0; i < rounds; i++) {
+    let a;
+    do a = Math.floor(Math.random() * 3); while (a === last);
+    last = a;
+    const [f1, f2, sides] = WIDE_AXES[a];
+    const w = pick([f1, f2]) + 'w', wa = pick(['', "'", '2']);
+    const x = pick([...sides]), xa = pick(['', "'"]);
+    out.push(`${w}${wa} ${x}${xa} ${pick([f1, f2])}${pick(['', "'", '2'])} ${x}${INV[xa]} ${w}${INV[wa]}`);
+  }
+  return `${out.join(' ')} ${threeByThree}`.trim();
+}
+
 /* ---------------------------------------------------------
    Public API
    --------------------------------------------------------- */
@@ -323,6 +347,7 @@ export async function generate(eventId, modeId = 'wca', opts = {}) {
   if (mode.kind === 'compose')  return { ...composeLL(), official: false };
   if (mode.kind === 'trigger')  return { ...triggerScramble(mode.depth, mode.maxMoves), official: false };
   if (mode.kind === 'subgroup') return { ...subgroupScramble(mode.pool, mode.depth), official: false };
+  if (mode.kind === 'centres444') return { scramble: centresSolved444(await one(await cubing(), '333')), official: false };
 
   // wca + wca-goal: official random-state scramble
   const ev = EVENTS[eventId] || EVENTS['333'];

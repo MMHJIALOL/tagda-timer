@@ -78,6 +78,8 @@ export function fmtLive(ms, precision = 2) {
   const totalSec = Math.floor(ms / 1000);
   const m = Math.floor(totalSec / 60);
   const s = totalSec % 60;
+  // 0 = whole seconds only, for "While running: Seconds".
+  if (!precision) return m ? `${m}:${String(s).padStart(2,'0')}` : `${s}`;
   const frac = precision === 3
     ? String(Math.floor(ms % 1000)).padStart(3, '0')
     : String(Math.floor((ms % 1000) / 10)).padStart(2, '0');

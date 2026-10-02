@@ -90,6 +90,18 @@ export function meanOf(effTimes) {
   return effTimes.reduce((a, b) => a + b, 0) / effTimes.length;
 }
 
+/**
+ * Best and worst possible ao5 from the last four solves: what the average
+ * becomes if the fifth is perfect (BPA) or a DNF (WPA). The fifth is just one
+ * more value through the same WCA trim, so +2 and DNF behave exactly as they
+ * do in every other average. null with fewer than four solves.
+ */
+export function bpaWpa(solves) {
+  if (solves.length < 4) return null;
+  const e = solves.slice(-4).map(eff);
+  return { bpa: averageOf([...e, -Infinity]), wpa: averageOf([...e, DNF]) };
+}
+
 /** Current aoN over the most recent N solves (solves given oldest-first). */
 export function currentAvg(solves, n) {
   if (solves.length < n) return null;

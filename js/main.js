@@ -18,9 +18,9 @@ import { makeDraggable } from './drag.js';
 import { flash, shockwave, confetti, chime, callout, beep } from './fx.js';
 import { mountMetro, metroExternal } from './metro.js';
 import { keepAwake } from './wakelock.js';
-import { summarize, eff, DNF, isMoveResult, bestSingle, bestAvg, trimmedIndices, byCase, sessionBests, rollingSeries, statWindow, STAT_LABELS, goalProgress } from './stats.js';
+import { summarize, eff, DNF, isMoveResult, bestSingle, bestAvg, trimmedIndices, byCase, sessionBests, rollingSeries, statWindow, STAT_LABELS, goalProgress, bpaWpa } from './stats.js';
 import { renderMiniTrend } from './charts.js';
-import { DEFAULTS, loadSettings, saveSettings, applyTheme, applyBackground, themeColors, setAlbumTint, paintBackgroundColors } from './theme.js';
+import { DEFAULTS, loadSettings, saveSettings, applyTheme, applyBackground, themeColors, setAlbumTint, paintBackgroundColors, liquidGlassOK } from './theme.js';
 import { loadLibraryPrefs } from './alglibrary.js';
 import { initTiles, applyTiles, measureLayout } from './tiles.js';
 import { SPOTIFY_CLIENT_ID, DEV_MODE_LIMIT, OWNER_NEEDS_PREMIUM } from './spotifyapp.js';
@@ -431,7 +431,18 @@ app.softwareGL = softwareGL();
 function applyLite() {
   const lite = app.settings.reduceEffects ?? app.softwareGL;
   document.body.classList.toggle('lite', lite);
+  // Glass is the heaviest thing on the page after the shader, so it goes too.
+  const glass = lite ? 'off' : (app.settings.glass || 'off');
+  document.body.dataset.glass = glass === 'liquid' && !liquidGlassOK() ? 'frosted' : glass;
   bg.setLite(lite);
+  // Said once, the first time it switches itself on, so nobody wonders where the animation went.
+  if (lite && app.settings.reduceEffects == null) {
+    KV.get('liteNoticed', false).then((seen) => {
+      if (seen) return;
+      KV.set('liteNoticed', true);
+      toast(t('Graphics acceleration looks off, so effects are reduced. Change this in Appearance.'), { long: true });
+    }).catch(() => {});
+  }
 }
 
 /* A celebration is a full-screen canvas of moving flakes, a shockwave scaling
@@ -519,11 +530,14 @@ async function init() {
     inspection: app.settings.inspection,
     holdTime: app.settings.holdTime,
     precision: app.settings.precision,
+    minSolveMs: app.settings.misfireMs,
+    off: !!app.settings.scramblesOnly,
     useInspection: !eventOf(app.settings.event).noInspection,
   });
   wireTimer();
   initFeedback(timer);
   wireInput();
+  wireScrambleSwipe();
   wireChrome();
   wireShortcuts();
   wireLastActions();
@@ -1424,7 +1438,7 @@ function wireTimer() {
       // argument ignores it and *flips* the class — so on 3x3 the digits went
       // dark on every other solve.
       display.classList.toggle('hidden-digits',
-        !!(app.settings.hideWhileRunning || eventOf(app.settings.event).hideDuringSolve));
+        !!(app.settings.runningDigits === 'hidden' || eventOf(app.settings.event).hideDuringSolve));
       pen.textContent = '';
       if (app.settings.paceGhost) startPace(pace, paceFill);
     } else if (st === 'idle') {
@@ -1507,7 +1521,8 @@ function wireTimer() {
   let lastDigits = '';
   timer.addEventListener('tick', (e) => {
     if (inputMode() === 'stackmat') return;   // the mat writes its own digits
-    const txt = fmtLive(e.detail.elapsed, app.settings.precision);
+    // "Seconds" is whole seconds while running; the stop writes the full time.
+    const txt = fmtLive(e.detail.elapsed, app.settings.runningDigits === 'seconds' ? 0 : app.settings.precision);
     if (txt !== lastDigits) { lastDigits = txt; main.textContent = txt; }
   });
 
@@ -2560,8 +2575,13 @@ function renderStats() {
   $('#live-ao12').textContent = f(st.ao12);
   const avgs = $('#timer-avgs');
   if (avgs) {
-    avgs.hidden = st.ao5 === null || st.ao5 === undefined;
+    const bw = app.settings.showBpa !== false && bpaWpa(app.solves);
+    const noAvg = st.ao5 === null || st.ao5 === undefined;
+    avgs.hidden = noAvg && !bw;
+    avgs.classList.toggle('no-avg', noAvg);
     avgs.classList.toggle('solo', st.ao12 === null || st.ao12 === undefined);
+    $('#timer-bpa').hidden = !bw;
+    if (bw) { $('#live-bpa').textContent = f(bw.bpa); $('#live-wpa').textContent = f(bw.wpa); }
   }
 
   // Session bests are O(n x len) to compute, so only when they are on screen.
@@ -4575,7 +4595,7 @@ function applyAll(changed) {
   // bgSolid and bgGradient were missing here, so editing the background colour
   // or the gradient string did nothing at all until some unrelated setting
   // happened to trigger a re-apply.
-  if (!changed || changed === 'reduceEffects') applyLite();
+  if (!changed || changed === 'reduceEffects' || changed === 'glass') applyLite();
   if (!changed || ['bgMode','bgShader','bgSpeed','bgAmount','theme','accent','accent2','bg2',
                    'bgDim','bgSolid','bgGradient','autoContrast',
                    'spotifyGradient','spotifyTint'].includes(changed)) {
@@ -4585,8 +4605,12 @@ function applyAll(changed) {
     timer.cfg.inspection = app.settings.inspection;
     timer.cfg.holdTime = app.settings.holdTime;
     timer.cfg.precision = app.settings.precision;
+    timer.cfg.minSolveMs = app.settings.misfireMs;
     timer.cfg.useInspection = !eventOf(app.settings.event).noInspection;
+    timer.cfg.off = !!app.settings.scramblesOnly;
   }
+  if (changed === 'scramblesOnly') { timer?.reset(); measureLayout(); }
+  if (changed === 'showBpa') renderStats();
   if (changed === 'hintFacelets') cube.setHints(app.settings.hintFacelets);
   if (!changed || changed === 'cubeColors') {
     cube.setColors(app.settings.cubeColors);
@@ -5013,7 +5037,54 @@ const isTyping = () => {
 };
 const modalOpen = () => drawerOpen() || paletteOpen() || popoverOpen() || shareOpen() || reconOpen() || xp1Open() || feedbackOpen();
 
+/* Swipe the scramble on a touch screen, the way csTimer does: left for the
+   next one, right for the one before. Only on #scramble-zone, which is outside
+   #stage, so a swipe can never reach the timer; and only a clearly sideways
+   move, so a vertical drag still scrolls a long scramble (touch-action: pan-y in
+   base.css hands vertical moves to the browser and horizontal ones to us). A
+   mouse is left alone: dragging across the text selects it. */
+function wireScrambleSwipe() {
+  const zone = $('#scramble-zone');
+  const text = $('#scramble-text');
+  let start = null;
+  zone.addEventListener('pointerdown', (e) => {
+    start = e.isPrimary && e.pointerType !== 'mouse' ? { x: e.clientX, y: e.clientY } : null;
+  });
+  zone.addEventListener('pointercancel', () => { start = null; });
+  zone.addEventListener('pointerup', (e) => {
+    if (!start || !e.isPrimary) return;
+    const dx = e.clientX - start.x, dy = e.clientY - start.y;
+    start = null;
+    if (timer.state !== 'idle' && timer.state !== 'cooldown') return;
+    if (Math.abs(dx) > 50 && Math.abs(dx) > 2 * Math.abs(dy)) {
+      if (scrambleIsSpokenFor()) { toast(spokenForWhy()); return; }
+      if (dx < 0) forwardScramble(); else prevScramble();
+      // The new scramble comes in from the side the finger is moving away from.
+      if (app.settings.motion === 'full' && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        text.animate([{ transform: `translateX(${dx < 0 ? 20 : -20}px)`, opacity: 0 }, { transform: 'none', opacity: 1 }],
+          { duration: 150, easing: 'ease-out' });
+      }
+      return;
+    }
+    // Scrambles only has no timer under the scramble: a tap beside it is "next".
+    if (app.settings.scramblesOnly && Math.hypot(dx, dy) < 10 && !e.target.closest('button, a, .scramble')) forwardScramble();
+  });
+  $('#exit-scrambles-only').addEventListener('click', () => app.setSetting('scramblesOnly', false));
+}
+
 function wireInput() {
+  /* Scrambles only: Space deals the next scramble and nothing else hears it.
+     First listener on the document, so the virtual cube, the Stackmat and the
+     timer below never see the press. The arrows and N still work from the
+     shortcut handler. */
+  document.addEventListener('keydown', (e) => {
+    if (!app.settings.scramblesOnly || e.code !== 'Space' || isTyping() || modalOpen()) return;
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    if (!e.repeat) forwardScramble();
+  }, true);
+
   let spaceDown = false;
   // Keys that stopped a running solve. Their keyup belongs to that same press
   // and must be swallowed too, or it lands on whatever the key normally does.

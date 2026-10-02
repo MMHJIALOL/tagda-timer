@@ -34,6 +34,7 @@ Open this page from the same server as the app.</p>
 <div id="summary">running…</div>
 
 <twisty-player id="tp" puzzle="3x3x3" alg="" visualization="2D" control-panel="none" background="none" style="width:1px;height:1px;opacity:0;position:absolute"></twisty-player>
+<twisty-player id="tp4" puzzle="4x4x4" alg="" visualization="2D" control-panel="none" background="none" style="width:1px;height:1px;opacity:0;position:absolute"></twisty-player>
 
 <script type="module">
 const out = document.getElementById('out');
@@ -112,6 +113,21 @@ check('bestSingle counts the +2 penalty',
     St.rollingSeries(solves, 12).every(v => v === null));
   check('a DNF-heavy window reads as no value rather than as zero',
     St.rollingSeries([mk(9000, 'DNF'), mk(9000, 'DNF'), mk(10000), mk(11000), mk(12000)], 5)[4] === null);
+}
+
+/* BPA / WPA: the next ao5 if the fifth solve is perfect, or a DNF. */
+{
+  const near = (a, b) => Math.abs(a - b) < 1e-6;
+  const n = St.bpaWpa([mk(10000), mk(12000), mk(11000), mk(13000)]);
+  check('BPA is the mean of the best three of four', near(n.bpa, 11000), U.fmt(n.bpa));
+  check('WPA is the mean of the worst three of four', near(n.wpa, 12000), U.fmt(n.wpa));
+  const one = St.bpaWpa([mk(10000), mk(12000, 'DNF'), mk(11000), mk(13000)]);
+  check('one DNF: BPA still counts, WPA is a DNF', near(one.bpa, 34000 / 3) && one.wpa === St.DNF);
+  const two = St.bpaWpa([mk(10000, 'DNF'), mk(12000, 'DNF'), mk(11000), mk(13000)]);
+  check('two DNFs: both are DNF', two.bpa === St.DNF && two.wpa === St.DNF);
+  const p2 = St.bpaWpa([mk(10000), mk(12000, '+2'), mk(11000), mk(13000)]);
+  check('a +2 counts at its penalised time', near(p2.bpa, 34000 / 3) && near(p2.wpa, 38000 / 3));
+  check('fewer than four solves has no BPA', St.bpaWpa([mk(1), mk(2), mk(3)]) === null);
 }
 
 /* Any average in the list opens the solves behind it — including one that
@@ -251,6 +267,16 @@ section('formatting');
 check('sub-minute format', U.fmt(12345) === '12.34', U.fmt(12345));
 check('truncates, never rounds up', U.fmt(12999) === '12.99', U.fmt(12999));
 check('minutes format', U.fmt(75123) === '1:15.12', U.fmt(75123));
+check('live digits in whole seconds', U.fmtLive(12345, 0) === '12' && U.fmtLive(72345, 0) === '1:12', U.fmtLive(72345, 0));
+{
+  const Th = await import('./js/theme.js');
+  const round = ['linear-gradient(135deg, #2b1055, #7597de)', 'radial-gradient(circle at 30% 20%, #4a00e0, #08001f)',
+    'linear-gradient(160deg, #0f0c29, #302b63, #24243e)'];
+  check('gradient presets read back into the pickers unchanged',
+    round.every(g => Th.buildGradient(Th.parseGradient(g)) === g));
+  check('a gradient the pickers cannot hold is left as custom',
+    Th.parseGradient('linear-gradient(to right, red, blue)') === null);
+}
 check('invert reverses and flips', U.invert("R U R'") === "R U' R'", U.invert("R U R'"));
 check('invert leaves half turns', U.invert("R2 U") === "U' R2", U.invert("R2 U"));
 check('tidy cancels opposites', U.tidy("R U U' R'") === '', `"${U.tidy("R U U' R'")}"`);
@@ -611,6 +637,21 @@ const sample = async (mode, n, test) => {
   for (let i = 0; i < 200 && !q.stash.get(pk)?.length; i++) await new Promise(r => setTimeout(r, 50));
   q.setContext('pyram', 'wca');
   check('switching back to an event reuses its queued scrambles', q.ready);
+}
+
+{
+  /* 4x4 "centres solved" practice, applied on cubing.js's own 4x4. */
+  const kp4 = await (await document.getElementById('tp4').experimentalModel.puzzleLoader.get()).kpuzzle();
+  const S4 = kp4.defaultPattern().patternData;
+  let off = 0, paired = 0;
+  for (let i = 0; i < 100; i++) {
+    const { scramble } = await G.generate('444', '444centres');
+    const d = kp4.defaultPattern().applyAlg(scramble).patternData;
+    if (!d.CENTERS.pieces.every((p, j) => Math.floor(p / 4) === Math.floor(j / 4))) off++;
+    if (d.EDGES.pieces.every((p, j) => p === S4.EDGES.pieces[j])) paired++;
+  }
+  check('4x4 "centres solved" scrambles leave all 24 centres on their faces', off === 0, `${off}/100 not`);
+  check('4x4 "centres solved" scrambles never leave the edges solved', paired === 0, `${paired}/100 solved`);
 }
 
 section('official WCA scrambles');
