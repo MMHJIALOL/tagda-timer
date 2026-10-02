@@ -662,14 +662,16 @@ body.no-hint #timer-hint { visibility: hidden; }
 /* Four solves in: BPA/WPA, but no ao5 yet. */
 #timer-avgs.no-avg > span { display: none; }
 /* BPA / WPA: a smaller second line under the two averages. */
-#timer-avgs { flex-wrap: wrap; justify-content: center; row-gap: 2px; }
+/* max-content: an absolute box at left:50% is otherwise capped at half the
+   column, and the wrap then broke ao5 and ao12 onto separate lines. */
+#timer-avgs { flex-wrap: wrap; justify-content: center; row-gap: 2px; width: max-content; }
 #timer-bpa {
   flex-basis: 100%;
   display: flex; align-items: baseline; justify-content: center; gap: 8px;
 }
-#timer-bpa b { font-size: .68rem; }
+#timer-bpa b { font-size: .6rem; }
 #timer-bpa b + i + b { margin-left: 10px; }
-#timer-avgs #timer-bpa i { font-size: clamp(.95rem, calc(var(--timer-size) * .12), 1.45rem); color: var(--text-dim); }
+#timer-avgs #timer-bpa i { font-size: clamp(.8rem, calc(var(--timer-size) * .09), 1.1rem); color: var(--text-dim); }
 #timer-avgs > span { display: flex; align-items: baseline; gap: 10px; }
 #timer-avgs b {
   font-size: .84rem; font-weight: 700; letter-spacing: .16em; text-transform: uppercase;
