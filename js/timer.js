@@ -34,6 +34,7 @@ export class Timer extends EventTarget {
       precision: 2,           // decimal places shown while running
       hideWhileRunning: false,
       phaseSplits: 0,         // presses that split the solve instead of ending it
+      off: false,             // scrambles-only mode: nothing may start an attempt
       ...cfg,
     };
     this.state = 'idle';
@@ -75,6 +76,7 @@ export class Timer extends EventTarget {
    * virtual cube, a Stackmat, a race) pass nothing and get the clock.
    */
   down(at) {
+    if (this.cfg.off && this.state === 'idle') return;
     switch (this.state) {
       case 'running':
         // A press part-way through a solve is a phase boundary until the
@@ -161,6 +163,7 @@ export class Timer extends EventTarget {
    * because there is no key still held down to release.
    */
   start() {
+    if (this.cfg.off) return;
     if (this.state === 'idle' || this.state === 'inspecting') this._start();
   }
 

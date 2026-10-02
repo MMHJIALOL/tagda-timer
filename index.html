@@ -29,11 +29,11 @@
      perfect in incognito, which is a miserable thing to debug.
      /js/ is `must-revalidate` and does not depend on this, but keep the number
      in step anyway rather than leaving two answers to the same question. -->
-<link rel="modulepreload" href="js/main.js?v=69">
-<link rel="stylesheet" href="css/fonts.css?v=69">
-<link rel="stylesheet" href="css/tokens.css?v=69">
-<link rel="stylesheet" href="css/base.css?v=69">
-<link rel="stylesheet" href="css/components.css?v=69">
+<link rel="modulepreload" href="js/main.js?v=70">
+<link rel="stylesheet" href="css/fonts.css?v=70">
+<link rel="stylesheet" href="css/tokens.css?v=70">
+<link rel="stylesheet" href="css/base.css?v=70">
+<link rel="stylesheet" href="css/components.css?v=70">
 <link rel="icon" href="assets/favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="assets/logo-192.png">
 <link rel="apple-touch-icon" href="assets/logo-180.png">
@@ -515,7 +515,9 @@
         <div id="timer-avgs">
           <span><b>ao5</b><i id="live-ao5">&mdash;</i></span>
           <span class="sep" aria-hidden="true"></span>
-          <span><b>ao12</b><i id="live-ao12">&mdash;</i></span>
+          <span class="a12"><b>ao12</b><i id="live-ao12">&mdash;</i></span>
+          <!-- What the next ao5 becomes if the coming solve is perfect / a DNF. -->
+          <div id="timer-bpa" hidden><b>bpa</b><i id="live-bpa">&mdash;</i><b>wpa</b><i id="live-wpa">&mdash;</i></div>
         </div>
 
         <!-- Manual entry. Replaces the spacebar entirely when it is on, so
@@ -633,6 +635,19 @@
        where a tile actually is. -->
   <div id="dock-bottom"></div>
   <div id="tile-float-layer"></div>
+
+  <!-- Scrambles-only mode has no timer to come back to, so the way out is on screen. -->
+  <button id="exit-scrambles-only" type="button" class="ghost-btn">exit scrambles only</button>
+
+  <!-- Liquid glass: what bends the background behind a panel (body[data-glass="liquid"]
+       in components.css). Only Chromium applies an SVG filter in backdrop-filter. -->
+  <svg width="0" height="0" aria-hidden="true" focusable="false" style="position:absolute">
+    <filter id="tt-glass" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">
+      <feTurbulence type="fractalNoise" baseFrequency="0.006 0.009" numOctaves="2" seed="11" result="noise"/>
+      <feGaussianBlur in="noise" stdDeviation="3" result="soft"/>
+      <feDisplacementMap in="SourceGraphic" in2="soft" scale="34" xChannelSelector="R" yChannelSelector="G"/>
+    </filter>
+  </svg>
   <div id="snap-zones" aria-hidden="true" hidden></div>
 
   <!-- ---------- MASCOT ---------- -->
@@ -737,7 +752,7 @@
   </div>
 </div>
 
-<script type="module" src="js/main.js?v=69"></script>
+<script type="module" src="js/main.js?v=70"></script>
 <script>
 (function () {
   var isFile = location.protocol === 'file:';

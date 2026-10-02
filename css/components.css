@@ -2036,6 +2036,32 @@ body.celebrating .toast {
   background: var(--surface-2);
 }
 
+/* ---------------- glass (Appearance -> Theme -> Glass) ----------------
+   Frosted: the panel surfaces turn see-through, with a bright hairline edge, a
+   highlight across the top and a soft shadow, over a strong blur. Liquid adds
+   an SVG displacement (#tt-glass in index.html) that bends the background
+   behind each surface. Only Chromium applies an SVG filter inside
+   backdrop-filter, so everywhere else main.js applyLite() writes "frosted"
+   for a Liquid setting (see liquidGlassOK in theme.js), and body.lite writes
+   "off". */
+body:is([data-glass="frosted"], [data-glass="liquid"]) {
+  --glass-fx: blur(18px) saturate(1.8) brightness(1.04);
+}
+body:is([data-glass="frosted"], [data-glass="liquid"]) :is(.panel, .seg-btn, .scramble, #timer-avgs) {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, #fff 10%, transparent), color-mix(in srgb, #fff 2%, transparent) 45%),
+    color-mix(in srgb, var(--surface) 32%, transparent);
+  border: 1px solid color-mix(in srgb, #fff 16%, transparent);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, #fff 30%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, #000 16%, transparent),
+    0 18px 40px -18px rgba(0, 0, 0, .55);
+  backdrop-filter: var(--glass-fx);
+  -webkit-backdrop-filter: var(--glass-fx);
+}
+body:is([data-glass="frosted"], [data-glass="liquid"]) #timer-avgs { padding: 6px 16px; border-radius: 14px; }
+body[data-glass="liquid"] { --glass-fx: url(#tt-glass) blur(5px) saturate(1.8) brightness(1.04); }
+
 /* Reduce effects (body.lite — on by itself when softwareGL() in bg.js says the
    graphics are drawn by the CPU). There every backdrop blur is redone on the
    processor, so the glass goes, and the cards get a near-solid fill to stay
@@ -3635,3 +3661,30 @@ body.relay .scramble-label { display: none; }
 .relay-bar-seg { display: block; min-width: 2px; }
 .relay-bar-seg:nth-child(odd)  { background: var(--accent); }
 .relay-bar-seg:nth-child(even) { background: var(--accent-2); }
+
+/* ---- sessions drawer: reorder ----
+   A grip to drag by (pointer events, so it works on touch) and up/down buttons
+   for the keyboard. */
+.sess-list .st-row { align-items: center; transition: transform var(--dur-fast) var(--ease); }
+.sess-list .st-row.dragging { transition: none; position: relative; z-index: 2; background: color-mix(in srgb, var(--accent) 14%, var(--surface)); }
+.sess-list .st-row.drop-above { box-shadow: inset 0 2px 0 var(--accent); }
+.sess-list .st-row.drop-below { box-shadow: inset 0 -2px 0 var(--accent); }
+.sess-grip {
+  width: 22px; height: 28px; display: grid; place-items: center;
+  color: var(--text-faint); cursor: grab; touch-action: none; border-radius: 6px;
+}
+.sess-grip:hover { color: var(--text); background: color-mix(in srgb, var(--text) 8%, transparent); }
+.sess-grip:active { cursor: grabbing; }
+.sess-grip svg { width: 15px; height: 15px; fill: currentColor; stroke: none; }
+.sess-step { padding: 0 6px; }
+.sess-step svg { width: 13px; height: 13px; }
+.sess-step:disabled { opacity: .3; cursor: default; }
+
+/* ---- background gradient pickers ---- */
+.grad-stops { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.grad-stops input[type="color"] { width: 38px; height: 30px; padding: 2px; }
+.grad-custom { font-size: .7rem; color: var(--text-faint); letter-spacing: .06em; }
+.grad-presets { margin: 4px 0 6px; }
+.grad-adv summary { cursor: pointer; font-size: .78rem; color: var(--text-dim); padding: 4px 0; }
+/* A setting that only applies while the one above it is on. */
+.row.off { opacity: .45; }

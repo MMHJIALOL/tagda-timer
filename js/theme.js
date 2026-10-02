@@ -29,6 +29,51 @@ export const TIMER_FONTS = {
   'System':         "system-ui, -apple-system, sans-serif",
 };
 
+/* A scramble is read move by move down a fixed grid, so only monospace faces. */
+export const SCRAMBLE_FONTS = {
+  'JetBrains Mono': "'JetBrains Mono', ui-monospace, monospace",
+  'Chivo Mono':     "'Chivo Mono', ui-monospace, monospace",
+  'System mono':    "ui-monospace, 'Cascadia Mono', 'SF Mono', Menlo, Consolas, monospace",
+};
+
+/* The top bar, the panels and the drawers. */
+export const UI_FONTS = {
+  'Inter':          "'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif",
+  'Space Grotesk':  "'Space Grotesk', system-ui, sans-serif",
+  'System':         "system-ui, -apple-system, 'Segoe UI', sans-serif",
+};
+
+/**
+ * The background gradient as something pickers can edit: linear or radial,
+ * two or three #rrggbb stops, an angle (linear) or a position (radial). null
+ * for anything else, such as a string typed by hand — that is left alone.
+ */
+export function parseGradient(css) {
+  const m = /^\s*(linear|radial)-gradient\((.*)\)\s*$/i.exec(css || '');
+  if (!m) return null;
+  const type = m[1].toLowerCase();
+  const parts = m[2].split(',').map(p => p.trim());
+  let angle = 180, pos = 'circle at 50% 50%';
+  if (type === 'linear' && /^-?\d+(\.\d+)?deg$/.test(parts[0])) angle = parseFloat(parts.shift());
+  else if (type === 'radial' && /^(circle|ellipse)\b/.test(parts[0])) pos = parts.shift();
+  if (parts.length < 2 || parts.length > 3 || !parts.every(c => /^#[0-9a-f]{6}$/i.test(c))) return null;
+  return { type, angle, pos, stops: parts.map(c => c.toLowerCase()) };
+}
+
+/** parseGradient's inverse. */
+export const buildGradient = (g) => g.type === 'radial'
+  ? `radial-gradient(${g.pos}, ${g.stops.join(', ')})`
+  : `linear-gradient(${Math.round(g.angle)}deg, ${g.stops.join(', ')})`;
+
+/**
+ * Whether Liquid glass can actually be drawn: only Chromium (Chrome, Edge,
+ * Opera, Brave) applies an SVG filter inside backdrop-filter. Asked of the
+ * engine, not of CSS.supports(): Firefox says yes to `url()` there, then drops
+ * the whole backdrop-filter, blur and all.
+ */
+export const liquidGlassOK = () =>
+  !!globalThis.navigator?.userAgentData?.brands?.some(b => b.brand === 'Chromium');
+
 /** The reel pinned in the About panel until someone pastes another one. */
 export const FEATURED_REEL = 'https://www.instagram.com/reel/DZzyIGcBQjD/';
 
@@ -38,7 +83,7 @@ export const FEATURED_REEL = 'https://www.instagram.com/reel/DZzyIGcBQjD/';
  * existing profile carries the OLD default forever and simply editing
  * DEFAULTS would never reach anyone who has used the app before.
  */
-const SETTINGS_VERSION = 9;
+const SETTINGS_VERSION = 10;
 
 const MIGRATIONS = {
   // v2 — the pace ghost is now opt-in rather than on by default.
@@ -91,6 +136,12 @@ const MIGRATIONS = {
     s.histAvgCols ??= [5, 12];
     if (s.sidebarWidth === 236 || s.sidebarWidth === undefined) s.sidebarWidth = 290;
   },
+  // v10 — "Hide time while solving" became a three-way choice. Anyone who had
+  // it on keeps the digits hidden.
+  10: (s) => {
+    if (s.hideWhileRunning) s.runningDigits = 'hidden';
+    delete s.hideWhileRunning;
+  },
 };
 
 export const DEFAULTS = {
@@ -99,11 +150,15 @@ export const DEFAULTS = {
   holdTime: 0,                  // 0 = the press starts the solve, no arming hold
   callouts: 'beep',             // beep | off
   precision: 2,
-  hideWhileRunning: false,
+  runningDigits: 'full',        // full | seconds | hidden — what the clock shows mid-solve
+  showHint: true,               // "tap space, release to start" under the digits
+  scramblesOnly: false,         // no timer at all: space / tap / swipe deal the next scramble
+  showBpa: true,                // best and worst possible ao5 once four solves are in
   focusMode: true,
   paceGhost: false,           // opt-in — see SETTINGS_VERSION below
   paceRef: 'pb',                // pb | ao5
   confirmShortSolves: true,
+  misfireMs: 500,               // a solve under this is asked about (confirmShortSolves)
   soundOnPB: true,
   metronome: false,             // a click on the beat while the timer runs
   metronomeBpm: 60,             // shared by the solve-time click and the window
@@ -131,6 +186,7 @@ export const DEFAULTS = {
   density: 'comfortable',
   motion: 'full',               // full | reduced | off
   reduceEffects: null,          // still background, no glass blur; null = on when WebGL is software-rendered
+  glass: 'off',                 // off | frosted | liquid — see body[data-glass] in components.css
   accent: '',                   // '' = use preset
   accent2: '',
   bg2: '',                      // '' = use preset; set by an album theme
@@ -138,6 +194,8 @@ export const DEFAULTS = {
   albumThemes: [],
   albumTheme: '',               // id of the album theme last picked, for the card's highlight
   timerFont: 'JetBrains Mono',
+  scrambleFont: 'JetBrains Mono',
+  uiFont: 'Inter',
   timerWeight: 700,
   timerSize: 100,               // % of the fluid default
   timerGlow: 0,
@@ -255,6 +313,8 @@ export function applyTheme(s) {
 
   const st = root.style;
   st.setProperty('--font-timer', TIMER_FONTS[s.timerFont] || TIMER_FONTS['JetBrains Mono']);
+  st.setProperty('--font-scramble', SCRAMBLE_FONTS[s.scrambleFont] || SCRAMBLE_FONTS['JetBrains Mono']);
+  st.setProperty('--font-ui', UI_FONTS[s.uiFont] || UI_FONTS.Inter);
   st.setProperty('--timer-weight', s.timerWeight);
   st.setProperty('--timer-size', `clamp(3rem, ${(15 * s.timerSize / 100).toFixed(2)}vw, ${(11.5 * s.timerSize / 100).toFixed(2)}rem)`);
   st.setProperty('--timer-glow', `${s.timerGlow}px`);
@@ -293,6 +353,9 @@ export function applyTheme(s) {
   }
 
   document.body.classList.toggle('no-stats', !s.showStats);
+  // visibility, not display: the digits must not move when the hint goes.
+  document.body.classList.toggle('no-hint', s.showHint === false);
+  document.body.classList.toggle('scrambles-only', !!s.scramblesOnly);
   // The right-hand rail reserves room at its foot for the preview floating in
   // that corner. With the preview switched off there is nothing to reserve for,
   // and `display: none` is not something a stylesheet can ask about.
@@ -481,6 +544,7 @@ export async function applyBackground(bg, s) {
 
 const THEME_KEYS = [
   'theme','density','motion','accent','accent2','bg2','timerFont','timerWeight','timerSize','timerGlow',
+  'scrambleFont','uiFont','glass',
   'bgMode','bgShader','bgSpeed','bgAmount','bgBlur','bgDim','bgSat','bgGradient','bgSolid',
   'showStats','showCube','showHistory','cubeView','hintFacelets','autoContrast',
   'panelStyle','scrambleSize','cubeSize','sidebarWidth','sidebarText','timesSize',

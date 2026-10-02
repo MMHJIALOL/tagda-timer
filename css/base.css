@@ -255,6 +255,9 @@ body.inspecting #timer-display { opacity: 0; }
   position: relative;
   display: flex; flex-direction: column; align-items: center; gap: 6px;
   min-width: 0; padding-top: 6px;
+  /* Sideways moves are a swipe to the next or previous scramble (main.js);
+     up and down still scroll. */
+  touch-action: pan-y;
 }
 .scramble-label {
   font-size: .64rem; font-weight: 700; letter-spacing: .18em; text-transform: uppercase;
@@ -270,7 +273,7 @@ body.inspecting #timer-display { opacity: 0; }
 }
 @media (max-width: 760px) { #scramble-wrap { padding: 0; } }
 .scramble {
-  font-family: var(--font-mono);
+  font-family: var(--font-scramble);
   font-size: calc(clamp(1.15rem, 2.45vw, 1.95rem) * var(--scramble-scale) * var(--scramble-boost, 1));
   font-weight: 600; line-height: 1.6; letter-spacing: .012em;
   text-align: center; color: var(--text);
@@ -627,6 +630,8 @@ body[data-input="virtual"] #timer-display { font-size: min(var(--timer-size), 5.
   height: 1.2em;
 }
 body.focus #timer-hint, body.inspecting #timer-hint { opacity: 0; }
+/* Settings -> Show start hint. Kept in the layout so the digits do not move. */
+body.no-hint #timer-hint { visibility: hidden; }
 /* The markup carries both wordings until updateHint() replaces the lot; this
    is which of them this device was going to end up with anyway. */
 #timer-hint .hint-coarse { display: none; }
@@ -653,7 +658,18 @@ body.focus #timer-hint, body.inspecting #timer-hint { opacity: 0; }
 }
 #timer-avgs[hidden] { display: none; }
 /* Before the twelfth solve there is no ao12 to print. */
-#timer-avgs.solo .sep, #timer-avgs.solo > span:last-child { display: none; }
+#timer-avgs.solo .sep, #timer-avgs.solo .a12 { display: none; }
+/* Four solves in: BPA/WPA, but no ao5 yet. */
+#timer-avgs.no-avg > span { display: none; }
+/* BPA / WPA: a smaller second line under the two averages. */
+#timer-avgs { flex-wrap: wrap; justify-content: center; row-gap: 2px; }
+#timer-bpa {
+  flex-basis: 100%;
+  display: flex; align-items: baseline; justify-content: center; gap: 8px;
+}
+#timer-bpa b { font-size: .68rem; }
+#timer-bpa b + i + b { margin-left: 10px; }
+#timer-avgs #timer-bpa i { font-size: clamp(.95rem, calc(var(--timer-size) * .12), 1.45rem); color: var(--text-dim); }
 #timer-avgs > span { display: flex; align-items: baseline; gap: 10px; }
 #timer-avgs b {
   font-size: .84rem; font-weight: 700; letter-spacing: .16em; text-transform: uppercase;
@@ -889,6 +905,29 @@ body.inspecting #last-delta, body.focus #last-delta { display: none; }
      user chose, right up to the point where the digits would not fit. */
   #timer-display { font-size: min(var(--timer-size), 13vh); }
   #inspect-num { font-size: min(clamp(5rem, 22vw, 16rem), 24vh); }
+}
+
+/* Scrambles only (Settings): no timer at all. The scramble takes the middle of
+   the screen at the size Scramble of the Day gives it; the preview stays, since
+   it is how you check the scramble. Space, a tap or a swipe deals the next. */
+body.scrambles-only #stage,
+body.scrambles-only #dock-bottom,
+body.scrambles-only #tile-float-layer { display: none !important; }
+body.scrambles-only #app { grid-template-rows: auto 1fr; }
+body.scrambles-only #scramble-zone { justify-content: center; padding-bottom: 10vh; }
+/* On a phone the preview floats in the band below the scramble; centring the
+   scramble would put it on top of the preview, so it stays where it always is. */
+@media (max-width: 860px) {
+  body.scrambles-only #scramble-zone { justify-content: flex-start; padding-bottom: 0; }
+}
+body.scrambles-only { --scramble-boost: 1.35; }
+#exit-scrambles-only { display: none; }
+body.scrambles-only #exit-scrambles-only {
+  display: inline-flex; position: fixed; z-index: 30;
+  left: 50%; bottom: max(18px, env(safe-area-inset-bottom)); transform: translateX(-50%);
+  padding: 8px 16px; border-radius: 999px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface) 80%, transparent);
 }
 
 /* zen mode — hide chrome permanently */

@@ -44,6 +44,7 @@
   --font-ui:       'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-mono:     'JetBrains Mono', ui-monospace, 'Cascadia Mono', monospace;
   --font-timer:    'JetBrains Mono', ui-monospace, monospace;
+  --font-scramble: 'JetBrains Mono', ui-monospace, monospace;
   /* Same shape applyTheme() writes at the default size, for the same reason. */
   --timer-size:    clamp(3rem, 15vw, 11.5rem);
   --timer-weight:  700;

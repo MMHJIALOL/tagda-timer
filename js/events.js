@@ -47,6 +47,7 @@ export const EVENT_ORDER = [
  *   subgroup — random moves from a restricted move pool
  *   trigger  — random composition of cross-preserving triggers
  *   wca-goal — official scramble, but you only time part of the solve
+ *   centres444 — 4x4 practice scramble with every centre solved
  */
 export const MODES = {
   'wca':      { name: t('Random state'),   kind: 'wca',      events: '*',    desc: t('Official WCA random-state scramble') },
@@ -105,13 +106,14 @@ export const MODES = {
   'roux':     { name: t('Roux L10P'),      kind: 'subgroup', pool: 'roux', depth: [12, 16], events: ['333'], desc: t('R, U and M moves only') },
 
   'crossgoal':{ name: t('Cross practice'), kind: 'wca-goal', events: ['333','333oh'], desc: t('Full WCA scramble — time your cross only') },
+  '444centres': { name: t('Centres solved'), kind: 'centres444', events: ['444'], desc: t('Practice, not random-state: centres done, edges and corners mixed') },
 };
 
 export const MODE_ORDER = [
   'wca', 'f2l', 'pll', 'oll', 'zbll', 'oll2look', 'pll2look', 'ocll',
   'wv', 'coll', 'ollcp', 'cmll2look', 'cmll', 'ohcmll', 'lseeo', 'lseeolr',
   '222oll', '222pbl', '222cll', '222eg1', '222eg2',
-  '444pllp', 'pyrall', 'pyral4e', 'sarahint', 'sarahadv',
+  '444pllp', '444centres', 'pyrall', 'pyral4e', 'sarahint', 'sarahadv',
   'sq1shape', 'sq1csp', 'sq1obl', 'sq1eo', 'sq1cp', 'sq1ep',
   'll', 'cross', 'lastslot', '2gen', 'lse', 'roux', 'crossgoal',
 ];

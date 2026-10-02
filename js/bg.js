@@ -172,6 +172,63 @@ void main(){
   col = 1.0 - exp(-col * 1.4);
   gl_FragColor = vec4(col * u_amount, 1.0);
 }`,
+
+  /* Silk: five ribbons, each a lit edge that fades upward, drifting on two
+     sines of their own. */
+  waves: `${HEAD}
+void main(){
+  vec2 uv = gl_FragCoord.xy / u_res.xy;
+  float x = uv.x * u_res.x / u_res.y;
+  float t = u_t * 0.22 * u_speed;
+  vec3 col = u_c1 * (0.35 + 0.25 * uv.y);
+  for(int i = 0; i < 5; i++){
+    float fi = float(i);
+    float y = 0.16 + fi * 0.15
+            + 0.07 * sin(x * (1.6 + fi * 0.35) + t * (1.0 + fi * 0.2) + fi * 1.7)
+            + 0.03 * sin(x * 4.1 - t * 1.3 + fi);
+    float d = uv.y - y;
+    float band = smoothstep(0.0, 0.012, d) * exp(-max(d, 0.0) * 9.0);
+    col = mix(col, mix(u_c2, u_c3, fi / 4.0), band * 0.55);
+  }
+  gl_FragColor = vec4(col * u_amount, 1.0);
+}`,
+
+  /* Soft smoke: noise warped by noise, slow enough to read as weather. */
+  smoke: `${HEAD}
+void main(){
+  vec2 uv = gl_FragCoord.xy / u_res.xy;
+  vec2 q = uv * vec2(u_res.x / u_res.y, 1.0) * 1.6;
+  float t = u_t * 0.05 * u_speed;
+  vec2 w = vec2(fbm(q + vec2(0.0, t)), fbm(q + vec2(5.2, 1.3) - t));
+  float f = fbm(q + 2.2 * w + vec2(t * 0.7, 0.0));
+  vec3 col = mix(u_c1 * 0.6, u_c2, smoothstep(0.25, 0.85, f));
+  col = mix(col, u_c3, smoothstep(0.6, 1.0, f * w.x * 1.6));
+  gl_FragColor = vec4(col * u_amount, 1.0);
+}`,
+
+  /* Cells: a voronoi pattern whose seeds wander, edges darkened. */
+  cells: `${HEAD}
+void main(){
+  vec2 uv = gl_FragCoord.xy / u_res.xy;
+  vec2 q = uv * vec2(u_res.x / u_res.y, 1.0) * 5.0;
+  float t = u_t * 0.3 * u_speed;
+  vec2 i = floor(q), f = fract(q);
+  float d1 = 8.0, d2 = 8.0, id = 0.0;
+  for(int y = -1; y <= 1; y++){
+    for(int x = -1; x <= 1; x++){
+      vec2 g = vec2(float(x), float(y));
+      vec2 o = vec2(hash(i + g), hash(i + g + 17.3));
+      o = 0.5 + 0.42 * sin(t + 6.2831 * o);
+      float d = length(g + o - f);
+      if(d < d1){ d2 = d1; d1 = d; id = hash(i + g); } else if(d < d2){ d2 = d; }
+    }
+  }
+  float edge = smoothstep(0.0, 0.08, d2 - d1);
+  vec3 col = mix(u_c1, mix(u_c2, u_c3, id), 0.35 + 0.35 * (1.0 - d1));
+  col *= 0.55 + 0.45 * edge;
+  col += u_c3 * (1.0 - edge) * 0.25;
+  gl_FragColor = vec4(col * u_amount, 1.0);
+}`,
 };
 
 export const SHADER_NAMES = Object.keys(SHADERS);

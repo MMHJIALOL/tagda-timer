@@ -6,9 +6,10 @@ import { t, lang, setLang } from './i18n.js';
    =========================================================== */
 
 import { $, el, fmt, fmtResult, fmtDate, download, parseScrambleList } from './util.js';
-import { PRESETS, TIMER_FONTS, exportTheme, importTheme } from './theme.js';
+import { PRESETS, TIMER_FONTS, SCRAMBLE_FONTS, UI_FONTS, DEFAULTS, exportTheme, importTheme,
+         parseGradient, buildGradient, albumTint, liquidGlassOK } from './theme.js';
 import { SHADER_NAMES } from './bg.js';
-import { summarize, byCase, eff, DNF, isMoveResult, bestAvg, statWindow, bldSummary, relaySummary,
+import { summarize, byCase, eff, DNF, isMoveResult, bestAvg, bpaWpa, statWindow, bldSummary, relaySummary,
          groupStats, byHourOfDay, bySittingPosition, MIN_GROUP, SITTING_GAP_MS,
          consistencySeries, CONS_SPREAD, sessionReport } from './stats.js';
 import { renderTrend, renderHistogram, renderHeatmap, renderCaseBars, renderGroupBars, renderConsistency } from './charts.js';
@@ -193,22 +194,7 @@ export function buildAppearance(app) {
           row('Brightness', slider(S.bgAmount, 0, 2, .05, v => set('bgAmount', v), v => v.toFixed(2))),
         );
       } else if (m === 'gradient') {
-        const inp = el('input', { class: 'inp', type: 'text', value: S.bgGradient, style: { flex: '1' } });
-        inp.addEventListener('change', () => set('bgGradient', inp.value));
-        bgExtra.append(el('div', { class: 'row stack' },
-          el('div', { class: 'lbl' }, el('span', { text: t('CSS gradient') })), inp));
-        bgExtra.append(el('div', { class: 'chips' },
-          ...[
-            'linear-gradient(135deg, #2b1055, #7597de)',
-            t('linear-gradient(160deg, #0f0c29, #302b63, #24243e)'),
-            t('linear-gradient(135deg, #ff0844, #ffb199)'),
-            t('linear-gradient(135deg, #00c6ff, #0072ff)'),
-            t('radial-gradient(circle at 30% 20%, #4a00e0, #08001f)'),
-          ].map(g => {
-            const c = el('button', { class: 'chip', style: { background: g, color: '#fff', minWidth: '44px' }, text: ' ' });
-            c.addEventListener('click', () => { set('bgGradient', g); inp.value = g; });
-            return c;
-          })));
+        bgExtra.append(gradientEditor());
       } else if (m === 'solid') {
         const inp = el('input', { class: 'inp', type: 'color', value: S.bgSolid });
         inp.addEventListener('input', () => set('bgSolid', inp.value));
@@ -241,13 +227,83 @@ export function buildAppearance(app) {
         );
       }
     };
+    /* The gradient as pickers. It still writes one CSS string to bgGradient,
+       so presets, sync and old settings are untouched; a string the pickers
+       cannot read (typed by hand) shows as "custom" and is only replaced once
+       a picker is touched. */
+    const GRADIENT_PRESETS = [
+      'linear-gradient(135deg, #2b1055, #7597de)',
+      'linear-gradient(160deg, #0f0c29, #302b63, #24243e)',
+      'linear-gradient(135deg, #ff0844, #ffb199)',
+      'linear-gradient(135deg, #00c6ff, #0072ff)',
+      'radial-gradient(circle at 30% 20%, #4a00e0, #08001f)',
+      'linear-gradient(135deg, #f093fb, #f5576c)',
+      'linear-gradient(135deg, #11998e, #38ef7d)',
+      'linear-gradient(160deg, #0f2027, #203a43, #2c5364)',
+      'linear-gradient(135deg, #fa709a, #fee140)',
+      'linear-gradient(135deg, #30cfd0, #330867)',
+      'linear-gradient(180deg, #232526, #414345)',
+      'radial-gradient(circle at 70% 30%, #ff6a00, #1a0b2e)',
+      'radial-gradient(circle at 50% 100%, #00c9ff, #0a0f2c)',
+    ];
+    function gradientEditor() {
+      const wrap = el('div', { class: 'grad-edit' });
+      const render = () => {
+        const parsed = parseGradient(app.settings.bgGradient);
+        const g = parsed || parseGradient(DEFAULTS.bgGradient);
+        const text = el('input', { class: 'inp', type: 'text', value: app.settings.bgGradient, style: { flex: '1' } });
+        const tag = el('span', { class: 'grad-custom', text: t('custom'), hidden: !parsed });
+        const write = () => { const css = buildGradient(g); set('bgGradient', css); text.value = css; tag.hidden = true; };
+        text.addEventListener('change', () => { set('bgGradient', text.value); render(); });
+
+        const stops = el('div', { class: 'grad-stops' },
+          ...g.stops.map((c, i) => {
+            const inp = el('input', { class: 'inp', type: 'color', value: c, 'aria-label': t('Colour {n}', { n: i + 1 }) });
+            inp.addEventListener('input', () => { g.stops[i] = inp.value; write(); });
+            return inp;
+          }),
+          g.stops.length < 3
+            ? el('button', { class: 'ghost-btn sm', text: '+', title: t('Add a colour'),
+                onclick: () => { g.stops.push(g.stops.at(-1)); write(); render(); } })
+            : el('button', { class: 'ghost-btn sm', text: '×', title: t('Remove the last colour'),
+                onclick: () => { g.stops.pop(); write(); render(); } }),
+          tag);
+
+        // While an album is tinting, the gradient on screen is the album's.
+        const spotify = albumTint() && app.settings.spotifyGradient !== false && app.settings.spotifyTint === 'accent';
+        wrap.replaceChildren(...[
+          spotify ? el('div', { class: 'hint-note', text: t('Spotify colours are driving the background') }) : null,
+          row(t('Colours'), stops),
+          row(t('Shape'), chips([{ value: 'linear', label: t('Linear') }, { value: 'radial', label: t('Radial') }],
+            g.type, v => { g.type = v; write(); render(); })),
+          g.type === 'linear' ? row(t('Angle'), slider(g.angle, 0, 360, 5, v => { g.angle = v; write(); }, v => v + '°')) : null,
+          el('div', { class: 'chips grad-presets' }, ...GRADIENT_PRESETS.map(p => {
+            const c = el('button', { class: 'chip', style: { background: p, minWidth: '44px' }, text: ' ', 'aria-label': p });
+            c.addEventListener('click', () => { set('bgGradient', p); render(); });
+            return c;
+          })),
+          el('details', { class: 'grad-adv' }, el('summary', { text: t('Advanced') }),
+            el('div', { class: 'row stack' }, el('div', { class: 'lbl' }, el('span', { text: t('CSS gradient') })), text)),
+        ].filter(Boolean));
+      };
+      render();
+      return wrap;
+    }
     renderBgExtra();
+
+    const glassLiquid = liquidGlassOK();
 
     body.append(
       group(t('Theme'), grid,
         el('div', { class: 'color-grid' },
           colorItem('accent', 'accent', '#7c5cff'),
           colorItem('secondary', 'accent2', '#35e6c5')),
+        row(t('Glass'), chips([
+          { value: 'off', label: t('Off') },
+          { value: 'frosted', label: t('Frosted') },
+          { value: 'liquid', label: glassLiquid ? t('Liquid') : t('Liquid (Chrome only, frosted here)') },
+        ], S.glass || 'off', v => set('glass', v)),
+          t('see-through panels that bend the background. Reduce effects turns it off.')),
       ),
 
       group(t('Background'),
@@ -266,8 +322,15 @@ export function buildAppearance(app) {
         row('Saturation', slider(S.bgSat, 0, 2, .05, v => set('bgSat', v), v => v.toFixed(2))),
       ),
 
+      group(t('Fonts'),
+        row(t('Timer digits'), select(Object.keys(TIMER_FONTS).map(n => ({ value: n, label: n })), S.timerFont, v => set('timerFont', v))),
+        row(t('Scramble'), select(Object.keys(SCRAMBLE_FONTS).map(n => ({ value: n, label: n })), S.scrambleFont, v => set('scrambleFont', v)),
+          t('fixed-width faces only, so the moves line up')),
+        row(t('Interface'), select(Object.keys(UI_FONTS).map(n => ({ value: n, label: n })), S.uiFont, v => set('uiFont', v)),
+          t('the top bar, the panels and the stats')),
+      ),
+
       group(t('Timer'),
-        row(t('Font'), select(Object.keys(TIMER_FONTS).map(n => ({ value: n, label: n })), S.timerFont, v => set('timerFont', v))),
         row('Weight', slider(S.timerWeight, 300, 800, 100, v => set('timerWeight', v))),
         row('Size', slider(S.timerSize, 50, 160, 5, v => set('timerSize', v), v => v + '%')),
         row('Glow', slider(S.timerGlow, 0, 60, 1, v => set('timerGlow', v), v => v + 'px')),
@@ -648,6 +711,23 @@ export function buildSettings(app) {
     const S = app.settings;
     const set = (k, v) => app.setSetting(k, v);
 
+    /* "Confirm misfires" and how short a misfire is. The slider is greyed out
+       while the toggle is off, and the toggle's own line reads its value. */
+    const misfireRows = () => {
+      const secs = () => ((S.misfireMs ?? 500) / 1000).toFixed(1);
+      const sub = () => t('ask before recording a sub-{n}s solve', { n: secs() });
+      const sw = row(t('Confirm misfires'), toggle(S.confirmShortSolves, v => { set('confirmShortSolves', v); sync(); }), sub());
+      const sl = row(t('Misfire threshold'), slider((S.misfireMs ?? 500) / 1000, 0.3, 5, 0.1,
+        v => { set('misfireMs', Math.round(v * 1000)); sw.querySelector('.sub').textContent = sub(); },
+        v => v.toFixed(1) + ' s'));
+      const sync = () => {
+        sl.classList.toggle('off', !S.confirmShortSolves);
+        sl.querySelector('input').disabled = !S.confirmShortSolves;
+      };
+      sync();
+      return el('div', {}, sw, sl);
+    };
+
     body.append(
       group(t('Inspection'),
         row(t('WCA inspection'), toggle(S.inspection, v => set('inspection', v)), t('15s, +2 after 15, DNF after 17')),
@@ -694,12 +774,22 @@ export function buildSettings(app) {
           { value: 500, label: t('500 ms') },
         ], S.holdTime, v => set('holdTime', +v)), t('instant starts on the press; the others arm first and start on release')),
         row('Decimals', chips([{ value: 2, label: t('0.00') }, { value: 3, label: '0.000' }], S.precision, v => set('precision', +v))),
-        row(t('Hide time while solving'), toggle(S.hideWhileRunning, v => set('hideWhileRunning', v)), t('stops you watching the clock')),
+        row(t('While running'), chips([
+          { value: 'full', label: t('Full') },
+          { value: 'seconds', label: t('Seconds') },
+          { value: 'hidden', label: t('Hidden') },
+        ], S.runningDigits || 'full', v => set('runningDigits', v)),
+          t('what the clock shows mid-solve — the final time is always shown in full')),
+        row(t('Show start hint'), toggle(S.showHint !== false, v => set('showHint', v)), t('the “tap space, release to start” line')),
         row(t('Focus mode'), toggle(S.focusMode, v => set('focusMode', v)), t('everything but the digits fades out')),
+        row(t('Scrambles only'), toggle(S.scramblesOnly, v => set('scramblesOnly', v)),
+          t('no timer: space, a tap or a swipe deals the next scramble, ← goes back')),
+        row(t('Show BPA / WPA'), toggle(S.showBpa !== false, v => set('showBpa', v)),
+          t('best and worst possible ao5 once four solves are in')),
         row(t('Pace ghost'), toggle(S.paceGhost, v => set('paceGhost', v)), t('live bar racing your best')),
         row(t('Pace reference'), chips([{ value: 'pb', label: t('PB single') }, { value: 'ao5', label: t('Current ao5') }], S.paceRef, v => set('paceRef', v))),
         row(t('Start with the mouse'), toggle(S.mouseTimer, v => set('mouseTimer', v)), t('click the screen to start and stop — touch always works')),
-        row(t('Confirm misfires'), toggle(S.confirmShortSolves, v => set('confirmShortSolves', v)), t('ask before recording a sub-0.5s solve')),
+        misfireRows(),
         row(t('Sound on PB'), toggle(S.soundOnPB, v => set('soundOnPB', v))),
         row(t('Metronome'), toggle(S.metronome, v => set('metronome', v)),
           t('a click on the beat while the timer runs — one move per beat to practise a smooth cross and F2L')),
@@ -1092,6 +1182,10 @@ export function buildStats(app) {
           cell(t('std dev'), f(st.stdev)),
           cell('mo3', f(st.mo3)),
           cell('ao5', f(st.ao5), st.bestAo5 ? t('best ') + f(st.bestAo5) : ''),
+          ...(() => {
+            const bw = app.settings.showBpa !== false && bpaWpa(solves);
+            return bw ? [cell('bpa / wpa', `${f(bw.bpa)} / ${f(bw.wpa)}`, t('next ao5 if the 5th is perfect / a DNF'))] : [];
+          })(),
           cell('ao12', f(st.ao12), st.bestAo12 ? t('best ') + f(st.bestAo12) : ''),
           cell('ao50', f(st.ao50)),
           cell('ao100', f(st.ao100)),
@@ -2367,14 +2461,77 @@ export function buildRelay(app) {
 }
 
 export function buildSessions(app) {
+  /* Order is the session's own `order` field, which Sessions.all() sorts by and
+     sync carries, so the top-bar list and a second device follow on their own.
+     Every session is renumbered 0..n-1 and only the ones that moved are saved. */
+  const move = async (from, to) => {
+    if (to < 0 || to >= app.sessions.length || to === from) return;
+    const [s] = app.sessions.splice(from, 1);
+    app.sessions.splice(to, 0, s);
+    await Promise.all(app.sessions.map((x, i) => {
+      if (x.order === i) return null;
+      x.order = i;
+      return app.saveSession(x);
+    }));
+    openDrawer('Sessions', buildSessions(app));
+  };
+
+  /* Pointer events rather than HTML5 drag and drop, which does nothing on a
+     touch screen. The row follows the finger; where it is let go decides the
+     slot, by the midpoints of the other rows. */
+  const dragFrom = (grip, r, list, from) => {
+    grip.addEventListener('click', (e) => e.stopPropagation());
+    grip.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      grip.setPointerCapture(e.pointerId);
+      const y0 = e.clientY;
+      const rows = [...list.children];
+      const mids = rows.map(x => { const b = x.getBoundingClientRect(); return b.top + b.height / 2; });
+      let to = from;
+      r.classList.add('dragging');
+      const moveTo = (ev) => {
+        const dy = ev.clientY - y0;
+        r.style.transform = `translateY(${dy}px)`;
+        const y = mids[from] + dy;
+        to = mids.filter((m, i) => i !== from && m < y).length;
+        // The line goes above the row the dragged one would land in front of.
+        rows.forEach((x, i) => x.classList.toggle('drop-above', i !== from && i === (to >= from ? to + 1 : to)));
+        rows.at(-1).classList.toggle('drop-below', to === rows.length - 1 && from !== rows.length - 1);
+      };
+      const end = (ev) => {
+        grip.removeEventListener('pointermove', moveTo);
+        grip.removeEventListener('pointerup', end);
+        grip.removeEventListener('pointercancel', end);
+        r.style.transform = '';
+        rows.forEach(x => x.classList.remove('dragging', 'drop-above', 'drop-below'));
+        if (ev.type === 'pointerup') move(from, to);
+      };
+      grip.addEventListener('pointermove', moveTo);
+      grip.addEventListener('pointerup', end);
+      grip.addEventListener('pointercancel', end);
+    });
+  };
+
   return (body) => {
-    const list = el('div', { class: 'solve-table' });
-    for (const s of app.sessions) {
+    const list = el('div', { class: 'solve-table sess-list' });
+    app.sessions.forEach((s, i) => {
       const count = app.sessionCounts.get(s.id) || 0;
-      const r = el('div', { class: `st-row ${s.id === app.settings.sessionId ? 'pb' : ''}`, style: { gridTemplateColumns: t('1fr auto auto') } },
+      const grip = el('button', { class: 'sess-grip', type: 'button', title: t('Drag to reorder'), 'aria-label': t('Drag to reorder'),
+        html: '<svg viewBox="0 0 24 24"><circle cx="9" cy="7" r="1.5"/><circle cx="15" cy="7" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="17" r="1.5"/><circle cx="15" cy="17" r="1.5"/></svg>' });
+      const step = (d, label, path) => el('button', {
+        class: 'ghost-btn sm sess-step', type: 'button', title: label, 'aria-label': label,
+        disabled: i + d < 0 || i + d >= app.sessions.length,
+        html: `<svg viewBox="0 0 24 24"><path d="${path}"/></svg>`,
+        onclick: (e) => { e.stopPropagation(); move(i, i + d); },
+      });
+      const r = el('div', { class: `st-row ${s.id === app.settings.sessionId ? 'pb' : ''}`, style: { gridTemplateColumns: 'auto 1fr auto auto' } },
+        grip,
         el('span', { class: 'st-t', style: { fontFamily: 'var(--font-ui)', fontWeight: '600' }, text: s.name }),
         el('span', { class: 'st-d', text: t('{event} · {n} solves', { event: EVENTS[s.event]?.short || s.event, n: count }) }),
         el('span', { style: { display: 'flex', gap: '4px' } },
+          step(-1, t('Move up'), 'M6 15l6-6 6 6'),
+          step(1, t('Move down'), 'M6 9l6 6 6-6'),
           el('button', {
             class: 'ghost-btn sm', text: 'rename',
             onclick: (e) => {
@@ -2396,8 +2553,9 @@ export function buildSessions(app) {
         ),
       );
       r.addEventListener('click', () => { app.switchSession(s.id); closeDrawer(); });
+      dragFrom(grip, r, list, i);
       list.append(r);
-    }
+    });
     body.append(
       el('button', { class: 'btn primary full', text: t('+ New session'), onclick: () => { app.newSession(); closeDrawer(); } }),
       list,
