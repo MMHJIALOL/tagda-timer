@@ -96,6 +96,16 @@ function sq1(warmOnly = false) {
   });
 }
 
+/** A square-1 worker that stopped answering: replace it and re-ask for whatever it was sitting on. */
+function restartSq1() {
+  if (!sq1Worker) return;
+  sq1Worker.terminate();
+  sq1Worker = null;
+  const waiting = [...sq1Waiting.values()];
+  sq1Waiting.clear();
+  for (const w of waiting) sq1().then(w.resolve);
+}
+
 /* ---------------------------------------------------------
    Fallback generator — only used when the CDN cannot be reached.
    Not random-state, so it is NOT competition legal; the UI says so.
@@ -463,6 +473,21 @@ export class ScrambleQueue {
       this.stash.set(key, [...(this.stash.get(key) || []), s]);
       if (!this.items.length) return;           // the active queue comes first
     }
+  }
+
+  /**
+   * Give up on a fill that never came back. A generation that hangs (a worker
+   * the browser killed or that stopped answering) held `filling` forever, so
+   * every later next() queued behind it and the scramble said "generating…"
+   * until a reload. The hung promise is simply abandoned: if it ever does
+   * resolve, its scramble lands in the queue like any other.
+   * ponytail: cubing.js keeps its worker private, so only our own square-1
+   * worker is replaced; a dead cubing.js worker still needs the reload.
+   */
+  restart() {
+    restartSq1();
+    this.filling = false;
+    this.fill();
   }
 
   /** Wake anyone waiting on next() as soon as there is something to hand out. */

@@ -2036,6 +2036,27 @@ body.celebrating .toast {
   background: var(--surface-2);
 }
 
+/* Reduce effects (body.lite — on by itself when softwareGL() in bg.js says the
+   graphics are drawn by the CPU). There every backdrop blur is redone on the
+   processor, so the glass goes, and the cards get a near-solid fill to stay
+   readable without it. A flat panel style stays flat. */
+body.lite *, body.lite *::before, body.lite *::after {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+:root:not([data-panels="flat"]) body.lite .panel {
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+}
+/* The drawer is the one big sheet over busy content; at 88% the stats panel
+   behind it read through its rows once the blur was gone. */
+body.lite #drawer { background: var(--surface); }
+/* Measured in Chrome with --disable-gpu: these two are redone over the whole
+   screen on every inspection frame — the background's filter (focus mode's
+   blur, and even a bare saturate) and the ring's glow. 50 ms frames with them,
+   17 ms without. The blur and saturation settings sit out while this is on. */
+body.lite #bg-shader, body.lite #bg-media { filter: none; transition: none; }
+body.lite #inspect-ring-rect { filter: none; }
+
 /* ---- reconstruct, one click from the times list ----
    It used to ride *over* the ao5 on hover, hiding it Ã¢â‚¬â€ which quietly made the
    ao5 unclickable with a mouse, since the pointer that reveals the button is
@@ -3013,8 +3034,11 @@ body.focus #dock-bottom, body.focus #tile-float-layer { opacity: 0; pointer-even
    is already an offset from where it landed Ã¢â‚¬â€ and where `50%` would resolve
    against the containing block and throw it off the page. */
 #timer-core { top: var(--bld-shift, 0px); }
+/* --timer-top is 50% unless the scramble reaches further down than that leaves
+   room for — see placeTimer() in main.js. The countdown is inside #timer-core,
+   whose transform makes it the containing block, so it moves along with it. */
 @media (min-width: 861px) {
-  #timer-core { top: calc(50% + var(--bld-shift, 0px)); }
+  #timer-core { top: calc(var(--timer-top, 50%) + var(--bld-shift, 0px)); }
 }
 
 /* ---------------- memo / execution phase ---------------- */

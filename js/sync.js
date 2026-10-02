@@ -48,7 +48,10 @@ export const decKey = (k) => decodeURIComponent(k);
 /* Settings that say where this browser is right now rather than how it is set
    up. Pushed like the rest, never adopted from another device — switching
    event on the laptop must not switch it on the phone mid-solve. */
-export const LOCAL_ONLY_SETTINGS = ['sessionId', 'event', 'mode', 'raceReturnSession', 'raceLastRoom'];
+export const LOCAL_ONLY_SETTINGS = ['sessionId', 'event', 'mode', 'raceReturnSession', 'raceLastRoom',
+  // Which session to go back to is where this browser is; whether its graphics
+  // are software-rendered is about this machine, not the account.
+  'returnSessionId', 'reduceEffects'];
 
 /**
  * Serializes every read-modify-write against the offline queue. KV.get/set

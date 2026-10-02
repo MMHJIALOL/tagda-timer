@@ -130,6 +130,7 @@ export const DEFAULTS = {
   theme: 'nebula',
   density: 'comfortable',
   motion: 'full',               // full | reduced | off
+  reduceEffects: null,          // still background, no glass blur; null = on when WebGL is software-rendered
   accent: '',                   // '' = use preset
   accent2: '',
   bg2: '',                      // '' = use preset; set by an album theme
@@ -202,6 +203,7 @@ export const DEFAULTS = {
   event: '333',
   mode: 'wca',
   sessionId: null,
+  returnSessionId: null,        // the session to go back to when you leave a trainer's own
   multiCount: 3,
   allowedCases: {},             // { modeId: [caseId, ...] }
 
