@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- tagdatimer.me checks that a move came from here before it takes one
+     without asking, so the referrer has to carry at least the origin. -->
+<meta name="referrer" content="origin">
+<meta name="robots" content="noindex">
+<title>Tagda Timer has moved</title>
+<!-- No favicon request: every request here counts against the Vercel quota. -->
+<link rel="icon" href="data:,">
+<style>
+  :root { color-scheme: light dark; --bg: #f6f6f4; --fg: #1b1b1b; --dim: #6b6b6b; --accent: #2f6fe4; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #111; --fg: #ececec; --dim: #9a9a9a; --accent: #6c9cff; } }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: var(--bg); color: var(--fg);
+         font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 26rem; padding: 0 16px; text-align: center; }
+  h1 { font-size: 1.4rem; margin: 0 0 .5rem; }
+  p { margin: .5rem 0; color: var(--dim); }
+  a, button { display: inline-block; margin-top: 1rem; padding: .6rem 1.1rem; border: 0; border-radius: 8px;
+              background: var(--accent); color: #fff; font: inherit; text-decoration: none; cursor: pointer; }
+  /* With the move button up, going without the solves is the lesser choice. */
+  button:not([hidden]) + a { background: none; color: var(--accent); }
+  [hidden] { display: none; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Tagda Timer has moved to tagdatimer.me</h1>
+  <p id="msg">Taking you there…</p>
+  <button id="move" hidden>Move my solves</button>
+  <a id="go" href="https://tagdatimer.me/">Open tagdatimer.me</a>
+</main>
+<script>
+/* ===========================================================
+   tagdatimer.vercel.app, after the move to tagdatimer.me
+
+   This page is the whole deployment: every path is rewritten to it. Solves
+   live in IndexedDB, which the browser keeps per origin, so this is the last
+   place that can read what someone timed here. It reads it all and carries it
+   to tagdatimer.me in the URL fragment (#tagda-move=…), which browsers never
+   send to a server; js/moved.js on the other side merges it in.
+
+   A history too long for a URL falls back to a button and the postMessage
+   handshake js/moved.js already speaks (window.open needs a click).
+
+   After one move, this browser only gets a plain redirect, so a later visit
+   cannot bring back solves deleted on tagdatimer.me. ?move-again sends again.
+   =========================================================== */
+const TARGET = 'https://tagdatimer.me';
+const DONE_KEY = 'tdt-moved';     // the same flag the old in-app banner set
+/* Firefox caps a URL at 1 MiB and Chrome at 2 MiB; stay under the smaller. */
+const MAX_URL = 1000000;
+const WAIT_MS = 15000;
+
+const $ = (id) => document.getElementById(id);
+const done = () => { try { return !!localStorage.getItem(DONE_KEY); } catch { return false; } };
+const markDone = () => { try { localStorage.setItem(DONE_KEY, '1'); } catch { /* private window */ } };
+/* Same path on the new site, so /algs and friends land where they were going. */
+function there() {
+  const u = new URL(location.pathname + location.search, TARGET);
+  u.searchParams.delete('move-again');
+  return u.href;
+}
+
+const req = (r) => new Promise((res, rej) => { r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
+
+/** The app's database, or null if this browser never had one (and none gets created). */
+function openExisting() {
+  return new Promise((resolve) => {
+    let r;
+    try { r = indexedDB.open('tagdatimer'); } catch { return resolve(null); }
+    r.onupgradeneeded = () => r.transaction.abort();
+    r.onsuccess = () => resolve(r.result);
+    r.onerror = () => resolve(null);
+    r.onblocked = () => resolve(null);
+  });
+}
+
+/** The same shape as exportAll() in js/db.js, read without loading the app. */
+async function readAll() {
+  const db = await openExisting();
+  if (!db) return null;
+  const has = (n) => db.objectStoreNames.contains(n);
+  const all = (n) => has(n) ? req(db.transaction(n).objectStore(n).getAll()) : [];
+  const kv = async (k, fb) => { const v = has('kv') ? await req(db.transaction('kv').objectStore('kv').get(k)) : undefined; return v === undefined ? fb : v; };
+  const data = {
+    app: 'tagdatimer', version: 1, exportedAt: Date.now(),
+    sessions: await all('sessions'),
+    solves: (await all('solves')).sort((a, b) => a.createdAt - b.createdAt),
+    settings: await kv('settings', {}),
+    letterPairs: await all('letterPairs'),
+    gear: await all('gear'),
+    gearLog: await all('gearLog'),
+    gearActive: await kv('gear.active', null),
+    learn: await kv('learn', {}),
+  };
+  db.close();
+  const empty = !data.solves.length && !data.sessions.length && !data.letterPairs.length
+    && !data.gear.length && !Object.keys(data.learn || {}).length;
+  return empty ? null : data;
+}
+
+function b64url(bytes) {
+  let s = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+/** 'g.' + gzip, or 'j.' + plain UTF-8 where CompressionStream is missing. */
+async function encode(data) {
+  const raw = new TextEncoder().encode(JSON.stringify(data));
+  if (typeof CompressionStream !== 'function') return 'j.' + b64url(raw);
+  const gz = new Uint8Array(await new Response(new Blob([raw]).stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer());
+  return 'g.' + b64url(gz);
+}
+
+/* ---------- too big for a URL: the click-to-move handshake ---------- */
+function offerButton(data) {
+  $('msg').textContent = 'Your solve history is too big to carry over automatically. One click moves it.';
+  const btn = $('move');
+  btn.hidden = false;
+  btn.onclick = () => {
+    const w = window.open(TARGET + '/?import-from=vercel', '_blank');
+    if (!w) { $('msg').textContent = 'Your browser blocked the new tab. Allow pop-ups for this page and try again.'; return; }
+    btn.hidden = true;
+    $('msg').textContent = 'Moving your solves…';
+    let timer;
+    const stop = () => { clearTimeout(timer); removeEventListener('message', onMessage); };
+    const fail = () => { stop(); btn.hidden = false; btn.textContent = 'Try again'; $('msg').textContent = 'Could not move your solves.'; };
+    const arm = () => { clearTimeout(timer); timer = setTimeout(fail, WAIT_MS); };
+    function onMessage(e) {
+      if (e.source !== w || e.origin !== TARGET) return;
+      if (e.data?.type === 'tagda-ready') {
+        arm();
+        try { w.postMessage({ type: 'tagda-import', data }, TARGET); } catch { fail(); }
+      } else if (e.data?.type === 'tagda-imported') {
+        stop();
+        markDone();
+        $('msg').textContent = `Moved ${e.data.count} solves. You can close this tab.`;
+      }
+    }
+    addEventListener('message', onMessage);
+    arm();
+  };
+}
+
+/* The old app's offline worker would otherwise keep checking in here for
+   updates. sw.js retires it too, but only when the browser gets round to an
+   update check, which it may not before this page has already gone. */
+async function retireOldApp() {
+  try { for (const r of await navigator.serviceWorker.getRegistrations()) await r.unregister(); } catch { /* none */ }
+  try { for (const k of await caches.keys()) await caches.delete(k); } catch { /* none */ }
+}
+
+async function main() {
+  await retireOldApp();
+  const again = new URLSearchParams(location.search).has('move-again');
+  let data = null;
+  if (again || !done()) {
+    try { data = await readAll(); } catch (err) { console.warn('[move] could not read the old data', err); }
+  }
+  if (!data) return location.replace(there());
+
+  const url = TARGET + '/#tagda-move=' + await encode(data);
+  if (url.length > MAX_URL) return offerButton(data);
+  markDone();
+  location.replace(url);
+}
+main();
+</script>
+</body>
+</html>

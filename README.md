@@ -671,6 +671,16 @@ half the old app and half the new one. `.vercelignore` keeps `sync-test.html`
 out of the deployment — it is a developer page, and it writes to whatever
 database the browser opening it is signed in to.
 
+### The old tagdatimer.vercel.app
+
+The app now lives on Cloudflare at tagdatimer.me. The Vercel project serves only
+`vercel-mover/` (set **Root Directory** to `vercel-mover` in the project's
+settings): one page that reads the old origin's IndexedDB, carries it to
+tagdatimer.me in the URL fragment (`js/moved.js` merges it in), and retires the
+old service worker so the browser stops calling Vercel. A history too long for a
+URL gets a one-click button instead. `.assetsignore` keeps the folder off
+Cloudflare.
+
 For GitHub Pages, push the folder to a `gh-pages` branch and enable Pages on it.
 The `.nojekyll` file stops Jekyll from touching anything.
 

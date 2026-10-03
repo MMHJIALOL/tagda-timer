@@ -8,3 +8,5 @@ wrangler.jsonc
 worker.js
 # Same reason as .vercelignore: it writes to whoever's synced data is signed in.
 sync-test.html
+# The tagdatimer.vercel.app redirect page, deployed to Vercel on its own.
+vercel-mover

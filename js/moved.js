@@ -122,12 +122,53 @@ function receive() {
   opener.postMessage({ type: 'tagda-ready' }, from);
 }
 
+/* ---------- new site: a move carried in the URL ----------
+   Once tagdatimer.vercel.app is only vercel-mover/index.html, that page reads
+   the old IndexedDB and sends it here as #tagda-move=<g.|j.><base64url>, with
+   no click. The fragment never reaches a server. It is taken out of the
+   address bar before anything else, so a reload or a shared link cannot run
+   it twice. A link from anywhere but the old site is asked about rather than
+   merged on sight. */
+
+const HASH_KEY = 'tagda-move';
+const OLD_HOST = 'tagdatimer.vercel.app';
+
+async function decodeMove(raw) {
+  const b64 = raw.slice(2).replace(/-/g, '+').replace(/_/g, '/');
+  const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+  if (raw.startsWith('j.')) return JSON.parse(new TextDecoder().decode(bytes));
+  if (!raw.startsWith('g.')) throw new Error('unknown encoding');
+  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
+  return JSON.parse(await new Response(stream).text());
+}
+
+async function receiveHash(raw) {
+  history.replaceState(history.state, '', location.pathname + location.search);
+  let from = '';
+  try { from = new URL(document.referrer).hostname; } catch { /* no referrer */ }
+
+  const run = async () => {
+    try {
+      const count = await importMoved(await decodeMove(raw));
+      try { sessionStorage.setItem(COUNT_KEY, String(count)); } catch { /* no toast, solves still there */ }
+      location.reload();
+    } catch (err) {
+      console.warn('[moved] import failed', err);
+      toast(t('Could not move your solves.'), { kind: 'bad', hold: true });
+    }
+  };
+  if (from === OLD_HOST) return run();
+  toast(t('Bring in solves from tagdatimer.vercel.app?'), { action: t('Import'), onAction: run, hold: true });
+}
+
 function movedToast() {
   let n = null;
   try { n = sessionStorage.getItem(COUNT_KEY); sessionStorage.removeItem(COUNT_KEY); } catch { /* none */ }
   if (n !== null) toast(t('✓ {n} solves moved', { n }), { kind: 'good', hold: true });
 }
 
-if (new URLSearchParams(location.search).has('import-from')) receive();
+const moveHash = new URLSearchParams(location.hash.slice(1)).get(HASH_KEY);
+if (moveHash) receiveHash(moveHash);
+else if (new URLSearchParams(location.search).has('import-from')) receive();
 else if (location.hostname.endsWith('.vercel.app')) banner();
 movedToast();
