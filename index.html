@@ -20,20 +20,21 @@
 <!-- The scrambler is the one thing the user actually waits on, so start
      fetching its module graph alongside the stylesheets, not after them. -->
 <link rel="modulepreload" href="vendor/cubing/cubing/scramble.js">
-<!-- BUMP ?v= ON EVERY CHANGE TO ANYTHING UNDER css/.
-     vercel.json serves /css/ as `max-age=31536000, immutable`, so a browser
-     that has been here before will not so much as ask whether a stylesheet
-     changed for a year. This query string is the only thing that can hand it a
-     new one. Forgetting it ships new markup against a year-old stylesheet:
-     the page renders unstyled in every returning visitor's browser and looks
-     perfect in incognito, which is a miserable thing to debug.
-     /js/ is `must-revalidate` and does not depend on this, but keep the number
-     in step anyway rather than leaving two answers to the same question. -->
-<link rel="modulepreload" href="js/main.js?v=70">
-<link rel="stylesheet" href="css/fonts.css?v=70">
-<link rel="stylesheet" href="css/tokens.css?v=70">
-<link rel="stylesheet" href="css/base.css?v=70">
-<link rel="stylesheet" href="css/components.css?v=70">
+<!-- BUMP ?v= ON EVERY CHANGE TO ANYTHING UNDER css/ OR js/.
+     sw.js serves every app file from its cache and only notices a deploy when
+     this page's HTML changes (or the cache turns 3 days old), so this number
+     is what hands a returning visitor the new files. Forgetting it on a
+     JS-only change is worse than it looks: modules the visitor has not opened
+     yet (panels.js, race.js...) come fresh from the network while main.js
+     stays cached, and the two deploys run against each other — a CubeDesk
+     import hint in Settings over a main.js that has never heard of CubeDesk.
+     vercel.json also serves /css/ as `max-age=31536000, immutable`, so a
+     stylesheet there will not even be asked about for a year without it. -->
+<link rel="modulepreload" href="js/main.js?v=71">
+<link rel="stylesheet" href="css/fonts.css?v=71">
+<link rel="stylesheet" href="css/tokens.css?v=71">
+<link rel="stylesheet" href="css/base.css?v=71">
+<link rel="stylesheet" href="css/components.css?v=71">
 <link rel="icon" href="assets/favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="assets/logo-192.png">
 <link rel="apple-touch-icon" href="assets/logo-180.png">
@@ -752,7 +753,7 @@
   </div>
 </div>
 
-<script type="module" src="js/main.js?v=70"></script>
+<script type="module" src="js/main.js?v=71"></script>
 <script>
 (function () {
   var isFile = location.protocol === 'file:';
