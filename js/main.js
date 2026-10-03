@@ -15,7 +15,7 @@ import { Timer, INSPECT_MS } from './timer.js';
 import { Background, softwareGL } from './bg.js';
 import { CubeView } from './cube.js';
 import { makeDraggable } from './drag.js';
-import { flash, shockwave, confetti, chime, callout, beep } from './fx.js';
+import { flash, shockwave, confetti, chime, callout, beep, setCalloutMode } from './fx.js';
 import { mountMetro, metroExternal } from './metro.js';
 import { keepAwake } from './wakelock.js';
 import { summarize, eff, DNF, isMoveResult, bestSingle, bestAvg, trimmedIndices, byCase, sessionBests, rollingSeries, statWindow, STAT_LABELS, goalProgress, bpaWpa } from './stats.js';
@@ -473,6 +473,7 @@ function bootFailure(err) {
 
 async function init() {
   app.settings = await loadSettings();
+  setCalloutMode(app.settings.callouts);   // wakes the voice now, not at 8 seconds
   translateDOM();
   applyTheme(app.settings);
 
@@ -4609,6 +4610,7 @@ function applyAll(changed) {
     timer.cfg.useInspection = !eventOf(app.settings.event).noInspection;
     timer.cfg.off = !!app.settings.scramblesOnly;
   }
+  if (!changed || changed === 'callouts') setCalloutMode(app.settings.callouts);
   if (changed === 'scramblesOnly') { timer?.reset(); measureLayout(); }
   if (changed === 'showBpa') renderStats();
   if (changed === 'hintFacelets') cube.setHints(app.settings.hintFacelets);

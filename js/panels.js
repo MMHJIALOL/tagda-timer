@@ -16,6 +16,7 @@ import { renderTrend, renderHistogram, renderHeatmap, renderCaseBars, renderGrou
 import { MODES, EVENTS, EVENT_ORDER, eventOf, virtualSize, relayLegEvents, relayLabel, RELAY_MAX } from './events.js';
 import { setFor } from './scramble.js';
 import { toast, confirmToast } from './toast.js';
+import { canSpeak } from './fx.js';
 import { exportAll, Assets, Solves, LetterPairs } from './db.js';
 import { Gear, GearLog, LOG_KINDS, newGear, newLogEntry, gearLabel,
          loadSeeds, filterByCube, markersFor, activeGearId, setActiveGearId } from './gear.js';
@@ -733,8 +734,9 @@ export function buildSettings(app) {
         row(t('WCA inspection'), toggle(S.inspection, v => set('inspection', v)), t('15s, +2 after 15, DNF after 17')),
         row(t('Callouts'), chips([
           { value: 'beep', label: t('Beep') },
+          ...(canSpeak() ? [{ value: 'voice', label: t('Voice') }] : []),
           { value: 'off', label: t('Off') },
-        ], S.callouts, v => set('callouts', v)), t('a tone at 8 and 12 seconds')),
+        ], S.callouts, v => set('callouts', v)), t('a tone, or a voice saying "8 seconds" and "12 seconds"')),
       ),
 
       group(t('Timing input'),

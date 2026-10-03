@@ -294,8 +294,9 @@ export class Fmc {
         if (left <= at * 1000 && !this.attempt.warned.includes(at)) {
           this.attempt.warned.push(at);
           // The same two-tone call inspection uses, answering the same setting.
-          callout(at === 60 ? 12 : 8, this.app.settings?.callouts);
-          toast(at === 60 ? t('One minute left') : t('Five minutes left'), { kind: 'bad', long: true });
+          const words = at === 60 ? t('One minute left') : t('Five minutes left');
+          callout(at === 60 ? 12 : 8, this.app.settings?.callouts, words);
+          toast(words, { kind: 'bad', long: true });
         }
       }
       if (left <= 0) { this._stopTick(); this._timeUp(); }
