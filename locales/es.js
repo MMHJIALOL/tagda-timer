@@ -1707,6 +1707,7 @@ export const es = {
   "Try again": "Reintentar",
   "Moved ✓ — open tagdatimer.me": "Movido ✓ — abrir tagdatimer.me",
   "✓ {n} solves moved": "✓ {n} resoluciones movidas",
+  "Bring in solves from tagdatimer.vercel.app?": "¿Traer las resoluciones de tagdatimer.vercel.app?",
   "Reduce effects": "Reducir efectos",
   "a still background and no glass blur — for slow or software-rendered graphics": "fondo quieto y sin desenfoque de cristal — para gráficos lentos o renderizados por software",
   "Couldn’t make a scramble. Tap to retry.": "No se pudo generar la mezcla. Toca para reintentar.",
