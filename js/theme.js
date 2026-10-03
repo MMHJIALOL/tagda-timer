@@ -148,7 +148,7 @@ export const DEFAULTS = {
   // behaviour
   inspection: true,
   holdTime: 0,                  // 0 = the press starts the solve, no arming hold
-  callouts: 'beep',             // beep | off
+  callouts: 'beep',             // beep | voice | off
   precision: 2,
   runningDigits: 'full',        // full | seconds | hidden — what the clock shows mid-solve
   showHint: true,               // "tap space, release to start" under the digits

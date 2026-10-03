@@ -1,4 +1,4 @@
-import { t } from './i18n.js';
+import { t, lang } from './i18n.js';
 /* ===========================================================
    Tagda Timer — effects: confetti, shockwave, screen flash, audio
    =========================================================== */
@@ -267,16 +267,60 @@ export function chime() {
   } catch { /* audio unavailable */ }
 }
 
+/* ---------------- spoken callouts ---------------- */
+/* The first `speechSynthesis.speak()` of a session can block the main thread
+   for hundreds of milliseconds while the platform spins up a voice — which is
+   why voice callouts were once removed outright. That cost is paid here instead,
+   with a silent utterance as soon as Voice is chosen or the page loads with it
+   on, so by the 8-second call the engine is long since awake. Chrome refuses
+   speech before a user gesture, so a refused warm-up is retried on the next
+   key or tap. */
+const synth = globalThis.speechSynthesis || null;
+let voiceMode = false;
+let voiceWarm = false;
+
+function warmVoice() {
+  if (!synth || voiceWarm || !voiceMode) return;
+  voiceWarm = true;
+  try {
+    const u = new SpeechSynthesisUtterance(' ');
+    u.volume = 0;
+    u.onerror = (e) => { if (e.error === 'not-allowed') voiceWarm = false; };
+    synth.speak(u);
+  } catch { /* speech unavailable */ }
+}
+addEventListener('keydown', warmVoice, true);
+addEventListener('pointerdown', warmVoice, true);
+
+/** Tell the callouts which mode they are in, and wake the voice if it is Voice. */
+export function setCalloutMode(mode) {
+  voiceMode = mode === 'voice';
+  warmVoice();
+}
+
+/** Whether this browser can speak at all — the Voice chip is hidden if not. */
+export const canSpeak = () => !!synth;
+
+function speak(words) {
+  // No installed voice (some Linux builds) means silence: fall back to the tone.
+  if (!synth || !synth.getVoices().length) return false;
+  try {
+    synth.cancel();
+    const u = new SpeechSynthesisUtterance(words);
+    u.lang = lang === 'es' ? 'es-ES' : 'en-US';
+    u.rate = 1.1;
+    synth.speak(u);
+    return true;
+  } catch { return false; }
+}
+
 /**
- * Inspection callout at 8 and 12 seconds.
- *
- * Speech synthesis used to be an option here and is gone for good: the first
- * `speechSynthesis.speak()` of a session can block the main thread for hundreds
- * of milliseconds while the platform spins up a voice, which is a stutter
- * landing squarely in the middle of inspection. A tone costs nothing.
+ * Inspection callout at 8 and 12 seconds: a tone, or a voice calling it the
+ * way a WCA judge would. `words` overrides what is said (FMC's time warnings).
  */
-export function callout(seconds, mode) {
+export function callout(seconds, mode, words) {
   if (mode === 'off') return;
+  if (mode === 'voice' && speak(words || t(seconds === 8 ? '8 seconds' : '12 seconds'))) return;
   if (seconds === 8) beep(660, 110, 'square', 0.13);
   else { beep(880, 90, 'square', 0.14); setTimeout(() => beep(880, 90, 'square', 0.14), 130); }
 }
