@@ -79,6 +79,9 @@ export const MODES = {
      loadSetFor in scramble.js — so none of them costs the timer anything until
      someone picks one. */
   'wv':        { name: t('Winter Variation'), kind: 'case', set: 'WV',        events: ['333','333oh'], desc: t('Insert the last pair and orient the last layer') },
+  'sv':        { name: t('Summer Variation'), kind: 'case', set: 'SV',        events: ['333','333oh'], desc: t('Insert the last pair and orient the corners') },
+  'vhls':      { name: 'VHLS',             kind: 'case', set: 'VHLS',      events: ['333','333oh'], desc: t('Orient the edges while inserting a ready-made pair') },
+  'zbls':      { name: 'ZBLS',             kind: 'case', set: 'ZBLS',      events: ['333','333oh'], desc: t('Insert the last pair and orient the edges — all 302 cases') },
   'coll':      { name: 'COLL',             kind: 'case', set: 'COLL',      events: ['333','333oh'], view: 'LL', desc: t('Last-layer corners with the edges oriented') },
   'ollcp':     { name: 'OLLCP',            kind: 'case', set: 'OLLCP',     events: ['333','333oh'], view: 'LL', desc: t('Orient the last layer and permute its corners') },
   'cmll2look': { name: t('2-look CMLL'),      kind: 'case', set: 'CMLL2L',    events: ['333','333oh'], desc: t('Roux corners: orient, then permute') },
@@ -111,7 +114,7 @@ export const MODES = {
 
 export const MODE_ORDER = [
   'wca', 'f2l', 'pll', 'oll', 'zbll', 'oll2look', 'pll2look', 'ocll',
-  'wv', 'coll', 'ollcp', 'cmll2look', 'cmll', 'ohcmll', 'lseeo', 'lseeolr',
+  'wv', 'sv', 'vhls', 'zbls', 'coll', 'ollcp', 'cmll2look', 'cmll', 'ohcmll', 'lseeo', 'lseeolr',
   '222oll', '222pbl', '222cll', '222eg1', '222eg2',
   '444pllp', '444centres', 'pyrall', 'pyral4e', 'sarahint', 'sarahadv',
   'sq1shape', 'sq1csp', 'sq1obl', 'sq1eo', 'sq1cp', 'sq1ep',

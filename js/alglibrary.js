@@ -121,7 +121,7 @@ const MODULES = {
 
 /* Sets that live entirely in js/algsets/<id>.js. */
 const GENERATED = new Set([
-  'WV', 'COLL', 'OLLCP', 'CMLL2L', 'CMLL', 'LSEEO', 'LSEEOLR', 'OHCMLL', '444-PLLP',
+  'WV', 'SV', 'VHLS', 'ZBLS', 'COLL', 'OLLCP', 'CMLL2L', 'CMLL', 'LSEEO', 'LSEEOLR', 'OHCMLL', '444-PLLP',
   'PYRA-LL', 'PYRA-L4E', 'SKEWB-SI', 'SKEWB-SA',
   'SQ1-SHAPE', 'SQ1-CSP', 'SQ1-OBL', 'SQ1-CP', 'SQ1-EO', 'SQ1-EP',
 ]);
@@ -141,7 +141,8 @@ const MERGED = new Set(['F2L', '2LOLL', 'OLL', '2LPLL', 'PLL', 'ZBLL', '222-PBL'
 export const ALG_EVENTS = [
   { id: '333', label: '3x3', groups: [
     { label: 'CFOP', sets: ['PLL', '2LPLL', 'OLL', '2LOLL', 'F2L'] },
-    { label: 'Advanced', sets: ['WV', 'COLL', 'OLLCP', 'ZBLL'] },
+    { label: t('Last slot'), sets: ['WV', 'SV', 'VHLS', 'ZBLS'] },
+    { label: 'Advanced', sets: ['COLL', 'OLLCP', 'ZBLL'] },
     { label: 'Roux', sets: ['CMLL2L', 'CMLL', 'LSEEO', 'LSEEOLR'] },
   ] },
   { id: '222', label: '2x2', groups: [
@@ -167,7 +168,7 @@ export const SET_IDS = [...new Set(ALG_EVENTS.flatMap(e => e.sets))];
  */
 export const SET_LABELS = {
   F2L: 'F2L', '2LOLL': t('2-Look OLL'), OLL: 'OLL', '2LPLL': t('2-Look PLL'), PLL: 'PLL',
-  WV: 'WV', COLL: 'COLL', OLLCP: 'OLLCP', ZBLL: 'ZBLL',
+  WV: 'WV', SV: 'SV', VHLS: 'VHLS', ZBLS: 'ZBLS', COLL: 'COLL', OLLCP: 'OLLCP', ZBLL: 'ZBLL',
   CMLL2L: t('2-Look CMLL'), CMLL: 'CMLL', LSEEO: 'LSE EO', LSEEOLR: 'EOLR', OHCMLL: 'OH CMLL',
   '222-OLL': 'OLL', '222-PBL': 'PBL', '222-CLL': 'CLL', '222-EG1': 'EG-1', '222-EG2': 'EG-2',
   '444-PLLP': t('PLL Parity'),

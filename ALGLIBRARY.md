@@ -703,7 +703,7 @@ tabs again.
 
 | Event | Sets |
 |---|---|
-| 3x3 | F2L, 2-Look OLL, OLL, 2-Look PLL, PLL · WV, COLL, OLLCP, ZBLL · 2-Look CMLL, CMLL, LSE EO, EOLR |
+| 3x3 | F2L, 2-Look OLL, OLL, 2-Look PLL, PLL · WV, SV, VHLS, ZBLS · COLL, OLLCP, ZBLL · 2-Look CMLL, CMLL, LSE EO, EOLR |
 | 2x2 | OLL, PBL, CLL, EG-1, EG-2 |
 | 4x4 | PLL Parity |
 | OH | OH CMLL |
@@ -736,6 +736,14 @@ not solve its case — errors in the source, not in the checker.
 
 Fixing `2R` in `js/cubenet.js` was part of this: a number on a plain face letter
 is the single inner layer in SiGN, and 4x4 parity algorithms depend on it.
+
+### 11.2b ZBLS, VHLS and Summer Variation
+
+These three come from `tools/import-lastslot.mjs` instead (Tao Yu's
+Alg-Trainer, @moishy/algsets and speedcubedb), with one more rule on top of
+the above: no case lists the same algorithm twice, even spelt with a rotation
+or a wide turn instead. [LASTSLOT.md](LASTSLOT.md) has the sources,
+licences, checks and everything that was merged or dropped.
 
 ### 11.3 Where the 2x2 algorithms come from
 
