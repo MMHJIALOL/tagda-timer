@@ -305,9 +305,36 @@ async function enterSotd() {
   syncTimerDisplay();
 }
 
+/**
+ * A module that downloads fine but fails to link ("does not provide an export
+ * named …") is two deploys mixed together: the worker's cache still holds the
+ * old copy of a shared module, and the lazy one just arrived from the new
+ * deploy. Nothing fixes that but a clean cache, and the worker keeps its cache
+ * until index.html changes, which a deploy that forgot to bump ?v= never
+ * does. So drop it and reload, once per tab session so a genuinely broken
+ * deploy cannot loop. A network failure is a TypeError and is left alone:
+ * dropping the cache then would take the offline copy away with it.
+ */
+function healMixedDeploy(err) {
+  if (!(err instanceof SyntaxError)) return false;
+  const sw = navigator.serviceWorker?.controller;
+  if (!sw) return false;
+  try {
+    if (sessionStorage.getItem('healed-mixed-deploy')) return false;
+    sessionStorage.setItem('healed-mixed-deploy', '1');
+  } catch { return false; }
+  toast(t('Updating to the latest version…'));
+  navigator.serviceWorker.addEventListener('message', (e) => {
+    if (e.data?.type === 'dropped') location.reload();
+  });
+  sw.postMessage({ type: 'drop' });
+  return true;
+}
+
 /** Nothing to open is better than a click that silently does nothing. */
 function lazyFailed(what, err) {
   console.warn(`[lazy] could not load ${what}`, err);
+  if (healMixedDeploy(err)) return;
   toast(t('Could not open {what} — check your connection and try again', { what }), { kind: 'bad' });
 }
 
