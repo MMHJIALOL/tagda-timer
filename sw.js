@@ -182,3 +182,14 @@ self.addEventListener('message', (e) => {
     }
   }));
 });
+
+/**
+ * The page asks for this when a lazy module fails to link against the cached
+ * ones: two deploys are mixed in the cache, and only an empty one fixes it.
+ * The reply tells the page it is safe to reload.
+ */
+self.addEventListener('message', (e) => {
+  if (e.data?.type !== 'drop') return;
+  e.waitUntil(caches.open(CACHE).then(dropApp)
+    .then(() => e.source?.postMessage({ type: 'dropped' })));
+});

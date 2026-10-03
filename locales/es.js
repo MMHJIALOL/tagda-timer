@@ -1583,6 +1583,7 @@ export const es = {
   "Untitled cube": "Cubo sin nombre",
   "up {d} points over the last {n} solves.": "{d} puntos más en las últimas {n} resoluciones.",
   "Up face": "Cara de arriba",
+  "Updating to the latest version…": "Actualizando a la última versión…",
   "Use it in this session": "Usarlo en esta sesión",
   "use these scrambles": "usar estas mezclas",
   "Username — used in Race mode and shown on your account": "Nombre de usuario: se usa en el modo carrera y aparece en tu cuenta",
