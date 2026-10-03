@@ -228,7 +228,8 @@ full-solve averages.
 | F2L | all 41 first-two-layers cases, grouped the way they are taught |
 | PLL · OLL · ZBLL | all 21 · all 57 · all 472 (by family: T, U, L, H, Pi, Sune, Antisune) |
 | 2-look OLL · 2-look PLL · OCLL | the beginner subsets |
-| Winter Variation · COLL · OLLCP | the advanced last-slot and last-layer sets |
+| Winter Variation · Summer Variation · VHLS · ZBLS | last slot: the pair in while orienting the last layer (WV, SV) or its edges (VHLS, all 302 ZBLS) |
+| COLL · OLLCP | the advanced last-layer sets |
 | 2-look CMLL · CMLL · OH CMLL · LSE EO · EOLR | Roux |
 | Last layer | a random OLL and PLL stacked together |
 | Cross solved | cross already done: drill F2L + LL |
@@ -285,8 +286,9 @@ in. PLL is still PLL; learn mode only changes *which* PLL you get next.
 
 A full algorithm library on its own page (`algs.html`, the **Alg trainer** button in the
 top bar), covering **3x3, 2x2, 4x4, OH, Pyraminx, Skewb and Square-1**. The 3x3 sets are
-grouped by method: CFOP (PLL, 2-look PLL, OLL, 2-look OLL, F2L), Advanced (WV, COLL,
-OLLCP, ZBLL) and Roux (2-look CMLL, CMLL, LSE EO, EOLR).
+grouped by method: CFOP (PLL, 2-look PLL, OLL, 2-look OLL, F2L), Last slot (WV, SV,
+VHLS, ZBLS — see [LASTSLOT.md](LASTSLOT.md)), Advanced (COLL, OLLCP, ZBLL) and Roux
+(2-look CMLL, CMLL, LSE EO, EOLR).
 
 - **Every case is a picture first.** The name and group are metadata underneath, so
   you find a case by recognising it, not by remembering its letter.

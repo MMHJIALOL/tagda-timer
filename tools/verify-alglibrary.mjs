@@ -4,6 +4,7 @@
 import assert from 'node:assert/strict';
 import { SETS, loadAllSets, auditLibrary, verifyAlgForCase, displayOrder, alignAlg, algKey } from '../js/alglibrary.js';
 import { auditSetups } from '../js/alglibrary-setup.js';
+import { faceTurns, sameAlgKey } from './same-alg.mjs';
 
 await loadAllSets();
 
@@ -15,6 +16,28 @@ assert.equal(alignAlg('OLL', 'OLL27', "U2 R U R' U R U2 R'"), "R U R' U R U2 R'"
 /* algKey: R' R' is R2, and a closing U is free. */
 assert.equal(algKey('OLL', "R U2 R' R' F R F' U2 R' F R F'"), algKey('OLL', "R U2 R2 F R F' U2 R' F R F' U"));
 
+/* The same algorithm held differently is the same algorithm (tools/same-alg.mjs). */
+assert.equal(faceTurns("y L' U' L"), "F' U' F");
+assert.equal(sameAlgKey("d' F R U R' F'"), sameAlgKey("U' R B U B' R'"));
+assert.equal(sameAlgKey("R U' R' U y' R' U R y"), sameAlgKey("R U' R' U F' U F"));
+assert.notEqual(sameAlgKey("r U R' U' r' F R F'"), sameAlgKey("R U R' U' R' F R F'"));
+
+/* The last-slot sets were imported with that rule (LASTSLOT.md §5): every case
+   there, and only one spelling of each algorithm in it. */
+const LAST_SLOT = { ZBLS: 302, VHLS: 32, SV: 27 };
+for (const [id, n] of Object.entries(LAST_SLOT)) assert.equal(SETS[id].cases.length, n, `${id} has ${n} cases`);
+const respelt = [];
+for (const id of Object.keys(LAST_SLOT)) {
+  for (const c of SETS[id].cases) {
+    const seen = new Map();
+    for (const a of displayOrder(id, c.id)) {
+      const k = sameAlgKey(a.alg);
+      if (seen.has(k)) respelt.push(`${c.name}: ${seen.get(k)} / ${a.alg}`);
+      seen.set(k, a.alg);
+    }
+  }
+}
+
 let total = 0, cases = 0;
 for (const set of Object.values(SETS)) {
   cases += set.cases.length;
@@ -25,6 +48,11 @@ const bad = auditLibrary();
 console.log(`${Object.keys(SETS).length} sets · ${cases} cases · ${total} listed algorithms`);
 console.log(bad.length ? `FAIL ${bad.length} listed algorithms are wrong or repeated` : 'PASS every listed algorithm solves its case as drawn, none listed twice');
 for (const b of bad.slice(0, 40)) console.log('  ', b.set, b.caseId, b.alg, '—', b.why);
+
+console.log(respelt.length
+  ? `FAIL ${respelt.length} last-slot algorithms are another listed algorithm held differently`
+  : 'PASS no ZBLS, VHLS or SV case lists the same algorithm twice, rotations and wide turns included');
+for (const r of respelt.slice(0, 20)) console.log('  ', r);
 
 /* The canonical algorithm of every case, too: `auditLibrary` only walks the
    alternates, and a set whose cases carry their own alg (ZBLL, F2L, 2x2) would
@@ -55,4 +83,4 @@ console.log(badSetup.length
   : `PASS all ${setupCases} 3x3 setups build their case and are solved by their algorithm`);
 for (const b of badSetup.slice(0, 20)) console.log('  ', b.set, b.caseId, b.why);
 
-process.exit(bad.length || badCanon.length || badSetup.length ? 1 : 0);
+process.exit(bad.length || badCanon.length || badSetup.length || respelt.length ? 1 : 0);
