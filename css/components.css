@@ -1795,6 +1795,14 @@ body.inspecting #last-replay, body.focus #last-replay { display: none; }
 }
 .cam-hint-row { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
 .cam-hint-row .btn { height: 32px; padding: 0 14px; }
+/* The support nudge: the same card, in the bottom corner with no arrow. */
+.coffee-nudge {
+  right: 20px; bottom: 20px; width: min(320px, calc(100vw - 20px));
+  border-color: color-mix(in srgb, #ff6a3d 45%, var(--border));
+}
+.coffee-nudge::before { display: none; }
+.coffee-nudge .btn.primary { background: linear-gradient(135deg, #d6353c, #cf4d14); border-color: transparent; color: #fff; }
+@media (max-width: 620px) { .coffee-nudge { right: 10px; bottom: 10px; } }
 
 @media (max-width: 620px) {
   .sd-row { grid-template-columns: 22px 64px 1fr; }
