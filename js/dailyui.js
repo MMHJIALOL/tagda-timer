@@ -49,11 +49,12 @@ import { t } from './i18n.js';
 import { el, fmt } from './util.js';
 import { signIn } from './sync-auth.js';
 import { toast } from './toast.js';
-import { formatCountdown, safePhotoUrl, shiftDayId, cleanNote, NOTE_MAX_LEN } from './daily-net.js';
+import { formatCountdown, safePhotoUrl, shiftDayId, cleanNote, NOTE_MAX_LEN, dayStartMs } from './daily-net.js';
 import { RACE_EMOJI } from './raceapp.js';
 import { isOwnerName, openOwnerCard } from './ownercard.js';
 // Policy lives with the controller — see the comment on it there.
 import { SHOW_COUNT_BOARD } from './daily.js';
+import { canPlay, playButton, replayKept, shareBox, bindReplays } from './sotd-replays.js';
 
 /* ---------------------------------------------------------
    A face, or the next best thing
@@ -108,24 +109,46 @@ export function avatar(name, photo) {
    The time board — who solved today's scramble fastest
    --------------------------------------------------------- */
 
+const lockedBoard = () => el('div', { class: 'db-locked' },
+  el('div', { class: 'db-locked-icon', text: t('🔒') }),
+  el('div', { class: 'db-locked-text', text:
+    t('Submit today’s attempt to unlock the board. Nobody’s time is visible to you until you have sent your own — that is a database rule, not a setting.') }),
+);
+
 /**
  * @param rows      what daily.js's ranked() returned
  * @param revealed  whether this viewer has earned the right to see times
+ * @param replays   { dayKey, event, onGone }: put a ▶ on rows with a shared
+ *                  replay (sotd-replays.js). Left out, there are none.
  */
-export function timeBoard(rows, revealed) {
-  if (!revealed) {
-    return el('div', { class: 'db-locked' },
-      el('div', { class: 'db-locked-icon', text: t('🔒') }),
-      el('div', { class: 'db-locked-text', text:
-        t('Submit today’s attempt to unlock the board. Nobody’s time is visible to you until you have sent your own — that is a database rule, not a setting.') }),
-    );
-  }
+export function timeBoard(rows, revealed, replays = null) {
+  if (!revealed) return lockedBoard();
   if (!rows.length) return el('div', { class: 'db-empty', text: t('Nobody has posted a time yet today.') });
 
-  return el('div', { class: 'db-board' }, rows.map((r, i) => timeRow(r, i)));
+  return el('div', { class: 'db-board' }, rows.map((r, i) => timeRow(r, i, replays)));
 }
 
-function timeRow(r, i) {
+/**
+ * The third view of the board: everybody who shared a replay of this day's
+ * attempt, in board order, each with a ▶. Gated exactly like the times, and
+ * built from the same rows: the `replay` flag on each, nothing listed from
+ * storage. Nothing is fetched until a ▶ is pressed.
+ */
+export function replaysBoard(rows, revealed, replays, { past = false } = {}) {
+  if (!revealed) return lockedBoard();
+  if (!replayKept(replays.dayKey)) {
+    return el('div', { class: 'db-empty', text: t('Replays are kept for 7 days.') });
+  }
+  const shared = rows.map((r, i) => [r, i]).filter(([r]) => canPlay(replays.dayKey, replays.event, r.uid, r.result));
+  if (!shared.length) {
+    return el('div', { class: 'db-empty', text: past
+      ? t('Nobody shared a replay that day.')
+      : t('Nobody has shared a replay yet today. Turn on webcam replay with the camera button, and yours can be the first.') });
+  }
+  return el('div', { class: 'db-board' }, shared.map(([r, i]) => timeRow(r, i, replays)));
+}
+
+function timeRow(r, i, replays = null) {
   const res = r.result || {};
   const shown = res.penalty === 'DNF' ? 'DNF' : fmt(res.timeMs) + (res.penalty === '+2' ? '+' : '');
   const owner = isOwnerName(res.name);
@@ -152,7 +175,12 @@ function timeRow(r, i) {
     el('span', { class: 'db-time', text: shown },
       /* Ranked like any other time; the tag only says which scramble it was. */
       res.backup ? el('span', { class: 'db-flag db-backup', text: t('backup'),
-        title: t('Solved on the backup scramble after a misfire') }) : null),
+        title: t('Solved on the backup scramble after a misfire') }) : null,
+      /* Inside the time's cell rather than a column of its own: the grid's
+         other optional cell (the ⚑) would shift a sixth column about. */
+      replays && canPlay(replays.dayKey, replays.event, r.uid, res)
+        ? playButton({ dayKey: replays.dayKey, event: replays.event, uid: r.uid, result: res, onGone: replays.onGone })
+        : null),
   );
 }
 
@@ -296,13 +324,13 @@ export function dayHistory(ctl, redraw) {
     /** The day being looked at, or null while that is today. */
     get day() { return day; },
 
-    /** The board for the picked day, started on the first look at it. */
-    view(eventId) {
+    /** The board for the picked day, started on the first look at it. `mode`: 'times' or 'replays'. */
+    view(eventId, mode = 'times') {
       // Only a read of exactly this day AND event is usable — the window and
       // the panel both let the event change underneath this picker.
       const cur = (got && got.dayId === day && got.eventId === eventId) ? got : null;
       if (!cur) load(day, eventId);
-      return pastView(cur);
+      return pastView(cur, mode, { dayKey: String(dayStartMs(day)), event: eventId, onGone: redraw });
     },
 
     /** The ‹ · › control itself. `today` is the live day id, or null before it loads. */
@@ -339,7 +367,7 @@ export function dayHistory(ctl, redraw) {
  * the same "send your own time first" bargain today's board makes, which for
  * a day already over simply cannot be met any more.
  */
-function pastView(got) {
+function pastView(got, mode = 'times', replays = null) {
   if (!got) return el('div', { class: 'db-empty', text: t('Loading that day’s board…') });
   if (got.error) {
     return el('div', { class: 'db-empty', text:
@@ -351,7 +379,8 @@ function pastView(got) {
       el('div', { class: 'db-locked-text', text:
         t('You did not submit an attempt for this event that day, so its board stays locked. The reveal rule applies to every day, not just today.') }));
   }
-  return timeBoard(got.rows, true);
+  if (mode === 'replays' && replays) return replaysBoard(got.rows, true, replays, { past: true });
+  return timeBoard(got.rows, true, replays);
 }
 
 /* ---------------------------------------------------------
@@ -468,11 +497,35 @@ export function openSotd(app, ctl, { onExit, solving = () => false } = {}) {
     return noteBox;
   };
 
+  /* Shared replays (sotd-replays.js): the Share box under the note, kept
+     across renders the same way, and which of the two views is up — the
+     times, or the replays people shared. Held out here for the same reason
+     the picker's day is: a redraw every second must not reset it. */
+  bindReplays(ctl);
+  let shareEl = null;
+  const share = () => {
+    shareEl ||= shareBox(ctl);
+    shareEl.refresh();
+    return shareEl;
+  };
+  let mode = 'times';
+  const tab = (id, label) => el('button', {
+    class: 'sotd-tab', type: 'button', role: 'tab', text: label,
+    'aria-selected': String(mode === id),
+    onclick: () => { if (mode !== id) { mode = id; renderBoard(); placeBoard(); } },
+    // Space on a focused tab is not the timer's.
+    onkeydown: (e) => e.stopPropagation(),
+  });
+
   const renderBoard = () => {
     board.innerHTML = '';
     board.hidden = false;
     const today = ctl.snap?.dayId || null;
     const past = history.day;
+    const rows = past ? [] : ctl.ranked();
+    const dayKey = past ? String(dayStartMs(past)) : ctl.net?.target?.().dayKey;
+    const replays = dayKey ? { dayKey, event: ctl.eventId, onGone: () => { renderBoard(); placeBoard(); } } : null;
+    const sharedN = replays ? rows.filter(r => r.result?.replay === true).length : 0;
     board.append(el('div', { class: 'sotd-board-card' },
       /* The heading and the picker share a row: the column is narrow and
          parked under the scramble, so a control on a line of its own costs
@@ -480,18 +533,23 @@ export function openSotd(app, ctl, { onExit, solving = () => false } = {}) {
       el('div', { class: 'sotd-board-head' },
         /* The picker beside it is already showing the date, so the heading
            does not repeat it — it says only what kind of board this is. */
-        el('h3', { text: past ? 'Times' : t('Today’s times') }),
+        el('div', { class: 'sotd-tabs', role: 'tablist', 'aria-label': t('Board') },
+          tab('times', past ? t('Times') : t('Today’s times')),
+          tab('replays', sharedN ? t('Replays · {n}', { n: sharedN }) : t('Replays'))),
         history.nav(today)),
       /* Today is the LIVE board, off the running listeners and their reveal
          gate. A past day is a one-shot read that never touches them, so the
          bar above, the rollover check and an armed attempt all stay pointed
          at today however far back this has been walked. */
-      past ? history.view(ctl.eventId) : timeBoard(ctl.ranked(), ctl.revealed),
+      past ? history.view(ctl.eventId, mode)
+        : mode === 'replays' && replays ? replaysBoard(rows, ctl.revealed, replays)
+        : timeBoard(rows, ctl.revealed, replays),
       /* Under the board rather than over it: the board is what the window is
          for, and the note is something you do once, after reading it. Today
          only — a past day's rows come from a one-shot read that the composer
          has no live copy of. */
       (!past && ctl.revealed) ? note() : null,
+      (!past && ctl.revealed) ? share() : null,
       ctl.snap?.signedIn ? null : signInPrompt(),
       SHOW_COUNT_BOARD ? [
         el('h3', { class: 'sotd-h3-second' }, t('Most solves today'),
@@ -554,6 +612,7 @@ export function openSotd(app, ctl, { onExit, solving = () => false } = {}) {
     clearInterval(state.timer);
     document.documentElement.style.removeProperty('--sotd-board-top');
     window.removeEventListener('resize', placeBoard);
+    shareEl?.dispose();
     ctl.removeEventListener('change', onChange);
     document.removeEventListener('keydown', onKey, true);
     exitBtn.removeEventListener('click', close);
@@ -567,6 +626,9 @@ export function openSotd(app, ctl, { onExit, solving = () => false } = {}) {
      solve, and that has to keep working from in here. */
   const onKey = (e) => {
     if (e.key !== 'Escape' || solving()) return;
+    /* Something open over the window has Esc first: the camera panel (a
+       popover, closed by its own handler) or a replay player (a dialog). */
+    if (document.querySelector('dialog[open]') || document.getElementById('popover')?.hidden === false) return;
     e.preventDefault();
     e.stopPropagation();
     close();

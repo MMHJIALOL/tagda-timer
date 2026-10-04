@@ -10,6 +10,11 @@ import { t } from './i18n.js';
    the square of the picture it shows, remembered per camera), a 16:9 with a
    panel beside the picture, or the clip as filmed with only a watermark.
 
+   Two ways in: openPlayer, a solve's clip on this device, and
+   openSharedPlayer, somebody's shared Scramble of the Day clip
+   (sotd-replays.js), which is the same player without the parts that are
+   only yours to use (keep, delete, clock delay, Save video).
+
    Every seek goes through seekTo(), which keeps one in flight and only the
    newest waiting: a burst of arrow presses or a dragged scrubber used to pile
    seeks onto a decoder that was still busy with the last one, and the picture
@@ -117,17 +122,36 @@ export async function openPlayer(solve) {
   dlg?.close();
   const got = await loadClip(id).catch((err) => { console.warn('[replay] load', err); return null; });
   if (!got) { forgetReplay(id); toast(t('That replay is gone')); return; }
-  const { meta: m, blob } = got;
+  const sv = typeof solve === 'object' ? solve : null;
+  const camName = got.meta.cam || '';
+  show({
+    id, m: got.meta, blob: got.blob, sv, timeMs: sv?.timeMs ?? got.meta.timeMs, pen: sv?.penalty || 'none',
+    camName, adj: (replaySettings().webcamSync || {})[camName] || 0,
+  });
+}
+
+/**
+ * Somebody's shared Scramble of the Day clip (sotd-replays.js): `meta` is the
+ * Worker's, with the uploader's own clock delay in it (`adj`). Under their
+ * name, and with nothing to keep, delete, line up or save, because it is not
+ * yours. `onRemove` (admins only) takes it down for everyone; it resolves
+ * whether it did, and is asked about inside the player first.
+ */
+export function openSharedPlayer({ blob, meta, timeMs, penalty = 'none', name = '', onRemove = null }) {
+  dlg?.close();
+  show({
+    id: null, m: meta, blob, sv: null, timeMs: timeMs ?? meta.timeMs, pen: penalty || 'none',
+    camName: '', adj: Number(meta.adj) || 0, shared: { name, onRemove },
+  });
+}
+
+function show({ id, m, blob, sv, timeMs, pen, camName, adj, shared = null }) {
   const S = replaySettings();
   const url = URL.createObjectURL(blob);
   const prec = S.precision === 3 ? 3 : 2;
-  const sv = typeof solve === 'object' ? solve : null;
-  const timeMs = sv?.timeMs ?? m.timeMs;
-  const pen = sv?.penalty || 'none';
   const fps = clamp(m.fps || 30, 5, 120);
-  const camName = m.cam || '';
   const final = fmt(timeMs, { showMs: prec === 3 });
-  let adj = (S.webcamSync || {})[camName] || 0;   // ms this camera's picture runs behind the clock
+  // `adj`: ms this camera's picture runs behind the clock (the uploader's, for a shared clip).
   let pinned = !!m.pinned;
   const ac = new AbortController();               // every window listener, and an export, go with the player
 
@@ -153,7 +177,8 @@ export async function openPlayer(solve) {
     class: `chip ${rate === 1 ? 'on' : ''}`, text: `${rate}×`, dataset: { rate },
     onclick: () => setRate(rate),
   })));
-  const moreBtn = btn('more', t('More'), () => openMenu(moreBtn, moreItems()), 'rp-more');
+  // A shared clip has nothing under ⋯ but an admin's Remove.
+  const moreBtn = shared && !shared.onRemove ? null : btn('more', t('More'), () => openMenu(moreBtn, moreItems()), 'rp-more');
   // Only a clip filmed with sound has the button. It opens muted the first
   // time; unmuting is remembered for every replay after.
   const soundBtn = m.sound ? btn('muted', t('Sound on / off  (M)'), () => setMuted(!video.muted), 'rp-mute') : null;
@@ -164,7 +189,7 @@ export async function openPlayer(solve) {
     soundBtn.setAttribute('aria-pressed', String(!muted));
     if (remember && !!replaySettings().webcamUnmute === muted) setReplaySetting('webcamUnmute', !muted);
   };
-  const saveBtn = el('button', {
+  const saveBtn = shared ? null : el('button', {
     class: 'btn primary rp-save', html: `${ICON.save}<span>${t('Save video')}</span>`, title: t('Download as a video file'),
     onclick: () => openMenu(saveBtn, [
       { label: t('Reel  ·  9:16'), sub: t('choose a square of the picture; the clock, the scrambled cube and the scramble go under it. For Instagram, TikTok, Shorts'), run: () => chooseCrop('reel') },
@@ -185,7 +210,7 @@ export async function openPlayer(solve) {
 
   // Clock delay, under ⋯: what used to be "Sync".
   const delayNote = el('span', { class: 'rp-sync-note' });
-  const syncBox = el('div', { class: 'rp-sync', hidden: true },
+  const syncBox = shared ? null : el('div', { class: 'rp-sync', hidden: true },
     el('p', { text: t('Clock ahead of your hands? Pause on the frame where your hand stops the timer (← and → step a frame) and press Stopped here. It is remembered for this camera.') }),
     el('div', { class: 'rp-sync-row' },
       el('button', { class: 'btn primary', text: t('Stopped here'), onclick: () => setAdj(shown * 1000 - m.stop) }),
@@ -197,11 +222,12 @@ export async function openPlayer(solve) {
   // Making a video: progress, then Share / Save.
   const exportBox = el('div', { class: 'rp-export', hidden: true });
 
-  const pinChip = el('span', { class: 'rp-pin', hidden: !pinned, text: m.pb ? t('PB · kept') : t('kept') });
+  const pinChip = shared ? null : el('span', { class: 'rp-pin', hidden: !pinned, text: m.pb ? t('PB · kept') : t('kept') });
   const head = el('div', { class: 'rp-head' },
     el('div', { class: 'rp-title' },
       el('b', { text: final + (pen === '+2' ? ' +2' : pen === 'DNF' ? ' DNF' : '') }),
       pinChip,
+      shared ? el('span', { class: 'rp-who', text: shared.name || 'Cuber' }) : null,
       el('span', { text: [fmtDate(m.at), camName && cameraName(camName)].filter(Boolean).join(' · ') })),
     btn('close', t('Close  (Esc)'), () => d.close(), 'rp-close'),
   );
@@ -386,7 +412,10 @@ export async function openPlayer(solve) {
     exportBox.hidden = false;
     fit();
   };
-  const moreItems = () => [
+  const moreItems = () => shared ? [
+    { label: t('Remove this replay'), sub: t('for everyone · admin'), danger: true, run: () => ask(
+      t('Remove this replay for everyone?'), t('Remove'), async () => { if (await shared.onRemove()) d.close(); }) },
+  ] : [
     { label: t('Keep forever'), sub: t('never deleted to make room'), check: pinned, run: async () => {
       pinned = !pinned;
       await setPinned(id, pinned);
@@ -609,7 +638,7 @@ export async function openPlayer(solve) {
 
   document.body.append(d);
   d.showModal();
-  paintDelay();
+  if (!shared) paintDelay();
   fit();
   setMuted(!(m.sound && S.webcamUnmute), false);
   // Unmuted, a browser may refuse to start without a fresh click: then muted, as the first time.

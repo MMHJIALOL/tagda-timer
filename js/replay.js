@@ -15,6 +15,12 @@ import { t } from './i18n.js';
    running the old code to let go of the database: the freshly loaded tab sat
    on a blank timer until the old one was closed.
 
+   One way out, and only when asked: a Scramble of the Day clip can be shared
+   (js/sotd-replays.js, DAILY.md §8). That uploads a copy, made from the clip
+   here, when Share replay is pressed or "Always share my SOTD replay" is on.
+   It never changes or deletes the clip on this device, and nothing else is
+   ever uploaded.
+
    A clip is handed straight to its solve. main.js takes it the moment the
    timer stops (takeClip) and gives it the solve once one is recorded, so a
    misfire thrown away is simply never saved, and nothing has to guess which
@@ -234,6 +240,12 @@ export async function loadClip(id) {
   return meta && blob ? { meta, blob } : null;
 }
 
+/** A clip's metadata alone (no video read), or null. */
+export async function clipMeta(id) {
+  await saving.get(id);
+  return (await wrap((await txn()).objectStore('meta').get(id))) || null;
+}
+
 /** Clips whose solve has since been deleted. Run once at boot, so an undo in the same sitting still finds its clip. */
 async function sweep() {
   const keys = [...ids].filter(id => !saving.has(id));
@@ -354,8 +366,28 @@ async function runFinish() {
     patchMeta(id, { conv: 'failed' }).catch(() => {});
   } finally {
     finishBusy = false;
+    // Off the queue, however it ended: anything waiting on it (clipReady) can go on.
+    if (!finishQueue.includes(id) && finishing?.id !== id) emit({ type: 'finished', id });
     scheduleFinish();
   }
+}
+
+/**
+ * Resolves once a clip is saved and, if it was waiting to be converted, done
+ * converting (or `ms` later): for a copy made from it, so the two encodes
+ * never run at once. Resolves whether or not there turns out to be a clip.
+ */
+export async function clipReady(id, ms = 90_000) {
+  await saving.get(id);
+  const pending = () => finishQueue.includes(id) || finishing?.id === id;
+  if (!pending()) return;
+  await new Promise((resolve) => {
+    let off = () => {};
+    const done = () => { clearTimeout(timer); off(); resolve(); };
+    const timer = setTimeout(done, ms);
+    off = onReplayChange(() => { if (!pending()) done(); });
+    if (!pending()) done();
+  });
 }
 
 /* ---------------- the camera ---------------- */

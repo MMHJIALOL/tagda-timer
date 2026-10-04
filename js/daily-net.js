@@ -357,6 +357,34 @@ export class DailyTransport extends EventTarget {
   }
 
   /**
+   * Whether this account has already spent today's replay share for the
+   * watched event (shared, or shared and removed). Owner-readable only, so
+   * a refusal means rules from before replays, where nothing can be shared
+   * yet: 'off'. `null` when that cannot be asked.
+   */
+  async hasReplayClaim({ dayKey, event, uid } = this.target()) {
+    if (!dayKey || !event || !uid) return null;
+    try {
+      return (await this._sdk.get(this._ref(`daily/${dayKey}/${event}/replayClaim/${uid}`))).exists();
+    } catch (err) {
+      return /permission.denied/i.test(String(err?.code || err?.message || err)) ? 'off' : null;
+    }
+  }
+
+  /** Whether your own row says it has a replay, read now rather than from the listener. */
+  async replayFlag({ dayKey, event, uid } = this.target()) {
+    if (!dayKey || !event || !uid) return null;
+    try { return (await this._sdk.get(this._ref(`daily/${dayKey}/${event}/results/${uid}/replay`))).val() === true; }
+    catch { return null; }
+  }
+
+  /** Mark your own row as having a replay: the Worker does this; this is the fallback when its write did not land. */
+  async setReplayFlag(value, { dayKey, event, uid } = this.target()) {
+    if (!dayKey || !event || !uid) throw new Error('not-signed-in');
+    await this._sdk.set(this._ref(`daily/${dayKey}/${event}/results/${uid}/replay`), value ? true : null);
+  }
+
+  /**
    * Give up the main attempt for the backup scramble. Write-once, and the
    * rules only accept it from somebody who has started an attempt and not
    * yet sent a result. This comes BEFORE the backup can be read at all: the
