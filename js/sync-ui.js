@@ -328,26 +328,43 @@ function changeAvatar(btn, setSetting) {
 export function wireAccountButton(btn, { setSetting } = {}) {
   if (btn.dataset.wired) { autoStart(); return; }
   btn.dataset.wired = '1';
+  _accountBtn = btn;
+  _accountSet = setSetting;
 
   onAuthChange(async (user) => { await refreshUsername(); renderAccountButton(btn, user); });
   onWrite('kv', ({ key }) => { if (key === 'settings' && _topBarUser) renderAccountButton(btn, _topBarUser); });
 
   btn.addEventListener('click', () => {
-    if (_topBarUser) {
-      popover(btn, [
-        { title: displayNameOf(_topBarUser) },
-        { label: t('Edit username'), onSelect: () => editUsername(btn, setSetting) },
-        { label: t('Change profile picture'), onSelect: () => changeAvatar(btn, setSetting) },
-        ..._avatar ? [{ label: t('Remove profile picture'), onSelect: () => saveAvatar(btn, setSetting, '') }] : [],
-        { label: t('Sign out'), onSelect: async () => {
-          await signOutUser();
-          toast('Signed out — your solves stay on this device', { kind: '' });
-        } },
-      ]);
-    } else {
-      signInAndSay();
-    }
+    const menu = accountMenu();
+    if (menu) popover(btn, [{ title: menu.name }, ...menu.items]);
+    else signInAndSay();
   });
 
   autoStart();
+}
+
+let _accountBtn = null;
+let _accountSet = null;
+
+/**
+ * Who is signed in and what the account menu offers, or null while signed
+ * out. The top-bar button shows these as a popover; a phone shows the same
+ * rows in a sheet (js/phoneshell.js), so the two can never disagree.
+ */
+export function accountMenu() {
+  if (!_topBarUser || !_accountBtn) return null;
+  const btn = _accountBtn, setSetting = _accountSet;
+  return {
+    name: displayNameOf(_topBarUser),
+    email: _topBarUser.email || '',
+    items: [
+      { label: t('Edit username'), onSelect: () => editUsername(btn, setSetting) },
+      { label: t('Change profile picture'), onSelect: () => changeAvatar(btn, setSetting) },
+      ..._avatar ? [{ label: t('Remove profile picture'), onSelect: () => saveAvatar(btn, setSetting, '') }] : [],
+      { label: t('Sign out'), onSelect: async () => {
+        await signOutUser();
+        toast('Signed out — your solves stay on this device', { kind: '' });
+      } },
+    ],
+  };
 }
