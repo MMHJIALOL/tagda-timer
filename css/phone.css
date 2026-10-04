@@ -496,6 +496,18 @@ body.ph.relay:is(.focus, .inspecting, .holding, .armed, .timing) #scramble-zone 
 body.ph:is(.sotd) .ph-recent { display: none; }
 body.ph:has(#panel-race:not([hidden])) .ph-recent { visibility: hidden; }
 
+/* A toast stands above the dock, never on it: the "New personal best!" one
+   stays up until the next attempt, and on the dock it took the taps meant for
+   Times and Train. (Full-screen tools and open sheets place toasts themselves,
+   further up this file.) */
+body.ph:not(.recon-open, .xp1-open):not(:has(.sheet)) #toasts { bottom: calc(var(--ph-dock-room) + 4px); }
+/* A toast with nothing to press is something to read, not a lid: taps go
+   through it to whatever it is lying over. */
+body.ph .toast:not(:has(button, a)) { pointer-events: none; }
+/* The new-best ticker runs above the digits, in the band the "vs last" chip
+   uses; for its five seconds it has the band to itself. */
+body.ph #timer-core:has(.pb-marquee) #last-delta { visibility: hidden; }
+
 /* ---------------- inspection ---------------- */
 body.ph #inspect-readout:not([hidden]) {
   position: fixed; inset: 0; transform: none;
