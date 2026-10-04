@@ -19,7 +19,7 @@ import { flash, shockwave, confetti, chime, callout, beep, setCalloutMode } from
 import { mountMetro, metroExternal } from './metro.js';
 import { keepAwake } from './wakelock.js';
 import { initReplay, syncReplay, takeClip, hasReplay, openReplay, replayOpen, replayEnabled,
-         onReplayChange, replayStatus, replaySupported } from './replay.js';
+         onReplayChange, replayStatus, replaySupported, setStackmatMic } from './replay.js';
 import { summarize, eff, DNF, isMoveResult, bestSingle, bestAvg, trimmedIndices, byCase, sessionBests, rollingSeries, statWindow, STAT_LABELS, goalProgress, bpaWpa } from './stats.js';
 import { renderMiniTrend } from './charts.js';
 import { DEFAULTS, loadSettings, saveSettings, applyTheme, applyBackground, themeColors, setAlbumTint, paintBackgroundColors, liquidGlassOK } from './theme.js';
@@ -565,6 +565,13 @@ async function init() {
     useInspection: !eventOf(app.settings.event).noInspection,
   });
   initReplay(app, timer);
+  // Replay sound must never record from the input the Stackmat is listening on.
+  setStackmatMic(() => {
+    if (inputMode() !== 'stackmat') return null;
+    const tr = stackmat?.stream?.getAudioTracks()[0];
+    const st = tr?.readyState === 'live' ? tr.getSettings?.() || {} : {};
+    return { deviceId: st.deviceId || '', groupId: st.groupId || '' };
+  });
   wireTimer();
   wireReplayUI();
   initFeedback(timer);
@@ -3822,6 +3829,7 @@ function applyInputMode(changed) {
 
   if (mode === 'stackmat') startStackmat();
   else stackmat?.stop();
+  syncReplay();                       // replay sound chooses its mic again, Stackmat or not
 
   if (mode === 'manual') setTimeout(() => $('#manual-input')?.focus(), 0);
   else $('#manual-input')?.blur();
@@ -4021,6 +4029,7 @@ async function startStackmat() {
   catch (err) { return lazyFailed(t('the Stackmat driver'), err); }
   try {
     await stackmat.start();
+    syncReplay();                     // now its input is known, replay sound keeps off it
     toast('Listening on the microphone input');
   } catch (err) {
     console.warn('[stackmat] could not start', err);

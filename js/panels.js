@@ -25,7 +25,7 @@ import { DEFAULT_SPEFFZ_MAP, DEFAULT_BLD, CORNER_STICKER_KEYS, EDGE_STICKER_KEYS
          frontsFor, faceLabel, pieceAtFacelet, faceletsOfPiece,
          pieceName, samePiece, diagnose } from './bldtrace.js';
 import { FACES } from './cube3.js';
-import { enableReplay, requestCamera, attachPreview, onCamerasChanged, listCameras, cameraName,
+import { enableReplay, enableSound, requestCamera, attachPreview, onCamerasChanged, listCameras, listMics, cameraName,
          replayUsage, clearReplays, hasReplay, openReplay, keepCount, replaySupported } from './replay.js';
 
 /* ---------------- drawer shell ---------------- */
@@ -176,17 +176,48 @@ export function webcamControls(app, { onWatch = null, compact = false } = {}) {
       });
     });
     fill();
+
+    // The mic, remembered as the camera is. '' picks one: the camera's own,
+    // else the system default (never the Stackmat's, see replay.js).
+    const micPick = el('select', { class: 'inp', 'aria-label': t('Microphone') });
+    const fillMics = async () => {
+      const mics = await listMics();
+      const want = S.webcamMic || '';
+      const opts = [el('option', { value: '', text: t('Automatic') })];
+      mics.forEach((d, i) => opts.push(el('option', { value: d.deviceId, text: d.label || t('Microphone {n}', { n: i + 1 }) })));
+      if (want && !mics.some(d => d.deviceId === want)) {
+        opts.push(el('option', { value: want, text: t('{name} (not connected)', { name: S.webcamMicLabel || t('Microphone') }) }));
+      }
+      micPick.replaceChildren(...opts);
+      micPick.value = want;
+    };
+    micPick.addEventListener('change', () => {
+      const opt = micPick.selectedOptions[0];
+      S.webcamMicLabel = micPick.value ? (opt?.textContent || '') : '';
+      set('webcamMic', micPick.value);
+    });
+    fillMics();
+    const soundSw = toggle(!!S.webcamSound, async (v) => {
+      if (v && !(await enableSound())) { soundSw.querySelector('input').checked = false; return; }
+      set('webcamSound', v);
+      micRow.hidden = !v;
+    });
+    const micRow = row(t('Microphone'), micPick, note(t('the one beside the camera if it has one. Never the mic a Stackmat is plugged into')));
+    micRow.hidden = !S.webcamSound;
+
     // Labels arrive with permission, and phones come and go as webcams.
     let placed = false;
     onCamerasChanged(() => {
       if (pick.isConnected) placed = true;
       else if (placed) return false;
       fill();
+      fillMics();
       return true;
     });
 
     const video = el('video', { class: 'rp-preview-video', playsinline: true, autoplay: true, 'aria-label': t('Camera preview') });
     const status = el('div', { class: 'rp-preview-status' });
+    const soundStatus = el('div', { class: 'rp-preview-status rp-sound-status' });
     const usage = el('span', { class: 'sub' });
     const wipe = el('button', { class: 'ghost-btn sm danger', text: t('Delete all'), disabled: true, onclick: async () => {
       if (!(await confirmToast(t('Delete every saved replay on this device, kept ones too?'), t('Delete'), { timeout: 8000 }))) return;
@@ -205,8 +236,10 @@ export function webcamControls(app, { onWatch = null, compact = false } = {}) {
 
     // Native append() would print a null as the word "null"; el() skips them, this has to too.
     box.append(...[
-      el('div', { class: `rp-preview ${compact ? 'compact' : ''}` }, video, status),
+      el('div', { class: `rp-preview ${compact ? 'compact' : ''}` }, video, status, soundStatus),
       row(t('Camera'), pick, note(t('anything this device can film with, a phone connected as a webcam included'))),
+      row(t('Record sound'), soundSw, compact ? t('it hears voices too') : t('the sound of the solve goes in the replay and the saved videos. It hears voices too, so it starts off')),
+      micRow,
       row(t('Quality'), chips([
         { value: 'sd', label: t('Standard') },
         { value: 'hd', label: 'HD' },
@@ -219,7 +252,7 @@ export function webcamControls(app, { onWatch = null, compact = false } = {}) {
       el('div', { class: 'row' }, el('div', { class: 'lbl' }, el('span', { text: t('Saved replays') }), usage), wipe),
       onWatch ? el('button', { class: 'btn primary full', text: t('Watch the last solve  (W)'), onclick: onWatch }) : null,
     ].filter(Boolean));
-    attachPreview(video, status, () => requestCamera(), box);
+    attachPreview(video, status, () => requestCamera(), box, soundStatus);
   };
   render();
   return box;

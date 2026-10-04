@@ -162,6 +162,10 @@ export const DEFAULTS = {
   webcamDevice: '',             // a deviceId; '' is whatever the browser calls the default camera
   webcamLabel: '',              // its name, to find it again if the id changes
   webcamQuality: 'sd',          // sd 640x480 | hd 1280x720
+  webcamSound: false,           // record sound with the picture; off by default, it hears voices too
+  webcamMic: '',                // a mic's deviceId; '' picks one: the camera's own, else the default (never the Stackmat's)
+  webcamMicLabel: '',           // its name, to find it again if the id changes
+  webcamUnmute: false,          // the player plays with sound (it starts muted until you unmute once)
   webcamKeepOn: false,          // hold the camera between solves (else it goes after each one)
   webcamSync: {},               // camera name -> ms its picture runs behind the clock (the player's Sync)
   webcamCrop: {},               // camera name (+ '|wide' for Landscape) -> the part a video shows, as fractions { x, y, s }

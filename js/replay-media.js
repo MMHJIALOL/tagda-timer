@@ -21,6 +21,9 @@ import { t } from './i18n.js';
             corner
    The clock comes from clockAt() in replay.js, the same function the player
    draws with, so the download says exactly what the player said.
+
+   Sound, when the clip has it, goes along: copied as it is into the seekable
+   copy, and in a download AAC where the browser can encode it, else Opus.
    =========================================================== */
 
 import * as MB from '../vendor/mediabunny/mediabunny.min.js';
@@ -176,7 +179,8 @@ export async function prepareFinish(blob, order = STORE_CODECS) {
   const conv = await MB.Conversion.init({
     input: inp, output,
     video: { codec: enc.codec, keyFrameInterval: 0.5, forceTranscode: true },
-    audio: { discard: true },
+    // The sound as recorded: copied, not encoded again (Opus goes in WebM and MP4 alike).
+    audio: { forceTranscode: false },
   });
   if (!conv.isValid) return null;
   return {
@@ -427,14 +431,30 @@ async function exportEncoder(w, h, bps, fresh) {
   return encoder(w, h, undefined, bps);
 }
 
+/* The export's sound. In an MP4, AAC where the browser can encode it (what
+   iPhones and Instagram's upload checks are happiest with), else Opus; in a
+   WebM, Opus. Null when the clip is silent; { discard } when nothing here
+   can make either, and the video goes out without it. */
+async function exportAudio(inp, mp4) {
+  const track = await inp.getPrimaryAudioTrack().catch(() => null);
+  if (!track) return null;
+  const codec = await MB.getFirstEncodableAudioCodec(mp4 ? ['aac', 'opus'] : ['opus'], {
+    numberOfChannels: track.numberOfChannels, sampleRate: track.sampleRate, bitrate: 96_000,
+  });
+  if (!codec) return { discard: true };
+  return { codec, bitrate: 96_000 };
+}
+
 async function viaWebCodecs({ blob, L, crop, clockFor, onProgress, signal }, fresh = false) {
   const enc = await exportEncoder(L.W, L.H, L.bps, fresh);
   if (!enc) throw new Error(t('no video encoder for {w}x{h}', { w: L.W, h: L.H }));
   const out = canvas(L.W, L.H);
   const g = out.getContext('2d');
   const output = new MB.Output({ format: enc.format, target: new MB.BufferTarget() });
+  const inp = input(blob);
+  const audio = await exportAudio(inp, enc.ext === 'mp4');
   const conv = await MB.Conversion.init({
-    input: input(blob), output,
+    input: inp, output,
     video: {
       codec: enc.codec, frameRate: 30, keyFrameInterval: 1, bitrate: L.bps,
       processedWidth: L.W, processedHeight: L.H,
@@ -444,14 +464,18 @@ async function viaWebCodecs({ blob, L, crop, clockFor, onProgress, signal }, fre
         return out;
       },
     },
-    audio: { discard: true },
+    audio: audio || { discard: true },
   });
   if (!conv.isValid) {
     throw new Error(t('the clip could not be converted ({why})', { why: conv.discardedTracks.map(d => d.reason).join(', ') || '?' }));
   }
   await run(conv, signal, onProgress);
   if (!output.target.buffer?.byteLength) throw new Error(t('the encoder produced nothing'));
-  return { blob: new Blob([output.target.buffer], { type: enc.mime }), ext: enc.ext, mime: enc.mime };
+  return {
+    blob: new Blob([output.target.buffer], { type: enc.mime }), ext: enc.ext, mime: enc.mime,
+    // A clip with sound whose sound did not make it: the player says so.
+    silent: !!audio && !conv.utilizedTracks.some(tr => tr.isAudioTrack()),
+  };
 }
 
 /* The way that always works: play the clip once, at normal speed, drawing
@@ -459,9 +483,11 @@ async function viaWebCodecs({ blob, L, crop, clockFor, onProgress, signal }, fre
    Slower (it takes as long as the clip) and an MP4 only where the browser
    records MP4 (Chrome, Safari; Firefox makes a WebM), but it needs nothing
    beyond what filming the clip already needed. */
-async function viaRecorder({ blob, L, crop, clockFor, onProgress, signal }) {
+async function viaRecorder({ blob, L, crop, clockFor, onProgress, signal, sound }) {
   const types = ['video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'];
-  const mime = globalThis.MediaRecorder?.isTypeSupported ? types.find(m => MediaRecorder.isTypeSupported(m)) : null;
+  const avTypes = ['video/mp4;codecs=avc1,mp4a.40.2', 'video/mp4;codecs=avc1,opus', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus'];
+  const can = (m) => globalThis.MediaRecorder?.isTypeSupported?.(m);
+  const mime = types.find(can);
   if (!mime) throw new Error(t('this browser cannot record video'));
   const v = document.createElement('video');
   v.muted = true;
@@ -472,7 +498,7 @@ async function viaRecorder({ blob, L, crop, clockFor, onProgress, signal }) {
   const url = URL.createObjectURL(blob);
   v.src = url;
   document.body.append(v);
-  let mr = null, stream = null;
+  let mr = null, stream = null, ac = null, heard = false;
   try {
     await new Promise((res, rej) => {
       v.onloadeddata = res;
@@ -484,7 +510,28 @@ async function viaRecorder({ blob, L, crop, clockFor, onProgress, signal }) {
     const frame = () => paintFrame(g, L, crop, draw, v.videoWidth, v.videoHeight, clockFor(v.currentTime * 1000));
     frame();
     stream = out.captureStream(30);
-    mr = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: L.bps });
+    /* The clip's sound, taken from the video through Web Audio and into the
+       recording. Once a media element feeds an audio graph it plays only
+       through that graph, and this one never reaches the speakers, so
+       unmuting it here is silent. */
+    const avMime = sound ? avTypes.find(can) : null;
+    if (avMime) {
+      try {
+        ac = new AudioContext();
+        const dest = ac.createMediaStreamDestination();
+        ac.createMediaElementSource(v).connect(dest);
+        v.muted = false;
+        ac.resume().catch(() => {});
+        stream.addTrack(dest.stream.getAudioTracks()[0]);
+        heard = true;
+      } catch (err) {
+        console.warn('[replay] no sound in the live recording', err);
+        v.muted = true;
+      }
+    }
+    mr = new MediaRecorder(stream, heard
+      ? { mimeType: avMime, videoBitsPerSecond: L.bps, audioBitsPerSecond: 96_000 }
+      : { mimeType: mime, videoBitsPerSecond: L.bps });
     const chunks = [];
     mr.ondataavailable = (e) => { if (e.data?.size) chunks.push(e.data); };
     const stopped = new Promise((res) => { mr.onstop = res; });
@@ -502,7 +549,13 @@ async function viaRecorder({ blob, L, crop, clockFor, onProgress, signal }) {
       };
       v.onended = () => { frame(); setTimeout(res, 120); };
       signal?.addEventListener('abort', () => rej(new DOMException('Cancelled', 'AbortError')));
-      v.play().then(tick, rej);
+      // Unmuted, a play() the browser will not allow without a fresh click: silent instead.
+      v.play().catch((err) => {
+        if (v.muted || err?.name !== 'NotAllowedError') throw err;
+        v.muted = true;
+        heard = false;
+        return v.play();
+      }).then(tick, rej);
     });
     mr.stop();
     await stopped;
@@ -510,10 +563,11 @@ async function viaRecorder({ blob, L, crop, clockFor, onProgress, signal }) {
     const made = new Blob(chunks, { type });
     // A recorder that never saw a frame still writes a header: that is not a video.
     if (made.size < 4096) throw new Error(t('nothing was recorded'));
-    return { blob: made, ext: /mp4/.test(type) ? 'mp4' : 'webm', mime: type };
+    return { blob: made, ext: /mp4/.test(type) ? 'mp4' : 'webm', mime: type, silent: !!sound && !heard };
   } finally {
     if (mr && mr.state !== 'inactive') mr.stop();
     stream?.getTracks().forEach(tr => tr.stop());
+    ac?.close().catch(() => {});
     v.pause();
     v.removeAttribute('src');
     v.load();
@@ -528,7 +582,8 @@ async function viaRecorder({ blob, L, crop, clockFor, onProgress, signal }) {
  * square as fractions of the picture, `adj` this camera's clock delay in ms.
  * Tries WebCodecs first and falls back to recording it live, so a browser
  * whose encoder will not start still gets a file. Resolves
- * { blob, ext, mime, live }; rejects with AbortError when `signal` fires.
+ * { blob, ext, mime, live, silent } (silent: the clip had sound and the file
+ * does not); rejects with AbortError when `signal` fires.
  */
 export async function exportVideo({ blob, meta, solve, layout = 'reel', crop = null, adj = 0, prec = 2, onProgress, signal }) {
   await fontsReady();
@@ -555,7 +610,7 @@ export async function exportVideo({ blob, meta, solve, layout = 'reel', crop = n
   };
   const L = (layout === 'wide' ? wideLayout : layout === 'clean' ? cleanLayout : reelLayout)(vw, vh, info, c, logo);
   const clockFor = (ms) => clockAt(meta, ms - adj, { timeMs, pen, prec });
-  const job = { blob, L, crop, clockFor, onProgress, signal };
+  const job = { blob, L, crop, clockFor, onProgress, signal, sound: !!meta.sound };
 
   /* Firefox's encoder can fall over now and then, under load; a second go a
      moment later, with its tests run afresh, usually works, and costs a couple

@@ -51,6 +51,17 @@ import { t } from './i18n.js';
    the player's Sync control fixes once per camera: pause on the frame where
    your hand stops the timer and press "Stopped here".
 
+   Sound is opt-in ("Record sound", webcamSound): it records voices too. The
+   mic is its own getUserMedia beside the camera's, so a refused mic never
+   costs the picture, and it comes and goes with the camera (cam.mic). Which
+   mic: the one picked in Settings (webcamMic, by id and then by name), else
+   the camera's own (the audioinput sharing its groupId), else the system
+   default. With the Stackmat as the input, never the device the Stackmat is
+   listening on: another mic if there is one, else video only, and the line
+   under the preview says why. Raw, as the Stackmat takes it (echo
+   cancellation, noise suppression and gain control off, one channel), and
+   Opus at about 48 kbps.
+
    The player reads the frame times out of the clip itself (webmFrames). The
    browsers disagree about what time a paused frame is at (Firefox reports
    the time asked for, not the frame's own), and webcam frames do not come
@@ -74,12 +85,18 @@ const QUALITY = {
 /* The first format this browser can both record and play back. VP8 first: it
    is the cheapest of them to encode, which is CPU the timer keeps. Safari
    records only MP4. */
-const MIME = (() => {
+const VIDEO_TYPES = ['video/webm;codecs=vp8', 'video/webm', 'video/mp4;codecs=avc1', 'video/mp4'];
+const firstType = (types) => {
   if (typeof document === 'undefined' || !globalThis.MediaRecorder?.isTypeSupported) return '';
   const v = document.createElement('video');
-  return ['video/webm;codecs=vp8', 'video/webm', 'video/mp4;codecs=avc1', 'video/mp4']
-    .find(m => MediaRecorder.isTypeSupported(m) && v.canPlayType(m)) || '';
-})();
+  return types.find(m => MediaRecorder.isTypeSupported(m) && v.canPlayType(m)) || '';
+};
+const MIME = firstType(VIDEO_TYPES);
+// With sound: VP8 and Opus, else whatever the browser pairs with the plain types.
+const MIME_AV = firstType(['video/webm;codecs=vp8,opus', ...VIDEO_TYPES]);
+const MIC_BPS = 48_000;
+// The Stackmat's settings, for the same reason: speech clean-up mangles the sound of a solve.
+const RAW = { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 };
 export const replaySupported = () => !!MIME && !!navigator.mediaDevices?.getUserMedia;
 
 let app = null;                          // main.js's app: settings, setSetting, persist
@@ -89,6 +106,9 @@ let enabled = false;
 let perm = 'unknown';                    // the camera permission: granted | denied | prompt | unknown
 let grantedHere = false;                 // a getUserMedia succeeded on this page
 let asked = false;                       // the "allow the camera?" toast has had its one go
+let micPerm = 'unknown';                 // the microphone permission, as perm
+let micGranted = false;                  // a mic getUserMedia succeeded on this page
+let stackmatMic = () => null;            // main.js: null unless the Stackmat is the input, else its track's { deviceId, groupId }
 const warned = new Set();                // problems already reported this page load
 
 let camP = null;                         // Promise<Cam> while the camera is opening or open
@@ -341,6 +361,8 @@ async function runFinish() {
 /* ---------------- the camera ---------------- */
 
 const stopStream = (s) => s?.getTracks().forEach(tr => tr.stop());
+/* The camera and its mic, lights and all. A mic still opening is stopped when it lands (adoptMic). */
+const stopCam = (c) => { c.dead = true; stopStream(c.stream); stopStream(c.mic?.stream); c.mic = null; };
 const camKey = () => `${S().webcamDevice || ''}|${S().webcamQuality || 'sd'}`;
 const notify = (err = null) => { for (const fn of watchers) fn(cam, err); emit({ type: 'state' }); };
 
@@ -359,11 +381,175 @@ export function cameraName(label, i = 0) {
   return label;
 }
 
+/* ---------------- the microphone ---------------- */
+
+const soundOn = () => !!S().webcamSound;
+const PSEUDO = new Set(['default', 'communications']);   // Chrome's stand-ins for the system's choice
+const denied = (err) => err?.name === 'NotAllowedError' || err?.name === 'PermissionDeniedError';
+
+/** main.js: where the Stackmat is listening, while it is the input. */
+export function setStackmatMic(fn) { stackmatMic = fn; }
+
+/* What the open mic was chosen against: when any of it changes, it is chosen again. */
+const micKey = () => {
+  const sm = stackmatMic();
+  return `${soundOn() ? 1 : 0}|${S().webcamMic || ''}|${sm ? sm.deviceId || '?' : '-'}`;
+};
+
+/** Every audio input, labelled once permission has been given (Chrome's stand-ins left out). */
+export async function listMics() {
+  try {
+    return (await navigator.mediaDevices.enumerateDevices())
+      .filter(d => d.kind === 'audioinput' && d.deviceId && !PSEUDO.has(d.deviceId));
+  } catch { return []; }
+}
+
+/**
+ * Which mic to record from: { deviceId, label } ('' for the system default),
+ * or { none: 'stackmat' } when every mic left is the Stackmat's. `sm` is the
+ * Stackmat's track ({ deviceId, groupId }; deviceId '' while it opens, when
+ * the default is taken to be its), null when the Stackmat is not the input.
+ */
+export function chooseMic(devs, { want = '', wantLabel = '', camGroup = '', sm = null } = {}) {
+  const mics = devs.filter(d => d.kind === 'audioinput' && d.deviceId);
+  const real = mics.filter(d => !PSEUDO.has(d.deviceId));
+  // The system default: Chrome lists it as 'default' (with the real device's groupId), Firefox lists it first.
+  const def = mics.find(d => d.deviceId === 'default') || real[0] || null;
+  const smDev = sm && (sm.deviceId ? mics.find(d => d.deviceId === sm.deviceId) : def);
+  const smGroup = sm ? sm.groupId || smDev?.groupId || '' : '';
+  const taken = (d) => !!sm && (d === smDev || d.deviceId === sm.deviceId || (!!smGroup && d.groupId === smGroup));
+  const pick = (d) => ({ deviceId: d.deviceId, label: d.label });
+  if (want) {
+    const d = real.find(x => x.deviceId === want) || (wantLabel ? real.find(x => x.label === wantLabel) : null);
+    if (d && !taken(d)) return pick(d);
+  }
+  const free = real.filter(d => !taken(d));
+  const own = camGroup ? free.find(d => d.groupId === camGroup) : null;
+  if (own) return pick(own);
+  if (!sm) return { deviceId: '', label: def?.label || '' };
+  if (def && !taken(def)) return { deviceId: '', label: def.label };
+  return free[0] ? pick(free[0]) : { none: 'stackmat' };
+}
+
+/* Resolves, never rejects: { stream, track, label } or { off: why }.
+   `prompt`: this is a click, so the browser may ask. Otherwise a mic this page
+   has not been given is left alone, as the camera is, rather than putting a
+   prompt over a held spacebar. */
+async function openMic(camGroup, prompt = false) {
+  if (!soundOn()) return { off: 'setting' };
+  if (!prompt && !micGranted && micPerm !== 'granted' && micPerm !== 'unknown') return { off: micPerm === 'denied' ? 'denied' : 'perm' };
+  const devs = await navigator.mediaDevices.enumerateDevices().catch(() => []);
+  const pick = chooseMic(devs, { want: S().webcamMic || '', wantLabel: S().webcamMicLabel || '', camGroup, sm: stackmatMic() });
+  if (pick.none) return { off: pick.none };
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: { ...RAW, ...(pick.deviceId ? { deviceId: { exact: pick.deviceId } } : {}) },
+    });
+  } catch (err) {
+    return { off: denied(err) ? 'denied' : 'failed', err };
+  }
+  micGranted = true;
+  const track = stream.getAudioTracks()[0];
+  const st = track?.getSettings?.() || {};
+  // Whatever was asked for, never the input the Stackmat is reading.
+  const sm = stackmatMic();
+  if (!track || (sm && st.deviceId && (st.deviceId === sm.deviceId || (sm.groupId && st.groupId === sm.groupId)))) {
+    stopStream(stream);
+    return { off: track ? 'stackmat' : 'failed' };
+  }
+  return { stream, track, label: track.label || pick.label || t('Microphone') };
+}
+
+/* Once per page load, and short: the clip is still filmed, only silent. */
+function micFailed(err) {
+  console.warn('[replay] microphone', err);
+  if (warned.has('mic')) return;
+  warned.add('mic');
+  toast(t('No microphone, filming without sound'), { kind: 'bad' });
+}
+
+/* A mic being opened for camera `c`, adopted when it lands; dropped if the
+   camera went, or another mic was asked for, in the meantime. */
+function adoptMic(c, p) {
+  c.mic = null;
+  c.micOff = '';
+  c.micKey = micKey();
+  const w = c.micWait = p.then((m) => {
+    if (c.micWait !== w || c.dead) { stopStream(m.stream); return; }
+    c.mic = m.stream ? m : null;
+    c.micOff = m.off || '';
+    if (m.stream) m.track.onended = () => { if (c.mic === m) { c.mic = null; c.micOff = 'lost'; notify(); } };
+    if (m.off === 'denied' || m.off === 'failed') micFailed(m.err);
+    if (cam === c) notify();
+  });
+  return w;
+}
+
+/* Choose and open the mic again on an open camera: the setting, the mic or the Stackmat changed. */
+function setMic(c, prompt = false) {
+  stopStream(c.mic?.stream);
+  adoptMic(c, openMic(c.group, prompt));
+  notify();
+}
+
+/**
+ * The "Record sound" toggle: a click, so the mic may be asked for here.
+ * Resolves whether it can go on; a refusal explains itself.
+ */
+export async function enableSound() {
+  if (micGranted || micPerm === 'granted') return true;
+  try {
+    stopStream(await navigator.mediaDevices.getUserMedia({ audio: RAW }));
+    micGranted = true;
+    return true;
+  } catch (err) {
+    toast(denied(err) ? t('Microphone permission denied, replays stay silent') : t('Could not open a microphone'), { kind: 'bad' });
+    return false;
+  }
+}
+
+/** One line for under the preview: what the clips will hear. */
+function soundLine(c) {
+  if (!soundOn()) return t('Sound off');
+  if (!c) return t('Sound on, with the camera');
+  if (c.mic) return t('Sound: {name}', { name: c.mic.label });
+  switch (c.micOff) {
+    case '': return t('Sound: starting the microphone…');
+    case 'stackmat': return t('Sound off: the only mic is in use by the Stackmat');
+    case 'denied': return t('Sound off: the microphone is blocked for this site');
+    case 'perm': return [t('Sound off until the microphone is allowed'), ' ', el('button', {
+      class: 'ghost-btn sm', text: t('Allow'),
+      onclick: () => enableSound().then((ok) => { if (ok && cam) setMic(cam, true); }),
+    })];
+    case 'lost': return t('Sound off: the microphone was disconnected');
+    default: return t('Sound off: the microphone could not be opened');
+  }
+}
+
 async function openCamera(key) {
   const q = QUALITY[S().webcamQuality] || QUALITY.sd;
   const video = { width: { ideal: q.width }, height: { ideal: q.height }, frameRate: { ideal: 30 } };
   const gum = (extra) => navigator.mediaDevices.getUserMedia({ video: { ...video, ...extra }, audio: false });
   const want = S().webcamDevice || '';
+  // The mic opens alongside the camera, not after it: the clip cannot start
+  // until both are up. The camera's own mic shares its groupId: the picked
+  // camera's, or else the first listed, the one the browser opens by default.
+  const vids = await listCameras();
+  const group = (vids.find(d => d.deviceId === want) || (!want ? vids[0] : null))?.groupId || '';
+  const micP = openMic(group);
+  try {
+    const c = await openVideo(key, gum, want);
+    c.group = c.group || group;
+    adoptMic(c, micP);
+    return c;
+  } catch (err) {
+    micP.then(m => stopStream(m.stream));
+    throw err;
+  }
+}
+
+async function openVideo(key, gum, want) {
   let stream = null, missing = false;
   if (want) {
     try { stream = await gum({ deviceId: { exact: want } }); }
@@ -392,6 +578,7 @@ async function openCamera(key) {
     deviceId: st.deviceId || '',
     w: st.width || 0, h: st.height || 0, fps: st.frameRate || 30,
     lat: 0,
+    group: st.groupId || '',
   };
   // The handler property, not addEventListener: Firefox delivered an 'ended'
   // to one and not the other in testing. begin() also checks readyState, for
@@ -406,7 +593,7 @@ function camera() {
   const key = camKey();
   const p = camP = openCamera(key).then((c) => {
     if (camP !== p || !enabled) {
-      stopStream(c.stream);
+      stopCam(c);
       throw new DOMException('Camera released while opening', 'AbortError');
     }
     cam = c;
@@ -439,7 +626,7 @@ function release() {
   const c = cam;
   cam = null;
   camP = null;
-  if (c) stopStream(c.stream);
+  if (c) stopCam(c);
   notify();
 }
 
@@ -573,22 +760,34 @@ function begin() {
     if (perm !== 'granted' && perm !== 'unknown' && !grantedHere) { r.resolve(null); askOnce(); return; }
     c = camera();
   }
-  c.then((cm) => {
+  c.then(async (cm) => {
+    // A mic chosen against an old setting, or before the Stackmat started: choose again.
+    if (cm.micKey !== micKey()) setMic(cm);
+    await cm.micWait;
     if (r.over) return r.resolve(null);     // over, or thrown away, before the camera was up
     startRecorder(r, cm);
   }).catch((err) => { r.resolve(null); failed(err); });
 }
 
 function startRecorder(r, c) {
-  let mr;
-  try {
-    mr = new MediaRecorder(c.stream, {
-      mimeType: MIME, videoBitsPerSecond: (QUALITY[S().webcamQuality] || QUALITY.sd).bps,
-      // A keyframe every half second makes seeking cheap. Chrome honours it;
-      // others ignore it, and the clip is converted after the solve instead.
-      videoKeyFrameIntervalDuration: 500,
-    });
-  } catch (err) { r.resolve(null); return failed(err); }
+  const make = (audio) => new MediaRecorder(audio ? new MediaStream([c.track, audio]) : c.stream, {
+    mimeType: audio ? MIME_AV : MIME, videoBitsPerSecond: (QUALITY[S().webcamQuality] || QUALITY.sd).bps,
+    ...(audio ? { audioBitsPerSecond: MIC_BPS } : {}),
+    // A keyframe every half second makes seeking cheap. Chrome honours it;
+    // others ignore it, and the clip is converted after the solve instead.
+    videoKeyFrameIntervalDuration: 500,
+  });
+  let mr, audio = c.mic?.track.readyState === 'live' ? c.mic.track : null;
+  try { mr = make(audio); }
+  catch (err) {
+    if (!audio) { r.resolve(null); return failed(err); }
+    // A recorder that will not take the sound still films the picture.
+    console.warn('[replay] recorder refused the sound', err);
+    audio = null;
+    try { mr = make(null); } catch (err2) { r.resolve(null); return failed(err2); }
+  }
+  r.sound = !!audio;
+  r.mic = audio ? c.mic.label : '';
   const chunks = [];
   mr.ondataavailable = (e) => { if (e.data?.size) chunks.push(e.data); };
   mr.onstop = () => {
@@ -685,6 +884,7 @@ async function save(r, solve, blob) {
     timeMs: r.res.timeMs,
     splits: r.res.splits || [],
     cam: r.cam.label, w: r.cam.w, h: r.cam.h, fps: r.cam.fps, lat: r.cam.lat,
+    sound: !!r.sound, mic: r.mic || '',
     pinned: !!r.pb, pb: !!r.pb,
   };
   try {
@@ -737,6 +937,8 @@ export function syncReplay() {
   }
   const was = enabled;
   enabled = true;
+  // Sound turned on or off, another mic picked, the Stackmat started or stopped.
+  if (cam && !rec && cam.micKey !== micKey()) setMic(cam);
   const open = cam?.key ?? camP?.key;
   if (open && open !== camKey() && !rec) {
     // A different camera or quality. This is a click in Settings, so asking is fine.
@@ -775,6 +977,10 @@ export function initReplay(appRef, tm) {
     });
   }).catch(() => {}) || Promise.resolve();
   ready.then(syncReplay);
+  navigator.permissions?.query({ name: 'microphone' }).then((st) => {
+    micPerm = st.state;
+    st.addEventListener('change', () => { micPerm = st.state; });
+  }).catch(() => {});
 
   // Another tab, another window, the phone locked: the camera goes now (or,
   // mid-attempt, as soon as the clip is done), and comes back when needed.
@@ -796,6 +1002,8 @@ export function initReplay(appRef, tm) {
   // list redraws, and a stand-in goes back to the camera that was picked.
   navigator.mediaDevices?.addEventListener?.('devicechange', async () => {
     if (cam && cam.track.readyState === 'ended') lost(cam);
+    // A mic plugged in while filming without one: choose again.
+    if (cam && !rec && soundOn() && !cam.mic && cam.micOff) setMic(cam);
     notify();
     if (!enabled || !cam?.missing || rec || !S().webcamDevice) return;
     const back = (await listCameras()).some(d => d.deviceId === S().webcamDevice || (d.label && d.label === S().webcamLabel));
@@ -812,7 +1020,7 @@ export function initReplay(appRef, tm) {
  * quality shows it straight away; off screen (drawer shut or scrolled past)
  * the picture is detached and the camera can go.
  */
-export function attachPreview(video, status, onAllow, area = video) {
+export function attachPreview(video, status, onAllow, area = video, sound = null) {
   let visible = false, placed = false;
   const paint = (c, err) => {
     // Built before it is put in the page; gone for good once the drawer redraws.
@@ -820,6 +1028,7 @@ export function attachPreview(video, status, onAllow, area = video) {
     else if (placed) { watchers.delete(paint); io.disconnect(); video.srcObject = null; show(false); return; }
     const want = visible && c ? c.stream : null;
     if (video.srcObject !== want) { video.srcObject = want; if (want) video.play().catch(() => {}); }
+    sound?.replaceChildren(...[soundLine(c)].flat());
     status.replaceChildren();
     if (c) {
       const size = c.w && c.h ? ` · ${c.w}×${c.h}` : '';

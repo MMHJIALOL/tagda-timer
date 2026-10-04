@@ -404,6 +404,14 @@ then the time, then the final result with its penalty. Step a frame at a time wi
 **← →**, slow it to 0.25×, or jump to the start (**Home**) or the stop (**End**). On a phone on
 its side the clock moves beside the picture instead.
 
+**Record sound** (off by default, because it hears voices too) adds the sound to each clip.
+Pick the mic under the camera; left on Automatic it uses the camera's own mic, else the system
+default. With a **Stackmat** as the input it never records from the mic input the Stackmat is
+plugged into: it takes another mic if there is one, and otherwise films without sound. The line
+under the preview always says what the clips will hear. The player starts muted; press the
+speaker button (or **M**) to unmute, and that choice is remembered. Saved videos carry the
+sound too (AAC where the browser can make it, otherwise Opus).
+
 **Save video** makes a real MP4, three ways:
 - **Reel** (1080×1920): the share card with the solve playing in it. First drag a square over
   the picture (and size it) to choose what it shows; that square is remembered per camera.

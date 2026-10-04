@@ -1630,6 +1630,7 @@ body:has(#timer-display.state-running) #goal-line { opacity: 0; }
 .rp-btn.rp-play { background: var(--accent); color: var(--on-accent); }
 .rp-btn.rp-play:hover { background: var(--accent); color: var(--on-accent); box-shadow: 0 6px 18px -6px var(--accent); }
 .rp-btn.rp-close { width: 32px; height: 32px; }
+.rp-btn.rp-mute[aria-pressed="true"] { color: var(--text); }
 .rp-sync {
   padding: 10px 12px; border-radius: var(--radius-sm); font-size: .78rem; color: var(--text-dim);
   background: color-mix(in srgb, var(--text) 5%, transparent);
@@ -1668,6 +1669,8 @@ body:has(#timer-display.state-running) #goal-line { opacity: 0; }
 /* As tall as its tallest state (the "Turn it on" button), so the rows under it
    do not jump when the camera comes on, under a pointer about to click one. */
 .rp-preview-status { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-height: 30px; font-size: .72rem; color: var(--text-faint); }
+/* The sound line sits tight under the camera line: one block saying what is filmed and heard. */
+.rp-sound-status { margin-top: -6px; }
 .rp-settings .ghost-btn[disabled] { opacity: .35; pointer-events: none; }
 
 /* The player's own menus (⋯ and Save video). Drawn inside the dialog: a page

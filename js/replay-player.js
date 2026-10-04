@@ -4,7 +4,8 @@ import { t } from './i18n.js';
 
    A modal over everything: the clip, the clock in its own bar under it (never
    over the cube), a scrubber with the inspection and the solve marked on it,
-   frame stepping, 0.25x/0.5x/1x, and two menus: ⋯ (keep forever, clock delay,
+   frame stepping, 0.25x/0.5x/1x, sound on and off for a clip that has it
+   (muted until you unmute once; then remembered, webcamUnmute), and two menus: ⋯ (keep forever, clock delay,
    delete) and Save video, made by replay-media.js: a Reel (after you choose
    the square of the picture it shows, remembered per camera), a 16:9 with a
    panel beside the picture, or the clip as filmed with only a watermark.
@@ -46,20 +47,27 @@ export function webmFrames(buf) {
     for (let i = 1; i < len; i++) { v = v * 256 + b[p + i]; if (b[p + i] !== 0xff) ones = false; }
     return { v, len, unknown: !id && ones };
   };
-  const ENTER = new Set([0x18538067, 0x1549A966, 0x1F43B675, 0xA0]);   // Segment, Info, Cluster, BlockGroup
+  // Segment, Info, Cluster, BlockGroup, and Tracks and TrackEntry: a clip with
+  // sound has audio blocks too, and only the video track's are frames.
+  const ENTER = new Set([0x18538067, 0x1549A966, 0x1F43B675, 0xA0, 0x1654AE6B, 0xAE]);
   const out = [];
-  let scale = 1e6, cluster = 0, p = 0;
+  let scale = 1e6, cluster = 0, p = 0, video = 0, entry = null;
   while (p < b.length) {
     const id = vint(p, true); if (!id) break;
     const size = vint(p + id.len, false); if (!size) break;
     const body = p + id.len + size.len;
+    if (id.v === 0xAE) entry = {};
     if (ENTER.has(id.v)) { p = body; continue; }
     if (size.unknown || body + size.v > b.length) break;
     if (id.v === 0x2AD7B1) scale = uint(body, size.v);                  // TimecodeScale, ns a tick
     else if (id.v === 0xE7) cluster = uint(body, size.v);               // Cluster Timecode
-    else if (id.v === 0xA3 || id.v === 0xA1) {                          // SimpleBlock, Block
+    else if (entry && (id.v === 0xD7 || id.v === 0x83)) {              // TrackNumber, TrackType (1 is video)
+      entry[id.v === 0xD7 ? 'num' : 'type'] = uint(body, size.v);
+      if (entry.type === 1 && entry.num && !video) video = entry.num;
+    } else if (id.v === 0xA3 || id.v === 0xA1) {                        // SimpleBlock, Block
       const tn = vint(body, false);
       if (!tn) break;
+      if (video && tn.v !== video) { p = body + size.v; continue; }
       let rel = uint(body + tn.len, 2);
       if (rel & 0x8000) rel -= 0x10000;
       out.push((cluster + rel) * scale / 1e9);
@@ -78,6 +86,8 @@ const ICON = {
   save: '<svg viewBox="0 0 24 24"><path d="M12 4v11"/><path d="M7 10l5 5 5-5"/><path d="M5 19h14"/></svg>',
   more: '<svg viewBox="0 0 24 24"><circle cx="5.5" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="18.5" cy="12" r="1.6" fill="currentColor" stroke="none"/></svg>',
   close: '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+  sound: '<svg viewBox="0 0 24 24"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" fill="currentColor" stroke="none"/><path d="M15.5 9a4.2 4.2 0 0 1 0 6M18 6.5a7.8 7.8 0 0 1 0 11"/></svg>',
+  muted: '<svg viewBox="0 0 24 24"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" fill="currentColor" stroke="none"/><path d="M16 9.5l5 5M21 9.5l-5 5"/></svg>',
 };
 
 let dlg = null;
@@ -144,6 +154,16 @@ export async function openPlayer(solve) {
     onclick: () => setRate(rate),
   })));
   const moreBtn = btn('more', t('More'), () => openMenu(moreBtn, moreItems()), 'rp-more');
+  // Only a clip filmed with sound has the button. It opens muted the first
+  // time; unmuting is remembered for every replay after.
+  const soundBtn = m.sound ? btn('muted', t('Sound on / off  (M)'), () => setMuted(!video.muted), 'rp-mute') : null;
+  const setMuted = (muted, remember = true) => {
+    video.muted = muted;
+    if (!soundBtn) return;
+    soundBtn.innerHTML = muted ? ICON.muted : ICON.sound;
+    soundBtn.setAttribute('aria-pressed', String(!muted));
+    if (remember && !!replaySettings().webcamUnmute === muted) setReplaySetting('webcamUnmute', !muted);
+  };
   const saveBtn = el('button', {
     class: 'btn primary rp-save', html: `${ICON.save}<span>${t('Save video')}</span>`, title: t('Download as a video file'),
     onclick: () => openMenu(saveBtn, [
@@ -160,7 +180,7 @@ export async function openPlayer(solve) {
       btn('start', t('Jump to the start of the solve  (Home)'), () => jump(m.start)),
     ),
     speeds,
-    el('div', { class: 'rp-extra' }, moreBtn, saveBtn),
+    el('div', { class: 'rp-extra' }, soundBtn, moreBtn, saveBtn),
   );
 
   // Clock delay, under ⋯: what used to be "Sync".
@@ -512,7 +532,8 @@ export async function openPlayer(solve) {
       const share = navigator.canShare?.({ files: [file] }) && matchMedia('(pointer: coarse)').matches;
       exportBox.replaceChildren(el('div', { class: 'rp-export-row' },
         el('span', { text: (share ? t('Ready · {mb} MB', { mb }) : t('Saved {name} · {mb} MB', { name, mb }))
-          + (out.ext === 'mp4' ? '' : ` · ${t('a WebM: this browser cannot make MP4s')}`) }),
+          + (out.ext === 'mp4' ? '' : ` · ${t('a WebM: this browser cannot make MP4s')}`)
+          + (out.silent ? ` · ${t('no sound: this browser could not add it')}` : '') }),
         share ? el('button', { class: 'btn primary', text: t('Share'), onclick: () => navigator.share({ files: [file] }).catch(() => {}) }) : null,
         el('button', { class: 'ghost-btn sm', text: share ? t('Save') : t('Save again'), onclick: () => saveFile(out.blob, name) }),
         el('button', { class: 'ghost-btn sm', text: t('Done'), onclick: () => { exportBox.hidden = true; fit(); } })));
@@ -558,6 +579,7 @@ export async function openPlayer(solve) {
     if (k === ' ' || k === 'k' || k === 'K') { e.preventDefault(); togglePlay(); }
     else if (k === 'ArrowLeft' || k === ',') { e.preventDefault(); e.shiftKey ? jump(shown * 1000 - adj - 1000) : step(-1); }
     else if (k === 'ArrowRight' || k === '.') { e.preventDefault(); e.shiftKey ? jump(shown * 1000 - adj + 1000) : step(1); }
+    else if ((k === 'm' || k === 'M') && soundBtn) { e.preventDefault(); setMuted(!video.muted); }
     else if (k === 'Home') { e.preventDefault(); jump(m.start); }
     else if (k === 'End') { e.preventDefault(); jump(m.stop); }
   });
@@ -589,5 +611,11 @@ export async function openPlayer(solve) {
   d.showModal();
   paintDelay();
   fit();
-  video.play().catch(() => {});
+  setMuted(!(m.sound && S.webcamUnmute), false);
+  // Unmuted, a browser may refuse to start without a fresh click: then muted, as the first time.
+  video.play().catch((err) => {
+    if (video.muted || err?.name !== 'NotAllowedError') return;
+    setMuted(true, false);
+    video.play().catch(() => {});
+  });
 }
