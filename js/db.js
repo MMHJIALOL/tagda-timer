@@ -189,6 +189,7 @@ export const Solves = {
     emit('solvesBatch', list);
   },
   async get(id)         { return wrap((await tx('solves')).get(id)); },
+  async count()         { return wrap((await tx('solves')).count()); },
   async del(id)         {
     const r = await wrap((await tx('solves', 'readwrite')).delete(id));
     await Tombstones.record('solves', [id]);
