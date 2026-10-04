@@ -30,11 +30,11 @@
      import hint in Settings over a main.js that has never heard of CubeDesk.
      vercel.json also serves /css/ as `max-age=31536000, immutable`, so a
      stylesheet there will not even be asked about for a year without it. -->
-<link rel="modulepreload" href="js/main.js?v=74">
-<link rel="stylesheet" href="css/fonts.css?v=74">
-<link rel="stylesheet" href="css/tokens.css?v=74">
-<link rel="stylesheet" href="css/base.css?v=74">
-<link rel="stylesheet" href="css/components.css?v=74">
+<link rel="modulepreload" href="js/main.js?v=77">
+<link rel="stylesheet" href="css/fonts.css?v=77">
+<link rel="stylesheet" href="css/tokens.css?v=77">
+<link rel="stylesheet" href="css/base.css?v=77">
+<link rel="stylesheet" href="css/components.css?v=77">
 <link rel="icon" href="assets/favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="assets/logo-192.png">
 <link rel="apple-touch-icon" href="assets/logo-180.png">
@@ -175,6 +175,14 @@
           <svg viewBox="0 0 24 24"><circle cx="12" cy="8.5" r="3.4"/><path d="M4.8 20a7.2 7.2 0 0114.4 0"/></svg>
         </span>
       </button>
+      <!-- Webcam replay. Lit while it is on, with a red dot while an attempt is
+           being filmed; opens the camera panel (js/main.js, openCameraPanel).
+           On a phone this one stays in the bar beside the menu button rather
+           than folding into the menu with the rest -- see components.css. -->
+      <button class="icon-btn" id="btn-camera" title="Webcam replay" aria-pressed="false">
+        <svg viewBox="0 0 24 24"><path d="M3.5 8.2A2.2 2.2 0 015.7 6h8.6a2.2 2.2 0 012.2 2.2v7.6a2.2 2.2 0 01-2.2 2.2H5.7a2.2 2.2 0 01-2.2-2.2z"/><path d="M16.5 10.3l4-2.4v8.2l-4-2.4"/></svg>
+        <span class="rec-dot" aria-hidden="true"></span>
+      </button>
       <button class="icon-btn" id="btn-stats" title="Statistics  (A)">
         <svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>
       </button>
@@ -238,9 +246,6 @@
           </svg>
         </span>
         <span class="sotd-label">SOTD</span>
-      </button>
-      <button class="icon-btn" id="btn-help" title="Keyboard shortcuts  (?)">
-        <svg viewBox="0 0 24 24"><path d="M16.2 4.2L7.8 19.8" stroke-width="2.4"/><circle cx="12" cy="12" r="9.2" opacity=".3"/></svg>
       </button>
       <button class="icon-btn" id="btn-about" title="About  (B)">
         <svg viewBox="0 0 24 24"><path d="M9.1 9a3 3 0 115.8 1c0 2-2.9 2.5-2.9 4.5"/><circle cx="12" cy="18.5" r=".9" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="9.2" opacity=".35"/></svg>
@@ -543,7 +548,15 @@
              sideways when the script caught up with the markup. -->
         <div id="timer-hint"><span class="hint-fine">tap <kbd>space</kbd>, release to start</span><span class="hint-coarse">tap anywhere, release to start</span></div>
 
-        <div id="last-delta" hidden></div>
+        <!-- The last solve, one line: how it compares, and its replay when it
+             was filmed. One row so the pill landing a second after the stop
+             (when the clip is saved) does not move the timer. -->
+        <div id="last-row">
+          <div id="last-delta" hidden></div>
+          <button type="button" id="last-replay" class="ghost-btn sm" hidden title="Watch the replay  (W)">
+            <svg viewBox="0 0 24 24"><path d="M8 5.5v13l10.5-6.5z"/></svg><span>Replay</span>
+          </button>
+        </div>
       </div>
     </section>
     <!-- RIGHT COLUMN: the numbers -->
@@ -753,7 +766,7 @@
   </div>
 </div>
 
-<script type="module" src="js/main.js?v=74"></script>
+<script type="module" src="js/main.js?v=77"></script>
 <script>
 (function () {
   var isFile = location.protocol === 'file:';
