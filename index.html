@@ -708,10 +708,13 @@
   </div>
   <div class="sotd-clock">resets in <b class="sotd-count">&mdash;</b></div>
   <!-- The top bar's camera button, which the window hides: the same panel,
-       the same lit / red-dot states, shut while an attempt is under way. -->
-  <button class="icon-btn cam-btn" id="sotd-camera" title="Webcam replay" aria-pressed="false">
+       the same lit / red-dot states, shut while an attempt is under way. A
+       labelled, bordered pill rather than a bare icon, because in here it is
+       the only way to film the attempt (main.js, syncCameraButton). -->
+  <button class="ghost-btn" id="sotd-camera" title="Webcam replay" aria-pressed="false">
     <svg viewBox="0 0 24 24"><path d="M3.5 8.2A2.2 2.2 0 015.7 6h8.6a2.2 2.2 0 012.2 2.2v7.6a2.2 2.2 0 01-2.2 2.2H5.7a2.2 2.2 0 01-2.2-2.2z"/><path d="M16.5 10.3l4-2.4v8.2l-4-2.4"/></svg>
     <span class="rec-dot" aria-hidden="true"></span>
+    <span class="sotd-cam-label">Camera</span>
   </button>
   <button class="ghost-btn" id="sotd-exit" title="Leave (Esc)">
     <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>

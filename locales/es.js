@@ -1969,4 +1969,11 @@ export const es = {
   "after you submit the Scramble of the Day, a copy of its clip goes up for everyone else who did it to watch, for 7 days. Off, there is a Share replay button under the board instead": "al enviar la Mezcla del día se sube una copia de su clip para que la vean quienes también la hicieron, durante 7 días. Desactivado, tienes un botón Compartir repetición bajo la clasificación",
   "Include sound in shared replays": "Incluir el sonido en las repeticiones compartidas",
   "off, the copy that goes up is silent": "desactivado, la copia que se sube va sin sonido",
+  "Filming": "Grabando",
+  "Camera on": "Cámara activada",
+  "Your attempt will be filmed": "Tu intento se grabará",
+  "New: film your attempt": "Nuevo: graba tu intento",
+  "Webcam replay is on. After you submit, Share replay puts your clip on the board for everyone who did today’s scramble.": "La repetición con webcam está activada. Al enviar, Compartir repetición pone tu clip en la clasificación para todos los que hicieron la mezcla de hoy.",
+  "Turn on the camera here to film today’s attempt. After you submit, you can share the replay with everyone who did the same scramble.": "Activa aquí la cámara para grabar el intento de hoy. Al enviar, podrás compartir la repetición con todos los que hicieron la misma mezcla.",
+  "Got it": "Entendido",
 };

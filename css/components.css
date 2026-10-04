@@ -3586,10 +3586,31 @@ body.focus #dock-bottom, body.focus #tile-float-layer { opacity: 0; pointer-even
 .sotd-clock b { color: var(--text); font-weight: 600; }
 #sotd-exit { display: flex; align-items: center; gap: 6px; font-size: .74rem; }
 #sotd-exit svg { width: 13px; height: 13px; }
-/* The top bar's camera button, which the window hides. Shut (and dimmed)
-   while an attempt is under way: inspection or the solve itself. */
-#sotd-camera { flex: none; }
+/* The top bar's camera button, which the window hides. A bordered pill with
+   a word in it, not a bare icon: in here it is the only way to film the
+   attempt, and a grey glyph beside Leave was easy to miss. Lit while replay
+   is on, red while filming; shut (and dimmed) while an attempt is under way. */
+#sotd-camera {
+  flex: none; height: 32px; padding: 0 12px 0 10px; gap: 7px;
+  font-size: .76rem; font-weight: 600; color: var(--text-dim);
+  border: 1px solid color-mix(in srgb, var(--text) 26%, transparent);
+  background: color-mix(in srgb, var(--surface) 55%, transparent);
+  border-radius: 999px;
+}
+#sotd-camera svg { width: 16px; height: 16px; flex: none; }
+#sotd-camera:hover { color: var(--text); border-color: color-mix(in srgb, var(--accent) 70%, transparent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+#sotd-camera.on {
+  color: var(--accent); border-color: color-mix(in srgb, var(--accent) 65%, transparent);
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+}
+#sotd-camera.rec { color: #ff6b61; border-color: color-mix(in srgb, #ff3b30 65%, transparent); background: color-mix(in srgb, #ff3b30 12%, transparent); }
+/* The dot sits in the pill, before the word, instead of on a corner. */
+#sotd-camera .rec-dot { position: static; box-shadow: none; width: 7px; height: 7px; }
 #sotd-camera[disabled] { opacity: .35; pointer-events: none; }
+/* Shut during the solve, but "Filming" is what says you are being recorded: kept readable. */
+#sotd-camera.rec[disabled] { opacity: .85; }
+/* Over the window's bar and board, under a popover. */
+.cam-hint.sotd-cam-hint { z-index: 95; }
 
 /* A column down the left, not a sheet across the bottom.
 
@@ -3845,6 +3866,10 @@ body.focus #dock-bottom, body.focus #tile-float-layer { opacity: 0; pointer-even
 
 @media (max-width: 520px) {
   #sotd-bar { gap: 8px; padding: 8px 12px; }
+  /* No room for the word beside the date, the countdown and Leave: the
+     bordered pill stays, around the icon alone. */
+  .sotd-cam-label { display: none; }
+  #sotd-camera { padding: 0 9px; }
   .sotd-kicker { display: none; }
   /* The qualifier beside the heading is a sentence, and a sentence does not
      share a line with a heading at this width Ã¢â‚¬â€ it wraps into a shape that
