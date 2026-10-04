@@ -61,6 +61,7 @@ export function openSheet({ title = '', label = '', content = [], done = false, 
   const api = {
     el: sheet,
     body,
+    get closed() { return closed; },
     setContent(nodes) { body.replaceChildren(...[].concat(nodes).filter(Boolean)); },
     close() {
       if (closed) return;
@@ -138,20 +139,27 @@ function wireSwipe(sheet, grips, api) {
   }
 }
 
+const CHECK = '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
+const CHEVRON = '<svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>';
+
 /**
- * A list of rows for a menu sheet: [{ label, sub, icon, danger, onSelect }].
+ * A list of rows for a menu sheet:
+ *   [{ label, sub, icon, value, check, chevron, accent, danger, disabled, keep, onSelect }]
+ * `check` marks the current choice; `chevron` says the row opens something.
  * Each row closes the sheet first unless it says `keep: true`.
  */
 export function sheetRows(items, sheet) {
   return el('div', { class: 'sheet-rows' },
     ...items.filter(Boolean).map((it) => el('button', {
-      class: 'sheet-row' + (it.danger ? ' danger' : ''), type: 'button',
-      disabled: it.disabled || null,
+      class: 'sheet-row' + (it.danger ? ' danger' : '') + (it.accent ? ' accent' : '') + (it.check ? ' current' : ''),
+      type: 'button', disabled: it.disabled || null, 'aria-current': it.check ? 'true' : null,
       onclick: () => { if (!it.keep) sheet()?.close(); it.onSelect?.(); },
     },
     it.icon ? el('span', { class: 'sheet-row-ico', html: it.icon, 'aria-hidden': 'true' }) : null,
     el('span', { class: 'sheet-row-txt' },
       el('span', { class: 'sheet-row-label', text: it.label }),
       it.sub ? el('span', { class: 'sheet-row-sub', text: it.sub }) : null),
-    it.value ? el('span', { class: 'sheet-row-val', text: it.value }) : null)));
+    it.value ? el('span', { class: 'sheet-row-val', text: it.value }) : null,
+    it.check ? el('span', { class: 'sheet-row-check', html: CHECK, 'aria-hidden': 'true' }) : null,
+    it.chevron ? el('span', { class: 'sheet-row-chev', html: CHEVRON, 'aria-hidden': 'true' }) : null)));
 }
