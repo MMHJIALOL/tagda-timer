@@ -1729,21 +1729,25 @@ function wireReplayUI() {
 /* =========================================================
    Support nudge
 
-   One page load in a hundred, a card in the corner points at the support
-   section of About (Ko-fi, and UPI for India). Only after a solve, so it is
-   never the first thing a new visitor sees and never lands on a held
-   spacebar; never on the same load as an unanswered announcement; out of the
-   way while an attempt runs, back after it once more at most. Answered
-   (either button or the cross), it stays away for a month even if the dice
-   come up again.
+   A card in the corner that points at the support section of About (Ko-fi,
+   and UPI for India). Everyone who has used the timer before gets it once,
+   then one page load in a hundred. "Used before" is solves already saved
+   when the page loaded, so a brand-new visitor is asked on a later visit,
+   not during their first. Only after a solve, so it never lands on a held
+   spacebar; never while the replay announcement is still unanswered; out of
+   the way while an attempt runs, back after it once more at most.
+   Answered (either button or the cross), the 1-in-100 stays away for a
+   month even if the dice come up again.
    ========================================================= */
 const COFFEE_ODDS = 0.01;
 const COFFEE_KEY = 'coffeeNudgeAt';
+const COFFEE_ASKED_KEY = 'coffeeAsked';    // the once-for-everyone ask has been shown
 const COFFEE_QUIET_MS = 30 * 24 * 60 * 60 * 1000;
 const COFFEE_SHOWS = 2;
 
 function wireSupportNudge() {
-  if (Math.random() >= COFFEE_ODDS) return;
+  const lucky = Math.random() < COFFEE_ODDS;
+  let firstAsk = false;
   let card = null;
   let shown = 0;
   let done = false;
@@ -1753,6 +1757,7 @@ function wireSupportNudge() {
     if (done || card || shown >= COFFEE_SHOWS) return;
     if (!timerIdle() || modalOpen() || document.hidden || camHint || hintArmed) return;
     shown++;
+    if (firstAsk) { firstAsk = false; KV.set(COFFEE_ASKED_KEY, true).catch(() => {}); }
     card = el('div', { class: 'cam-hint coffee-nudge', role: 'status', 'aria-live': 'polite' },
       el('button', { class: 'cam-hint-x', 'aria-label': t('Not now'), title: t('Not now'), html: '&times;', onclick: answer }),
       el('b', { text: t('Enjoying Tagda Timer?') }),
@@ -1762,8 +1767,10 @@ function wireSupportNudge() {
         el('button', { class: 'ghost-btn sm', text: t('Not now'), onclick: answer })));
     document.body.append(card);
   };
-  KV.get(COFFEE_KEY, 0).then((at) => {
-    if (Date.now() - at < COFFEE_QUIET_MS) return;
+  // Counted now, during boot, before this load's own first solve can land.
+  Promise.all([KV.get(COFFEE_KEY, 0), KV.get(COFFEE_ASKED_KEY, false), Solves.count()]).then(([at, asked, solves]) => {
+    firstAsk = !asked && !at && solves > 0;
+    if (!firstAsk && (!lucky || Date.now() - at < COFFEE_QUIET_MS)) return;
     timer.addEventListener('stop', () => setTimeout(show, 2000));
     timer.addEventListener('state', ({ detail: { state } }) => {
       if (state !== 'idle' && state !== 'cooldown') hide();
