@@ -112,6 +112,45 @@ if (typeof VideoEncoder === 'function' && !VideoEncoder.mended) {
   };
 }
 
+/* Mediabunny's WebM reader gives each frame the time up to the next one in
+   its cluster. The last frame of a cluster has no next one there, and unless
+   the file states a frame length (a webcam's, filmed at whatever rate the
+   camera manages, does not) it comes out 0 s long. Conversion takes a frame
+   with no length for one outside the clip and leaves it out. Chrome's
+   recorder starts a cluster at every keyframe, so the seekable copy lost the
+   frame before each one, twice a second (455 frames in, 424 out), and every
+   loss was a frame shown twice; Firefox's recordings, and the seekable copy
+   itself on its way into a download or a shared copy, lost one a second.
+   So frames read in order are given their real length: up to the next
+   frame's time, and the last one as long as the one before it. Installed
+   once, while this module is loaded; Conversion reads through this same
+   class. */
+if (!MB.VideoSampleSink.prototype.samples.timed) {
+  const samples = MB.VideoSampleSink.prototype.samples;
+  const timed = async function* (...args) {
+    let held = null, gap = 0;
+    try {
+      for await (const s of samples.apply(this, args)) {
+        if (held) {
+          gap = Math.max(0, s.timestamp - held.timestamp);
+          if (!(held.duration > 0)) held.setDuration(gap);
+          const out = held;
+          held = s;
+          yield out;
+        } else held = s;
+      }
+      if (held) {
+        if (!(held.duration > 0)) held.setDuration(gap);
+        const out = held;
+        held = null;
+        yield out;
+      }
+    } finally { held?.close(); }
+  };
+  timed.timed = true;
+  MB.VideoSampleSink.prototype.samples = timed;
+}
+
 /** Cancel `conv` when `signal` fires, and say so with an AbortError. */
 async function run(conv, signal, onProgress) {
   if (onProgress) conv.onProgress = (p) => onProgress(Math.min(1, p));
