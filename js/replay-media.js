@@ -120,10 +120,11 @@ if (typeof VideoEncoder === 'function' && !VideoEncoder.mended) {
    recorder starts a cluster at every keyframe, so the seekable copy lost the
    frame before each one, twice a second (455 frames in, 424 out), and every
    loss was a frame shown twice; Firefox's recordings, and the seekable copy
-   itself on its way into a download, lost one a second. So frames read in
-   order are given their real length: up to the next frame's time, and the
-   last one as long as the one before it. Installed once, while this module
-   is loaded; Conversion reads through this same class. */
+   itself on its way into a download or a shared copy, lost one a second.
+   So frames read in order are given their real length: up to the next
+   frame's time, and the last one as long as the one before it. Installed
+   once, while this module is loaded; Conversion reads through this same
+   class. */
 if (!MB.VideoSampleSink.prototype.samples.timed) {
   const samples = MB.VideoSampleSink.prototype.samples;
   const timed = async function* (...args) {
