@@ -1596,7 +1596,10 @@ function wireTimer() {
 const openShortcuts = () => openPanel(t('Keyboard shortcuts'), 'buildShortcuts', { wide: true });
 app.openCommands = () => openPaletteWithCommands();
 
-async function openCameraPanel() {
+/* `anchor`: the button it opens from. The top bar's, or the Scramble of the
+   Day bar's (#sotd-camera), since the top bar is hidden in that window. */
+async function openCameraPanel(anchor = $('#btn-camera')) {
+  if (!timerIdle()) return;
   let m;
   try { m = await loadPanels(); }
   catch (err) { return lazyFailed(t('webcam replay'), err); }
@@ -1611,17 +1614,24 @@ async function openCameraPanel() {
     }));
   // A tick later: on a phone the button was just tapped inside the folded
   // menu, and the menu closes on that same click.
-  setTimeout(() => popover($('#btn-camera'), [{ node }], { minWidth: 360 }), 0);
+  setTimeout(() => popover(anchor, [{ node }], { minWidth: 360 }), 0);
 }
 
+/* Both camera buttons, the top bar's and the SOTD bar's: lit while replay is
+   on, a red dot while filming. The SOTD one is also shut while an attempt is
+   under way (inspection or the solve), the one time a panel over the timer
+   would be in the way. */
 function syncCameraButton() {
-  const b = $('#btn-camera');
-  if (!b) return;
   const st = replayStatus();
-  b.classList.toggle('on', st.enabled);
-  b.classList.toggle('rec', st.recording);
-  b.setAttribute('aria-pressed', String(st.enabled));
-  b.title = st.recording ? t('Webcam replay — filming') : st.enabled ? t('Webcam replay — on') : t('Webcam replay');
+  for (const b of [$('#btn-camera'), $('#sotd-camera')]) {
+    if (!b) continue;
+    b.classList.toggle('on', st.enabled);
+    b.classList.toggle('rec', st.recording);
+    b.setAttribute('aria-pressed', String(st.enabled));
+    b.title = st.recording ? t('Webcam replay — filming') : st.enabled ? t('Webcam replay — on') : t('Webcam replay');
+  }
+  const sb = $('#sotd-camera');
+  if (sb) sb.disabled = !timerIdle();
 }
 
 /** The pill under the time: the solve on the digits was filmed, and nothing is under way. */
@@ -1692,6 +1702,8 @@ function wireReplayUI() {
   const btn = $('#btn-camera');
   if (btn && !replaySupported()) btn.title = t('Webcam replay (this browser cannot record video)');
   btn?.addEventListener('click', () => openCameraPanel());
+  const sotdBtn = $('#sotd-camera');
+  sotdBtn?.addEventListener('click', () => openCameraPanel(sotdBtn));
   $('#last-replay')?.addEventListener('click', () => {
     const last = shownSolve();
     if (last && hasReplay(last.id)) openReplay(last);
@@ -1707,6 +1719,7 @@ function wireReplayUI() {
   });
   timer.addEventListener('state', ({ detail: { state } }) => {
     syncReplayPill();
+    syncCameraButton();
     // Out of the way the moment an attempt starts, back once it is over.
     if (state !== 'idle' && state !== 'cooldown') camHint?.hide();
     else if (hintArmed && !camHint) setTimeout(showCameraHint, 1500);

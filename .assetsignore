@@ -10,3 +10,5 @@ worker.js
 sync-test.html
 # The tagdatimer.vercel.app redirect page, deployed to Vercel on its own.
 vercel-mover
+# Local Worker vars (gitignored too, but never served even when present).
+.dev.vars

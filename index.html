@@ -30,11 +30,11 @@
      import hint in Settings over a main.js that has never heard of CubeDesk.
      vercel.json also serves /css/ as `max-age=31536000, immutable`, so a
      stylesheet there will not even be asked about for a year without it. -->
-<link rel="modulepreload" href="js/main.js?v=82">
-<link rel="stylesheet" href="css/fonts.css?v=82">
-<link rel="stylesheet" href="css/tokens.css?v=82">
-<link rel="stylesheet" href="css/base.css?v=82">
-<link rel="stylesheet" href="css/components.css?v=82">
+<link rel="modulepreload" href="js/main.js?v=83">
+<link rel="stylesheet" href="css/fonts.css?v=83">
+<link rel="stylesheet" href="css/tokens.css?v=83">
+<link rel="stylesheet" href="css/base.css?v=83">
+<link rel="stylesheet" href="css/components.css?v=83">
 <link rel="icon" href="assets/favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="assets/logo-192.png">
 <link rel="apple-touch-icon" href="assets/logo-180.png">
@@ -707,6 +707,12 @@
     <span class="sotd-state"></span>
   </div>
   <div class="sotd-clock">resets in <b class="sotd-count">&mdash;</b></div>
+  <!-- The top bar's camera button, which the window hides: the same panel,
+       the same lit / red-dot states, shut while an attempt is under way. -->
+  <button class="icon-btn cam-btn" id="sotd-camera" title="Webcam replay" aria-pressed="false">
+    <svg viewBox="0 0 24 24"><path d="M3.5 8.2A2.2 2.2 0 015.7 6h8.6a2.2 2.2 0 012.2 2.2v7.6a2.2 2.2 0 01-2.2 2.2H5.7a2.2 2.2 0 01-2.2-2.2z"/><path d="M16.5 10.3l4-2.4v8.2l-4-2.4"/></svg>
+    <span class="rec-dot" aria-hidden="true"></span>
+  </button>
   <button class="ghost-btn" id="sotd-exit" title="Leave (Esc)">
     <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
     <span>Leave</span>
@@ -766,7 +772,7 @@
   </div>
 </div>
 
-<script type="module" src="js/main.js?v=82"></script>
+<script type="module" src="js/main.js?v=83"></script>
 <script>
 (function () {
   var isFile = location.protocol === 'file:';

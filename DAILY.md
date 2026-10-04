@@ -94,8 +94,10 @@ the UI.
 ## 2. Anti-cheat, honestly
 
 Identical tiers to Race mode, reusing the exact same constants (`CLOCK_SLACK_MS`,
-`CLOCK_SLACK_RATIO`, `SUSPECT_RATIO` — see [`js/raceapp.js`](js/raceapp.js)). No camera, no
-microphone, no screen recording. Ever.
+`CLOCK_SLACK_RATIO`, `SUSPECT_RATIO` — see [`js/raceapp.js`](js/raceapp.js)). A camera is never
+*required*: nothing here checks for one, and no time is judged on a video. Webcam replay is
+your own choice, the clip stays on your device, and sharing it with the day's board is opt-in,
+one press at a time or a setting you turn on yourself (§8).
 
 ### Enforced by database rules — Tier 1
 
@@ -174,6 +176,9 @@ transaction result and adopts it without waiting for the listener.
 | `js/panels.js`'s `buildDaily` | The drawer panel — event picker, countdown, both boards, no solving |
 | `firebase.rules.json` | The rules that make §1's guarantees real, alongside Race mode's |
 | `tools/verify-misfire.mjs` | `node` check of the misfire thresholds in `js/dayid.js` (§7) |
+| `js/sotd-replays.js` | Shared replays: Share replay, the ▶ on the boards, fetching and caching clips (§8) |
+| `worker.js` | The `/replay/*` routes and their limits, in front of the R2 bucket (§8) |
+| `tools/sotd-replay-dev.mjs` | One command for the emulators and `wrangler dev`, to test §8 locally |
 
 > **Republish `firebase.rules.json` before deploying this.** The previous rules end `results`
 > with `"$other": { ".validate": false }` and know nothing about `photo`, so a client that
@@ -187,6 +192,10 @@ Firebase project, the same rules file republished, the same config pasted into
 `js/raceapp.js`. Without that configuration, the panel says so and stays inert — it does not
 fall back to a local, unenforced mode the way Race mode does, because a daily leaderboard that
 cannot be shared with anyone else has nothing to demonstrate.
+
+Shared replays (§8) need one thing more: the R2 bucket `tagda-replays` bound in
+`wrangler.jsonc`, private, with a rule deleting objects 8 days after upload. Without the new
+rules published, sharing says it is not switched on yet and touches nothing.
 
 ---
 
@@ -489,3 +498,113 @@ auto-switch at 1.2 s, Keep and Use backup at 3.5 s, the same backup for a second
 is up, 8 s straight through, the tag on today's board and on the history view, how long each
 toast stays up, and both fallbacks under the old rules (sub-2 s thrown away with the main
 scramble re-armed; Use backup kept).
+
+---
+
+## 8. Shared replays
+
+With [webcam replay](README.md#webcam-replay) on, the day's attempt is filmed like any other
+solve: the clip is kept on your device against that solve and plays from the times list. After
+you submit, **Share replay** under the board uploads a copy of it, and everyone who has
+submitted the same day's attempt for the same event can watch it, for 7 days after the day.
+Nothing goes up until you press it, unless you have turned on **Always share my SOTD replay**
+in the camera panel (off by default). The camera panel opens from the button in the window's
+own bar too, since the top bar is hidden in here.
+
+- **Watching** is gated exactly like the times: nothing until you have submitted your own.
+  Rows with a shared clip get a ▶ on the time board, and the **Replays** view beside it lists
+  only those. Past days in the picker work the same; a day more than 7 days over says
+  *Replays are kept for 7 days*. Nothing loads until ▶ is pressed, and a clip fetched once is
+  kept in memory for the page, so watching it again asks for nothing.
+- **The player** is the ordinary one, run with the uploader's clock delay for their camera
+  (`adj`) so the clock lines up with their hands, under their name, and without keep, delete,
+  clock delay or Save video. An admin gets **Remove**.
+- **Your own share**: *Preparing… / Uploading n%*, then **Shared · Watch · Remove**. Watch
+  plays your local clip. Remove is for good that day (it says so first): the claim below stays,
+  so the same account cannot share again for that event until tomorrow.
+- **The copy** (`replay-media.js` `shareCopy`): the filmed size up to 720p (long side 1280),
+  never upscaled, 30 fps, a keyframe every 0.5 s for seeking, video bitrate
+  `min(1.5 Mbps at 720p / 0.6 Mbps at 480p, CLIP_MAX × 8 × 0.9 / duration)`. Under 0.5 Mbps at
+  720p it steps down to 480p; under 150 kbps the clip is too long to share and says so. Sound
+  only with **Include sound** ticked (shown only when the clip has sound); otherwise the track
+  is left out. A browser that cannot encode copies the frames into a new file as they are,
+  sound dropped, if that fits. The clip on your device is never changed.
+
+### Where it lives
+
+```
+R2 bucket tagda-replays (never public)
+  r/<dayKey>/<event>/<uid>   the clip. Custom metadata: v, mime, insp, start, stop, timeMs,
+                             w, h, fps, lat, adj, sound, at. No camera or microphone name.
+
+daily/<dayKey>/<event>/
+  replayClaim/<uid>          server ms. Write-once, own uid only, only once results/<uid>
+                             exists. Readable by its owner. Never deleted.
+  results/<uid>/replay       true, or absent. Its own .write (owner only, like note), and
+                             true only with a claim. The ▶ and the Replays view come from this.
+```
+
+The Worker (`worker.js`, `/replay/*`) is the only way to the bucket:
+
+| Request | Who | Order of checks |
+|---|---|---|
+| `PUT /replay/<dayKey>/<event>` | you, your clip | path, and today's or yesterday's day → headers (meta, type, length) → the body really that size, really WebM or MP4 → Google sign-in, a result on the board → **the claim** → `list` the day, under DAY_BUDGET → `put`, then the flag |
+| `GET /replay/<dayKey>/<event>/<uid>` | anyone with a result that day | path → not past 7 days → reading `results/<uid>` with your token (allowed only once yours exists) and its flag → `get` |
+| `DELETE /replay/<dayKey>/<event>/<uid>` | the owner, or an `ADMIN_UIDS` uid | path → token → the flag (owner) → `delete` |
+
+400 bad path or day, 401 token, 403 not submitted or not a Google account, 404 removed,
+409 already shared today, 410 past 7 days, 411 no length, 413 over CLIP_MAX, 415 not a video,
+503 rules not published yet, 507 the day is full. A clip is served with its stored type
+(WebM or MP4 only), `nosniff`, `Content-Security-Policy: sandbox; default-src 'none'` and
+`Cache-Control: private, max-age=86400`: these are strangers' uploads on tagdatimer.me.
+
+**No crypto in the Worker.** The ID token goes to the database's REST API as `?auth=`, never
+as a Bearer header (the REST API takes that as an admin credential and skips every rule). A
+read the rules allow proves the token is genuine, and only then is its payload decoded for the
+uid and `sign_in_provider`. A garbage token gets 401 from the production database (checked
+read-only on 2026-10-05). Only Google accounts can share: race mode signs people in
+anonymously on the same project, and anyone can mint anonymous tokens with the public key.
+
+**Retention is exact in the app**: the Worker treats a clip as gone once `now > dayKey + 8
+days` (7 days after the day ends), whatever the bucket's lifecycle rule has got round to.
+
+### The money rule
+
+R2 has no spending cap: going past the free tier bills the card instead of failing. So the code
+has to make going over impossible.
+
+| R2 meter | Free a month | What keeps it under |
+|---|---|---|
+| Class B (get, head) | 10M | Every read is a Worker request, at most one `get` each, and Workers Free stops at 100k requests a day: at most ~3.1M a month. The bucket has no public route (no r2.dev, no domain). |
+| Class A (put, list) | 1M | Nothing touches R2 for an upload until the write-once claim lands, one per Google account, event and day; after it, one `list` and one `put`. 50 parallel uploads from one account reach R2 once (tested). |
+| Storage | 10 GB-month | CLIP_MAX 10 MB a clip, DAY_BUDGET 1 GB a day for all events, and an 8-day lifecycle rule (plus up to 24 h before R2 acts): at most about 9 GB at peak. More than one page (1000 clips) in a day counts as full. |
+| Deletes, egress | free | — |
+
+The Worker itself stays on **Workers Free**, where every limit fails rather than bills, and
+static assets are not metered: `run_worker_first` is `/__/auth/*` and `/replay/*` only.
+
+Two honest edges. Class A is bounded by claims, so going over would take roughly 16,000
+claims a day, every day for a month: over a thousand Google accounts each submitting every
+event daily. And DAY_BUDGET is checked with a `list` before the `put`, so uploads racing at the
+same moment can each pass it: the day can run over by at most one clip per upload in flight.
+A viewer's browser may keep a clip it has already watched for up to a day after it is removed
+(the `private, max-age=86400` above); everybody else gets *That replay was removed*.
+
+Every refusal is a toast (*Replay space for today is full*, *Couldn't load the replay, try
+later*): the solve, the time and the board are never touched. There is no polling, and a
+request is retried at most once, and only after a network error.
+
+### Until firebase.rules.json is republished
+
+The claim has no rule to allow it, so the Worker answers 503 and the app says *Sharing replays
+isn't switched on yet*. Nothing reaches R2, and nothing is written from the browser that could
+be rolled back off your board row (the claim is the Worker's write, and the flag fallback only
+runs after a share succeeded).
+
+### Testing it locally
+
+`node tools/sotd-replay-dev.mjs` starts the Realtime Database and Auth emulators and
+`wrangler dev` (R2 simulated on disk) and prints the URL. `?emu=1` on localhost points the app
+at the emulators, and sign-in is the emulator's fake Google account chooser. `--reset` wipes
+the clips, `--old-rules` starts on the rules from before replays (`rules old|new` swaps them
+live), `--budget <bytes>` shrinks DAY_BUDGET, and `counts` prints the R2 operations so far.

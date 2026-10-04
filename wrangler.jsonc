@@ -1,6 +1,8 @@
 // Cloudflare Workers deploy: the repo root is served as static assets, which
-// are not metered. Only /__/auth/* runs worker.js (the Firebase sign-in proxy,
-// see raceapp.js); everything else is answered straight from the asset store.
+// are not metered. Only /__/auth/* (the Firebase sign-in proxy, see raceapp.js)
+// and /replay/* (shared SOTD replays, see DAILY.md §8) run worker.js;
+// everything else is answered straight from the asset store. Stay on the
+// Workers Free plan: its daily request cap is part of what keeps R2 free.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "tagda-timer",
@@ -9,9 +11,20 @@
   "assets": {
     "directory": ".",
     "binding": "ASSETS",
-    "run_worker_first": ["/__/auth/*"],
+    "run_worker_first": ["/__/auth/*", "/replay/*"],
     // /algs.html -> /algs, like cleanUrls did on Vercel.
     "html_handling": "auto-trailing-slash"
+  },
+  // Never public: no r2.dev, no custom domain. Every read goes through the
+  // Worker. Lifecycle rule: delete objects 8 days after upload.
+  "r2_buckets": [{ "binding": "REPLAYS", "bucket_name": "tagda-replays" }],
+  // Local values (the emulators, a small budget for tests) go in .dev.vars.
+  "vars": {
+    "RTDB_URL": "https://tagda-timer-default-rtdb.firebaseio.com",
+    "RTDB_NS": "",
+    "ADMIN_UIDS": "8lSr96LEO1cdHDVlMDv8tCCFQag1",
+    "DAY_BUDGET": "1073741824",
+    "CLIP_MAX": "10485760"
   },
   "observability": { "enabled": true }
 }

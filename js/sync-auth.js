@@ -19,6 +19,20 @@ import { clearSotdDone } from './dayid.js';
 const APP_NAME = 'tagda-sync';
 
 /**
+ * Local testing against the Firebase emulators (tools/sotd-replay-dev.mjs):
+ * only on localhost or 127.0.0.1, and only with ?emu=1 in the URL, so there
+ * is no way to switch it on at tagdatimer.me. Sign-in then goes to the Auth
+ * emulator's own account chooser and every database read and write to the
+ * local Realtime Database, so a test touches no real account and no real board.
+ */
+export const EMULATED = (() => {
+  try {
+    return (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
+      && new URLSearchParams(location.search).get('emu') === '1';
+  } catch { return false; }
+})();
+
+/**
  * Set immediately before signInWithRedirect() and cleared once the result
  * has been read back. It is the only thing that tells the page load AFTER
  * that redirect apart from any other page load: the account has not been
@@ -90,6 +104,7 @@ async function ensureSdk() {
     ]);
     const app = appMod.initializeApp(FIREBASE_CONFIG, APP_NAME);
     const auth = authMod.getAuth(app);
+    if (EMULATED) authMod.connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });
     await authMod.setPersistence(auth, authMod.browserLocalPersistence)
       .catch(err => console.warn('[sync] local persistence unavailable', err?.code || err));
     authMod.onAuthStateChanged(auth, (user) => {
@@ -147,6 +162,12 @@ export async function onAuthChange(fn) {
 
 export function currentUser() {
   return _sdk?.auth.currentUser ?? null;
+}
+
+/** The signed-in account's ID token, for the Worker's /replay/ routes; null when signed out. */
+export async function idToken() {
+  const { auth } = await ensureSdk();
+  return auth.currentUser ? auth.currentUser.getIdToken() : null;
 }
 
 /**
@@ -231,9 +252,14 @@ export function hasPersistedSession() {
   }
 }
 
+let _emuDb = false;
+
 export async function getDatabaseHandle() {
   const { appMod, auth } = await ensureSdk();
   const dbMod = await loadDatabaseModule();
   const app = appMod.getApp(APP_NAME);
-  return { ...dbMod, db: dbMod.getDatabase(app), auth };
+  const db = dbMod.getDatabase(app);
+  // Once, before anything reads or writes. The namespace comes from databaseURL.
+  if (EMULATED && !_emuDb) { _emuDb = true; dbMod.connectDatabaseEmulator(db, '127.0.0.1', 9000); }
+  return { ...dbMod, db, auth };
 }

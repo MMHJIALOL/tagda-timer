@@ -1559,6 +1559,8 @@ body:has(#timer-display.state-running) #goal-line { opacity: 0; }
 .rp-title { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
 .rp-title b { font-family: var(--font-timer); font-size: 1rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .rp-title span { font-size: .72rem; color: var(--text-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Whose solve it is, on a shared replay. */
+.rp-title .rp-who { font-size: .82rem; font-weight: 600; color: var(--text); }
 .rp-stage {
   display: grid; place-items: center; min-height: 120px;
   background: #000; border-radius: var(--radius-sm); overflow: hidden;
@@ -1724,14 +1726,14 @@ body:has(#timer-display.state-running) #goal-line { opacity: 0; }
 
 /* The top-bar camera. Lit while webcam replay is on; a red dot while an
    attempt is actually being filmed, so it is never filming unseen. */
-#btn-camera { position: relative; }
-#btn-camera .rec-dot {
+#btn-camera, #sotd-camera { position: relative; }
+#btn-camera .rec-dot, #sotd-camera .rec-dot {
   display: none; position: absolute; top: 4px; right: 4px; width: 8px; height: 8px; border-radius: 50%;
   background: #ff3b30; box-shadow: 0 0 0 2px var(--bg);
 }
-#btn-camera.rec .rec-dot { display: block; animation: recPulse 1.2s ease-in-out infinite; }
+#btn-camera.rec .rec-dot, #sotd-camera.rec .rec-dot { display: block; animation: recPulse 1.2s ease-in-out infinite; }
 @keyframes recPulse { 50% { opacity: .35; } }
-@media (prefers-reduced-motion: reduce) { #btn-camera.rec .rec-dot { animation: none; } }
+@media (prefers-reduced-motion: reduce) { #btn-camera.rec .rec-dot, #sotd-camera.rec .rec-dot { animation: none; } }
 
 /* Below the menu breakpoint the icon row folds away, except this one: the
    camera stays in the bar, beside the menu button. */
@@ -3584,6 +3586,10 @@ body.focus #dock-bottom, body.focus #tile-float-layer { opacity: 0; pointer-even
 .sotd-clock b { color: var(--text); font-weight: 600; }
 #sotd-exit { display: flex; align-items: center; gap: 6px; font-size: .74rem; }
 #sotd-exit svg { width: 13px; height: 13px; }
+/* The top bar's camera button, which the window hides. Shut (and dimmed)
+   while an attempt is under way: inspection or the solve itself. */
+#sotd-camera { flex: none; }
+#sotd-camera[disabled] { opacity: .35; pointer-events: none; }
 
 /* A column down the left, not a sheet across the bottom.
 
@@ -3634,6 +3640,20 @@ body.focus #dock-bottom, body.focus #tile-float-layer { opacity: 0; pointer-even
 .sotd-board-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .sotd-board-head h3 { margin: 0; }
 .sotd-board-head .daily-daynav { margin: 0; flex: none; }
+
+/* The board's views, Times and Replays: lettered like the heading they
+   replace, the one being shown in full colour with a rule under it. */
+/* Two tabs and the day picker do not always fit one row of a narrow column
+   (a phone, or a count on the Replays tab): the picker drops to its own. */
+.sotd-board-head:has(.sotd-tabs) { flex-wrap: wrap; row-gap: 8px; }
+.sotd-tabs { display: flex; gap: 12px; min-width: 0; margin-right: auto; }
+.sotd-tab {
+  padding: 2px 0; border-bottom: 1.5px solid transparent;
+  font-size: .64rem; font-weight: 700; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--text-faint); white-space: nowrap; cursor: pointer;
+}
+.sotd-tab:hover { color: var(--text-dim); }
+.sotd-tab[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); }
 
 .daily-daynav { display: flex; align-items: center; gap: 6px; margin-bottom: 10px; }
 .daily-daynav .btn {
@@ -3740,6 +3760,36 @@ body.focus #dock-bottom, body.focus #tile-float-layer { opacity: 0; pointer-even
 }
 .db-emoji-btn:hover { background: color-mix(in srgb, var(--accent) 22%, transparent); }
 .db-time { font-size: .84rem; font-weight: 650; font-variant-numeric: tabular-nums; }
+/* ▶ beside a time with a shared replay. In the time's own cell, so the row
+   keeps its columns whether or not there is one. */
+/* On a board where any row has one, the rows without keep its room, so the
+   times still line up down the right. */
+.db-time:has(.db-play) { display: inline-flex; align-items: center; gap: 6px; }
+.db-board:has(.db-play) .db-time:not(:has(.db-play)) { padding-right: 30px; }
+@media (pointer: coarse) { .db-board:has(.db-play) .db-time:not(:has(.db-play)) { padding-right: 36px; } }
+.db-play {
+  flex: none; width: 24px; height: 24px; display: grid; place-items: center;
+  border-radius: 50%; color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 34%, transparent);
+  cursor: pointer; transition: background var(--dur-fast) var(--ease);
+}
+.db-play svg { width: 11px; height: 11px; margin-left: 1px; }
+.db-play:hover { background: color-mix(in srgb, var(--accent) 26%, transparent); }
+.db-play.loading { opacity: .5; cursor: progress; animation: recPulse 1s ease-in-out infinite; }
+@media (pointer: coarse) { .db-play { width: 30px; height: 30px; } }
+
+/* Share replay, under the note composer. */
+.db-share { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; padding-top: 10px; border-top: 1px solid var(--border); }
+.db-share[hidden] { display: none; }
+.db-share-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: .76rem; color: var(--text-dim); }
+.db-share-row > span { min-width: 0; }
+.db-share .btn.sm { height: 30px; padding: 0 12px; font-size: .76rem; gap: 6px; }
+.db-share .btn.sm svg { width: 11px; height: 11px; }
+.db-share-done { color: var(--ok); flex: 1 1 auto; }
+.db-share-note { font-size: .68rem; line-height: 1.45; color: var(--text-faint); }
+.db-share-sound { display: inline-flex; align-items: center; gap: 5px; font-size: .72rem; color: var(--text-dim); cursor: pointer; }
+.db-share-sound input { accent-color: var(--accent); }
 .db-unit { font-size: .66rem; color: var(--text-faint); }
 .db-flag { font-size: .7rem; color: var(--warn); cursor: help; }
 /* The ⚑'s cousin, as a word: this time was done on the backup scramble. */
@@ -3794,7 +3844,7 @@ body.focus #dock-bottom, body.focus #tile-float-layer { opacity: 0; pointer-even
 }
 
 @media (max-width: 520px) {
-  #sotd-bar { gap: 10px; padding: 8px 12px; }
+  #sotd-bar { gap: 8px; padding: 8px 12px; }
   .sotd-kicker { display: none; }
   /* The qualifier beside the heading is a sentence, and a sentence does not
      share a line with a heading at this width Ã¢â‚¬â€ it wraps into a shape that

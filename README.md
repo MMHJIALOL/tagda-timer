@@ -432,9 +432,17 @@ live preview to aim it with. If the chosen camera is unplugged, the next attempt
 another one and says so, and plugging it back switches back. Standard (640×480) or HD
 (1280×720).
 
-Clips stay **on this device only**, in their own database, never synced or uploaded. Keep the
-newest **50, 200 or 1000**; a **PB single's clip is kept for good**, and so is any you mark
+Clips stay **on this device only**, in their own database, never synced. Keep the newest
+**50, 200 or 1000**; a **PB single's clip is kept for good**, and so is any you mark
 **Keep forever** in the player. A misfire you discard is never saved.
+
+The one exception is yours to make: **Scramble of the Day replays**. After you submit the day's
+attempt, **Share replay** under the board uploads a copy of its clip (720p at most, sound only
+if you tick *Include sound*), and everyone else who has done that day's scramble can watch it
+from the ▶ on the board or the **Replays** view, for 7 days. **Always share my SOTD replay**
+in the camera panel does it every day without the button; it is off until you turn it on. One
+share per event a day, removable (for good, that day). The window has its own camera button,
+next to Leave. How it stays free and private is in [DAILY.md §8](DAILY.md#8-shared-replays).
 
 The camera is only on while it is needed: it wakes on the press (or the start of inspection),
 switches off a second after the stop, and goes the moment you leave the tab. A preview in
