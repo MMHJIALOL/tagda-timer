@@ -574,6 +574,7 @@ async function init() {
   });
   wireTimer();
   wireReplayUI();
+  wireSupportNudge();
   initFeedback(timer);
   wireInput();
   wireScrambleSwipe();
@@ -1723,6 +1724,51 @@ function wireReplayUI() {
       }, 4000);
     }).catch(() => {});
   }
+}
+
+/* =========================================================
+   Support nudge
+
+   One page load in a hundred, a card in the corner points at the support
+   section of About (Ko-fi, and UPI for India). Only after a solve, so it is
+   never the first thing a new visitor sees and never lands on a held
+   spacebar; never on the same load as an unanswered announcement; out of the
+   way while an attempt runs, back after it once more at most. Answered
+   (either button or the cross), it stays away for a month even if the dice
+   come up again.
+   ========================================================= */
+const COFFEE_ODDS = 0.01;
+const COFFEE_KEY = 'coffeeNudgeAt';
+const COFFEE_QUIET_MS = 30 * 24 * 60 * 60 * 1000;
+const COFFEE_SHOWS = 2;
+
+function wireSupportNudge() {
+  if (Math.random() >= COFFEE_ODDS) return;
+  let card = null;
+  let shown = 0;
+  let done = false;
+  const hide = () => { card?.remove(); card = null; };
+  const answer = () => { done = true; hide(); KV.set(COFFEE_KEY, Date.now()).catch(() => {}); };
+  const show = () => {
+    if (done || card || shown >= COFFEE_SHOWS) return;
+    if (!timerIdle() || modalOpen() || document.hidden || camHint || hintArmed) return;
+    shown++;
+    card = el('div', { class: 'cam-hint coffee-nudge', role: 'status', 'aria-live': 'polite' },
+      el('button', { class: 'cam-hint-x', 'aria-label': t('Not now'), title: t('Not now'), html: '&times;', onclick: answer }),
+      el('b', { text: t('Enjoying Tagda Timer?') }),
+      el('span', { text: t('It is free, and made by one cuber. If it helps your practice, a coffee helps pay for the hosting and sync that keep it running.') }),
+      el('div', { class: 'cam-hint-row' },
+        el('button', { class: 'btn primary', text: t('☕ Buy me a coffee'), onclick: () => { answer(); openPanel('About', 'buildAbout', undefined, app); } }),
+        el('button', { class: 'ghost-btn sm', text: t('Not now'), onclick: answer })));
+    document.body.append(card);
+  };
+  KV.get(COFFEE_KEY, 0).then((at) => {
+    if (Date.now() - at < COFFEE_QUIET_MS) return;
+    timer.addEventListener('stop', () => setTimeout(show, 2000));
+    timer.addEventListener('state', ({ detail: { state } }) => {
+      if (state !== 'idle' && state !== 'cooldown') hide();
+    });
+  }).catch(() => {});
 }
 
 /**
