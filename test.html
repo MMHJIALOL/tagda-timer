@@ -919,6 +919,72 @@ section('reconstruction steps');
     spots(-80, 30).D.front && !spots(-80, 30).U.front);
 }
 
+/* ---------------- the move pad ----------------
+   On a phone the moves are typed on a pad, and ′, 2 and w change the move
+   already on the line instead of waiting for the next one. */
+section('move pad');
+{
+  const M = await import('./js/movepad.js');
+  check("′ turns R into R' and back, and a double into a prime",
+    M.primeOf('R') === "R'" && M.primeOf("R'") === 'R' && M.primeOf('R2') === "R'" && M.primeOf('x') === "x'");
+  check('2 makes a move a double, and a double single again',
+    M.doubleOf('U') === 'U2' && M.doubleOf("U'") === 'U2' && M.doubleOf('U2') === 'U' && M.doubleOf('M') === 'M2');
+  check('w makes a face turn wide, written Rw, and keeps its direction',
+    M.wideOf('R') === 'Rw' && M.wideOf("F'") === "Fw'" && M.wideOf('Rw2') === 'R2');
+  check('a slice or a rotation has no wide form', M.wideOf('M') === null && M.wideOf('y') === null);
+  check('nothing to change gives nothing back', M.primeOf('') === null && M.doubleOf('nonsense') === null);
+
+  /* The replay names the last-layer case under each line. */
+  const C = await import('./js/cube3.js');
+  const SV = await import('./js/solver.js');
+  const at = (alg) => { const r = C.applyAlg(C.SOLVED, alg, C.IDENTITY_FRAME); return [r.state, r.frame, C.analyse(r.state, 'D')]; };
+  check('the replay recognises an OLL by its shape', SV.lastLayerCase(...at("R U R' U' R' F R F'")) === 'Fish 37',
+    String(SV.lastLayerCase(...at("R U R' U' R' F R F'"))));
+  check('and a PLL by its name', SV.lastLayerCase(...at("R U R' U' R' F R2 U' R' U' R U R' F'")) === 'T',
+    String(SV.lastLayerCase(...at("R U R' U' R' F R2 U' R' U' R U R' F'"))));
+  check('a solved last layer is not a case', SV.lastLayerCase(...at('')) === null);
+}
+
+/* ---------------- phone sheets ----------------
+   On a phone the pickers and the solve menu are lists of rows in a sheet. */
+section('phone sheets');
+{
+  const S = await import('./js/sheet.js');
+  let picked = 0, closed = 0;
+  const fake = { close: () => closed++ };
+  const rows = S.sheetRows([
+    { label: 'A', check: true },
+    null,
+    { label: 'B', chevron: true, keep: true, onSelect: () => picked++ },
+  ], () => fake);
+  check('a row list skips the empty slots', rows.children.length === 2);
+  check('the current choice is ticked, and says so',
+    !!rows.children[0].querySelector('.sheet-row-check') && rows.children[0].getAttribute('aria-current') === 'true');
+  check('a row that opens something carries a chevron', !!rows.children[1].querySelector('.sheet-row-chev'));
+  rows.children[1].click();
+  rows.children[0].click();
+  check('a row closes its sheet unless it is told to keep it', picked === 1 && closed === 1, `${picked} ${closed}`);
+
+  // Every word the phone shell shows goes through t(), and Spanish has each one.
+  const src = await (await fetch('./js/phoneshell.js')).text();
+  const { es } = await import('./locales/es.js');
+  const keys = [...src.matchAll(/\bt\(\s*'((?:\\'|[^'])*)'/g)].map(m => m[1].replace(/\\'/g, "'"));
+  const missing = keys.filter(k => !(k in es));
+  check('every phone-shell string has its Spanish', keys.length > 30 && !missing.length, missing.join(' | ') || String(keys.length));
+
+  // The Times tab's trend card: a dot per time, the best ringed, a DNF crossed.
+  const C = await import('./js/charts.js');
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  const times = [12000, 11000, 13000, 10000, 12500, 11800, null, 12100]
+    .map(ms => (ms ? { timeMs: ms, penalty: 'none' } : { timeMs: 12000, penalty: 'DNF' }));
+  check('the trend draws once there are two times', C.renderDotTrend(svg, times, { width: 300, height: 84 }) === true);
+  check('one dot per time, the best ringed, a DNF crossed',
+    svg.querySelectorAll('.dt-dot').length === 6 && svg.querySelectorAll('.dt-pb').length === 1 && svg.querySelectorAll('.dt-dnf').length === 1,
+    `${svg.querySelectorAll('.dt-dot').length} ${svg.querySelectorAll('.dt-pb').length} ${svg.querySelectorAll('.dt-dnf').length}`);
+  check('the rolling ao5 runs through them', !!svg.querySelector('.dt-ao'));
+  check('one time is not a trend yet', C.renderDotTrend(svg, times.slice(0, 1)) === false);
+}
+
 /* ---------------- the last-layer libraries ----------------
    Two thousand algs scraped off a website is two thousand chances to ship one
    that does not work, and a suggestion that does not work is worse than no

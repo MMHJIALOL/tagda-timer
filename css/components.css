@@ -4087,3 +4087,9 @@ body.relay .scramble-label { display: none; }
 .grad-adv summary { cursor: pointer; font-size: .78rem; color: var(--text-dim); padding: 4px 0; }
 /* A setting that only applies while the one above it is on. */
 .row.off { opacity: .45; }
+
+/* The phone shell's own pieces (js/phoneshell.js, laid out by css/phone.css)
+   exist only once a phone has built them, and show only while body.ph says
+   the phone layout is on: a window widened past 640px keeps the elements and
+   never shows them. */
+body:not(.ph) :is(.ph-only, .ph-best, #ph-context, #ph-net, #ph-recent, #ph-dock, .ph-screen) { display: none !important; }

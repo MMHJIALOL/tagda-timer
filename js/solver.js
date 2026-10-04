@@ -485,6 +485,29 @@ function lastLayer(state, frame, analysis) {
   return { main, zb };
 }
 
+/**
+ * Which OLL or PLL a last-layer position is — "Fish 37", "Ra" — or null.
+ *
+ * The replay of a reconstruction names the case under each last-layer line,
+ * the way people write a reconstruction out. The first case with any alg that
+ * does the job is the case: a position only ever is one.
+ */
+export function lastLayerCase(state, frame, analysis) {
+  if (analysis?.method === 'roux' || (analysis?.phase !== 'oll' && analysis?.phase !== 'pll')) return null;
+  const rot = BRING_UP[toUserFace(frame, analysis.ll)] ?? '';
+  if (analysis.phase === 'pll') {
+    if (aufOnly(state, frame, rot).length) return t('PLL skip');
+    for (const entry of PLL_SET) {
+      if (entry.algs.some(({ toks }) => fit(state, frame, rot, toks, isSolvedState, AUFS))) return entry.name;
+    }
+    return null;
+  }
+  for (const entry of OLL_SET) {
+    if (entry.algs.some(({ toks }) => fit(state, frame, rot, toks, s => orientedOn(s, analysis.ll), ['']))) return ollName(entry);
+  }
+  return null;
+}
+
 /* =========================================================
    The one function the UI calls
    ========================================================= */
