@@ -945,6 +945,34 @@ section('move pad');
   check('a solved last layer is not a case', SV.lastLayerCase(...at('')) === null);
 }
 
+/* ---------------- phone sheets ----------------
+   On a phone the pickers and the solve menu are lists of rows in a sheet. */
+section('phone sheets');
+{
+  const S = await import('./js/sheet.js');
+  let picked = 0, closed = 0;
+  const fake = { close: () => closed++ };
+  const rows = S.sheetRows([
+    { label: 'A', check: true },
+    null,
+    { label: 'B', chevron: true, keep: true, onSelect: () => picked++ },
+  ], () => fake);
+  check('a row list skips the empty slots', rows.children.length === 2);
+  check('the current choice is ticked, and says so',
+    !!rows.children[0].querySelector('.sheet-row-check') && rows.children[0].getAttribute('aria-current') === 'true');
+  check('a row that opens something carries a chevron', !!rows.children[1].querySelector('.sheet-row-chev'));
+  rows.children[1].click();
+  rows.children[0].click();
+  check('a row closes its sheet unless it is told to keep it', picked === 1 && closed === 1, `${picked} ${closed}`);
+
+  // Every word the phone shell shows goes through t(), and Spanish has each one.
+  const src = await (await fetch('./js/phoneshell.js')).text();
+  const { es } = await import('./locales/es.js');
+  const keys = [...src.matchAll(/\bt\(\s*'((?:\\'|[^'])*)'/g)].map(m => m[1].replace(/\\'/g, "'"));
+  const missing = keys.filter(k => !(k in es));
+  check('every phone-shell string has its Spanish', keys.length > 30 && !missing.length, missing.join(' | ') || String(keys.length));
+}
+
 /* ---------------- the last-layer libraries ----------------
    Two thousand algs scraped off a website is two thousand chances to ship one
    that does not work, and a suggestion that does not work is worse than no

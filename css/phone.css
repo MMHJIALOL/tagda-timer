@@ -157,3 +157,530 @@ body:has(.sheet) #toasts {
   top: calc(12px + env(safe-area-inset-top));
   bottom: auto;
 }
+
+/* Rows that say which one is current, and rows that open something. */
+.sheet-row.accent .sheet-row-label { color: var(--accent-text); font-weight: 600; }
+.sheet-row-check, .sheet-row-chev { flex: none; display: grid; place-items: center; }
+.sheet-row-check { color: var(--accent-text); }
+.sheet-row-chev { color: var(--text-faint); }
+.sheet-row-check svg, .sheet-row-chev svg {
+  width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.9;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+.sheet-row-chev svg { width: 17px; height: 17px; stroke-width: 1.7; }
+
+/* ===========================================================
+   The phone shell (js/phoneshell.js)
+
+   body.ph is set by phoneshell.js whenever this stylesheet applies, so every
+   rule below also says it: the dock, the tabs and the sheets were built for
+   this layout and nothing else.
+   =========================================================== */
+
+:root {
+  --ph-dock-h: 66px;
+  --ph-dock-b: calc(12px + env(safe-area-inset-bottom));
+  /* What the dock covers, plus a breath: the foot of every tab stops here. */
+  --ph-dock-room: calc(var(--ph-dock-h) + var(--ph-dock-b) + 12px);
+}
+
+/* The whole screen is the timer, so none of it may be taken for a pan or a
+   pull-to-refresh halfway through a hold — the browser cancels the touch when
+   it does. Strips and tabs that scroll say so themselves. */
+body.ph #app {
+  display: flex; flex-direction: column; gap: 0;
+  height: 100dvh;
+  padding: max(8px, env(safe-area-inset-top)) 0 var(--ph-dock-room);
+  touch-action: none;
+}
+body.ph.sotd #app { padding-bottom: max(12px, env(safe-area-inset-bottom)); }
+
+/* What a phone does not have: the wordmark, the pickers, the menu, the icon
+   row (every one of those is in a tab or a sheet now), the floating preview
+   (the net in the scramble card), and the rails (the Times tab). */
+body.ph .topbar-left, body.ph .topbar-center, body.ph #btn-menu,
+body.ph #panel-cube, body.ph #creator-chip, body.ph #dock-bottom,
+body.ph #last-replay, body.ph .scramble-label,
+body.ph #last-actions [data-act="comment"], body.ph #last-actions [data-act="share"],
+body.ph #last-actions [data-act="delete"] { display: none !important; }
+
+/* ---------------- top row: context pill · camera · Daily ---------------- */
+body.ph #topbar {
+  flex: none; display: flex; flex-wrap: nowrap; align-items: center; gap: 8px;
+  min-height: 44px; padding: 0 var(--phone-gutter);
+}
+body.ph .topbar-right, body.ph .topbar-right:not(.open) {
+  display: flex; flex-direction: row; align-items: center; gap: 8px;
+  position: static; margin-left: auto; padding: 0; min-width: 0; max-height: none;
+  background: none; border: 0; box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none;
+}
+body.ph .topbar-right > :not(#btn-camera):not(#btn-daily) { display: none !important; }
+body.ph .topbar-right > #btn-camera, body.ph .topbar-right > #btn-daily { display: flex; }
+
+.ph-ctx {
+  flex: 0 1 auto; min-width: 0;
+  display: flex; align-items: center; gap: 8px;
+  height: 42px; padding: 0 12px; border-radius: 21px;
+  background: var(--surface); border: 1px solid var(--border); color: var(--text);
+  font-family: var(--font-ui);
+}
+.ph-ctx-ico { flex: none; color: var(--accent-text); display: grid; }
+.ph-ctx-ico svg, .ph-ctx-chev svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.ph-ctx-ico svg { width: 19px; height: 19px; }
+.ph-ctx-chev { flex: none; color: var(--text-faint); display: grid; }
+.ph-ctx-chev svg { width: 16px; height: 16px; }
+.ph-ctx-ev { flex: none; font-size: 15px; font-weight: 600; }
+.ph-dot { flex: none; width: 3px; height: 3px; border-radius: 2px; background: var(--text-faint); }
+.ph-ctx-ses {
+  min-width: 0; font-size: 14.5px; color: var(--text-dim);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+body.ph #btn-camera {
+  width: 42px; height: 42px; border-radius: 21px; justify-content: center;
+  background: var(--surface); border: 1px solid var(--border); color: var(--text-dim);
+}
+body.ph #btn-camera svg { width: 20px; height: 20px; }
+body.ph #btn-camera.on {
+  color: var(--accent-text); background: var(--accent-tint);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+}
+body.ph #btn-camera .rec-dot { top: 6px; right: 6px; }
+
+body.ph #btn-daily {
+  height: 42px; padding: 0 15px 0 12px; gap: 7px; border-radius: 21px;
+  color: var(--gold);
+  background: color-mix(in srgb, var(--gold) 10%, transparent);
+  border-color: color-mix(in srgb, var(--gold) 24%, transparent);
+}
+body.ph #btn-daily .sotd-glyph, body.ph #btn-daily .sotd-glyph svg { width: 18px; height: 18px; }
+body.ph #btn-daily .sotd-label { display: none; }
+/* Gold as text, pulled towards the theme's own text colour so it still reads
+   on a light theme. */
+.ph-daily-lbl { font-size: 14px; font-weight: 600; color: color-mix(in oklab, var(--gold) 72%, var(--text)); }
+/* Done for today: the quiet outline main.js has always given it, a circle here. */
+body.ph #btn-daily.done {
+  width: 42px; padding: 0; justify-content: center;
+  color: var(--text-faint); background: var(--surface); border-color: var(--border);
+}
+body.ph #btn-daily.done .ph-daily-lbl { display: none; }
+
+/* ---------------- the scramble card ---------------- */
+body.ph #scramble-zone {
+  flex: none; align-items: stretch; gap: 10px;
+  margin: 14px var(--phone-gutter) 0; padding: 18px 16px 12px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 24px;
+}
+body.ph #scramble-wrap {
+  width: auto; padding: 0;
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center;
+  column-gap: 8px; row-gap: 12px;
+}
+body.ph #scramble-text {
+  grid-column: 1 / -1;
+  padding: 0; border: 0; border-radius: 0; background: none;
+  font-size: calc(19px * var(--scramble-scale));
+  font-weight: 500; line-height: 1.55; word-spacing: .16em; letter-spacing: 0;
+  text-align: center; text-wrap: balance; white-space: pre-wrap;
+}
+body.ph #scramble-text.long { font-size: calc(15px * var(--scramble-scale)); }
+body.ph #scramble-text.multiline { font-size: calc(13px * var(--scramble-scale)); line-height: 1.45; text-align: left; text-wrap: initial; }
+body.ph #scramble-text.race-hold { font-family: var(--font-ui); font-size: 15px; color: var(--text-dim); }
+body.ph #scramble-tools {
+  grid-column: 1; justify-self: start;
+  position: static; transform: none; opacity: 1;
+  display: flex; gap: 2px; margin: 0; color: var(--text-dim);
+}
+/* Previous, next, copy, your own: the order the card reads them in. */
+body.ph #btn-prev-scramble { order: 1; }
+body.ph #btn-next-scramble { order: 2; }
+body.ph #btn-copy-scramble { order: 3; }
+body.ph #btn-custom-scramble { order: 4; }
+body.ph #scramble-tools .ghost-btn {
+  width: 44px; height: 44px; padding: 0; border: 0; border-radius: 22px; background: none;
+  display: grid; place-items: center; color: var(--text-dim);
+}
+body.ph #scramble-tools .ghost-btn svg { width: 22px; height: 22px; stroke-width: 1.7; }
+body.ph #scramble-tools .ghost-btn:active { background: color-mix(in srgb, var(--text) 8%, transparent); }
+
+.ph-net {
+  grid-column: 2; justify-self: end;
+  padding: 6px; border-radius: 12px;
+  background: var(--bg); border: 1px solid var(--border);
+}
+.ph-net-host { width: 84px; height: 63px; pointer-events: none; }
+.ph-net-host twisty-player { width: 100%; height: 100%; }
+body.no-cube .ph-net { display: none; }
+body.sotd .ph-net { grid-column: 1 / -1; justify-self: center; }
+
+/* The lines that hang under the scramble on a phone are the same ones the
+   desktop has; they only get tighter. */
+body.ph #goal-line, body.ph #now-playing, body.ph #custom-bar, body.ph #case-label { margin: 0; align-self: center; }
+body.ph #bld-zone, body.ph #phase-zone, body.ph #learn-bar { margin-top: 0; }
+
+/* ---------------- the clock ---------------- */
+body.ph #stage {
+  flex: 1 1 auto; min-height: 0;
+  display: flex; flex-direction: column; gap: 0;
+  padding: 0 var(--phone-gutter);
+}
+/* `safe`: a block too tall for the space (a Fewest Moves attempt, a long
+   multiphase readout) starts at the top of it rather than spilling upwards
+   into the scramble. */
+body.ph #timer-zone { flex: 1 1 auto; min-height: 0; justify-content: safe center; }
+body.ph #sidebar { display: none; }
+/* The right rail holds the race panel while a room is open (it docks itself
+   across the foot of the screen); the figures are the Times tab's. */
+body.ph #sidebar-right { flex: none; height: 0; min-height: 0; overflow: visible; }
+body.ph #panel-stats { display: none !important; }
+body.ph #panel-race {
+  left: var(--phone-gutter); right: var(--phone-gutter); bottom: var(--ph-dock-room);
+  border-radius: 20px; border-bottom: 1px solid var(--border);
+  max-height: 52vh; padding-bottom: 10px;
+}
+body.ph.sotd #panel-race, body.ph:is(.focus, .inspecting, .timing) #panel-race { bottom: max(12px, env(safe-area-inset-bottom)); }
+
+body.ph #timer-core {
+  position: relative; left: auto; top: auto; transform: none;
+  gap: 0;
+}
+body.ph #timer-display {
+  order: 1;
+  font-family: var(--font-mono);
+  /* 100px on a 390px phone, and never wider than the screen however many
+     characters the time has. */
+  font-size: min(calc(var(--timer-size) * 1.71), calc((100vw - 2 * var(--phone-gutter)) / (var(--ph-chars, 5) * .58)));
+  letter-spacing: -.055em; line-height: 1;
+}
+body.ph #timer-avgs {
+  order: 2;
+  position: static; transform: none; width: auto;
+  display: flex; align-items: stretch; column-gap: 20px; row-gap: 8px; margin-top: 16px;
+}
+body.ph #timer-avgs[hidden] { display: none; }
+body.ph #timer-avgs > span:not(.sep) { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+body.ph #timer-avgs b {
+  display: flex; align-items: center; gap: 6px;
+  font-family: var(--font-ui); font-size: 12px; font-weight: 600; letter-spacing: 0; text-transform: none;
+  color: var(--text-dim); line-height: 19px;
+}
+body.ph #timer-avgs > span > i {
+  font-size: 21px; font-weight: 600; letter-spacing: -.01em; line-height: 1.15;
+}
+body.ph #timer-avgs.no-avg > span, body.ph #timer-avgs.solo > :is(.a12, .sep) { display: none; }
+body.ph #timer-avgs #timer-bpa i { font-size: 14px; }
+body.ph #timer-bpa b { display: inline; color: var(--text-faint); }
+body.ph #timer-avgs i.ph-is-best { color: var(--accent-2); }
+body.ph #timer-avgs .sep { width: 1px; height: auto; align-self: stretch; background: var(--border); }
+.ph-best {
+  font-family: var(--font-ui); font-size: 10.5px; font-weight: 600; line-height: 17px;
+  padding: 0 6px; border-radius: 6px;
+  color: var(--accent-2); background: color-mix(in srgb, var(--accent-2) 14%, transparent);
+}
+.ph-best[hidden] { display: none; }
+body.ph #timer-bpa { grid-column: auto; margin-top: 4px; }
+
+/* How it compared with the last one: above the digits, in a band kept for it
+   whether or not it is showing, so the clock does not move when it lands. */
+body.ph #timer-core { padding-top: 36px; }
+body.ph #last-row {
+  position: absolute; left: 0; right: 0; top: 0; height: 26px;
+  display: flex; justify-content: center; align-items: center; pointer-events: none;
+}
+body.ph #last-delta { font-size: 13px; }
+
+body.ph #last-actions {
+  order: 3;
+  display: flex; flex-wrap: wrap; justify-content: center; gap: 8px;
+  max-width: none; margin-top: 24px;
+}
+body.ph #last-actions .ph-pill, body.ph #last-actions .ghost-btn.ph-pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 38px; padding: 0 14px; border-radius: 19px;
+  background: var(--surface); border: 1px solid var(--border);
+  font-family: var(--font-ui); font-size: 14px; font-weight: 600; color: var(--text);
+}
+body.ph #last-actions .ph-pill[hidden] { display: none; }
+body.ph #last-actions .ph-pill svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+body.ph #last-actions .ph-pill svg .fill, body.ph .ph-tab-ico .fill, .ph-sheet-ico .fill { fill: currentColor; stroke: none; }
+body.ph #last-actions [aria-pressed="true"] {
+  color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, transparent);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+}
+
+body.ph #timer-hint {
+  order: 4; margin-top: 22px; height: auto; max-width: none;
+  font-size: 13.5px; letter-spacing: 0; color: var(--text-faint);
+}
+body.ph #phase-readout, body.ph #phase-live, body.ph #relay-now,
+body.ph #pace-ghost, body.ph #hold-bar, body.ph #manual-entry, body.ph #stackmat-bar { order: 5; margin-top: 14px; }
+body.ph #pace-ghost { width: min(320px, 80vw); }
+/* Fewest Moves puts its hour and its solution where the timer's buttons go. */
+body.ph .fmc-zone { order: 3; margin-top: 20px; width: 100%; }
+body.ph.fmc-attempting .ph-recent { display: none; }
+body.ph.fmc-attempting #app { padding-bottom: max(12px, env(safe-area-inset-bottom)); }
+body.ph #manual-entry input { font-size: 16px; }
+
+/* ---------------- the recent strip ---------------- */
+.ph-recent { flex: none; padding: 10px 0 0 var(--phone-gutter); }
+.ph-recent-head {
+  display: flex; justify-content: space-between; align-items: center;
+  padding-right: 20px; margin-bottom: 4px; min-height: 22px;
+}
+.ph-lbl { font-size: 13px; font-weight: 600; color: var(--text-dim); }
+.ph-all {
+  margin: -11px -8px; padding: 11px 8px; min-height: 44px;
+  font-size: 13px; font-weight: 600; color: var(--accent-text);
+}
+.ph-all[hidden] { display: none; }
+.ph-chips {
+  display: flex; gap: 8px; overflow-x: auto; overscroll-behavior-x: contain;
+  padding: 6px var(--phone-gutter) 2px 0; scrollbar-width: none;
+  touch-action: pan-x;
+}
+.ph-chips::-webkit-scrollbar { display: none; }
+.ph-chip {
+  flex: none; display: flex; align-items: center;
+  height: 46px; padding: 0 15px; border-radius: 15px;
+  background: var(--surface); border: 1px solid var(--border);
+  font-family: var(--font-mono); font-size: 15.5px; font-weight: 600; color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.ph-chip.latest { border-color: var(--accent); }
+.ph-chip.best { color: var(--accent-2); }
+.ph-chip.dnf { color: var(--danger); }
+.ph-chip:active { background: var(--surface-2); }
+.ph-chips-empty { display: flex; align-items: center; height: 46px; font-size: 13.5px; color: var(--text-faint); }
+
+/* ---------------- the dock ---------------- */
+.ph-dock {
+  position: fixed; z-index: 40;
+  left: var(--phone-gutter); right: var(--phone-gutter); bottom: var(--ph-dock-b);
+  height: var(--ph-dock-h); padding: 6px; border-radius: 24px;
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px;
+  background: var(--surface); border: 1px solid var(--border);
+  box-shadow: 0 18px 40px -10px rgba(0, 0, 0, .7);
+  font-family: var(--font-ui);
+  touch-action: none;
+}
+.ph-tab {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  min-width: 0; border-radius: 18px; color: var(--text-dim);
+  -webkit-tap-highlight-color: transparent;
+}
+.ph-tab.on { background: var(--accent-tint); color: var(--accent-text); }
+.ph-tab-ico { display: grid; }
+.ph-tab-ico svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.ph-tab.on .ph-tab-ico svg { stroke-width: 1.9; }
+.ph-tab-lbl { font-size: 11px; font-weight: 600; letter-spacing: .01em; }
+.ph-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+/* An attempt is nothing but the clock: from the press, through inspection and
+   the solve, until it stops. The same for the tools that are a screen of their
+   own, and for the Scramble of the Day, which is one attempt and nothing else. */
+body.ph:is(.focus, .inspecting, .holding, .armed, .timing, .sotd, .fmc-attempting, .recon-open, .xp1-open) .ph-dock {
+  transform: translateY(calc(100% + var(--ph-dock-b) + 20px));
+  visibility: hidden;
+}
+.ph-dock { transition: transform 220ms var(--ease), visibility 0s linear 0s; }
+body.ph:is(.focus, .inspecting, .holding, .armed, .timing, .sotd, .fmc-attempting, .recon-open, .xp1-open) .ph-dock {
+  transition: transform 220ms var(--ease), visibility 0s linear 220ms;
+}
+body.ph:is(.focus, .inspecting, .holding, .armed, .timing) :is(#topbar, #scramble-zone, .ph-recent) {
+  opacity: 0; pointer-events: none;
+  transition: opacity 160ms var(--ease);
+}
+/* Which puzzle of a relay you are on is the one thing the clock cannot say. */
+body.ph.relay:is(.focus, .inspecting, .holding, .armed, .timing) #scramble-zone { opacity: 1; background: none; border-color: transparent; }
+body.ph.relay:is(.focus, .inspecting, .holding, .armed, .timing) #scramble-zone > :not(#relay-rail) { opacity: 0; }
+body.ph:is(.sotd) .ph-recent { display: none; }
+body.ph:has(#panel-race:not([hidden])) .ph-recent { visibility: hidden; }
+
+/* ---------------- inspection ---------------- */
+body.ph #inspect-readout:not([hidden]) {
+  position: fixed; inset: 0; transform: none;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0;
+  pointer-events: none;
+}
+body.ph #inspect-hint {
+  order: -1;
+  font-family: var(--font-ui); font-size: 14px; font-weight: 600;
+  letter-spacing: 0; text-transform: none;
+  color: color-mix(in oklab, var(--warn) 62%, var(--text-dim));
+}
+body.ph #inspect-hint::first-letter { text-transform: uppercase; }
+body.ph #inspect-num {
+  font-family: var(--font-mono); font-weight: 700;
+  font-size: min(168px, 40vw); letter-spacing: -.05em; line-height: 1;
+  margin-top: 4px; text-shadow: none;
+}
+.ph-insp-left { font-size: 15px; color: color-mix(in oklab, var(--warn) 40%, var(--text)); margin-top: 4px; }
+.ph-insp-rule { font-size: 13px; color: color-mix(in oklab, var(--warn) 45%, var(--text-faint)); margin-top: 18px; }
+#inspect-readout.ph-pen .ph-insp-left { visibility: hidden; }
+.ph-insp-foot {
+  position: fixed; left: 0; right: 0; bottom: max(64px, calc(40px + env(safe-area-inset-bottom)));
+  text-align: center; padding: 0 var(--phone-gutter);
+}
+.ph-insp-hold { font-size: 15.5px; font-weight: 600; color: color-mix(in oklab, var(--warn) 25%, var(--text)); }
+.ph-insp-gone { font-size: 13px; color: color-mix(in oklab, var(--warn) 45%, var(--text-faint)); margin-top: 6px; }
+body.ph:is(.holding, .armed) .ph-insp-hold { color: var(--t-ready); }
+body.ph #inspect-cancel {
+  position: fixed; top: max(12px, calc(env(safe-area-inset-top) + 4px)); right: 12px; left: auto;
+  transform: none; margin: 0;
+  width: 44px; height: 44px; padding: 0; border: 0; border-radius: 22px; background: none;
+  display: grid; place-items: center; font-size: 0;
+  color: color-mix(in oklab, var(--warn) 55%, var(--text-dim));
+  pointer-events: auto;
+}
+body.ph #inspect-cancel .ph-x { display: grid; }
+body.ph #inspect-cancel .ph-x svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; }
+/* The screen warms with the countdown, as the shader behind it does. */
+body.ph.inspecting::before {
+  content: ''; position: fixed; inset: 0; z-index: 1; pointer-events: none;
+  background: color-mix(in srgb, var(--ph-insp, var(--accent-2)) 7%, transparent);
+}
+body.ph[data-insp-band="warm"] { --ph-insp: var(--warn); }
+body.ph[data-insp-band="hot"] { --ph-insp: var(--danger); }
+body.ph #inspect-ring-rect { stroke-width: 5; }
+
+/* ---------------- Times, Train, More ---------------- */
+.ph-screen {
+  position: fixed; inset: 0; z-index: 20;
+  display: flex; flex-direction: column; gap: 14px;
+  padding: max(12px, env(safe-area-inset-top)) var(--phone-gutter) var(--ph-dock-room);
+  overflow-y: auto; overscroll-behavior: contain;
+  background: var(--bg); color: var(--text); font-family: var(--font-ui);
+  touch-action: pan-y;
+}
+.ph-screen[hidden] { display: none; }
+.ph-screen > * { flex-shrink: 0; }
+.ph-screen-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 52px; }
+.ph-screen-head h1 { margin: 0; font-size: 30px; font-weight: 700; letter-spacing: -.02em; }
+.ph-ctx.small { height: 38px; font-size: 14px; font-weight: 600; color: var(--text-dim); }
+
+.ph-times-sum { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.ph-stat {
+  display: flex; flex-direction: column; gap: 4px;
+  padding: 12px 14px; border-radius: 18px;
+  background: var(--surface); border: 1px solid var(--border);
+}
+.ph-stat span { font-size: 12.5px; font-weight: 600; color: var(--text-dim); }
+.ph-stat b { font-family: var(--font-mono); font-size: 22px; font-weight: 600; }
+.ph-times-actions { display: flex; gap: 16px; }
+.ph-times-slot { flex: 1 0 120px; }
+/* The desktop's times list, laid over the slot under the figures. */
+body.ph[data-tab="times"] #sidebar {
+  display: flex !important;
+  position: fixed; z-index: 21;
+  top: var(--ph-slot-top, 300px); bottom: var(--ph-dock-room);
+  left: var(--phone-gutter); right: var(--phone-gutter);
+  height: auto; padding: 0;
+}
+body.ph[data-tab="times"] #panel-times { display: flex !important; flex: 1 1 auto; min-height: 0; }
+body.ph[data-tab="times"] #panel-times .tile-grip { display: none; }
+
+/* ---------------- sheets the shell opens ---------------- */
+.ph-ev-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.ph-ev {
+  height: 50px; border-radius: 14px; min-width: 0;
+  background: var(--surface); border: 1px solid var(--border);
+  font-size: 14.5px; font-weight: 600; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 4px;
+}
+.ph-ev.on { background: var(--accent-tint); border: 1.5px solid var(--accent); font-weight: 700; }
+.ph-ev:active { background: var(--surface-2); }
+
+.ph-sv .sheet-body { gap: 12px; }
+.ph-sv-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.ph-sv-when, .ph-sv-avgs { font-size: 13px; color: var(--text-dim); }
+.ph-sv-avgs { margin-top: 6px; white-space: pre; }
+.ph-sv-avgs b { font-family: var(--font-mono); font-weight: 600; color: var(--text); }
+.ph-sv-time { font-family: var(--font-mono); font-size: 50px; font-weight: 700; letter-spacing: -.045em; line-height: 1.05; margin-top: 4px; }
+.ph-sv-time.dnf { color: var(--danger); }
+.ph-sv-close {
+  flex: none; width: 44px; height: 44px; border-radius: 22px; display: grid; place-items: center;
+  background: var(--surface); color: var(--text-dim);
+}
+.ph-sv-close svg, .ph-btn svg, .ph-link svg, .ph-seg-btn svg {
+  width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round;
+}
+.ph-sv-close svg { width: 20px; height: 20px; }
+.ph-seg {
+  display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 4px;
+  padding: 4px; border-radius: 14px; background: var(--surface);
+}
+.ph-seg-btn {
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  min-height: 44px; border-radius: 11px;
+  font-size: 14px; font-weight: 600; color: var(--text-dim);
+}
+.ph-seg-btn.on { background: var(--surface-2); color: var(--text); font-weight: 700; box-shadow: 0 1px 0 color-mix(in srgb, var(--text) 6%, transparent) inset; }
+.ph-sv-scr {
+  display: flex; gap: 12px; align-items: center;
+  padding: 12px 14px; border-radius: 16px; background: var(--surface);
+}
+.ph-sv-scr p, .ph-sv-block p {
+  margin: 0; flex: 1; min-width: 0;
+  font-family: var(--font-mono); font-size: 13.5px; line-height: 1.55; word-spacing: .1em;
+  color: var(--text); overflow-wrap: anywhere;
+}
+.ph-sv-net { flex: none; width: 68px; height: 51px; }
+.ph-sv-note {
+  width: 100%; min-height: 46px; padding: 12px 14px; border-radius: 14px;
+  background: var(--surface); border: 1px solid var(--border); color: var(--text);
+  font-family: var(--font-ui); font-size: 16px; line-height: 1.35; resize: none; field-sizing: content;
+}
+.ph-sv-note:focus { outline: none; border-color: var(--accent); }
+.ph-sv-main { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 8px; }
+.ph-btn {
+  display: flex; align-items: center; justify-content: center; gap: 8px; min-width: 0;
+  height: 52px; padding: 0 12px; border-radius: 16px;
+  background: var(--surface); color: var(--text); font-size: 15px; font-weight: 600;
+}
+.ph-btn.primary { background: var(--accent); color: var(--on-accent); font-weight: 700; }
+.ph-btn span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ph-sv-block { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border-radius: 16px; background: var(--surface); }
+.ph-sv-foot { display: flex; justify-content: space-between; gap: 12px; margin-top: -4px; }
+.ph-link {
+  display: inline-flex; align-items: center; gap: 7px;
+  min-height: 44px; padding: 0 4px;
+  font-size: 14px; font-weight: 600; color: var(--text-dim);
+}
+.ph-link.danger { color: var(--danger); }
+.ph-link.danger.armed {
+  padding: 0 12px; border-radius: 14px; color: var(--on-accent); background: var(--danger);
+}
+.ph-note { margin: 0; font-size: 13px; color: var(--text-dim); text-align: center; }
+
+.ph-cube3d { width: 100%; height: min(300px, 42vh); }
+.ph-cube3d twisty-player { width: 100%; height: 100%; }
+.ph-cube-tools { display: flex; justify-content: center; gap: 8px; }
+.ph-cube-tools .ph-seg-btn { padding: 0 16px; background: var(--surface); }
+.ph-cube-tools .ph-seg-btn.on { background: var(--accent-tint); color: var(--accent-text); }
+
+/* ---------------- smaller phones ----------------
+   A 360px-wide phone has 30px less across than the mockups, and one 740px tall
+   about 100px less down. Every piece keeps its place; the type and the
+   padding give the room back. */
+@media (max-width: 374px) {
+  body.ph #topbar, body.ph .topbar-right { gap: 6px; }
+  .ph-ctx { gap: 6px; padding: 0 10px; }
+  body.ph #btn-daily { padding: 0 12px 0 10px; gap: 6px; }
+  body.ph #scramble-text { font-size: calc(17.5px * var(--scramble-scale)); }
+  body.ph #last-actions { gap: 6px; }
+  body.ph #last-actions .ph-pill, body.ph #last-actions .ghost-btn.ph-pill { padding: 0 12px; font-size: 13.5px; }
+  body.ph #last-actions .ph-pill svg { display: none; }
+}
+@media (max-height: 780px) {
+  body.ph #scramble-zone { margin-top: 10px; padding: 14px 14px 8px; gap: 8px; }
+  body.ph #scramble-wrap { row-gap: 8px; }
+  .ph-net-host { width: 72px; height: 54px; }
+  body.ph #timer-display { font-size: min(calc(var(--timer-size) * 1.71), calc((100vw - 2 * var(--phone-gutter)) / (var(--ph-chars, 5) * .58)), 12.5vh); }
+  body.ph #timer-avgs { margin-top: 12px; }
+  body.ph #last-actions { margin-top: 16px; }
+  body.ph #timer-hint { margin-top: 14px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ph-dock, body.ph :is(#topbar, #scramble-zone, .ph-recent) { transition: none !important; }
+}
