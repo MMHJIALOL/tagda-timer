@@ -53,7 +53,8 @@ import { t } from './i18n.js';
    =========================================================== */
 
 import { getDatabaseHandle } from './sync-auth.js';
-import { CLOCK_SLACK_MS, CLOCK_SLACK_RATIO } from './raceapp.js';
+import { CLOCK_SLACK_MS, CLOCK_SLACK_RATIO, CHAT_HISTORY } from './raceapp.js';
+import { cleanChat } from './race-net.js';
 
 export { CLOCK_SLACK_MS, CLOCK_SLACK_RATIO };
 
@@ -62,17 +63,63 @@ export { CLOCK_SLACK_MS, CLOCK_SLACK_RATIO };
    module, test.html included, is unaffected by the split. */
 export * from './dayid.js';
 // Re-exporting does not put a name in this module's own scope, and the
-// transport below calls all three of these directly.
-import { dayIdFromServerMs, nextResetMs, dayKeyFromServerMs } from './dayid.js';
+// transport below calls these directly.
+import { dayIdFromServerMs, nextResetMs, dayKeyFromServerMs, pastDayKeys } from './dayid.js';
 
 /**
  * Longest note a row will carry, matched by the database rule.
  *
  * One line, because that is what the board has room for: a name, a time and
  * whatever fits between them on a row in a 300px column. Anything longer is
- * a chat message, and the room to have that conversation is race mode.
+ * a chat message, and that has a room of its own now: the day's chat, below.
  */
 export const NOTE_MAX_LEN = 80;
+
+/* ---------------------------------------------------------
+   The day's chat
+   ---------------------------------------------------------
+
+   One room per event per day, at `daily/<dayKey>/<event>/chat`, and behind
+   the same gate as the times: readable only once your own result is in.
+   An open room would be a way round that gate — "free x-cross on white" is
+   help on somebody else's one attempt, not banter — so the rule is the
+   board's rule, word for word.
+
+   The rest is in firebase.rules.json and DAILY.md §9; in short:
+     m/<pushId>   { uid, name, text, at, photo? }. Google accounts only, today's
+                  room only, `at` is the server's clock. Deleted by its author
+                  or by an admin. Never edited.
+     last/<uid>   the server time of that account's last message, written in
+                  the same update as the message. The rule wants 1.5 s
+                  between the two, which is the rate limit.
+
+   Nothing deletes a room at 00:00 IST. The next day the app simply reads a
+   different path, so it is gone from every screen; the stored copy is
+   removed by the first signed-in visitor of a later day (sweepOldChats),
+   and the rules allow that for every day except today.
+   --------------------------------------------------------- */
+
+/**
+ * Who may delete anybody's message. Must match the uid in firebase.rules.json
+ * (`chat/m/$msgId`), where it is what actually counts; this copy only decides
+ * who is shown the delete button on other people's messages. Same account as
+ * ADMIN_UIDS in wrangler.jsonc.
+ */
+export const CHAT_ADMIN_UIDS = ['8lSr96LEO1cdHDVlMDv8tCCFQag1'];
+
+/**
+ * Least time between two messages from one account, in this client. The rule
+ * says 1.5 s between the server's two timestamps; asking for a little more
+ * here keeps a message sent on a fast connection after one sent on a slow one
+ * from being refused.
+ */
+export const CHAT_GAP_MS = 2000;
+
+/** How many past days one sweep clears, in case nobody visited for a while. */
+export const CHAT_SWEEP_DAYS = 7;
+
+/** What the chat looks like before there is anything to read. */
+const emptyChat = () => ({ key: null, state: 'locked', messages: [] });
 
 /** Collapse the whitespace and cut it to the cap. Same shape as race chat. */
 export function cleanNote(text) {
@@ -120,6 +167,14 @@ export class DailyTransport extends EventTarget {
     this._countDayKey = null;
     /** The numeric path segment for the watched day — see dayKeyFromServerMs. */
     this._dayKey = null;
+    /**
+     * The watched room's messages, oldest first. Outside `snap`, and announced
+     * as its own 'chat' event rather than 'day': the board is rebuilt on every
+     * 'day', and a message arriving is no reason to rebuild it.
+     */
+    this.chat = emptyChat();
+    this._chatUnsub = null;
+    this._chatRetried = null;
   }
 
   async init() {
@@ -154,6 +209,7 @@ export class DailyTransport extends EventTarget {
 
   _ref(path) { return this._sdk.ref(this._sdk.db, path); }
   _emit() { this.dispatchEvent(new CustomEvent('day', { detail: this.snap })); }
+  _emitChat() { this.dispatchEvent(new CustomEvent('chat', { detail: this.chat })); }
 
   /** Point every listener at today's `daily/<dayKey>/<event>` subtree. */
   watch(eventId) {
@@ -250,6 +306,15 @@ export class DailyTransport extends EventTarget {
     this._resultsUnsub?.();
     this._resultsUnsub = null;
     this._dayKey = null;
+    this._chatUnsub?.();
+    this._chatUnsub = null;
+    clearTimeout(this._chatRetry);
+    // Another event or another day is another room, and its gate is shut
+    // until that board's own result says otherwise.
+    if (this.chat.key) {
+      this.chat = emptyChat();
+      this._emitChat();
+    }
   }
 
   /**
@@ -492,6 +557,10 @@ export class DailyTransport extends EventTarget {
    * earlier would just generate PERMISSION_DENIED noise for every change.
    */
   unlockResults() {
+    // The chat sits behind the very same gate, so it opens at the very same
+    // moment — including after a reload, when this is how a result already
+    // in the database is acted on.
+    this._watchChat();
     if (this.snap.resultsUnlocked || !this._dayKey) return;
     const { dayId, event } = this.snap;
     const dayKey = this._dayKey;
@@ -506,7 +575,108 @@ export class DailyTransport extends EventTarget {
     this._emit();
   }
 
+  /* ---------------- the day's chat ---------------- */
+
+  /**
+   * Start reading the watched room: the newest CHAT_HISTORY messages, as a
+   * query so that a busy day ships only what changed inside that tail.
+   *
+   * A refusal is `off`, not an error to show anybody: it is what a
+   * deployment whose rules predate the chat answers, and the window simply
+   * goes without one. One more try a few seconds later covers the other
+   * cause, a listener attached a beat before the server had the result that
+   * opens the gate.
+   */
+  _watchChat() {
+    if (this._chatUnsub || !this._dayKey || !this.snap.event) return;
+    const dayKey = this._dayKey;
+    const event = this.snap.event;
+    const key = `${dayKey}|${event}`;
+    const S = this._sdk;
+    if (this.chat.key !== key) this.chat = { key, state: 'loading', messages: [] };
+    const q = S.query(this._ref(`daily/${dayKey}/${event}/chat/m`), S.limitToLast(CHAT_HISTORY));
+    this._chatUnsub = S.onValue(q, (snap) => {
+      if (this.chat.key !== key) return;
+      const messages = [];
+      // forEach walks in the query's (push id, so time) order; a callback
+      // that returned push()'s length would stop it after the first.
+      snap.forEach((child) => { messages.push({ id: child.key, ...child.val() }); });
+      this.chat = { key, state: 'live', messages };
+      this._emitChat();
+    }, (err) => {
+      if (this.chat.key !== key) return;
+      // An errored listener has detached; nothing more will arrive on it.
+      this._chatUnsub = null;
+      console.warn('[daily] chat read refused', err?.code || err);
+      this.chat = { key, state: 'off', messages: [] };
+      this._emitChat();
+      if (this._chatRetried !== key) {
+        this._chatRetried = key;
+        this._chatRetry = setTimeout(() => {
+          if (this.chat.key === key && this._dayKey === dayKey && this.snap.event === event) this._watchChat();
+        }, 3000);
+      }
+    });
+    this._emitChat();
+  }
+
+  /**
+   * Say something in the watched room.
+   *
+   * One update writes the message and `last/<uid>` together, because that is
+   * the only shape the rules take: each requires the other to carry the same
+   * server time, and `last` is what the 1.5 s limit is measured from. The
+   * listener shows the message at once (the SDK applies a write locally
+   * before the server answers) and takes it back if the server refuses.
+   */
+  async sendChat(text, { name, photo } = {}) {
+    const { dayKey, event, uid } = this.target();
+    if (!dayKey || !event || !uid) throw new Error('not-signed-in');
+    const body = cleanChat(text);
+    if (!body) return null;
+    const S = this._sdk;
+    const base = `daily/${dayKey}/${event}/chat`;
+    // push() with no value only makes the id: time-ordered, so the query's order.
+    const id = S.push(this._ref(`${base}/m`)).key;
+    const msg = { uid, name: String(name || 'Cuber').slice(0, 32), text: body, at: S.serverTimestamp() };
+    if (photo) msg.photo = photo;
+    await S.update(this._ref(base), { [`m/${id}`]: msg, [`last/${uid}`]: S.serverTimestamp() });
+    return id;
+  }
+
+  /** Take a message down: your own, or anybody's for an admin. The rules decide which. */
+  async deleteChat(id) {
+    const { dayKey, event } = this.target();
+    if (!dayKey || !event || !id) return;
+    await this._sdk.remove(this._ref(`daily/${dayKey}/${event}/chat/m/${id}`));
+  }
+
+  /**
+   * Remove the stored rooms of the last few days, every event at once.
+   *
+   * Blind: one update per day, nulls only, nothing read first. Deleting a
+   * room that is not there costs nothing and is allowed, and the rules allow
+   * it for every day but today, so a clock that is a little off can only
+   * ever fail to clean, never clean today. Yesterday goes first, alone: if
+   * that is refused, these rules predate the chat and the rest would be
+   * refused too.
+   */
+  async sweepOldChats(events) {
+    if (!this._dayKey || !this.snap.uid || !events?.length) return false;
+    const S = this._sdk;
+    const paths = Object.fromEntries(events.map(e => [`${e}/chat`, null]));
+    const [first, ...rest] = pastDayKeys(this._dayKey, CHAT_SWEEP_DAYS);
+    try { await S.update(this._ref(`daily/${first}`), paths); }
+    catch (err) {
+      console.warn('[daily] chat sweep refused', err?.code || err);
+      return false;
+    }
+    await Promise.allSettled(rest.map(k => S.update(this._ref(`daily/${k}`), paths)));
+    return true;
+  }
+
   destroy() {
+    clearTimeout(this._chatRetry);
     this._offsetUnsub?.();
     this._countUnsub?.();
     this._countUnsub = null;

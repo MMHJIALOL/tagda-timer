@@ -78,6 +78,17 @@ export function dayKeyFromServerMs(serverMs) {
   return String(dayStartMs(dayIdFromServerMs(serverMs)));
 }
 
+/**
+ * The keys of the `n` days before `dayKey`, newest first: the ones the chat
+ * sweep clears. Every IST day is exactly 86400000 ms (no DST), so stepping
+ * the key is exact.
+ */
+export function pastDayKeys(dayKey, n) {
+  if (!/^\d+$/.test(String(dayKey ?? '')) || !(n > 0)) return [];
+  const start = Number(dayKey);
+  return Array.from({ length: n }, (_, i) => String(start - (i + 1) * 86400000));
+}
+
 /* ---------------------------------------------------------
    The solve-count board
    ---------------------------------------------------------

@@ -1988,6 +1988,18 @@ section('daily leaderboard — day id and reset math');
   check('the day key never reaches into the future: it is always <= the instant it was read at',
     Number(D.dayKeyFromServerMs(justAfter)) <= justAfter
     && Number(D.dayKeyFromServerMs(justBefore)) <= justBefore);
+
+  /* The chat sweep's days. The rules compare the key against today's own
+     key, so these have to be the board's keys exactly, and never today's. */
+  const key = D.dayKeyFromServerMs(justAfter);
+  const past = D.pastDayKeys(key, 7);
+  check('the chat sweep names the 7 days before today, newest first, and never today',
+    past.length === 7 && !past.includes(key)
+    && past[0] === D.dayKeyFromServerMs(justAfter - 86400000)
+    && past[6] === String(D.dayStartMs(D.shiftDayId('2026-09-08', -7))));
+  check('the chat sweep names nothing for a day key it cannot read',
+    D.pastDayKeys('', 7).length === 0 && D.pastDayKeys(null, 7).length === 0
+    && D.pastDayKeys(key, 0).length === 0);
 }
 
 /* ---------------- scramble of the day: the solve-count board ----------------

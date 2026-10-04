@@ -18,7 +18,7 @@ import { t } from './i18n.js';
 
 import { toast } from './toast.js';
 import { fmt } from './util.js';
-import { eventOf } from './events.js';
+import { eventOf, EVENT_ORDER } from './events.js';
 import { eff, bestAvg } from './stats.js';
 import { generate } from './scramble.js';
 import { onAuthChange } from './sync-auth.js';
@@ -27,6 +27,7 @@ import {
   CLOCK_SLACK_MS, CLOCK_SLACK_RATIO,
   countSolvesForDay, rankByCount, dayStartMs, safePhotoUrl, cleanNote,
   markSotdDone, clearSotdDone, sotdDoneOn, misfireAction,
+  CHAT_ADMIN_UIDS, CHAT_GAP_MS,
 } from './daily-net.js';
 import { SUSPECT_RATIO } from './raceapp.js';
 
@@ -101,6 +102,12 @@ const HELD_KEY = 'tdt.sotd.held';
  */
 const ATTEMPTS_KEY = 'tdt.sotd.attempts';
 const ATTEMPTS_KEPT = 30;
+
+/** The day key this browser last swept old chat rooms on: once a day is plenty. */
+const SWEPT_KEY = 'tdt.sotd.chatSwept';
+
+/** How long after the window connects the sweep waits: it is housekeeping, and today's scramble comes first. */
+const SWEEP_DELAY_MS = 5000;
 
 const within = (p, ms, why) => Promise.race([
   p, new Promise((_, rej) => setTimeout(() => rej(new Error(why)), ms)),
@@ -182,6 +189,8 @@ export class Daily extends EventTarget {
       await net.init();
       this.net = net;
       net.addEventListener('day', (e) => this._onDay(e.detail));
+      // Its own event, so a message arriving redraws the chat and not the board.
+      net.addEventListener('chat', () => this.dispatchEvent(new CustomEvent('chat')));
       this._authUnsub = await onAuthChange((user) => net.setUser(user));
       net.watch(this.eventId);
       // Whatever you solved today before opening this panel still counts.
@@ -224,6 +233,7 @@ export class Daily extends EventTarget {
        submitted, and so the board never unlocked either. */
     if (this.engaged) this._armIfPossible();
     this._maybePublishScramble();
+    this._maybeSweepChats();
     this._changed();
   }
 
@@ -1006,6 +1016,74 @@ export class Daily extends EventTarget {
     }
   }
 
+  /* ---------------- the day's chat ---------------- */
+
+  /** The watched room as the transport last saw it: { state, messages }. */
+  get chat() {
+    return this.net?.chat || { key: null, state: 'locked', messages: [] };
+  }
+
+  /** Whether the chat is open to this viewer: their time is in, and the room answered. */
+  get chatOpen() {
+    return this.revealed && ['loading', 'live'].includes(this.chat.state);
+  }
+
+  /** Whether this account may delete other people's messages (the rules have the final say). */
+  get chatAdmin() {
+    return !!this.snap?.uid && CHAT_ADMIN_UIDS.includes(this.snap.uid);
+  }
+
+  /**
+   * Say something in today's room for the watched event.
+   *
+   * 'slow' when it comes too soon after the last one: dropped, not queued —
+   * the only way to get here is holding Enter down, and sending those presses
+   * a moment later is not what anybody holding Enter wanted. Throws when the
+   * server refuses, so the composer can put the text back.
+   */
+  async sendChat(text) {
+    if (!this.net || !this.chatOpen) return 'closed';
+    const now = Date.now();
+    if (now - (this._chatSentAt || 0) < CHAT_GAP_MS) return 'slow';
+    this._chatSentAt = now;
+    try {
+      await this.net.sendChat(text, { name: this._name(), photo: this._photo() });
+      return 'sent';
+    } catch (err) {
+      // A refused message does not count against the gap.
+      this._chatSentAt = 0;
+      throw err;
+    }
+  }
+
+  async deleteChat(id) {
+    await this.net?.deleteChat(id);
+  }
+
+  /**
+   * Clear the stored rooms of the last few days, once a day per browser.
+   *
+   * Anybody signed in may (the rules allow it for every day but today), so
+   * it is whoever opens the window first after a reset. Nothing on screen
+   * depends on it: yesterday's room vanished from every screen at 00:00 IST
+   * because the window reads today's path, not because this ran.
+   */
+  _maybeSweepChats() {
+    const key = this.net?.target?.().dayKey;
+    if (!key || !this.snap?.signedIn || this._sweptKey === key) return;
+    this._sweptKey = key;
+    try { if (localStorage.getItem(SWEPT_KEY) === key) return; } catch { /* private mode: sweep anyway */ }
+    clearTimeout(this._sweepTimer);
+    this._sweepTimer = setTimeout(() => {
+      if (this.net?.target?.().dayKey !== key) return;
+      this.net.sweepOldChats(EVENT_ORDER.filter(dailyEligible)).then(() => {
+        // Marked whatever the answer: rules that refuse it today refuse it
+        // on every reload today too, and tomorrow's sweep reaches back a week.
+        try { localStorage.setItem(SWEPT_KEY, key); } catch { /* private mode */ }
+      });
+    }, SWEEP_DELAY_MS);
+  }
+
   /** How many people have sent in a time today — never how fast any of them were. */
   submittedCount() {
     return Object.values(this.snap?.progress || {}).filter(p => p?.submitted).length;
@@ -1071,6 +1149,7 @@ export class Daily extends EventTarget {
   }
 
   destroy() {
+    clearTimeout(this._sweepTimer);
     clearTimeout(this._publishRetry);
     clearTimeout(this._recheck);
     clearTimeout(this._backupRetry);
