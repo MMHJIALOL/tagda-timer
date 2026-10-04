@@ -5,7 +5,7 @@ import { t, lang, setLang } from './i18n.js';
    Every control writes straight into app.settings and applies live.
    =========================================================== */
 
-import { $, el, fmt, fmtResult, fmtDate, download, parseScrambleList } from './util.js';
+import { $, el, fmt, fmtResult, fmtDate, download, parseScrambleList, copy } from './util.js';
 import { PRESETS, TIMER_FONTS, SCRAMBLE_FONTS, UI_FONTS, DEFAULTS, exportTheme, importTheme,
          parseGradient, buildGradient, albumTint, liquidGlassOK } from './theme.js';
 import { SHADER_NAMES } from './bg.js';
@@ -2431,6 +2431,11 @@ export const AVATAR = 'assets/ishaan.jpg';
    visit to a page people leave open while they practise. */
 const KOFI_HANDLE = 'tagdatimer_ishaan';
 const KOFI_URL = `https://ko-fi.com/${KOFI_HANDLE}`;
+/* UPI for supporters in India, where PayPal cannot move money at all. The
+   QR in assets/upi-qr.svg encodes UPI_URI and was generated once offline, so
+   no QR library ships; regenerate it if either of these changes. */
+const UPI_ID = '9971141290@superyes';
+const UPI_URI = `upi://pay?pa=${UPI_ID}&pn=Ishaan&cu=INR&tn=Tagda%20Timer`;
 
 /** The raceName that marks a leaderboard/room row as the site owner's — see ownercard.js. */
 export const OWNER_NAME = 'cubingngagng';
@@ -2461,7 +2466,38 @@ export function buildAbout(app) {
       ? arrow(link(t('Featured reel'), url, url.replace(/^https?:\/\//, '').slice(0, 46)))
       : el('div', { class: 'reel-empty', text: t('No reel pinned yet — the button above always opens the newest one.') }));
 
+    const kofi = arrow(el('a', { class: 'support-kofi', href: KOFI_URL, target: '_blank', rel: 'noopener noreferrer' },
+      el('span', { class: 'support-cup', text: '☕' }),
+      el('span', {}, el('b', { text: t('Buy me a coffee') }), el('span', { class: 'sub', text: t('Ko-fi · card or PayPal') })),
+      el('svg', { viewBox: '0 0 24 24', class: 'about-arrow' }),
+    ));
+
+    const upi = el('div', { class: 'support-upi' },
+      el('img', { class: 'upi-qr', src: 'assets/upi-qr.svg', alt: t('UPI QR code'), width: 112, height: 112, loading: 'lazy', decoding: 'async' }),
+      el('div', { class: 'upi-side' },
+        el('b', { text: t('Pay with UPI') }),
+        el('span', { class: 'sub', text: t('Scan with GPay, PhonePe, Paytm or any UPI app') }),
+        el('div', { class: 'upi-id' },
+          el('code', { text: UPI_ID }),
+          el('button', {
+            class: 'btn', text: t('copy'),
+            onclick: async () => {
+              const ok = await copy(UPI_ID);
+              toast(ok ? t('UPI ID copied') : t('Could not copy — select it instead'), { kind: ok ? 'good' : 'bad' });
+            },
+          })),
+        // Only shown on touch devices: on a desktop the upi:// scheme goes nowhere.
+        el('a', { class: 'btn upi-open', href: UPI_URI, text: t('Open UPI app') })),
+    );
+
     body.append(
+      group(t('Support the timer'),
+        el('div', { class: 'support-card' },
+          el('div', { class: 'support-pitch', text:
+            t('Tagda Timer is free to use. If it helps your practice, a coffee helps pay for the hosting and sync that keep it running.') }),
+          kofi,
+          upi)),
+
       group(t('Ishaan'),
         el('div', { class: 'about-hero' },
           el('img', { class: 'about-avatar', src: AVATAR, alt: 'Ishaan', width: 52, height: 52, loading: 'lazy', decoding: 'async' }),
@@ -2475,12 +2511,6 @@ export function buildAbout(app) {
         arrow(link('Instagram', IG_PROFILE, '@' + IG_HANDLE)),
         arrow(link(t('Latest reels'), IG_REELS, t('always opens on the newest one'))),
         arrow(link('GitHub', GH_PROFILE, '@' + GH_HANDLE)),
-      ),
-
-      group(t('Support the timer'),
-        el('div', { class: 'about-bio', text:
-          t('Tagda Timer is free to use. If it helps your practice, a coffee helps pay for the hosting and sync that keep it running.') }),
-        arrow(link(t('Buy me a coffee on Ko-fi'), KOFI_URL, t('card or PayPal'))),
       ),
 
       group(t('Featured reel'), reelCard),
