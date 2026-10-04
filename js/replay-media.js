@@ -112,6 +112,45 @@ if (typeof VideoEncoder === 'function' && !VideoEncoder.mended) {
   };
 }
 
+/* Mediabunny's WebM reader gives each frame the time up to the next one in
+   its cluster. The last frame of a cluster has no next one there, and unless
+   the file states a frame length (a webcam's, filmed at whatever rate the
+   camera manages, does not) it comes out 0 s long. Conversion takes a frame
+   with no length for one outside the clip and leaves it out. Chrome's
+   recorder starts a cluster at every keyframe, so the seekable copy lost the
+   frame before each one, twice a second (455 frames in, 424 out), and every
+   loss was a frame shown twice; Firefox's recordings, and the seekable copy
+   itself on its way into a download or a shared copy, lost one a second.
+   So frames read in order are given their real length: up to the next
+   frame's time, and the last one as long as the one before it. Installed
+   once, while this module is loaded; Conversion reads through this same
+   class. */
+if (!MB.VideoSampleSink.prototype.samples.timed) {
+  const samples = MB.VideoSampleSink.prototype.samples;
+  const timed = async function* (...args) {
+    let held = null, gap = 0;
+    try {
+      for await (const s of samples.apply(this, args)) {
+        if (held) {
+          gap = Math.max(0, s.timestamp - held.timestamp);
+          if (!(held.duration > 0)) held.setDuration(gap);
+          const out = held;
+          held = s;
+          yield out;
+        } else held = s;
+      }
+      if (held) {
+        if (!(held.duration > 0)) held.setDuration(gap);
+        const out = held;
+        held = null;
+        yield out;
+      }
+    } finally { held?.close(); }
+  };
+  timed.timed = true;
+  MB.VideoSampleSink.prototype.samples = timed;
+}
+
 /** Cancel `conv` when `signal` fires, and say so with an AbortError. */
 async function run(conv, signal, onProgress) {
   if (onProgress) conv.onProgress = (p) => onProgress(Math.min(1, p));
@@ -207,6 +246,109 @@ export async function finishClip(blob, signal, order = STORE_CODECS) {
   } finally { signal?.removeEventListener('abort', stop); }
   if (signal?.aborted) throw new DOMException('Cancelled', 'AbortError');
   return job.result();
+}
+
+/* ---------------- sharing: the copy that goes up ----------------
+   A Scramble of the Day clip shared for others to watch (sotd-replays.js).
+   Made from the clip on this device, which is left exactly as it was. At
+   most 720p (long side 1280), never upscaled, 30 fps, a keyframe every half
+   second for the player's seeking, and a bitrate that fits it under the
+   Worker's CLIP_MAX with a tenth to spare:
+     min(1.5 Mbps at 720p, 0.6 Mbps at 480p, maxBytes*8*0.9 / duration)
+   Under half a megabit at 720p it drops to 480p; under 150 kbps even there
+   the clip is too long to share. Sound only when asked for, else the track is
+   left out. Where nothing here can encode, the clip is copied into a new file
+   as it is (no encoder needed), dropping the sound, if it fits. */
+const SHARE = {
+  hd: { long: 1280, short: 720, bps: 1_500_000, floor: 500_000 },
+  sd: { long: 854, short: 480, bps: 600_000, floor: 150_000 },
+};
+
+export class ShareError extends Error {
+  constructor(code) { super(code); this.code = code; }
+}
+
+/**
+ * The copy to upload: { blob, mime, w, h, fps, sound }. Throws ShareError
+ * 'too-long' (no bitrate fits), 'too-big' (it came out over maxBytes anyway),
+ * or 'cannot' (no way to make one here); AbortError when `signal` fires.
+ */
+export async function shareCopy(blob, opts = {}) {
+  /* Firefox's encoder can fail once under load (see exportVideo): a second
+     go with its tests run afresh, then the copy that needs no encoder. */
+  for (let attempt = 0; ; attempt++) {
+    try { return await encodeForShare(blob, opts, attempt > 0); }
+    catch (err) {
+      if (err instanceof ShareError || err?.name === 'AbortError' || opts.signal?.aborted) throw err;
+      console.warn(`[replay] share copy failed (try ${attempt + 1})`, err);
+      if (attempt === 0) { opts.onProgress?.(0); await new Promise(r => setTimeout(r, 1500)); continue; }
+      return remuxForShare(blob, { sound: !!opts.sound, maxBytes: opts.maxBytes, signal: opts.signal });
+    }
+  }
+}
+
+async function encodeForShare(blob, { sound = false, maxBytes, signal, onProgress } = {}, fresh = false) {
+  if (fresh) forgetEncoderTests();
+  const inp = input(blob);
+  const track = await inp.getPrimaryVideoTrack();
+  if (!track) throw new ShareError('cannot');
+  const W = track.displayWidth, H = track.displayHeight;
+  const secs = Math.max(1, await inp.computeDuration());
+  const audio = sound ? await inp.getPrimaryAudioTrack().catch(() => null) : null;
+  // The recorder's Opus (about 48 kbps) is copied as it is; room is left for it.
+  const room = (maxBytes * 8 * 0.9) / secs - (audio ? 64_000 : 0);
+  let q = Math.max(W, H) > SHARE.sd.long || Math.min(W, H) > SHARE.sd.short ? SHARE.hd : SHARE.sd;
+  let bps = Math.min(q.bps, room);
+  if (q === SHARE.hd && bps < q.floor) { q = SHARE.sd; bps = Math.min(q.bps, room); }
+  if (bps < SHARE.sd.floor) throw new ShareError('too-long');
+  const k = Math.min(1, q.long / Math.max(W, H), q.short / Math.min(W, H));
+  const w = even(W * k), h = even(H * k);
+
+  const enc = await encoder(w, h, STORE_CODECS, Math.round(bps));
+  if (!enc) return remuxForShare(blob, { sound: !!audio, maxBytes, signal });
+  for (const scale of [1, 0.7]) {
+    const output = new MB.Output({ format: enc.format, target: new MB.BufferTarget() });
+    const conv = await MB.Conversion.init({
+      input: input(blob), output,
+      video: {
+        codec: enc.codec, width: w, height: h, fit: 'fill', frameRate: 30, keyFrameInterval: 0.5,
+        bitrate: Math.round(bps * scale), forceTranscode: true,
+      },
+      audio: audio ? { forceTranscode: false } : { discard: true },
+    });
+    if (!conv.isValid) return remuxForShare(blob, { sound: !!audio, maxBytes, signal });
+    await run(conv, signal, onProgress);
+    const out = new Blob([output.target.buffer], { type: enc.mime });
+    if (out.size <= maxBytes) {
+      return { blob: out, mime: enc.mime, w, h, fps: 30, sound: conv.utilizedTracks.some(tr => tr.isAudioTrack()) };
+    }
+    onProgress?.(0);
+  }
+  throw new ShareError('too-big');
+}
+
+/* No encoder: the same frames in a new file, the sound dropped unless asked for. */
+async function remuxForShare(blob, { sound, maxBytes, signal }) {
+  const webm = /webm/.test(blob.type);
+  const track = await input(blob).getPrimaryVideoTrack();
+  if (!track) throw new ShareError('cannot');
+  const output = new MB.Output({
+    format: webm ? new MB.WebMOutputFormat() : new MB.Mp4OutputFormat({ fastStart: 'in-memory' }),
+    target: new MB.BufferTarget(),
+  });
+  const conv = await MB.Conversion.init({
+    input: input(blob), output,
+    video: { forceTranscode: false },
+    audio: sound ? { forceTranscode: false } : { discard: true },
+  });
+  if (!conv.isValid) throw new ShareError('cannot');
+  await run(conv, signal);
+  const mime = webm ? 'video/webm' : 'video/mp4';
+  const out = new Blob([output.target.buffer], { type: mime });
+  if (out.size > maxBytes) throw new ShareError('too-big');
+  // fps 0: the frames are as filmed, at whatever rate the camera ran.
+  return { blob: out, mime, w: track.displayWidth, h: track.displayHeight, fps: 0,
+    sound: conv.utilizedTracks.some(tr => tr.isAudioTrack()) };
 }
 
 /* ---------------- downloads: the clip with its clock ---------------- */

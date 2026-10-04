@@ -38,16 +38,18 @@ function isImmutable(url) {
 
 /**
  * Traffic that must never be answered from a cache: the auth handler and its
- * relay iframe, Vercel's analytics beacons, and — by being cross-origin and
- * not the versioned Firebase SDK — the Realtime Database sockets, the Spotify
- * API and the Google Fonts API, which all fall through the isCacheable() test
- * below and are left to the network untouched.
+ * relay iframe, shared SOTD replays (/replay/: somebody else's clip, behind a
+ * sign-in check, and removable), Vercel's analytics beacons, and — by being
+ * cross-origin and not the versioned Firebase SDK — the Realtime Database
+ * sockets, the Spotify API and the Google Fonts API, which all fall through
+ * the isCacheable() test below and are left to the network untouched.
  */
 function isCacheable(url, request) {
   if (request.method !== 'GET') return false;
   if (isImmutable(url)) return true;
   if (url.origin !== self.location.origin) return false;
-  return !url.pathname.startsWith('/__/auth/') && !url.pathname.startsWith('/_vercel/');
+  return !url.pathname.startsWith('/__/auth/') && !url.pathname.startsWith('/replay/')
+    && !url.pathname.startsWith('/_vercel/');
 }
 
 /* A response that arrived via a redirect cannot be replayed for a navigation

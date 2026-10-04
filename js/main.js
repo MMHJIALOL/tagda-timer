@@ -295,6 +295,7 @@ async function enterSotd() {
       /* Leaving with the misfire question up answers it Keep. Leaving must
          never be a way to put the main scramble back for another go. */
       pendingMisfire?.dismiss();
+      sotdHint?.hide();
       ctl.disengage();
       refit();
       syncSotdChip();
@@ -309,6 +310,10 @@ async function enterSotd() {
   // `sotd` is on <body> by now, so this clears the practice session's last
   // time off the digits rather than leaving it under today's scramble.
   syncTimerDisplay();
+  syncCameraButton();
+  // The top bar's card points at a button this window hides; this one has its own, a beat after it settles.
+  camHint?.hide();
+  setTimeout(showSotdCameraHint, 1200);
 }
 
 /**
@@ -1618,7 +1623,10 @@ function wireTimer() {
 const openShortcuts = () => openPanel(t('Keyboard shortcuts'), 'buildShortcuts', { wide: true });
 app.openCommands = () => openPaletteWithCommands();
 
-async function openCameraPanel() {
+/* `anchor`: the button it opens from. The top bar's, or the Scramble of the
+   Day bar's (#sotd-camera), since the top bar is hidden in that window. */
+async function openCameraPanel(anchor = $('#btn-camera')) {
+  if (!timerIdle()) return;
   let m;
   try { m = await loadPanels(); }
   catch (err) { return lazyFailed(t('webcam replay'), err); }
@@ -1633,17 +1641,28 @@ async function openCameraPanel() {
     }));
   // A tick later: on a phone the button was just tapped inside the folded
   // menu, and the menu closes on that same click.
-  setTimeout(() => popover($('#btn-camera'), [{ node }], { minWidth: 360 }), 0);
+  setTimeout(() => popover(anchor, [{ node }], { minWidth: 360 }), 0);
 }
 
+/* Both camera buttons, the top bar's and the SOTD bar's: lit while replay is
+   on, a red dot while filming. The SOTD one is also shut while an attempt is
+   under way (inspection or the solve), the one time a panel over the timer
+   would be in the way. */
 function syncCameraButton() {
-  const b = $('#btn-camera');
-  if (!b) return;
   const st = replayStatus();
-  b.classList.toggle('on', st.enabled);
-  b.classList.toggle('rec', st.recording);
-  b.setAttribute('aria-pressed', String(st.enabled));
-  b.title = st.recording ? t('Webcam replay — filming') : st.enabled ? t('Webcam replay — on') : t('Webcam replay');
+  for (const b of [$('#btn-camera'), $('#sotd-camera')]) {
+    if (!b) continue;
+    b.classList.toggle('on', st.enabled);
+    b.classList.toggle('rec', st.recording);
+    b.setAttribute('aria-pressed', String(st.enabled));
+    b.title = st.recording ? t('Webcam replay — filming') : st.enabled ? t('Webcam replay — on') : t('Webcam replay');
+  }
+  const sb = $('#sotd-camera');
+  if (sb) {
+    sb.disabled = !timerIdle();
+    const label = sb.querySelector('.sotd-cam-label');
+    if (label) label.textContent = st.recording ? t('Filming') : st.enabled ? t('Camera on') : t('Camera');
+  }
 }
 
 /** The pill under the time: the solve on the digits was filmed, and nothing is under way. */
@@ -1694,6 +1713,8 @@ function answerCameraHint() {
 function showCameraHint() {
   if (!hintArmed || camHint || hintShown >= HINT_SHOWS) return;
   if (app.settings.webcamReplay) return answerCameraHint();
+  // Not in the SOTD window: its top bar is hidden but still laid out, and that window has its own card.
+  if (document.body.classList.contains('sotd')) return;
   if (!$('#btn-camera')?.getBoundingClientRect().width || modalOpen() || document.hidden || !timerIdle()) return;
   hintShown++;
   const hide = () => { tip.remove(); if (camHint === tip) camHint = null; removeEventListener('resize', placeCameraHint); };
@@ -1710,10 +1731,64 @@ function showCameraHint() {
   addEventListener('resize', placeCameraHint);
 }
 
+/* The same news inside the Scramble of the Day window, where the top bar and
+   its camera are hidden: a card under the window's own camera button, so
+   people see it is there. Once per browser until answered (its own key: the
+   top bar's announcement being answered says nothing about this one), at most
+   HINT_SHOWS times a page load, out of the way the moment an attempt starts.
+   Replay off, it offers to turn it on; on, it says the attempt is filmed and
+   can be shared after. */
+const SOTD_HINT_KEY = 'sotdCameraNewsSeen';
+let sotdHint = null;
+let sotdHintShown = 0;
+
+function placeSotdHint() {
+  const tip = sotdHint;
+  const r = $('#sotd-camera')?.getBoundingClientRect();
+  if (!tip) return;
+  if (!r?.width || !document.body.classList.contains('sotd')) return tip.hide();
+  const w = tip.offsetWidth;
+  const left = Math.max(10, Math.min(r.left + r.width / 2 - w / 2, innerWidth - w - 10));
+  tip.style.left = `${left}px`;
+  tip.style.top = `${r.bottom + 12}px`;
+  tip.style.setProperty('--arrow', `${r.left + r.width / 2 - left}px`);
+}
+
+async function showSotdCameraHint() {
+  const btn = $('#sotd-camera');
+  const ready = () => !sotdHint && sotdHintShown < HINT_SHOWS && document.body.classList.contains('sotd')
+    && !!btn?.getBoundingClientRect().width && !btn.disabled && timerIdle() && !modalOpen() && !document.hidden;
+  if (!replaySupported() || !ready()) return;
+  if (await KV.get(SOTD_HINT_KEY, false).catch(() => true)) return;
+  if (!ready()) return;                       // the window may have moved on during the read
+  sotdHintShown++;
+  const on = !!app.settings.webcamReplay;
+  const hide = () => { tip.remove(); if (sotdHint === tip) sotdHint = null; removeEventListener('resize', placeSotdHint); };
+  const answer = () => { KV.set(SOTD_HINT_KEY, true).catch(() => {}); hide(); };
+  const tip = sotdHint = el('div', { class: 'cam-hint sotd-cam-hint', role: 'status', 'aria-live': 'polite' },
+    el('button', { class: 'cam-hint-x', 'aria-label': t('Not now'), title: t('Not now'), html: '&times;', onclick: answer }),
+    el('b', { text: on ? t('Your attempt will be filmed') : t('New: film your attempt') }),
+    el('span', { text: on
+      ? t('Webcam replay is on. After you submit, Share replay puts your clip on the board for everyone who did today’s scramble.')
+      : t('Turn on the camera here to film today’s attempt. After you submit, you can share the replay with everyone who did the same scramble.') }),
+    el('div', { class: 'cam-hint-row' }, ...(on
+      ? [el('button', { class: 'btn primary', text: t('Got it'), onclick: answer })]
+      : [el('button', { class: 'btn primary', text: t('Turn it on'), onclick: () => { answer(); openCameraPanel(btn); } }),
+         el('button', { class: 'ghost-btn sm', text: t('Not now'), onclick: answer })])));
+  // Its buttons take Space and Enter themselves; the timer behind does not get them.
+  tip.addEventListener('keydown', (e) => e.stopPropagation());
+  tip.hide = hide;
+  document.body.append(tip);
+  placeSotdHint();
+  addEventListener('resize', placeSotdHint);
+}
+
 function wireReplayUI() {
   const btn = $('#btn-camera');
   if (btn && !replaySupported()) btn.title = t('Webcam replay (this browser cannot record video)');
   btn?.addEventListener('click', () => openCameraPanel());
+  const sotdBtn = $('#sotd-camera');
+  sotdBtn?.addEventListener('click', () => openCameraPanel(sotdBtn));
   $('#last-replay')?.addEventListener('click', () => {
     const last = shownSolve();
     if (last && hasReplay(last.id)) openReplay(last);
@@ -1729,8 +1804,9 @@ function wireReplayUI() {
   });
   timer.addEventListener('state', ({ detail: { state } }) => {
     syncReplayPill();
+    syncCameraButton();
     // Out of the way the moment an attempt starts, back once it is over.
-    if (state !== 'idle' && state !== 'cooldown') camHint?.hide();
+    if (state !== 'idle' && state !== 'cooldown') { camHint?.hide(); sotdHint?.hide(); }
     else if (hintArmed && !camHint) setTimeout(showCameraHint, 1500);
   });
   // A few seconds after boot, then whenever nothing else is going on: a

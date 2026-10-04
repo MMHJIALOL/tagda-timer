@@ -55,7 +55,9 @@ export const LOCAL_ONLY_SETTINGS = ['sessionId', 'event', 'mode', 'raceReturnSes
   // Turning the camera on here must not make the phone ask for its camera mid-solve,
   // and which camera, and how late its picture runs, is about this machine.
   'webcamReplay', 'webcamDevice', 'webcamLabel', 'webcamQuality', 'webcamSync', 'webcamCrop', 'webcamKeepOn',
-  'webcamSound', 'webcamMic', 'webcamMicLabel', 'webcamUnmute'];
+  'webcamSound', 'webcamMic', 'webcamMicLabel', 'webcamUnmute',
+  // Uploading is a decision made on the machine with the camera, not one to arrive from another.
+  'sotdShareAuto', 'sotdShareSound'];
 
 /**
  * Serializes every read-modify-write against the offline queue. KV.get/set

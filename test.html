@@ -2791,6 +2791,62 @@ section('virtual cube');
   check('M does nothing on a 2x2', V.movesFor('Digit5', 2).length === 0);
 }
 
+section('webcam replay — the seekable copy');
+if (typeof VideoEncoder !== 'function' || typeof VideoDecoder !== 'function') {
+  check('no WebCodecs in this browser: nothing to convert with, skipped', true);
+} else {
+  const MB = await import('./vendor/mediabunny/mediabunny.min.js');
+  const RM = await import('./js/replay-media.js');
+  /* Four seconds filmed the way a webcam films: about 30 fps but never evenly.
+     Written by Mediabunny, it comes out in clusters of about a second, and the
+     last frame of each reads back 0 s long, as Chrome's recordings do before
+     every keyframe. */
+  const W = 320, H = 240, N = 120;
+  const cv = Object.assign(document.createElement('canvas'), { width: W, height: H });
+  const g = cv.getContext('2d');
+  const made = new MB.Output({ format: new MB.WebMOutputFormat(), target: new MB.BufferTarget() });
+  const src = new MB.CanvasSource(cv, { codec: 'vp8', bitrate: 500_000, keyFrameInterval: 0.5 });
+  made.addVideoTrack(src);
+  await made.start();
+  const at = (i) => Math.round((i / 30 + ((i * 7) % 5) * 0.004) * 1000) / 1000;
+  for (let i = 0; i < N; i++) {
+    g.fillStyle = `hsl(${i * 9} 70% 50%)`;
+    g.fillRect(0, 0, W, H);
+    g.fillStyle = '#fff';
+    g.fillRect((i * 5) % (W - 40), 40, 40, 40);
+    await src.add(at(i), 1 / 30);
+  }
+  src.close();
+  await made.finalize();
+  const clip = new Blob([made.target.buffer], { type: 'video/webm' });
+  const packets = async (blob) => {
+    const tr = await new MB.Input({ source: new MB.BlobSource(blob), formats: MB.ALL_FORMATS }).getPrimaryVideoTrack();
+    const out = [];
+    for await (const p of new MB.EncodedPacketSink(tr).packets()) out.push(p);
+    return { codec: await tr.getCodec(), list: out.sort((a, b) => a.timestamp - b.timestamp) };
+  };
+  const before = await packets(clip);
+  const silent = before.list.filter(p => !(p.duration > 0)).length;
+  check('the test clip has frames that read back 0 s long, as a recording does', silent >= 2, `${silent} of ${before.list.length}`);
+  let got = null, why = '';
+  try { got = await RM.finishClip(clip); } catch (err) { why = err?.message || String(err); }
+  if (!got) {
+    check('the clip converts', false, why || 'nothing here could encode it');
+  } else {
+    const after = await packets(got.blob);
+    const ms = (list) => list.map(p => Math.round(p.timestamp * 1000)).join();
+    check('the seekable copy keeps every frame', after.list.length === before.list.length,
+      `${before.list.length} in, ${after.list.length} out`);
+    check('each frame keeps its time', ms(after.list) === ms(before.list));
+    check('the frame times stored with it are the copy\'s own', got.frames.map(s => Math.round(s * 1000)).join() === ms(after.list));
+    const keys = after.list.filter(p => p.type === 'key').map(p => p.timestamp);
+    const gap = Math.max(...keys.slice(1).map((k, i) => k - keys[i]));
+    check('a keyframe at least every half second', keys[0] === after.list[0].timestamp && gap <= 0.5 + 1 / 20,
+      `${keys.length} keyframes, longest gap ${Math.round(gap * 1000)} ms`);
+    if (await MB.canEncodeVideo('vp8', { width: W, height: H })) check('VP8 where the browser can encode it', after.codec === 'vp8', after.codec);
+  }
+}
+
 document.getElementById('summary').textContent =
   fail === 0 ? `All ${pass} checks passed.` : `${pass} passed, ${fail} FAILED.`;
 document.getElementById('summary').style.color = fail === 0 ? '#3ddc84' : '#ff4d6d';
