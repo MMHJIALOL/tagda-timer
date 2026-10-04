@@ -1938,6 +1938,68 @@ body.inspecting #last-replay, body.focus #last-replay { display: none; }
 .about-arrow { width: 16px; height: 16px; flex: none; color: var(--text-faint); }
 .about-link:hover .about-arrow { color: var(--accent); }
 
+/* Support. Deliberately off-theme: a warm coffee red-orange that stays the
+   same whatever accent the timer wears, so it never blends into the links
+   around it. The deep end of the gradient keeps white text readable. */
+.support-card {
+  display: grid; gap: 10px; padding: 14px; border-radius: var(--radius);
+  background: linear-gradient(150deg, color-mix(in srgb, #ff6a3d 14%, transparent), color-mix(in srgb, #ff6a3d 4%, transparent));
+  border: 1px solid color-mix(in srgb, #ff6a3d 38%, transparent);
+}
+.support-pitch { font-size: .84rem; line-height: 1.6; color: var(--text-dim); }
+.support-kofi {
+  position: relative; overflow: hidden;
+  display: flex; align-items: center; gap: 12px;
+  padding: 13px 16px; border-radius: var(--radius-sm);
+  color: #fff; text-decoration: none;
+  background: linear-gradient(135deg, #d6353c, #cf4d14);
+  box-shadow: 0 10px 28px -12px #e0452a;
+  transition: transform var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
+}
+.support-kofi > span:nth-child(2) { flex: 1; }
+.support-kofi b { display: block; font-size: 1rem; font-weight: 700; letter-spacing: -.01em; }
+.support-kofi .sub { display: block; font-size: .74rem; color: rgba(255,255,255,.85); margin-top: 2px; }
+.support-kofi .about-arrow { color: #fff; }
+.support-cup {
+  width: 36px; height: 36px; flex: none; display: grid; place-items: center;
+  font-size: 1.25rem; border-radius: 10px; background: rgba(255,255,255,.18);
+}
+.support-kofi:hover { transform: translateY(-2px); box-shadow: 0 14px 34px -12px #e0452a; }
+/* The same occasional sweep the SOTD box uses, so the one coloured thing in
+   the panel is also the one moving thing. */
+.support-kofi::after {
+  content: ''; position: absolute; inset: 0;
+  background: linear-gradient(105deg, transparent 38%, rgba(255,255,255,.28) 50%, transparent 62%);
+  transform: translateX(-120%);
+  animation: sotdShine 6s var(--ease) infinite;
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .support-kofi::after { animation: none; opacity: 0; }
+  .support-kofi:hover { transform: none; }
+}
+.support-upi {
+  display: flex; align-items: center; gap: 14px;
+  padding: 12px; border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--text) 4%, transparent);
+  border: 1px solid var(--border);
+}
+/* White behind the code in every theme: scanners want dark on light, and the
+   SVG already carries its own quiet zone. */
+.upi-qr { width: 112px; height: 112px; flex: none; border-radius: 8px; background: #fff; }
+.upi-side { display: grid; gap: 6px; min-width: 0; }
+.upi-side b { font-size: .92rem; font-weight: 650; }
+.upi-side .sub { font-size: .72rem; color: var(--text-faint); }
+/* The ID wraps rather than truncating: someone typing it by hand needs all of it. */
+.upi-id { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
+.upi-id code {
+  font-size: .78rem; padding: 4px 7px; border-radius: 6px; min-width: 0;
+  overflow-wrap: anywhere; user-select: all;
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+}
+.upi-open { display: none; justify-self: start; }
+@media (pointer: coarse) { .upi-open { display: inline-flex; } }
+
 /* ---------------- owner shine & card ----------------
    Marks whichever row's raceName is the site owner's, in both the race
    room and the daily leaderboard — see js/ownercard.js. The sweep reuses
