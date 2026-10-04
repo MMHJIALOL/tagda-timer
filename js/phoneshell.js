@@ -862,7 +862,7 @@ function renderMore() {
   const group = (...rows) => el('div', { class: 'ph-group' }, ...rows.filter(Boolean));
   ui.moreGroups.replaceChildren(
     group(
-      row(I.sun, t('Appearance'), el('span', { class: 'ph-row-vv' }, swatches, PRESETS[S.theme]?.name || ''), () => X.click('#btn-theme')),
+      row(I.sun, t('Appearance'), el('span', { class: 'ph-row-vv' }, swatches, PRESETS[document.documentElement.dataset.theme || S.theme]?.name || ''), () => X.click('#btn-theme')),
       row(I.timer, t('Timer'), S.inspection ? t('Inspection 15 s') : t('Inspection off'), () => openSettingsAt(t('Inspection'))),
       row(I.keyboard, t('Timing input'), input, () => openSettingsAt(t('Timing input'))),
       row(I.gear, t('Settings'), null, () => X.click('#btn-settings'))),
