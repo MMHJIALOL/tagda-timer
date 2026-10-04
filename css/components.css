@@ -1541,6 +1541,253 @@ body:has(#timer-display.state-running) #goal-line { opacity: 0; }
 }
 .sd-meta { font-size: .64rem; color: var(--text-faint); }
 
+/* ---------------- webcam replay (replay.js) ----------------
+   The clock sits in its own bar under the picture, never over it: the cube is
+   what you came to look at. fit() in replay.js gives the video whatever height
+   the clock and the controls leave, so all of it fits on screen at once. */
+.replay-dlg {
+  margin: auto; width: min(780px, calc(100vw - 24px)); max-height: calc(100dvh - 24px);
+  padding: 12px; color: var(--text); background: var(--surface);
+  border: 1px solid var(--border); border-radius: var(--radius);
+  box-shadow: 0 24px 80px rgb(0 0 0 / .5);
+  overflow: auto; overscroll-behavior: contain;
+}
+.replay-dlg[open] { display: flex; flex-direction: column; gap: 10px; }
+/* The default backdrop barely dims the timer behind it. */
+.replay-dlg::backdrop { background: rgb(0 0 0 / .65); }
+.rp-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-width: 0; }
+.rp-title { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.rp-title b { font-family: var(--font-timer); font-size: 1rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rp-title span { font-size: .72rem; color: var(--text-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rp-stage {
+  display: grid; place-items: center; min-height: 120px;
+  background: #000; border-radius: var(--radius-sm); overflow: hidden;
+}
+.rp-video { display: block; width: 100%; height: auto; object-fit: contain; }
+.rp-stage { position: relative; }
+
+/* Choosing the Reel's square: everything outside it dimmed, the square itself
+   dragged (touch too) and sized with the slider or the wheel. */
+.rp-crop { position: absolute; overflow: hidden; touch-action: none; }
+.rp-crop-box {
+  position: absolute; cursor: move; touch-action: none;
+  border: 2px solid #fff; border-radius: 6px;
+  box-shadow: 0 0 0 9999px rgb(0 0 0 / .58), inset 0 0 0 1px rgb(0 0 0 / .35);
+}
+.rp-crop-box::before, .rp-crop-box::after {
+  content: ''; position: absolute; inset: 33.33% 0; border-block: 1px solid rgb(255 255 255 / .35); pointer-events: none;
+}
+.rp-crop-box::after { inset: 0 33.33%; border-block: 0; border-inline: 1px solid rgb(255 255 255 / .35); }
+.rp-crop-row .rp-crop-size { display: inline-flex; align-items: center; gap: 8px; font-size: .74rem; color: var(--text-dim); }
+.rp-crop-row .rp-crop-size input[type="range"] { width: 120px; max-width: 30vw; }
+.rp-err { color: #bbb; padding: 48px 16px; font-size: .84rem; text-align: center; }
+
+.rp-clock {
+  display: grid; grid-template-columns: 1fr auto 1fr; align-items: baseline; gap: 12px;
+  line-height: 1; padding-top: 2px;
+}
+.rp-phase {
+  justify-self: end; font-size: .64rem; font-weight: 700; letter-spacing: .16em;
+  text-transform: uppercase; color: var(--text-faint); white-space: nowrap;
+}
+.rp-digits { display: inline-flex; align-items: baseline; gap: 6px; }
+.rp-time {
+  font-family: var(--font-timer); font-size: clamp(2rem, 7vw, 3.2rem); font-weight: 600;
+  font-variant-numeric: tabular-nums; color: var(--text); transition: color var(--dur-fast) var(--ease);
+}
+.rp-pen { font-family: var(--font-timer); font-size: 1rem; font-weight: 700; color: var(--danger); }
+.rp-clock.pre .rp-time { color: var(--text-faint); }
+.rp-clock.insp .rp-time { color: var(--warn); }
+.rp-clock.insp.late .rp-time { color: var(--danger); }
+.rp-clock.done .rp-time { color: var(--accent-2); }
+
+/* The track is drawn by the marks underneath a transparent range input, so
+   the solve can be shaded on it. Inset by half a thumb, which is where the
+   input's own ends are. */
+.rp-bar { position: relative; height: 24px; flex: none; }
+.rp-marks {
+  position: absolute; left: 7px; right: 7px; top: 50%; height: 6px; transform: translateY(-50%);
+  border-radius: 3px; background: color-mix(in srgb, var(--text) 14%, transparent); pointer-events: none;
+}
+.rp-marks i { position: absolute; top: 0; bottom: 0; }
+.rp-marks .rp-solve { background: color-mix(in srgb, var(--accent-2) 60%, transparent); border-radius: 3px; }
+.rp-marks .rp-mark { width: 2px; margin-left: -1px; top: -4px; bottom: -4px; border-radius: 1px; background: var(--warn); }
+.rp-marks .rp-mark.split { background: var(--text-dim); }
+.replay-dlg input.rp-seek {
+  position: absolute; inset: 0; width: 100%; max-width: none; height: 100%; margin: 0; background: transparent;
+}
+.replay-dlg input.rp-seek::-moz-range-track { background: transparent; }
+
+.rp-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
+.rp-transport, .rp-extra { display: flex; align-items: center; gap: 4px; }
+.rp-btn {
+  display: inline-grid; place-items: center; width: 36px; height: 36px; flex: none;
+  border-radius: 10px; border: 0; background: transparent; color: var(--text-dim); cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+.rp-btn:hover { color: var(--text); background: color-mix(in srgb, var(--text) 8%, transparent); }
+.rp-btn svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.rp-btn.rp-play { background: var(--accent); color: var(--on-accent); }
+.rp-btn.rp-play:hover { background: var(--accent); color: var(--on-accent); box-shadow: 0 6px 18px -6px var(--accent); }
+.rp-btn.rp-close { width: 32px; height: 32px; }
+.rp-sync {
+  padding: 10px 12px; border-radius: var(--radius-sm); font-size: .78rem; color: var(--text-dim);
+  background: color-mix(in srgb, var(--text) 5%, transparent);
+}
+.rp-sync[hidden] { display: none; }
+.rp-sync p { margin: 0 0 8px; line-height: 1.45; }
+.rp-sync-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.rp-sync-note { font-size: .72rem; color: var(--text-faint); }
+
+/* A phone on its side: the picture down the left, everything else beside it. */
+.replay-dlg.rp-side { width: calc(100vw - 24px); }
+.replay-dlg.rp-side[open] {
+  display: grid; gap: 8px 12px; align-content: start;
+  grid-template-columns: minmax(0, 1fr) minmax(210px, 36%);
+  grid-template-areas: "head head" "stage clock" "stage bar" "stage controls" "stage sync" "stage .";
+  grid-template-rows: auto auto auto auto auto 1fr;
+}
+.rp-side .rp-head { grid-area: head; }
+.rp-side .rp-stage { grid-area: stage; align-self: start; }
+.rp-side .rp-clock { grid-area: clock; grid-template-columns: auto 1fr; }
+.rp-side .rp-phase { grid-row: 1; grid-column: 1 / -1; justify-self: start; }
+.rp-side .rp-digits { grid-row: 2; grid-column: 1 / -1; }
+.rp-side .rp-bar { grid-area: bar; }
+.rp-side .rp-controls { grid-area: controls; }
+.rp-side .rp-sync { grid-area: sync; }
+
+/* Settings: the live picture to aim the camera with. Not mirrored, so it
+   shows exactly what the replay will. */
+.rp-settings { display: flex; flex-direction: column; gap: 10px; }
+.rp-preview { display: grid; gap: 6px; }
+.rp-preview-video {
+  width: 100%; aspect-ratio: 16 / 9; max-height: 220px; object-fit: contain;
+  background: #000; border-radius: var(--radius-sm);
+}
+.rp-preview.compact .rp-preview-video { max-height: 150px; }
+/* As tall as its tallest state (the "Turn it on" button), so the rows under it
+   do not jump when the camera comes on, under a pointer about to click one. */
+.rp-preview-status { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-height: 30px; font-size: .72rem; color: var(--text-faint); }
+.rp-settings .ghost-btn[disabled] { opacity: .35; pointer-events: none; }
+
+/* The player's own menus (⋯ and Save video). Drawn inside the dialog: a page
+   popover would sit under the modal's top layer. */
+.rp-extra { gap: 6px; }
+.rp-save { height: 36px; padding: 0 14px 0 11px; gap: 6px; }
+.rp-save svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.rp-save[disabled] { opacity: .5; pointer-events: none; }
+.rp-menu {
+  position: absolute; z-index: 2; min-width: 230px; max-width: min(340px, calc(100% - 16px));
+  display: flex; flex-direction: column; gap: 2px; padding: 6px;
+  border-radius: 14px; border: 1px solid var(--border);
+  background: var(--surface-2); box-shadow: 0 22px 50px -16px rgba(0,0,0,.75);
+  animation: popover 200ms var(--ease-back);
+}
+.rp-menu-item {
+  display: flex; align-items: flex-start; gap: 10px; width: 100%; padding: 9px 10px;
+  border-radius: 9px; text-align: left; color: var(--text); background: none; border: 0;
+}
+.rp-menu-item:hover, .rp-menu-item:focus-visible { background: color-mix(in srgb, var(--text) 8%, transparent); outline: none; }
+.rp-menu-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.rp-menu-text b { font-size: .84rem; font-weight: 600; }
+.rp-menu-text span { font-size: .72rem; color: var(--text-faint); line-height: 1.35; }
+.rp-menu-item.danger b { color: var(--danger); }
+.rp-check {
+  flex: none; width: 16px; height: 16px; margin-top: 1px; border-radius: 5px;
+  border: 1.5px solid var(--text-faint);
+}
+.rp-check.on { background: var(--accent); border-color: var(--accent); box-shadow: inset 0 0 0 3px var(--surface-2); }
+.rp-pin {
+  flex: none; font-size: .62rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+  padding: 2px 7px; border-radius: 99px; color: var(--gold, #ffd166);
+  background: color-mix(in srgb, var(--gold, #ffd166) 14%, transparent);
+}
+.rp-pin[hidden] { display: none; }
+.rp-sync-row .rp-sync-close { margin-left: auto; }
+
+/* Making a video: what is happening, how far along, then Share / Save. */
+.rp-export {
+  display: flex; flex-direction: column; gap: 8px; padding: 10px 12px;
+  border-radius: var(--radius-sm); font-size: .8rem; color: var(--text-dim);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+}
+.rp-export[hidden] { display: none; }
+.rp-export-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
+.rp-export-row > span { flex: 1 1 12rem; min-width: 0; overflow-wrap: anywhere; }
+.rp-export-row > b { font-family: var(--font-mono); color: var(--text); }
+.rp-progress { height: 6px; border-radius: 99px; overflow: hidden; background: color-mix(in srgb, var(--text) 12%, transparent); }
+.rp-progress i { display: block; height: 100%; width: 0; border-radius: inherit; background: var(--accent); transition: width 160ms linear; }
+
+/* The top-bar camera. Lit while webcam replay is on; a red dot while an
+   attempt is actually being filmed, so it is never filming unseen. */
+#btn-camera { position: relative; }
+#btn-camera .rec-dot {
+  display: none; position: absolute; top: 4px; right: 4px; width: 8px; height: 8px; border-radius: 50%;
+  background: #ff3b30; box-shadow: 0 0 0 2px var(--bg);
+}
+#btn-camera.rec .rec-dot { display: block; animation: recPulse 1.2s ease-in-out infinite; }
+@keyframes recPulse { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { #btn-camera.rec .rec-dot { animation: none; } }
+
+/* Below the menu breakpoint the icon row folds away, except this one: the
+   camera stays in the bar, beside the menu button. */
+@media (max-width: 860px) {
+  .topbar-right:not(.open) { display: flex; margin-left: auto; gap: 0; }
+  .topbar-right:not(.open) > :not(#btn-camera) { display: none; }
+  #topbar:has(.topbar-right:not(.open)) #btn-menu { order: 2; margin-left: 6px; }
+  .topbar-right.open #btn-camera .rec-dot { position: static; }
+}
+
+/* The camera panel behind that button: the same controls as Settings. */
+.cam-panel { display: flex; flex-direction: column; gap: 12px; width: min(380px, calc(100vw - 44px)); padding: 6px 6px 8px; }
+.cam-panel-head { display: flex; flex-direction: column; gap: 3px; }
+.cam-panel-head b { font-size: .95rem; color: var(--text); }
+.cam-panel-head span { font-size: .74rem; color: var(--text-faint); line-height: 1.4; }
+
+/* After a filmed solve: the pill beside the "vs last" chip, until the next attempt. */
+#last-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px; }
+#last-row:not(:has(> :not([hidden]))) { display: none; }
+#last-replay {
+  height: 26px; padding: 0 10px 0 8px; gap: 5px; border-radius: 99px;
+  font-size: .76rem; font-weight: 600; color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 32%, transparent);
+  animation: popIn 420ms var(--ease-back);
+}
+#last-replay[hidden] { display: none; }
+#last-replay svg { width: 11px; height: 11px; fill: currentColor; stroke: none; }
+#last-replay:hover { color: var(--accent); background: color-mix(in srgb, var(--accent) 20%, transparent); }
+body.inspecting #last-replay, body.focus #last-replay { display: none; }
+
+/* A filmed solve in the times list: a small play button after its time. */
+.chip-replay {
+  display: inline-grid; place-items: center; width: 17px; height: 17px; margin-left: 6px; padding: 0;
+  vertical-align: -3px; border: 0; border-radius: 5px; cursor: pointer;
+  color: var(--accent); background: color-mix(in srgb, var(--accent) 15%, transparent);
+}
+.chip-replay svg { width: 9px; height: 9px; fill: currentColor; stroke: none; }
+.chip-replay:hover { color: var(--on-accent); background: var(--accent); }
+
+/* Once, for anyone who has not found the camera yet. */
+.cam-hint {
+  position: fixed; z-index: 90; width: min(290px, calc(100vw - 20px));
+  display: flex; flex-direction: column; gap: 6px; padding: 13px 14px 12px;
+  border-radius: var(--radius-sm); font-size: .8rem; line-height: 1.4; color: var(--text-dim);
+  background: var(--surface-2); border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border));
+  box-shadow: 0 22px 50px -18px rgba(0,0,0,.8);
+  animation: popIn 420ms var(--ease-back);
+}
+.cam-hint b { color: var(--text); font-size: .88rem; }
+.cam-hint::before {
+  content: ''; position: absolute; top: -7px; left: calc(var(--arrow, 50%) - 6px); width: 12px; height: 12px;
+  background: var(--surface-2); transform: rotate(45deg);
+  border-left: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border));
+  border-top: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border));
+}
+.cam-hint-row { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+.cam-hint-row .btn { height: 32px; padding: 0 14px; }
+
 @media (max-width: 620px) {
   .sd-row { grid-template-columns: 22px 64px 1fr; }
   .sd-row > .ghost-btn { grid-column: 2 / -1; justify-self: start; }

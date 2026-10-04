@@ -18,7 +18,7 @@ leaderboard, and a theme engine that lets you rebuild the entire look.
 - [Timing](#timing) — scrambles, inspection, input methods
 - [Events](#events) — Fewest Moves, Relay, Blindfolded
 - [Training](#training) — trainers, learn mode, alg trainer, Cross + 1, reconstruction
-- [Statistics](#statistics) — averages, charts, the times list, share cards
+- [Statistics](#statistics) — averages, charts, the times list, webcam replay, share cards
 - [Playing with other people](#playing-with-other-people) — race rooms, Scramble of the Day
 - [Making it yours](#making-it-yours) — themes, backgrounds, panels, Spotify
 - [Your data](#your-data) — storage, sync, import/export, offline, gear
@@ -393,6 +393,58 @@ clicking again puts the list back in solve order. Any average in the list opens 
 behind it. Hover a row for its **reconstruct** button, or open its menu to set a penalty,
 comment, share, or delete.
 
+### Webcam replay
+The **camera button** in the top bar (it stays in the bar on a phone too) turns on
+**webcam replay**: every attempt is filmed, from the press (or the start of inspection) to a
+second after the stop. The button lights up while it is on and shows a **red dot while an
+attempt is being filmed**. After a filmed solve a **▶ Replay** pill sits under the time, the
+times list puts a ▶ after that solve, its menu has **Watch replay**, and **W** plays the last
+one. The clock runs **in a bar under the picture, never over it**: the inspection countdown,
+then the time, then the final result with its penalty. Step a frame at a time with
+**← →**, slow it to 0.25×, or jump to the start (**Home**) or the stop (**End**). On a phone on
+its side the clock moves beside the picture instead.
+
+**Save video** makes a real MP4, three ways:
+- **Reel** (1080×1920): the share card with the solve playing in it. First drag a square over
+  the picture (and size it) to choose what it shows; that square is remembered per camera.
+  Under it, the clock beside a picture of the scrambled cube, the scramble, and tagdatimer.me
+  and @cubingngagng.
+- **Landscape** (1920×1080, 16:9): the whole picture as filmed, with the clock, the cube, the
+  scramble and the links in a panel beside it.
+- **Original**: just the video as filmed, with a small tagdatimer.me in the corner.
+
+On a phone it offers **Share**, straight into Instagram or a chat. The videos are made in the
+browser with [Mediabunny](https://mediabunny.dev) (vendor/mediabunny, MPL-2.0) over the
+browser's own video encoder, a few seconds for a solve. If that encoder will not start, the
+video is recorded live instead, which takes as long as the clip (and is a WebM in Firefox).
+
+Pick **any camera** the device can see: a phone's front or back camera, or a phone connected
+to a laptop as a webcam (Phone Link, Continuity Camera, DroidCam). The camera panel shows a
+live preview to aim it with. If the chosen camera is unplugged, the next attempt is filmed on
+another one and says so, and plugging it back switches back. Standard (640×480) or HD
+(1280×720).
+
+Clips stay **on this device only**, in their own database, never synced or uploaded. Keep the
+newest **50, 200 or 1000**; a **PB single's clip is kept for good**, and so is any you mark
+**Keep forever** in the player. A misfire you discard is never saved.
+
+The camera is only on while it is needed: it wakes on the press (or the start of inspection),
+switches off a second after the stop, and goes the moment you leave the tab. A preview in
+Settings or the camera panel keeps it on while you aim it. Solving without inspection? Turn on
+**Camera on between solves**, so the clip catches the very start. The browser is never made to
+ask for permission in the middle of a solve.
+
+Browsers record with a keyframe only every six or seven seconds, which made scrubbing back
+and forth stutter. So once a clip is saved, while the timer is idle, it is re-encoded with a
+keyframe every half second and a seek index (a seek went from a median 136 ms in Firefox, and
+41 ms in Chrome, to 13 ms). Starting an attempt pauses that, so filming and converting never
+cost the timer anything.
+
+The clock is lined up to within a frame using when the recording started, and, in Chrome, the
+camera's own frame timestamps. A camera with a slower picture (a phone over Wi-Fi) can still
+run a little behind: open **⋯ → Clock delay**, pause on the frame where your hand stops the
+timer, press **Stopped here**, and that camera is corrected from then on.
+
 ### Share cards
 
 ![An ao12 share card with counting times, trimmed solves and scrambles](docs/screenshots/share-card.webp)
@@ -564,6 +616,7 @@ model, the tension you set, what you lubed it with, and a dated log of what you 
 | **C** | comment on the last solve |
 | **N** · **← →** | new scramble · previous / next scramble |
 | **R** | repeat the last solve's scramble |
+| **W** | watch the last solve's webcam replay |
 | **Ctrl + C** | copy the scramble |
 | **X** | enter your own scrambles |
 | **<** / **>** | previous / next puzzle in a relay |
@@ -584,7 +637,9 @@ model, the tension you set, what you lubed it with, and a dated log of what you 
 | **Ctrl + Shift + Del** | clear the whole session |
 
 Shortcuts are ignored while you are typing in a field, and while the virtual cube is
-the input, the letter keys turn the cube instead.
+the input, the letter keys turn the cube instead. The shortcut list and the command palette
+also have buttons under **Settings → Keyboard & commands**, where the top bar's shortcuts
+button moved to make room for the camera.
 
 ---
 

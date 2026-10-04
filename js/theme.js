@@ -158,6 +158,13 @@ export const DEFAULTS = {
   paceGhost: false,           // opt-in — see SETTINGS_VERSION below
   paceRef: 'pb',                // pb | ao5
   confirmShortSolves: true,
+  webcamReplay: false,          // film each attempt (replay.js); asks for the camera when turned on
+  webcamDevice: '',             // a deviceId; '' is whatever the browser calls the default camera
+  webcamLabel: '',              // its name, to find it again if the id changes
+  webcamQuality: 'sd',          // sd 640x480 | hd 1280x720
+  webcamKeepOn: false,          // hold the camera between solves (else it goes after each one)
+  webcamSync: {},               // camera name -> ms its picture runs behind the clock (the player's Sync)
+  webcamCrop: {},               // camera name (+ '|wide' for Landscape) -> the part a video shows, as fractions { x, y, s }
   misfireMs: 500,               // a solve under this is asked about (confirmShortSolves)
   soundOnPB: true,
   metronome: false,             // a click on the beat while the timer runs

@@ -51,7 +51,10 @@ export const decKey = (k) => decodeURIComponent(k);
 export const LOCAL_ONLY_SETTINGS = ['sessionId', 'event', 'mode', 'raceReturnSession', 'raceLastRoom',
   // Which session to go back to is where this browser is; whether its graphics
   // are software-rendered is about this machine, not the account.
-  'returnSessionId', 'reduceEffects'];
+  'returnSessionId', 'reduceEffects',
+  // Turning the camera on here must not make the phone ask for its camera mid-solve,
+  // and which camera, and how late its picture runs, is about this machine.
+  'webcamReplay', 'webcamDevice', 'webcamLabel', 'webcamQuality', 'webcamSync', 'webcamCrop', 'webcamKeepOn'];
 
 /**
  * Serializes every read-modify-write against the offline queue. KV.get/set

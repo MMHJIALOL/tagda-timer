@@ -59,7 +59,10 @@ export function popover(anchor, items, { columns = 1, minWidth } = {}) {
   // position under the anchor, clamped to the viewport
   const r = anchor.getBoundingClientRect();
   pop.style.left = '0px'; pop.style.top = '0px';
-  const pr = pop.getBoundingClientRect();
+  // Layout size, not getBoundingClientRect(): the opening animation starts at
+  // scale(.94), so the box measured 6% small and a wide popover on a phone
+  // was placed hanging off the right edge by that much.
+  const pr = { width: pop.offsetWidth, height: pop.offsetHeight };
   let left = r.left + r.width / 2 - pr.width / 2;
   left = Math.max(10, Math.min(left, innerWidth - pr.width - 10));
   let top = r.bottom + 8;

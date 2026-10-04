@@ -18,6 +18,8 @@ import { makeDraggable } from './drag.js';
 import { flash, shockwave, confetti, chime, callout, beep, setCalloutMode } from './fx.js';
 import { mountMetro, metroExternal } from './metro.js';
 import { keepAwake } from './wakelock.js';
+import { initReplay, syncReplay, takeClip, hasReplay, openReplay, replayOpen, replayEnabled,
+         onReplayChange, replayStatus, replaySupported } from './replay.js';
 import { summarize, eff, DNF, isMoveResult, bestSingle, bestAvg, trimmedIndices, byCase, sessionBests, rollingSeries, statWindow, STAT_LABELS, goalProgress, bpaWpa } from './stats.js';
 import { renderMiniTrend } from './charts.js';
 import { DEFAULTS, loadSettings, saveSettings, applyTheme, applyBackground, themeColors, setAlbumTint, paintBackgroundColors, liquidGlassOK } from './theme.js';
@@ -562,7 +564,9 @@ async function init() {
     off: !!app.settings.scramblesOnly,
     useInspection: !eventOf(app.settings.event).noInspection,
   });
+  initReplay(app, timer);
   wireTimer();
+  wireReplayUI();
   initFeedback(timer);
   wireInput();
   wireScrambleSwipe();
@@ -1571,6 +1575,112 @@ function wireTimer() {
   timer.addEventListener('stop', (e) => onSolveFinished(e.detail));
 }
 
+/* =========================================================
+   Webcam replay: the camera button, the Replay pill, the hint
+
+   The feature lived three clicks deep in Settings, where most people would
+   never find it. The top bar's camera button opens the same controls as a
+   panel (turn it on, pick and aim the camera, watch the last solve), and
+   shows what it is doing: lit while it is on, a red dot while an attempt is
+   being filmed. After a filmed solve a Replay pill sits under the time until
+   the next attempt starts. replay.js owns all of it; this is only the chrome.
+   ========================================================= */
+const openShortcuts = () => openPanel(t('Keyboard shortcuts'), 'buildShortcuts', { wide: true });
+app.openCommands = () => openPaletteWithCommands();
+
+async function openCameraPanel() {
+  let m;
+  try { m = await loadPanels(); }
+  catch (err) { return lazyFailed(t('webcam replay'), err); }
+  const last = shownSolve();
+  const node = el('div', { class: 'cam-panel' },
+    el('div', { class: 'cam-panel-head' },
+      el('b', { text: t('Webcam replay') }),
+      el('span', { text: t('Film your solves, watch them back with the clock, save them as videos.') })),
+    m.webcamControls(app, {
+      compact: true,
+      onWatch: last && hasReplay(last.id) ? () => { closePopover(); openReplay(last); } : null,
+    }));
+  // A tick later: on a phone the button was just tapped inside the folded
+  // menu, and the menu closes on that same click.
+  setTimeout(() => popover($('#btn-camera'), [{ node }], { minWidth: 360 }), 0);
+}
+
+function syncCameraButton() {
+  const b = $('#btn-camera');
+  if (!b) return;
+  const st = replayStatus();
+  b.classList.toggle('on', st.enabled);
+  b.classList.toggle('rec', st.recording);
+  b.setAttribute('aria-pressed', String(st.enabled));
+  b.title = st.recording ? t('Webcam replay — filming') : st.enabled ? t('Webcam replay — on') : t('Webcam replay');
+}
+
+/** The pill under the time: the solve on the digits was filmed, and nothing is under way. */
+function syncReplayPill() {
+  const pill = $('#last-replay');
+  if (!pill) return;
+  const last = shownSolve();
+  const idle = !timer || timer.state === 'idle' || timer.state === 'cooldown';
+  pill.hidden = !(last && idle && hasReplay(last.id));
+}
+
+let camHint = null;
+function showCameraHint() {
+  const btn = $('#btn-camera');
+  const r = btn?.getBoundingClientRect();
+  if (!r?.width || app.settings.webcamReplay || modalOpen() || camHint
+      || (timer.state !== 'idle' && timer.state !== 'cooldown')) return false;
+  KV.set('camHintSeen', true);
+  const close = () => { camHint?.remove(); camHint = null; removeEventListener('resize', close); };
+  const tip = camHint = el('div', { class: 'cam-hint', role: 'note' },
+    el('b', { text: t('New: film your solves') }),
+    el('span', { text: t('Watch them back with the clock running, and save them as videos for Instagram.') }),
+    el('div', { class: 'cam-hint-row' },
+      el('button', { class: 'btn primary', text: t('Try it'), onclick: () => { close(); openCameraPanel(); } }),
+      el('button', { class: 'ghost-btn sm', text: t('Not now'), onclick: close })));
+  tip.close = close;
+  document.body.append(tip);
+  const w = tip.offsetWidth;
+  const left = Math.max(10, Math.min(r.left + r.width / 2 - w + 28, innerWidth - w - 10));
+  tip.style.left = `${left}px`;
+  tip.style.top = `${r.bottom + 12}px`;
+  tip.style.setProperty('--arrow', `${r.left + r.width / 2 - left}px`);
+  addEventListener('resize', close);
+  setTimeout(close, 20000);
+  return true;
+}
+
+function wireReplayUI() {
+  const btn = $('#btn-camera');
+  if (btn && !replaySupported()) btn.title = t('Webcam replay (this browser cannot record video)');
+  btn?.addEventListener('click', () => openCameraPanel());
+  $('#last-replay')?.addEventListener('click', () => {
+    const last = shownSolve();
+    if (last && hasReplay(last.id)) openReplay(last);
+  });
+  syncCameraButton();
+  onReplayChange((e) => {
+    if (e.type === 'state') return syncCameraButton();
+    syncReplayPill();
+    if (e.type === 'saved' || e.type === 'removed') renderHistory();
+  });
+  timer.addEventListener('state', ({ detail: { state } }) => {
+    syncReplayPill();
+    if (state !== 'idle' && state !== 'cooldown') camHint?.close();
+  });
+  // Once, for anyone who has not found it yet: a few seconds after boot, and
+  // only while nothing else is going on.
+  if (replaySupported() && !app.settings.webcamReplay) {
+    KV.get('camHintSeen', false).then((seen) => {
+      if (seen) return;
+      let tries = 0;
+      const attempt = () => { if (!showCameraHint() && ++tries < 6 && !app.settings.webcamReplay) setTimeout(attempt, 5000); };
+      setTimeout(attempt, 4000);
+    }).catch(() => {});
+  }
+}
+
 /**
  * Fills over the configured hold time, then latches green on "ready". This is
  * the only thing on screen during inspection that says the timer heard you.
@@ -2090,6 +2200,9 @@ function renderPhaseBreakdown(phasesMs, timeMs) {
 let pendingMisfire = null;
 
 async function onSolveFinished(res) {
+  // Synchronous, inside the timer's 'stop': the clip of this attempt, if it was
+  // filmed. It is only saved if the solve below is actually recorded.
+  const clip = takeClip(res);
   resetBgColors();
   const main = $('#time-main');
   main.textContent = fmt(res.timeMs);
@@ -2148,7 +2261,7 @@ async function onSolveFinished(res) {
     // put a practice scramble on screen by the time a Keep gets here.
     await recordSolve({
       timeMs: res.timeMs, penalty: res.penalty,
-      inspectionMs: res.inspectionMs, splits: res.splits, scramble: held.scramble,
+      inspectionMs: res.inspectionMs, splits: res.splits, scramble: held.scramble, clip,
     });
     return;
   }
@@ -2171,7 +2284,7 @@ async function onSolveFinished(res) {
 
   await recordSolve({
     timeMs: res.timeMs, penalty: res.penalty,
-    inspectionMs: res.inspectionMs, splits: res.splits,
+    inspectionMs: res.inspectionMs, splits: res.splits, clip,
   });
 }
 
@@ -2184,7 +2297,7 @@ async function onSolveFinished(res) {
  * no second version of the PB logic to drift.
  */
 async function recordSolve({ timeMs, penalty = 'none', inspectionMs = 0, splits = null,
-                             scramble = null, fmcMoves = null, fmcSolution = '', fmcNotes = '' }) {
+                             scramble = null, fmcMoves = null, fmcSolution = '', fmcNotes = '', clip = null }) {
   const prevBest = bestSingle(app.solves);
   const prevAo5  = bestAvg(app.solves, 5).value;
   const prevAo12 = bestAvg(app.solves, 12).value;
@@ -2287,6 +2400,8 @@ async function recordSolve({ timeMs, penalty = 'none', inspectionMs = 0, splits 
   else if (beat(prevAo25, nowAo25)) pb = ['ao25', nowAo25];
   else if (beat(prevAo100, nowAo100)) pb = ['ao100', nowAo100];
   if (pb && app.settings.soundOnPB) chime();
+  // Its replay, if this attempt was filmed. A new best single's is kept for good.
+  clip?.keep(solve, { pb: pb?.[0] === 'single' });
 
   await Solves.put(solve);
   /* Submitted after the local write, never before: the solve is yours whatever
@@ -2344,6 +2459,7 @@ function syncTimerDisplay() {
     : last && last.penalty === 'DNF' ? 'DNF' : '';
   $('#last-delta').hidden = true;
   syncLastActions();
+  syncReplayPill();
 }
 
 /**
@@ -2554,6 +2670,7 @@ function renderAll() {
   updateHint();
   refreshHeatmap();
   syncLastActions();
+  syncReplayPill();
 }
 app.renderAll = renderAll;
 
@@ -2770,6 +2887,7 @@ function historyRowData(i) {
     ].filter(Boolean).join(' '),
     idx: String(i + 1),
     time: v === DNF ? 'DNF' : fmtResult(v, isMoveResult(s)) + (s.penalty === '+2' ? '+' : ''),
+    replay: hasReplay(s.id),
     // One entry per average column, in column order.
     avgs: series.map(({ n, values, best: bestAvgN }) => {
       const a = values[i];
@@ -2790,7 +2908,7 @@ function historyRowData(i) {
 }
 
 const rowSig = (d) =>
-  `${d.cls}|${d.idx}|${d.time}|` + d.avgs.map(a => `${a.n}:${a.text}:${a.best ? 1 : 0}`).join(',');
+  `${d.cls}|${d.idx}|${d.time}|${d.replay ? 1 : 0}|` + d.avgs.map(a => `${a.n}:${a.text}:${a.best ? 1 : 0}`).join(',');
 
 /** One row. `i` is the index into app.solves, so #1 is always #1. */
 function historyChip(i, data) {
@@ -2828,12 +2946,22 @@ function historyChip(i, data) {
     return cell;
   });
 
+  const timeCell = el('span', {
+    class: 't', text: d.time,
+    title: d.solve.phases?.length ? t('Has a phase breakdown — click for the split') : '',
+  });
+  /* Filmed: a play button right after the time, inside its own (flexible)
+     column, so no row changes shape. Its click stops here, not at the menu. */
+  if (d.replay) {
+    timeCell.append(el('button', {
+      class: 'chip-replay', title: t('Watch replay'), 'aria-label': t('Watch replay'),
+      html: '<svg viewBox="0 0 24 24"><path d="M8 5.5v13l10.5-6.5z"/></svg>',
+      onclick: (e) => { e.stopPropagation(); openReplay(d.solve); },
+    }));
+  }
   const chip = el('div', { class: d.cls, role: 'listitem' },
     el('span', { class: 'idx', text: d.idx }),
-    el('span', {
-      class: 't', text: d.time,
-      title: d.solve.phases?.length ? t('Has a phase breakdown — click for the split') : '',
-    }),
+    timeCell,
     ...cells,
     recon,
   );
@@ -3287,6 +3415,7 @@ function solveMenu(solve, anchor) {
     ] : []),
     { label: t('Copy scramble'), badge: '', onSelect: () => copyToast(solve.scramble, 'Scramble') },
     { label: t('Share as a card'), badge: 'S', onSelect: () => app.shareSolveCard(solve) },
+    ...(hasReplay(solve.id) ? [{ label: t('Watch replay'), badge: 'W', onSelect: () => openReplay(solve) }] : []),
     { label: solve.comment ? t('Edit comment') : t('Add comment'), badge: 'C', onSelect: () => commentOn(solve) },
     { label: t('Repeat this scramble'), badge: 'R', onSelect: () => repeatScramble(solve) },
     /* Reconstruction only understands a 3x3, so a relay offers its 3x3 legs
@@ -4583,6 +4712,9 @@ const RESET_KEEPS = [
   // lives outside settings entirely, so resetting these would only desync the
   // switch from the progress the strip is still showing.
   'learn', 'learnNewPerSession', 'learnSlowFactor',
+  // Which camera this machine films with, how far behind its picture runs, and
+  // where in it the cube sits.
+  'webcamDevice', 'webcamLabel', 'webcamSync', 'webcamCrop',
 ];
 
 /** Put every look-and-feel setting back to the value it shipped with. */
@@ -4660,6 +4792,7 @@ function applyAll(changed) {
   }
   if (changed === 'cubeView') { updateLabels(); if (app.scramble) showScramble(app.scramble, true); }
   if (!changed || changed === 'inputMode') applyInputMode(changed);
+  if (!changed || String(changed).startsWith('webcam')) syncReplay();
   if (!changed || changed === 'bld') { bldEpoch++; syncBldTimer(); renderBld(); }
   if (!changed || changed === 'multiphase') { syncBldTimer(); syncPhaseZoneVisibility(); phaseReset(); }
   // The window shows the same bpm the settings slider writes, so a change in
@@ -5151,7 +5284,7 @@ const isTyping = () => {
   // whole keyboard — spacebar included — goes dead.
   return editable && a.offsetParent !== null;
 };
-const modalOpen = () => drawerOpen() || paletteOpen() || popoverOpen() || shareOpen() || reconOpen() || xp1Open() || feedbackOpen();
+const modalOpen = () => drawerOpen() || paletteOpen() || popoverOpen() || shareOpen() || reconOpen() || xp1Open() || feedbackOpen() || replayOpen();
 
 /* Swipe the scramble on a touch screen, the way csTimer does: left for the
    next one, right for the one before. Only on #scramble-zone, which is outside
@@ -5481,7 +5614,6 @@ function wireChrome() {
   // daily.js fires this the moment a result lands, so the chip goes without
   // waiting for the window to be closed.
   window.addEventListener('sotd-done', syncSotdChip);
-  $('#btn-help').addEventListener('click', () => openPanel(t('Keyboard shortcuts'), 'buildShortcuts', { wide: true }));
   $('#btn-about').addEventListener('click', () => openPanel('About', 'buildAbout', undefined, app));
   $('#btn-open-history').addEventListener('click', () => openPanel(t('All solves'), 'buildHistory', { wide: true }, app));
 
@@ -5757,6 +5889,11 @@ function wireShortcuts() {
       case 'd': case 'D': e.preventDefault(); penalizeLast('DNF'); break;
       case '0': e.preventDefault(); penalizeLast('none'); break;
       case 'c': case 'C': e.preventDefault(); if (last) commentOn(last); break;
+      case 'w': case 'W':
+        e.preventDefault();
+        if (last && hasReplay(last.id)) openReplay(last);
+        else toast(replayEnabled() ? t('No replay for the last solve') : t('Webcam replay is off. Turn it on in Settings'));
+        break;
       case 'r': case 'R':
         e.preventDefault();
         if (last) repeatScramble(last); else toast('No solves yet');
@@ -5791,7 +5928,7 @@ function wireShortcuts() {
       case 'h': case 'H': e.preventDefault(); $('#btn-open-history').click(); break;
       case 't': case 'T': e.preventDefault(); $('#btn-theme').click(); break;
       case ',':           e.preventDefault(); $('#btn-settings').click(); break;
-      case '?':           e.preventDefault(); $('#btn-help').click(); break;
+      case '?':           e.preventDefault(); openShortcuts(); break;
       case 'b': case 'B': e.preventDefault(); $('#btn-about').click(); break;
       case 'y': case 'Y': e.preventDefault(); $('#btn-recon').click(); break;
       case 'l': case 'L': e.preventDefault(); $('#btn-xp1').click(); break;
@@ -5857,7 +5994,8 @@ function openPaletteWithCommands() {
       { kind: 'go', label: 'Appearance', key: 'T', run: () => $('#btn-theme').click() },
       { kind: 'go', label: 'Settings', key: ',', run: () => $('#btn-settings').click() },
       { kind: 'go', label: 'Gear', key: 'U', keywords: t('cube lube tension magnets hardware collection'), run: () => $('#btn-gear').click() },
-      { kind: 'go', label: t('Keyboard shortcuts'), key: '?', run: () => $('#btn-help').click() },
+      { kind: 'go', label: t('Keyboard shortcuts'), key: '?', run: () => openShortcuts() },
+      { kind: 'go', label: t('Webcam replay'), keywords: t('webcam video camera recording film replay'), run: () => openCameraPanel() },
       { kind: 'go', label: 'About', key: 'B', run: () => $('#btn-about').click() },
       { kind: 'go', label: t('Reconstruct a scramble'), key: 'Y', run: () => $('#btn-recon').click() },
       { kind: 'go', label: t('Cross + 1 trainer'), key: 'L', keywords: t('cross plus one f2l lookahead first pair'), run: () => $('#btn-xp1').click() },
@@ -5871,6 +6009,9 @@ function openPaletteWithCommands() {
         run: () => learn.setEnabled(!learn.enabled) },
       { kind: 'do', label: t('New session'), run: () => app.newSession() },
       { kind: 'do', label: t('New scramble'), key: 'N', run: forwardScramble },
+      ...(app.solves.length && hasReplay(app.solves.at(-1).id)
+        ? [{ kind: 'do', label: t('Watch the last solve’s replay'), key: 'W', keywords: t('webcam video camera recording'), run: () => openReplay(app.solves.at(-1)) }]
+        : []),
       { kind: 'do', label: t('Copy scramble'), run: () => copyToast(app.scramble?.scramble || '', 'Scramble') },
       { kind: 'do', label: t('Enter your own scrambles'), key: 'X', run: () => openPanel(t('Your scrambles'), 'buildCustomScrambles', undefined, app) },
       { kind: 'do', label: t('Share last solve as a card'), run: () => app.solves.at(-1) ? app.shareSolveCard(app.solves.at(-1)) : toast('No solves yet') },

@@ -22,15 +22,17 @@ export const SITE_URL = 'https://tagdatimer.me/';
 export const INSTA = '@cubingngagng';
 export const INSTA_URL = 'https://instagram.com/cubingngagng';
 
-const W = 1080;
-const MONO = "'JetBrains Mono', ui-monospace, monospace";
-const SANS = "'Inter', system-ui, sans-serif";
+/* Exported, with the helpers below, for the webcam replay's Reel export
+   (replay-media.js): the same poster, with the solve playing in it. */
+export const W = 1080;
+export const MONO = "'JetBrains Mono', ui-monospace, monospace";
+export const SANS = "'Inter', system-ui, sans-serif";
 
 /* ---------------------------------------------------------
    Small canvas helpers
    --------------------------------------------------------- */
 
-function rr(ctx, x, y, w, h, r) {
+export function rr(ctx, x, y, w, h, r) {
   ctx.beginPath();
   if (ctx.roundRect) { ctx.roundRect(x, y, w, h, r); return; }
   ctx.moveTo(x + r, y);
@@ -41,7 +43,7 @@ function rr(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 
-const hex = (c, a) => {
+export const hex = (c, a) => {
   const m = /^#?([0-9a-f]{6})$/i.exec((c || '').trim());
   if (!m) return `rgba(255,255,255,${a})`;
   const n = parseInt(m[1], 16);
@@ -92,7 +94,7 @@ function fitOrClip(ctx, text, max, family, weight, start, floor) {
    Shared furniture
    --------------------------------------------------------- */
 
-function paintBackground(ctx, h, c) {
+export function paintBackground(ctx, h, c) {
   const g = ctx.createLinearGradient(0, 0, W, h);
   g.addColorStop(0, c.bg2 || '#12102a');
   g.addColorStop(1, c.bg || '#07070c');
@@ -118,7 +120,7 @@ function paintBackground(ctx, h, c) {
   ctx.stroke();
 }
 
-function paintHeader(ctx, c, logo, kicker) {
+export function paintHeader(ctx, c, logo, kicker) {
   const y = 92;
   const x = logo ? 154 : 74;
   if (logo) ctx.drawImage(logo, 74, y - 34, 64, 64);
@@ -137,7 +139,7 @@ function paintHeader(ctx, c, logo, kicker) {
   ctx.textAlign = 'left';
 }
 
-function paintFooter(ctx, h, c) {
+export function paintFooter(ctx, h, c) {
   const y = h - 78;
   ctx.strokeStyle = hex(c.text, 0.10);
   ctx.lineWidth = 2;
@@ -182,7 +184,7 @@ function paintHero(ctx, c, y, label, value, sub) {
 }
 
 /** Boxed scramble block. Returns the y it ends at. */
-function paintScramble(ctx, c, y, scramble, { title = 'SCRAMBLE', maxLines = 4, x = 74, width = W - 148, size: start = 30 } = {}) {
+export function paintScramble(ctx, c, y, scramble, { title = 'SCRAMBLE', maxLines = 4, x = 74, width = W - 148, size: start = 30 } = {}) {
   const pad = 34;
   const boxW = width;
   let size = start;
@@ -218,7 +220,7 @@ function paintScramble(ctx, c, y, scramble, { title = 'SCRAMBLE', maxLines = 4, 
 }
 
 let _logo;
-async function logoImage() {
+export async function logoImage() {
   if (_logo !== undefined) return _logo;
   _logo = await new Promise((res) => {
     const img = new Image();
@@ -230,7 +232,7 @@ async function logoImage() {
 }
 
 /** Canvas text silently falls back to a system face unless the webfonts are in. */
-async function fontsReady() {
+export async function fontsReady() {
   try { await document.fonts?.ready; } catch { /* not fatal, just less pretty */ }
 }
 

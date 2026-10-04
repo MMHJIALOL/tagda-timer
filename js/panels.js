@@ -25,6 +25,8 @@ import { DEFAULT_SPEFFZ_MAP, DEFAULT_BLD, CORNER_STICKER_KEYS, EDGE_STICKER_KEYS
          frontsFor, faceLabel, pieceAtFacelet, faceletsOfPiece,
          pieceName, samePiece, diagnose } from './bldtrace.js';
 import { FACES } from './cube3.js';
+import { enableReplay, requestCamera, attachPreview, onCamerasChanged, listCameras, cameraName,
+         replayUsage, clearReplays, hasReplay, openReplay, keepCount, replaySupported } from './replay.js';
 
 /* ---------------- drawer shell ---------------- */
 
@@ -116,6 +118,111 @@ function chips(options, value, onChange) {
   }
   new ResizeObserver(() => place(wrap.querySelector('.chip.on'), true)).observe(wrap);
   return wrap;
+}
+
+/* =========================================================
+   WEBCAM REPLAY — one block, in Settings and behind the top
+   bar's camera button
+
+   Turning it on asks for the camera first and only then saves the setting, so
+   a refusal leaves it off rather than flickering on. While it is on: which
+   camera, a live picture to aim it with, how sharp, how many to keep, and
+   what they take up. `onWatch`, from the top-bar panel, adds a button for the
+   last solve's replay; `compact` (the same panel) drops the longer notes.
+   ========================================================= */
+export function webcamControls(app, { onWatch = null, compact = false } = {}) {
+  const note = (text) => (compact ? null : text);
+  const S = app.settings;
+  const set = (k, v) => app.setSetting(k, v);
+  const box = el('div', { class: 'rp-settings' });
+  const render = () => {
+    const on = !!S.webcamReplay;
+    const sw = toggle(on, async (v) => {
+      if (v && !(await enableReplay())) { sw.querySelector('input').checked = false; return; }
+      set('webcamReplay', v);
+      render();
+    });
+    box.replaceChildren(compact
+      ? row(t('Film my solves'), sw, t('kept on this device, never uploaded'))
+      : row(t('Webcam replay'), sw,
+        t('films every attempt so you can watch it back with the clock running, and save it as a video. Kept on this device, never uploaded')));
+    if (!on) {
+      if (!replaySupported()) box.append(el('div', { class: 'hint-note', text: t('This browser cannot record video.') }));
+      return;
+    }
+
+    const pick = el('select', { class: 'inp', 'aria-label': t('Camera') });
+    const fill = async () => {
+      const cams = await listCameras();
+      const want = S.webcamDevice || '';
+      const opts = [el('option', { value: '', text: t('Default camera') })];
+      cams.forEach((d, i) => { if (d.deviceId) opts.push(el('option', { value: d.deviceId, text: cameraName(d.label, i) })); });
+      // The camera that was picked, unplugged right now: still shown, so
+      // it is clear why another one is filming.
+      if (want && !cams.some(d => d.deviceId === want)) {
+        opts.push(el('option', { value: want, text: t('{name} (not connected)', { name: cameraName(S.webcamLabel) }) }));
+      }
+      pick.replaceChildren(...opts);
+      pick.value = want;
+    };
+    pick.addEventListener('change', () => {
+      const opt = pick.selectedOptions[0];
+      // The name first: setting the id is what reopens the camera.
+      S.webcamLabel = pick.value ? (opt?.textContent || '') : '';
+      listCameras().then((cams) => {
+        const d = cams.find(c => c.deviceId === pick.value);
+        if (d) S.webcamLabel = d.label;
+        set('webcamDevice', pick.value);
+      });
+    });
+    fill();
+    // Labels arrive with permission, and phones come and go as webcams.
+    let placed = false;
+    onCamerasChanged(() => {
+      if (pick.isConnected) placed = true;
+      else if (placed) return false;
+      fill();
+      return true;
+    });
+
+    const video = el('video', { class: 'rp-preview-video', playsinline: true, autoplay: true, 'aria-label': t('Camera preview') });
+    const status = el('div', { class: 'rp-preview-status' });
+    const usage = el('span', { class: 'sub' });
+    const wipe = el('button', { class: 'ghost-btn sm danger', text: t('Delete all'), disabled: true, onclick: async () => {
+      if (!(await confirmToast(t('Delete every saved replay on this device, kept ones too?'), t('Delete'), { timeout: 8000 }))) return;
+      await clearReplays();
+      showUsage();
+      toast(t('Replays deleted'));
+    } });
+    const showUsage = () => replayUsage().then(({ count, pinned, bytes }) => {
+      const mb = (bytes / 1048576).toFixed(bytes < 10485760 ? 1 : 0);
+      usage.textContent = !count ? t('none yet')
+        : pinned ? t('{n} saved · {k} kept for good · {mb} MB', { n: count, k: pinned, mb })
+        : t('{n} saved · {mb} MB', { n: count, mb });
+      wipe.disabled = !count;
+    }, () => { usage.textContent = ''; });
+    showUsage();
+
+    // Native append() would print a null as the word "null"; el() skips them, this has to too.
+    box.append(...[
+      el('div', { class: `rp-preview ${compact ? 'compact' : ''}` }, video, status),
+      row(t('Camera'), pick, note(t('anything this device can film with, a phone connected as a webcam included'))),
+      row(t('Quality'), chips([
+        { value: 'sd', label: t('Standard') },
+        { value: 'hd', label: 'HD' },
+      ], S.webcamQuality || 'sd', v => set('webcamQuality', v)), note(t('HD is sharper and takes about two and a half times the space'))),
+      row(t('Camera on between solves'), toggle(S.webcamKeepOn, v => set('webcamKeepOn', v)),
+        compact ? t('otherwise it switches off after each solve')
+          : t('off, it switches off after every solve and when you leave the tab, and wakes on your next press. Turn this on if you solve without inspection, so the clip catches the very start')),
+      row(t('Keep'), chips([50, 200, 1000].map(n => ({ value: n, label: String(n) })), keepCount(), v => set('webcamKeep', +v)),
+        compact ? t('PB singles are always kept') : t('the most recent replays to hold on to. PB singles, and any you keep from the player, are never cleared out')),
+      el('div', { class: 'row' }, el('div', { class: 'lbl' }, el('span', { text: t('Saved replays') }), usage), wipe),
+      onWatch ? el('button', { class: 'btn primary full', text: t('Watch the last solve  (W)'), onclick: onWatch }) : null,
+    ].filter(Boolean));
+    attachPreview(video, status, () => requestCamera(), box);
+  };
+  render();
+  return box;
 }
 
 /* =========================================================
@@ -513,7 +620,11 @@ function solveRow(app, s, n, gi, { trimmed = false, pinned = false } = {}) {
         fmtDate(s.createdAt),
         s.caseName || '',
         s.comment || '',
-      ].filter(Boolean).join(' · ') })),
+      ].filter(Boolean).join(' · ') }),
+      hasReplay(s.id) ? el('button', {
+        class: 'ghost-btn sm', text: t('Watch replay'), style: { alignSelf: 'flex-start' },
+        onclick: () => openReplay(s),
+      }) : null),
     pinned ? null : el('button', {
       class: 'ghost-btn sm', text: 'copy',
       title: t('Copy this scramble'),
@@ -806,6 +917,19 @@ export function buildSettings(app) {
           { value: 5, label: '5' },
         ], S.multiphase || 0, v => set('multiphase', +v)),
           t('press the split key mid-solve to close a phase instead of stopping — cross/F2L/OLL/PLL, whatever you use it for. Off on blind events, which already split memo/exec.')),
+      ),
+
+      group(t('Webcam replay'), webcamControls(app)),
+
+      /* Where the top bar's keyboard button went: the camera took its place,
+         and both of these still open from anywhere with ? and Ctrl+K or /. */
+      group(t('Keyboard & commands'),
+        row(t('Keyboard shortcuts'), el('button', { class: 'ghost-btn sm', text: t('Show'),
+          onclick: () => openDrawer(t('Keyboard shortcuts'), buildShortcuts(), { wide: true }) }),
+          t('every key the timer answers to. ? opens it from anywhere')),
+        row(t('Command palette'), el('button', { class: 'ghost-btn sm', text: t('Open'),
+          onclick: () => { closeDrawer(); app.openCommands?.(); } }),
+          t('any event, mode, panel or action by name. Ctrl+K or / opens it from anywhere')),
       ),
 
       group(t('Learn mode'),
@@ -2189,6 +2313,7 @@ export const SHORTCUTS = [
     ['0', t('clear penalty')],
     ['C', t('add a comment')],
     ['R', t('solve its scramble again')],
+    ['W', t('watch its webcam replay')],
   ]],
   ['Scramble', [
     ['N', t('new scramble')],
