@@ -38,6 +38,9 @@ import { ScrambleQueue } from './scramble.js';
 import { Timer } from './timer.js';
 import { KV } from './db.js';
 import { toast } from './toast.js';
+import { isPhone, onPhoneChange } from './phone.js';
+import { openSheet, sheetRows, closeAllSheets } from './sheet.js';
+import { createMovePad } from './movepad.js';
 
 /* The panel's own stylesheet, fetched on the first open — most sessions never
    come in here. The version query is read off a sheet index.html already asked
@@ -488,6 +491,7 @@ function render() {
   renderStage();
   renderResults();
   renderPlan();
+  renderPhone();
 }
 
 function renderTop() {
@@ -572,8 +576,10 @@ function watchCamera() {
 function showCube() {
   if (!player || S.settings.view !== '3d') return;
   const token = ++cubeToken;
-  const sel = S.phase === 'reveal' ? selected() : null;
-  const setup = canonical([S.scramble, S.rot].filter(Boolean).join(' ')) ?? '';
+  /* Checking a planned line on a phone: the cube is where that line leaves it. */
+  const planned = phoneOn() && phoneView() === 'check' && XP.checked ? (canonical(S.plan.trim()) ?? '') : '';
+  const sel = S.phase === 'reveal' && !planned && !(phoneOn() && phoneView() === 'check') ? selected() : null;
+  const setup = canonical([S.scramble, S.rot, planned].filter(Boolean).join(' ')) ?? '';
   const alg = sel ? (canonical(sel.alg) ?? '') : '';
   try {
     player.pause?.();
@@ -837,6 +843,7 @@ function paintClock() {
   } else {
     ui.clock.textContent = '0.00';
   }
+  phoneClock();
 }
 
 function wireTimer() {
@@ -866,6 +873,7 @@ function wireTimer() {
 
 function reveal() {
   S.phase = 'reveal';
+  XP.check = false;
   S.selKey = null;
   render();
   showCube();
@@ -926,6 +934,9 @@ function setScramble(text) {
   S.lastTime = null;
   S.rot = defaultRot();
   if (ui.planBox) ui.planBox.value = '';
+  XP.planStart = performance.now();
+  XP.pairAuto = true;
+  if (XP.check) { XP.check = false; XP.checked = false; xh.pad?.hide(); }
   tmr?.reset();
   render();
   paintClock();
@@ -959,6 +970,13 @@ const typing = (e) => {
 };
 
 function onKeyDown(e) {
+  if (phoneOn() && phoneView() === 'check' && !document.querySelector('.sheet')) {
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setCheck(false); return; }
+    if (!typing(e) || e.target === xh.field) {
+      if (xh.pad.handleKey(e)) { e.preventDefault(); e.stopPropagation(); }
+      return;
+    }
+  }
   if (e.key === 'Escape') {
     // Abandon the attempt first; only a second Escape leaves the panel.
     if (tmr.state !== 'idle' && tmr.state !== 'cooldown') { e.stopPropagation(); tmr.cancel(); }
@@ -992,6 +1010,7 @@ function showAnswer() {
   tmr.reset();
   S.lastTime = null;
   S.phase = 'reveal';
+  XP.check = false;
   S.selKey = null;
   render();
   paintClock();
@@ -1117,9 +1136,9 @@ function build() {
   const stage = el('section', { class: 'panel xp-stage' },
     ui.clock,
     ui.hint,
-    el('div', { class: 'xp-hideable' },
+    ui.cubeHome = el('div', { class: 'xp-hideable' },
       ui.scrambleEcho,
-      el('div', { class: 'xp-cubewrap' },
+      ui.cubewrap = el('div', { class: 'xp-cubewrap' },
         ui.cube3d,
         el('div', { class: 'xp-netwrap' }, net.grid)),
       ui.netCap,
@@ -1285,6 +1304,582 @@ function buildSettings() {
 }
 
 /* =========================================================
+   The phone layout
+
+   Four screens in place of the desktop's two columns, one at a time:
+
+     plan     the scramble, the cross colour, a big cube, and one large
+              "Hold to start" button where the thumb already is
+     run      a black screen while you solve; anywhere stops it
+     results  the cube after the line you are looking at, the lines, the
+              pair table, and "Check my line" / "Next scramble"
+     check    the line you planned, typed on the move pad, and what it did
+
+   Each has one scroll area and the cube is never under a panel: the cube is
+   moved to wherever the current screen wants it (place()). The keyboard still
+   works exactly as on the desktop. Nothing here is built until a phone opens
+   the trainer, and the desktop layout is untouched.
+   ========================================================= */
+
+const XICON = {
+  back: '<svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>',
+  sliders: '<svg viewBox="0 0 24 24"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg>',
+  shuffle: '<svg viewBox="0 0 24 24"><path d="M3.5 7h3.2c4.6 0 5.1 10 10 10h3.8M3.5 17h3.2c1.9 0 3.1-1.4 4-3.2M12.8 10.2c.9-1.8 2.1-3.2 4-3.2h3.7"/><path d="M18 4l3 3-3 3M18 14l3 3-3 3"/></svg>',
+  fromSolve: '<svg viewBox="0 0 24 24"><path d="M4 6h11M4 12h7M4 18h11M17 9v9M13.5 12.5L17 9l3.5 3.5"/></svg>',
+  copy: '<svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2.2"/><path d="M5 15V6a2 2 0 012-2h9"/></svg>',
+  clock: '<svg viewBox="0 0 24 24"><circle cx="12" cy="13.5" r="7.5"/><path d="M12 13.5V10M9.5 3h5M18.2 6.8l1.3-1.3"/></svg>',
+  play: '<svg viewBox="0 0 24 24"><path class="fill" d="M8 5.5v13l10.5-6.5z"/></svg>',
+  check: '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
+  warn: '<svg viewBox="0 0 24 24"><path d="M12 8v5M12 16.5v.5"/></svg>',
+  cross: '<svg viewBox="0 0 24 24"><path d="M7 7l10 10M17 7L7 17"/></svg>',
+  pencil: '<svg viewBox="0 0 24 24"><path d="M4 20h4.5L19 9.5 14.5 5 4 15.5z"/><path d="M13 6.5l4.5 4.5"/></svg>',
+  next: '<svg viewBox="0 0 24 24"><path d="M5 12h13M13 7l5 5-5 5"/></svg>',
+  reset: '<svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 102.4-5.7"/><path d="M3.5 4v4.5H8"/></svg>',
+  paste: '<svg viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1M9 10h6M9 14h6"/></svg>',
+};
+
+const XP = {
+  built: false,
+  pairAuto: true,      // the pair control follows the shortest pair until you pick one
+  check: false,        // results -> "Check my line"
+  checked: false,      // Check has been pressed at least once for this plan
+  planStart: 0,        // when this scramble went up, for the inspection readout
+  ticker: 0,
+};
+let xh = {};
+
+const phoneOn = () => XP.built && !!host?.classList.contains('xp-phone');
+
+/** Which phone screen is up. */
+function phoneView() {
+  if (S.phase === 'exec') return 'run';
+  if (S.phase === 'reveal') return XP.check ? 'check' : 'results';
+  return 'plan';
+}
+
+const xIcon = (cls, label, icon, onclick) =>
+  el('button', { class: cls, type: 'button', 'aria-label': label, title: label, html: icon, onclick });
+
+/** A button with an icon and a word, the word set as text so it is never parsed. */
+function wordBtn(cls, icon, word, onclick) {
+  const b = el('button', { class: cls, type: 'button', html: `${icon}<span></span>`, onclick });
+  b.querySelector('span').textContent = word;
+  return b;
+}
+
+function buildPhone() {
+  if (XP.built) return;
+  XP.built = true;
+
+  /* ---- header, shared by every screen but the run ---- */
+  xh.sub = el('div', { class: 'xp-ph-sub' });
+  xh.head = el('header', { class: 'xp-ph-head' },
+    xIcon('xp-ph-icon', t('Back'), XICON.back, phoneBack),
+    el('div', { class: 'xp-ph-titles' }, el('h1', { text: t('Cross + 1') }), xh.sub),
+    xIcon('xp-ph-icon', t('Cross + 1 options'), XICON.sliders, openOptionsSheet));
+
+  /* ---- plan ---- */
+  xh.scramble = el('p', { class: 'xp-ph-scramble' });
+  xh.newBtn = wordBtn('xp-ph-chipbtn', XICON.shuffle, t('New'), () => nextScramble());
+  const scrCard = el('section', { class: 'xp-ph-scr', 'aria-label': t('Scramble') },
+    xh.scramble,
+    el('div', { class: 'xp-ph-scrbtns' },
+      xh.newBtn,
+      wordBtn('xp-ph-chipbtn', XICON.fromSolve, t('From a solve'), openSolvesSheet),
+      wordBtn('xp-ph-chipbtn', XICON.copy, t('Copy'),
+        () => copy(S.scramble).then(ok => toast(ok ? t('Scramble copied') : t('Clipboard blocked'), { kind: ok ? 'good' : 'bad' })))));
+
+  xh.swatches = el('div', { class: 'xp-ph-swatches', role: 'group', 'aria-label': t('Cross colour') },
+    ...CROSS_COLOURS.map(c => el('button', {
+      class: 'xp-ph-sw', type: 'button', dataset: { face: c.face }, 'aria-label': t(`${c.name} cross`),
+      onclick: () => setSetting('crossFace', c.face),
+    }, el('span', { style: { background: c.hex } }))),
+    el('button', { class: 'xp-ph-auto', type: 'button', dataset: { face: 'auto' }, text: t('Auto'),
+      'aria-label': t('Weigh up all six colours — slower, but a real answer'), onclick: () => setSetting('crossFace', 'auto') }));
+  const crossRow = el('div', { class: 'xp-ph-crossrow' }, el('span', { class: 'xp-ph-lbl', text: t('Cross') }), xh.swatches);
+
+  xh.holding = el('button', { class: 'xp-ph-holding', type: 'button', onclick: () => { if (S.rot !== defaultRot()) resetRot(); } });
+  xh.planCube = el('div', { class: 'xp-ph-cubebox' });
+  xh.viewBtn = el('button', { class: 'xp-ph-rot txt', type: 'button', text: '2D', 'aria-label': t('Flat net'),
+    onclick: () => setView(S.settings.view === 'net' ? '3d' : 'net') });
+  xh.rots = el('div', { class: 'xp-ph-rots', role: 'group', 'aria-label': t('Turn the cube') },
+    ...['x', "x'", 'y', "y'", 'z', "z'"].map(r => el('button', {
+      class: 'xp-ph-rot', type: 'button', text: r, 'aria-label': t('Turn the whole cube: {r} — the moves rewrite themselves', { r }),
+      onclick: () => turnCube(r),
+    })),
+    el('span', { class: 'xp-ph-rotsep', 'aria-hidden': 'true' }),
+    xh.viewBtn);
+  xh.insp = el('div', { class: 'xp-ph-insp', 'aria-live': 'off' });
+  xh.plan = el('div', { class: 'xp-ph-plan xp-ph-scroll' },
+    scrCard, crossRow,
+    el('div', { class: 'xp-ph-stagebox' }, xh.holding, xh.planCube, xh.rots),
+    xh.insp);
+
+  xh.holdSub = el('span', { class: 'xp-ph-holdsub' });
+  xh.holdMain = el('span', { class: 'xp-ph-holdmain' });
+  xh.hold = el('button', { class: 'xp-ph-hold', type: 'button' }, xh.holdMain, xh.holdSub);
+  wireHold(xh.hold);
+  xh.planBar = el('div', { class: 'xp-ph-planbar' },
+    xh.hold,
+    el('button', { class: 'xp-ph-skip', type: 'button', text: t('Skip it — show me the lines'), onclick: showAnswer }));
+
+  /* ---- run ---- */
+  xh.runTime = el('span', { class: 'xp-ph-runtime' });
+  xh.runNote = el('span', { class: 'xp-ph-runnote', text: t('Scramble hidden · solve on your cube') });
+  xh.run = el('div', { class: 'xp-ph-run', role: 'button', 'aria-label': t('Stop the timer') },
+    xh.runNote,
+    el('div', { class: 'xp-ph-runbox' },
+      el('span', { class: 'xp-ph-runlbl', text: t('Cross + 1') }),
+      xh.runTime,
+      el('span', { class: 'xp-ph-runhint', text: t('Tap anywhere to stop') })));
+  xh.run.addEventListener('pointerdown', (e) => { e.preventDefault(); press(e); });
+
+  /* ---- results ---- */
+  xh.heroCube = el('div', { class: 'xp-ph-herocube' });
+  xh.heroN = el('span', { class: 'xp-ph-heron' });
+  xh.heroLbl = el('span', { class: 'xp-ph-herolbl' });
+  xh.heroNote = el('p', { class: 'xp-ph-heronote' });
+  xh.hero = el('div', { class: 'xp-ph-hero' }, xh.heroCube,
+    el('div', { class: 'xp-ph-herotxt' }, el('div', { class: 'xp-ph-herorow' }, xh.heroN, xh.heroLbl), xh.heroNote));
+  xh.results = el('div', { class: 'xp-ph-results xp-ph-scroll' });
+  xh.resBar = el('div', { class: 'xp-ph-bar two' },
+    wordBtn('xp-ph-barbtn', XICON.pencil, t('Check my line'), () => setCheck(true)),
+    wordBtn('xp-ph-barbtn primary', XICON.next, t('Next scramble'), () => nextScramble()));
+
+  /* ---- check ---- */
+  xh.field = el('input', {
+    id: 'xp-ph-planned', class: 'xp-ph-field', type: 'text', autocomplete: 'off', spellcheck: 'false',
+    placeholder: t('Type it on the pad below'),
+  });
+  xh.fieldBox = el('div', { class: 'xp-ph-fieldbox' }, xh.field,
+    xIcon('xp-ph-icon small', t('Clear the line'), XICON.cross, () => { setPlan(''); }));
+  xh.verdict = el('div', { class: 'xp-ph-verdict', role: 'status' });
+  xh.shortest = el('div', { class: 'xp-ph-shortest' });
+  xh.checkCube = el('div', { class: 'xp-ph-checkcube' });
+  xh.checkCap = el('div', { class: 'xp-ph-cap', text: t('after your line') });
+  xh.checkView = el('div', { class: 'xp-ph-check xp-ph-scroll' },
+    el('label', { class: 'xp-ph-lbl', for: 'xp-ph-planned', text: t('The line you planned') }),
+    xh.fieldBox, xh.verdict, xh.shortest,
+    el('div', { class: 'xp-ph-checkstage' }, xh.checkCube, xh.checkCap));
+  xh.pad = createMovePad({
+    notation: 'full',
+    action: t('Check'),
+    onAction: () => { XP.checked = true; renderPhone(); showCube(); },
+    last: () => S.plan.trim().split(/\s+/).filter(Boolean).at(-1) || '',
+    push: (tok) => setPlan(`${S.plan.trim()} ${tok}`.trim()),
+    replaceLast: (tok) => setPlan([...S.plan.trim().split(/\s+/).filter(Boolean).slice(0, -1), tok].join(' ')),
+    pop: () => setPlan(S.plan.trim().split(/\s+/).filter(Boolean).slice(0, -1).join(' ')),
+  });
+  xh.pad.attachField(xh.field);
+
+  xh.root = el('div', { class: 'xp-ph' },
+    xh.head, xh.plan, xh.planBar, xh.hero, xh.results, xh.resBar, xh.checkView, xh.pad.el, xh.run);
+  host.append(xh.root);
+}
+
+/** The plan as typed on the pad; the desktop box mirrors it. */
+function setPlan(text) {
+  S.plan = text;
+  if (ui.planBox) ui.planBox.value = text;
+  renderPhone();
+  if (XP.checked) showCube();
+}
+
+/** Results <-> check. */
+function setCheck(on) {
+  XP.check = on;
+  XP.checked = on && !!S.plan.trim();
+  closeAllSheets();
+  if (on) xh.pad.show(); else xh.pad.hide();
+  place();
+  render();
+  showCube();
+  xh.checkView.scrollTop = 0;
+}
+
+/**
+ * A press on the clock, and its release wherever the finger lifts. The release
+ * is listened for on the window, not the element pressed: the run screen goes
+ * away under the finger the moment the press stops the clock, and a release
+ * that never arrives leaves the clock in its cool-down, deaf to the next press.
+ * A press the browser takes back (pointercancel) is undone, never acted on.
+ */
+function press(e) {
+  const stopping = tmr.state === 'running';
+  tmr.down(e.timeStamp);
+  /* The tap that stops the clock brings the results up under the finger, and
+     the click that tap ends in would land on whatever line is there. */
+  if (stopping) {
+    const swallow = (ev) => { ev.preventDefault(); ev.stopPropagation(); };
+    addEventListener('click', swallow, { capture: true, once: true });
+    setTimeout(() => removeEventListener('click', swallow, { capture: true }), 700);
+  }
+  const off = () => {
+    removeEventListener('pointerup', up, true);
+    removeEventListener('pointercancel', cancel, true);
+  };
+  const up = (ev) => { if (ev.pointerId !== e.pointerId) return; off(); tmr.up(ev.timeStamp); };
+  const cancel = (ev) => { if (ev.pointerId !== e.pointerId) return; off(); tmr.abortPress(); };
+  addEventListener('pointerup', up, true);
+  addEventListener('pointercancel', cancel, true);
+}
+
+/** Hold to start: press, and the clock arms; let go, and it starts (or the 15 s countdown does). */
+function wireHold(btn) {
+  btn.addEventListener('pointerdown', (e) => {
+    if (e.button > 0) return;
+    e.preventDefault();
+    press(e);
+  });
+  // From a keyboard it is pressed like any button (space is the clock's own key already).
+  btn.addEventListener('click', (e) => { if (e.detail === 0) { tmr.down(); tmr.up(); } });
+}
+
+/**
+ * Put the cube where this screen wants it. Moved only when it is somewhere
+ * else, because moving it restarts its renderer.
+ */
+function place() {
+  if (!host) return;
+  const phone = isPhone();
+  if (phone) buildPhone();
+  host.classList.toggle('xp-phone', phone);
+  const wrap = ui.cubewrap;
+  if (!phone) {
+    if (wrap.parentNode !== ui.cubeHome) ui.cubeHome.insertBefore(wrap, ui.netCap);
+    return;
+  }
+  const view = phoneView();
+  const target = view === 'results' ? xh.heroCube : view === 'check' ? xh.checkCube : xh.planCube;
+  if (wrap.parentNode !== target) target.append(wrap);
+  xh.root.dataset.view = view;
+}
+
+onPhoneChange(() => {
+  if (!host) return;
+  closeAllSheets();
+  XP.check = false;
+  xh.pad?.hide();
+  place();
+  if (xp1Open()) { render(); showCube(); }
+});
+
+/** Back: from checking a line to the lines, else out of the trainer. */
+function phoneBack() {
+  if (XP.check) return setCheck(false);
+  close();
+}
+
+/* ---------------- painting ---------------- */
+
+const fmtGo = () => {
+  if (S.lastTime === null) return '';
+  const time = fmtLive(S.lastTime, 2);
+  return S.lastPenalty === 'DNF' ? `DNF (${time})` : time + (S.lastPenalty === '+2' ? '+' : '');
+};
+
+function renderPhone() {
+  if (!phoneOn()) return;
+  place();
+  const view = phoneView();
+  xh.root.dataset.view = view;
+  xh.root.classList.toggle('see-through', view === 'run' && !S.settings.blackout);
+  xh.root.classList.toggle('no-clock', view === 'run' && S.settings.blackout && S.settings.hideTime);
+
+  xh.sub.textContent = view === 'check' ? t('Check your line')
+    : view === 'results' ? (S.lastTime !== null ? t('Your go · {time}', { time: fmtGo() }) : t('Just looking — no time'))
+    : '';
+  xh.sub.hidden = !xh.sub.textContent;
+
+  if (view === 'plan' || view === 'run') renderPhonePlan();
+  if (view === 'results') renderPhoneResults();
+  if (view === 'check') renderPhoneCheck();
+  phoneClock();
+}
+
+/** How the cube is being held, as a sentence: "White cross on the bottom · z2". */
+function phoneHolding() {
+  const f = faceNow();
+  if (!f) return S.rot ? t('turned {r}', { r: S.rot }) : t('held as the scramble is drawn');
+  const where = FACE_WORD[toUserFace(frameNow(), f)] || '';
+  return `${crossName(f)} ${where}${S.rot ? ` · ${S.rot}` : ''}`;
+}
+
+function renderPhonePlan() {
+  xh.scramble.textContent = S.scramble || t('no scramble yet');
+  xh.scramble.classList.toggle('empty', !S.scramble);
+  for (const b of xh.swatches.children) {
+    const on = b.dataset.face === S.settings.crossFace;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-pressed', String(on));
+  }
+  const turned = S.rot !== defaultRot();
+  xh.holding.replaceChildren(el('span', { text: phoneHolding() }));
+  if (turned) xh.holding.append(el('span', { class: 'xp-ph-reset', html: XICON.reset, 'aria-hidden': 'true' }));
+  xh.holding.disabled = !turned;
+  xh.holding.setAttribute('aria-label', turned ? `${phoneHolding()}. ${t('Back to the cross on the bottom')}` : phoneHolding());
+  const flat = S.settings.view === 'net';
+  xh.viewBtn.classList.toggle('on', flat);
+  xh.viewBtn.setAttribute('aria-pressed', String(flat));
+}
+
+function renderPhoneResults() {
+  const res = S.result;
+  /* The pair control starts on the pair with the shortest line, and the list
+     (and so the line on the cube) follows it — settled before anything below
+     reads which line is selected. */
+  const pairs = (res?.pairs || []).filter(p => p.face === res.face);
+  if (XP.pairAuto && S.pairFilter === null) {
+    const best = pairs.filter(p => p.best >= 0).sort((a, b) => a.best - b.best)[0];
+    if (best) S.pairFilter = best.rawSlot;
+  }
+  const sel = selected();
+  xh.results.replaceChildren();
+
+  if (S.searching || !res || res.best < 0) {
+    xh.heroN.textContent = S.searching ? '…' : '?';
+    xh.heroLbl.textContent = '';
+    xh.heroNote.textContent = S.searching ? t('still searching')
+      : res?.failed ? t('the search could not run here')
+      : t('nothing found inside the depth limit — try raising it in settings');
+    return;
+  }
+
+  /* The headline: the shortest cross + 1, and what the pair cost on top of the
+     cross alone (which is exact — a lookup, not a search). */
+  const shownLine = sel || null;
+  const n = shownLine ? shownLine.moves : res.best;
+  xh.heroN.textContent = String(n);
+  xh.heroN.classList.toggle('best', n === res.best);
+  xh.heroLbl.textContent = n === 1 ? t('move') : t('moves');
+  const extra = n - res.crossBest;
+  xh.heroNote.textContent = `${t('for cross + 1. The cross alone is {n}', { n: res.crossBest })}${
+    extra <= 0 ? t(', so the pair is free.') : t(', so the pair costs {n}.', { n: extra })}`;
+
+  if (res.built?.length) {
+    xh.results.append(el('div', { class: 'xp-ph-built' },
+      t(res.built.length > 1 ? 'the scramble already built your {slots} pairs' : 'the scramble already built your {slots} pair',
+        { slots: res.built.join(t(' and ')) })
+      + t(' — the lines below say which ones survive')));
+  }
+
+  // What the line on the cube leaves behind: the pairs still to come, and how near.
+  if (sel) {
+    const intro = el('div', { class: 'xp-ph-after-txt' });
+    intro.append(t('After') + ' ', el('b', { class: 'mono', text: sel.alg }), ' ',
+      t('the {slot} pair is in. Left standing:', { slot: sel.slot }));
+    xh.results.append(el('section', { class: 'xp-ph-after' }, intro,
+      el('div', { class: 'xp-ph-mini' }, ...sel.after.map((p) => {
+        const tier = tierOf(p.dist);
+        return el('span', { class: 'xp-ph-minicard' },
+          el('b', { text: p.slot }),
+          el('span', {},
+            p.dist === 0 ? el('span', { class: `tier ${tier}`, text: t('already in') })
+              : [`${t('{n} away', { n: p.dist })} · `, el('span', { class: `tier ${tier}`, text: TIER_WORD[tier] })]));
+      }))));
+  }
+
+  /* The shortest line per pair, as a segmented control. Pressing the pair that
+     is on lets go of it, and the list shows every pair's lines. */
+  if (pairs.length) {
+    xh.results.append(el('div', { class: 'xp-ph-pairs', role: 'group', 'aria-label': t('Shortest line per pair') },
+      ...pairs.map((p) => {
+        const on = S.pairFilter === p.rawSlot;
+        const dead = p.best < 0;
+        return el('button', {
+          class: 'xp-ph-pair' + (on ? ' on' : '') + (p.best === res.best ? ' best' : ''), type: 'button',
+          'aria-pressed': String(on), disabled: dead || null,
+          'aria-label': dead ? t('No line for the {slot} pair inside the depth limit', { slot: p.slot })
+            : on ? t('Showing only this pair — click to show them all again')
+            : t('Show only the lines that build the {slot} pair', { slot: p.slot }),
+          onclick: () => { XP.pairAuto = false; S.pairFilter = on ? null : p.rawSlot; S.selKey = null; render(); showCube(); },
+        }, p.slot, el('span', { class: 'mono', text: dead ? '—' : String(p.best) }));
+      })));
+  }
+
+  // Colour neutral: the best line for each colour, and a tap to switch to it.
+  if (S.settings.crossFace === 'auto' && res.faces?.length > 1) {
+    xh.results.append(el('div', { class: 'xp-ph-colours' },
+      el('span', { class: 'xp-ph-lbl', text: t('By colour') }),
+      el('div', { class: 'xp-ph-colourrow' }, ...res.faces.map(f => el('button', {
+        class: 'xp-ph-colour' + (f.face === res.face ? ' on' : ''), type: 'button',
+        'aria-label': t('Solve the {cross} instead', { cross: crossName(f.face) }),
+        onclick: () => setSetting('crossFace', f.face),
+      }, el('span', { class: 'dot', style: { background: colourOf(f.face)?.hex || '' } }),
+      el('span', { class: 'mono', text: f.best < 0 ? '—' : String(f.best) }))))));
+  }
+
+  // How many, and in which order.
+  const list = shown();
+  const total = (res.list || []).length;
+  const sortBy = (tps) => el('button', {
+    class: 'xp-ph-sortbtn' + (!!S.settings.rankTps === tps ? ' on' : ''), type: 'button',
+    'aria-pressed': String(!!S.settings.rankTps === tps), text: tps ? t('Easy hands') : t('Shortest'),
+    onclick: () => { if (!!S.settings.rankTps !== tps) setSetting('rankTps', tps); },
+  });
+  xh.results.append(el('div', { class: 'xp-ph-listhead' },
+    el('span', { class: 'xp-ph-lbl', text: res.partial
+      ? t('{n} of {total} lines · the search stopped early', { n: list.length, total })
+      : t('{n} of {total} lines', { n: list.length, total }) }),
+    el('div', { class: 'xp-ph-sort', role: 'group', 'aria-label': t('Order lines by') }, sortBy(false), sortBy(true))));
+
+  const selI = selectedIndex();
+  xh.results.append(el('div', { class: 'xp-ph-lines' }, ...list.map((s, i) => {
+    const on = i === selI;
+    const meta = el('span', { class: 'xp-ph-linemeta' },
+      el('b', { text: t('{slot} pair', { slot: s.slot }) }),
+      s.highTps ? el('span', { class: 'good', text: t('R U L D only') }) : null,
+      s.bMoves ? el('span', { class: 'warn', text: s.bMoves === 1 ? t('1 B move') : t('{n} B moves', { n: s.bMoves }) }) : null,
+      s.preserves === false ? el('span', { class: 'warn', text: t('breaks {slots}', { slots: s.broke.join(', ') }) }) : null,
+      s.after[0] ? el('span', { text: t('next: {slot} {n} away', { slot: s.after[0].slot, n: s.after[0].dist }) }) : null);
+    return el('button', {
+      class: 'xp-ph-line' + (on ? ' on' : ''), type: 'button', 'aria-pressed': String(on),
+      'aria-label': `${s.alg}, ${t('{n} moves', { n: s.moves })}. ${t('Watch this one on the cube')}`,
+      onclick: () => { S.selKey = s.path.join(); render(); showCube(); },
+    },
+    el('span', { class: 'xp-ph-linetxt' }, el('span', { class: 'mono alg', text: s.alg }), meta),
+    on ? el('span', { class: 'xp-ph-playing', html: XICON.play, 'aria-hidden': 'true' }) : null,
+    el('span', { class: 'mono len' + (s.moves === res.best ? ' best' : ''), text: String(s.moves) }));
+  })));
+}
+
+/** The verdict on the planned line, split into its sentence and the rest. */
+function renderPhoneCheck() {
+  xh.field.value = S.plan;
+  const v = XP.checked ? checkPlan() : null;
+  xh.verdict.className = 'xp-ph-verdict' + (v ? ` ${v.kind}` : ' idle');
+  if (!v) {
+    xh.verdict.replaceChildren(el('div', { class: 'xp-ph-vtxt' },
+      el('div', { class: 'xp-ph-vhead', text: S.plan.trim() ? t('Press Check to see what that line does.') : t('Type the line you planned on the pad.') }),
+      el('div', { class: 'xp-ph-vsub', text: t('It will say whether it works, and what it cost.') })));
+  } else {
+    const cut = v.msg.indexOf('. ');
+    const head = cut >= 0 ? v.msg.slice(0, cut + 1) : v.msg;
+    const rest = cut >= 0 ? v.msg.slice(cut + 2) : '';
+    xh.verdict.replaceChildren(
+      el('span', { class: 'xp-ph-vico', html: v.kind === 'good' ? XICON.check : v.kind === 'warn' ? XICON.warn : XICON.cross, 'aria-hidden': 'true' }),
+      el('div', { class: 'xp-ph-vtxt' }, el('div', { class: 'xp-ph-vhead', text: head }), rest ? el('div', { class: 'xp-ph-vsub', text: rest }) : null));
+  }
+  const best = shown()[0] || null;
+  xh.shortest.hidden = !best;
+  if (best) {
+    xh.shortest.replaceChildren(
+      el('div', {}, el('div', { class: 'xp-ph-lbl small', text: t('Shortest') }), el('div', { class: 'mono alg', text: best.alg })),
+      el('span', { class: 'mono len', text: String(best.moves) }));
+  }
+  xh.checkCap.hidden = !(XP.checked && S.plan.trim());
+}
+
+/** The clock's side of the phone: the run screen, the inspection readout, the hold button. */
+function phoneClock() {
+  if (!phoneOn() || !tmr) return;
+  const st = tmr.state;
+  xh.root.dataset.state = st;
+  const inspecting = st === 'inspecting' || ((st === 'holding' || st === 'ready') && tmr.inspectStart);
+  if (st === 'running') xh.runTime.textContent = fmtLive(tmr.elapsed, 2);
+  else if (S.lastTime !== null) xh.runTime.textContent = fmtGo();
+  if (S.settings.blackout && S.settings.hideTime) xh.runTime.textContent = t('eyes shut — execute');
+
+  if (inspecting) {
+    const left = Math.max(0, 15 - tmr.inspectElapsed / 1000);
+    xh.insp.replaceChildren(el('span', { class: 'ico', html: XICON.clock, 'aria-hidden': 'true' }),
+      el('span', { text: t('Inspection') }), el('span', { class: 'mono big', text: left <= 0 ? '+2' : String(Math.ceil(left)) }),
+      el('span', { class: 'dim', text: t('· +2 after 15, DNF after 17') }));
+    xh.holdMain.textContent = t('Hold to start the solve');
+    xh.holdSub.textContent = t('The scramble and the cube black out while you solve');
+  } else {
+    const s = Math.floor((performance.now() - XP.planStart) / 1000);
+    const clock = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+    xh.insp.replaceChildren(el('span', { class: 'ico', html: XICON.clock, 'aria-hidden': 'true' }),
+      el('span', { text: t('Inspection') }),
+      S.settings.inspection === 'wca'
+        ? el('span', { class: 'dim', text: t('· a 15 s countdown when you press') })
+        : el('span', { class: 'mono', text: clock }),
+      S.settings.inspection === 'wca' ? null : el('span', { class: 'dim', text: t('· no limit') }));
+    xh.holdMain.textContent = t('Hold to start');
+    xh.holdSub.textContent = S.settings.blackout
+      ? t('The scramble and the cube black out while you solve')
+      : t('Release to start, tap anywhere to stop');
+  }
+}
+
+/* Once a second, while a phone is planning, so the inspection readout counts. */
+function startTicker() {
+  stopTicker();
+  XP.ticker = setInterval(() => { if (phoneOn() && phoneView() === 'plan') phoneClock(); }, 1000);
+}
+function stopTicker() { clearInterval(XP.ticker); XP.ticker = 0; }
+
+/* ---------------- sheets ---------------- */
+
+function openSolvesSheet() {
+  let sheet = null;
+  const content = library.length
+    ? sheetRows(library.map(item => ({ label: item.label, sub: item.scramble, onSelect: () => setScramble(item.scramble) })), () => sheet)
+    : el('p', { class: 'xp-ph-note', text: t('No solves in this session yet.') });
+  sheet = openSheet({ title: t('Drill a solve’s scramble'), done: true, content });
+  for (const sub of sheet.el.querySelectorAll('.sheet-row-sub')) sub.classList.add('mono');
+}
+
+function openScrambleSheet() {
+  let sheet = null;
+  const box = el('textarea', {
+    class: 'sheet-field', rows: '3', spellcheck: 'false', autocomplete: 'off', autocapitalize: 'characters',
+    'aria-label': t('Scramble to drill'), placeholder: t('paste or type your own scramble…'),
+  });
+  box.value = S.scramble;
+  box.addEventListener('keydown', e => e.stopPropagation());
+  sheet = openSheet({
+    title: t('Your own scramble'), done: false,
+    content: [box, el('button', {
+      class: 'sheet-btn primary', type: 'button', text: t('Use this scramble'),
+      onclick: () => { if (setScramble(box.value)) sheet.close(); },
+    })],
+  });
+}
+
+/** Everything the desktop's settings popover holds, as a sheet. */
+function openOptionsSheet() {
+  let sheet = null;
+  const s = () => S.settings;
+  const toggle = (label, sub, key) => el('div', { class: 'xp-ph-optrow' },
+    el('div', { class: 'xp-ph-opttxt' }, el('b', { text: label }), sub ? el('span', { text: sub }) : null),
+    el('button', {
+      class: 'xp-switch' + (s()[key] ? ' on' : ''), type: 'button', role: 'switch', 'aria-checked': String(!!s()[key]), 'aria-label': label,
+      onclick: () => { setSetting(key, !s()[key]); refresh(); },
+    }, el('span')));
+  const pick = (label, sub, key, options, apply = (v) => setSetting(key, v)) => el('div', { class: 'xp-ph-optrow col' },
+    el('div', { class: 'xp-ph-opttxt' }, el('b', { text: label }), sub ? el('span', { text: sub }) : null),
+    el('div', { class: 'xp-ph-seg', role: 'group', 'aria-label': label }, ...options.map(o => el('button', {
+      class: 'xp-ph-segbtn' + (s()[key] === o.value ? ' on' : ''), type: 'button', 'aria-pressed': String(s()[key] === o.value),
+      text: o.label, onclick: () => { apply(o.value); refresh(); },
+    }))));
+  const content = () => [
+    el('div', { class: 'xp-ph-optgroup' },
+      toggle(t('Prefer easy hands'), t('Put the lines that stay off B and F first'), 'rankTps'),
+      toggle(t('Keep built pairs'), t('Put the lines that leave an already-built pair standing first'), 'rankPreserve')),
+    el('div', { class: 'xp-ph-optgroup' },
+      pick(t('Inspection'), t('off by default — this is planning practice, not a comp run'), 'inspection',
+        [{ value: 'infinite', label: t('No limit') }, { value: 'wca', label: t('15 s countdown') }]),
+      toggle(t('Black out when you start'), t('the scramble and the cube go dark so the execution is blind'), 'blackout'),
+      toggle(t('Hide the clock too'), t('only while blacked out'), 'hideTime')),
+    el('div', { class: 'xp-ph-optgroup' },
+      pick(t('Starting grip'), t('where each new scramble puts the cross — turn it any way you like from there'), 'orient',
+        [{ value: 'bottom', label: t('cross down') }, { value: 'scramble', label: t('as scrambled') }]),
+      pick(t('Cube view'), '', 'view', [{ value: '3d', label: '3D' }, { value: 'net', label: t('flat net') }], (v) => setView(v)),
+      pick(t('Scrambles'), t('where the next one comes from'), 'scrambleSource',
+        [{ value: 'own', label: t('generate here') }, { value: 'timer', label: t("the timer's") }])),
+    el('div', { class: 'xp-ph-optgroup' },
+      pick(t('Lines to show'), '', 'showLines', [4, 8, 15].map(n => ({ value: n, label: String(n) }))),
+      pick(t('Search depth'), t('deeper finds more and takes longer'), 'maxDepth', [10, 11, 12].map(n => ({ value: n, label: String(n) })))),
+    sheetRows([{ label: t('Type or paste a scramble'), icon: XICON.paste, onSelect: openScrambleSheet }], () => sheet),
+    el('p', { class: 'xp-ph-note', text: t('Every line the search returns is already rotation-free — it only ever turns the six faces, so there is no regrip to filter out.') }),
+  ];
+  const refresh = () => sheet?.setContent(content());
+  sheet = openSheet({ title: t('Cross + 1 options'), done: true, content: content(), className: 'xp-ph-options' });
+}
+
+/* =========================================================
    Open / close
    ========================================================= */
 
@@ -1304,6 +1899,10 @@ export async function openXp1({ scramble = '', timerScramble = null, onExit = nu
   onClose = onExit;
   getTimerScramble = timerScramble;
 
+  XP.check = false;
+  xh.pad?.hide();
+  place();
+  startTicker();
   host.hidden = false;
   document.body.classList.add('xp1-open');
   document.addEventListener('keydown', onKeyDown, KEY_OPTS);
@@ -1327,6 +1926,10 @@ export function closeXp1() {
   document.removeEventListener('keyup', onKeyUp, KEY_OPTS);
   spaceDown = false;
   tmr?.reset();
+  closeAllSheets();
+  stopTicker();
+  XP.check = false;
+  xh.pad?.hide();
   host.hidden = true;
   document.body.classList.remove('xp1-open');
   onClose?.();

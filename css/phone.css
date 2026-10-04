@@ -64,6 +64,9 @@ body.recon-open #toasts, body.xp1-open #toasts { bottom: calc(96px + env(safe-ar
   padding: 6px var(--phone-gutter) 18px;
   display: flex; flex-direction: column; gap: 14px;
 }
+/* The body scrolls; what is in it keeps its own height rather than being
+   squeezed (and clipped) to fit. */
+.sheet-body > * { flex-shrink: 0; }
 .sheet-label { font-size: 13px; font-weight: 600; color: var(--text-dim); margin: 2px 4px -6px; }
 
 /* A grouped list: rows in one card, hairlines between them. */
