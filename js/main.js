@@ -1632,30 +1632,59 @@ function syncReplayPill() {
   pill.hidden = !(last && idle && hasReplay(last.id));
 }
 
+/* The announcement. It used to count as seen the moment it appeared, close
+   itself after 20 seconds or the instant an attempt started, and give up
+   after half a minute of trying, so anyone mid-session never really saw it.
+   Now it waits for a gap between solves, steps aside while an attempt runs
+   and comes back after it, and stays until it is answered (Try it, Not now,
+   the cross, or turning replay on). Only an answer is remembered; the key is
+   new so that the people the old hint flashed past get it properly. At most
+   HINT_SHOWS times per page load, so a long session is not nagged by it
+   after every single solve. */
+const HINT_KEY = 'replayNewsSeen';
+const HINT_SHOWS = 3;
 let camHint = null;
-function showCameraHint() {
-  const btn = $('#btn-camera');
-  const r = btn?.getBoundingClientRect();
-  if (!r?.width || app.settings.webcamReplay || modalOpen() || camHint
-      || (timer.state !== 'idle' && timer.state !== 'cooldown')) return false;
-  KV.set('camHintSeen', true);
-  const close = () => { camHint?.remove(); camHint = null; removeEventListener('resize', close); };
-  const tip = camHint = el('div', { class: 'cam-hint', role: 'note' },
-    el('b', { text: t('New: film your solves') }),
-    el('span', { text: t('Watch them back with the clock running, and save them as videos for Instagram.') }),
-    el('div', { class: 'cam-hint-row' },
-      el('button', { class: 'btn primary', text: t('Try it'), onclick: () => { close(); openCameraPanel(); } }),
-      el('button', { class: 'ghost-btn sm', text: t('Not now'), onclick: close })));
-  tip.close = close;
-  document.body.append(tip);
+let hintArmed = false;       // this browser has not answered it yet
+let hintShown = 0;
+
+const timerIdle = () => !timer || timer.state === 'idle' || timer.state === 'cooldown';
+
+function placeCameraHint() {
+  const tip = camHint;
+  const r = $('#btn-camera')?.getBoundingClientRect();
+  if (!tip) return;
+  if (!r?.width) return tip.hide();
   const w = tip.offsetWidth;
   const left = Math.max(10, Math.min(r.left + r.width / 2 - w + 28, innerWidth - w - 10));
   tip.style.left = `${left}px`;
   tip.style.top = `${r.bottom + 12}px`;
   tip.style.setProperty('--arrow', `${r.left + r.width / 2 - left}px`);
-  addEventListener('resize', close);
-  setTimeout(close, 20000);
-  return true;
+}
+
+function answerCameraHint() {
+  if (!hintArmed) return;
+  hintArmed = false;
+  KV.set(HINT_KEY, true).catch(() => {});
+  camHint?.hide();
+}
+
+function showCameraHint() {
+  if (!hintArmed || camHint || hintShown >= HINT_SHOWS) return;
+  if (app.settings.webcamReplay) return answerCameraHint();
+  if (!$('#btn-camera')?.getBoundingClientRect().width || modalOpen() || document.hidden || !timerIdle()) return;
+  hintShown++;
+  const hide = () => { tip.remove(); if (camHint === tip) camHint = null; removeEventListener('resize', placeCameraHint); };
+  const tip = camHint = el('div', { class: 'cam-hint', role: 'status', 'aria-live': 'polite' },
+    el('button', { class: 'cam-hint-x', 'aria-label': t('Not now'), title: t('Not now'), html: '&times;', onclick: answerCameraHint }),
+    el('b', { text: t('New: replay your solves') }),
+    el('span', { text: t('Film every attempt with your webcam, watch it back with the clock running, and save it as a video.') }),
+    el('div', { class: 'cam-hint-row' },
+      el('button', { class: 'btn primary', text: t('Try it'), onclick: () => { answerCameraHint(); openCameraPanel(); } }),
+      el('button', { class: 'ghost-btn sm', text: t('Not now'), onclick: answerCameraHint })));
+  tip.hide = hide;
+  document.body.append(tip);
+  placeCameraHint();
+  addEventListener('resize', placeCameraHint);
 }
 
 function wireReplayUI() {
@@ -1668,22 +1697,30 @@ function wireReplayUI() {
   });
   syncCameraButton();
   onReplayChange((e) => {
-    if (e.type === 'state') return syncCameraButton();
+    if (e.type === 'state') {
+      if (replayStatus().enabled) answerCameraHint();
+      return syncCameraButton();
+    }
     syncReplayPill();
     if (e.type === 'saved' || e.type === 'removed') renderHistory();
   });
   timer.addEventListener('state', ({ detail: { state } }) => {
     syncReplayPill();
-    if (state !== 'idle' && state !== 'cooldown') camHint?.close();
+    // Out of the way the moment an attempt starts, back once it is over.
+    if (state !== 'idle' && state !== 'cooldown') camHint?.hide();
+    else if (hintArmed && !camHint) setTimeout(showCameraHint, 1500);
   });
-  // Once, for anyone who has not found it yet: a few seconds after boot, and
-  // only while nothing else is going on.
+  // A few seconds after boot, then whenever nothing else is going on: a
+  // panel open at the time, or a tab in the background, only delays it.
   if (replaySupported() && !app.settings.webcamReplay) {
-    KV.get('camHintSeen', false).then((seen) => {
+    KV.get(HINT_KEY, false).then((seen) => {
       if (seen) return;
-      let tries = 0;
-      const attempt = () => { if (!showCameraHint() && ++tries < 6 && !app.settings.webcamReplay) setTimeout(attempt, 5000); };
-      setTimeout(attempt, 4000);
+      hintArmed = true;
+      setTimeout(showCameraHint, 2500);
+      const tick = setInterval(() => {
+        if (!hintArmed || hintShown >= HINT_SHOWS) return clearInterval(tick);
+        showCameraHint();
+      }, 4000);
     }).catch(() => {});
   }
 }

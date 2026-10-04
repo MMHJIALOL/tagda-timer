@@ -1772,7 +1772,7 @@ body.inspecting #last-replay, body.focus #last-replay { display: none; }
 .chip-replay svg { width: 9px; height: 9px; fill: currentColor; stroke: none; }
 .chip-replay:hover { color: var(--on-accent); background: var(--accent); }
 
-/* Once, for anyone who has not found the camera yet. */
+/* The replay announcement: until it is answered, between solves. */
 .cam-hint {
   position: fixed; z-index: 90; width: min(290px, calc(100vw - 20px));
   display: flex; flex-direction: column; gap: 6px; padding: 13px 14px 12px;
@@ -1781,7 +1781,12 @@ body.inspecting #last-replay, body.focus #last-replay { display: none; }
   box-shadow: 0 22px 50px -18px rgba(0,0,0,.8);
   animation: popIn 420ms var(--ease-back);
 }
-.cam-hint b { color: var(--text); font-size: .88rem; }
+.cam-hint b { color: var(--text); font-size: .88rem; padding-right: 22px; }
+.cam-hint-x {
+  position: absolute; top: 6px; right: 6px; width: 26px; height: 26px; border-radius: 50%;
+  display: grid; place-items: center; font-size: 1.1rem; line-height: 1; color: var(--text-faint);
+}
+.cam-hint-x:hover { color: var(--text); background: color-mix(in srgb, var(--text) 8%, transparent); }
 .cam-hint::before {
   content: ''; position: absolute; top: -7px; left: calc(var(--arrow, 50%) - 6px); width: 12px; height: 12px;
   background: var(--surface-2); transform: rotate(45deg);
