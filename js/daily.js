@@ -94,6 +94,14 @@ const CLAIM_TIMEOUT_MS = 8000;
  */
 const HELD_KEY = 'tdt.sotd.held';
 
+/**
+ * Which local solve was each day's submitted attempt, by account, day and
+ * event: the clip that Share replay offers (js/sotd-replays.js) is that
+ * solve's. In the browser because the clip is; the newest few are kept.
+ */
+const ATTEMPTS_KEY = 'tdt.sotd.attempts';
+const ATTEMPTS_KEPT = 30;
+
 const within = (p, ms, why) => Promise.race([
   p, new Promise((_, rej) => setTimeout(() => rej(new Error(why)), ms)),
 ]);
@@ -838,8 +846,31 @@ export class Daily extends EventTarget {
        intro and dimmed the chip as though today were done. */
     if (!landed) return;
     markSotdDone(dayId);
+    this._noteAttempt(at, solve.id);
     this.net.unlockResults();
     this._changed();
+    // sotd-replays.js: "Always share my SOTD replay" starts from here.
+    this.dispatchEvent(new CustomEvent('submitted', { detail: { solve, at } }));
+  }
+
+  _noteAttempt(at, solveId) {
+    if (!at?.dayKey || !at.event || !at.uid) return;
+    try {
+      const all = JSON.parse(localStorage.getItem(ATTEMPTS_KEY) || '{}');
+      delete all[`${at.dayKey}|${at.event}|${at.uid}`];
+      all[`${at.dayKey}|${at.event}|${at.uid}`] = solveId;
+      const keys = Object.keys(all);
+      for (const k of keys.slice(0, Math.max(0, keys.length - ATTEMPTS_KEPT))) delete all[k];
+      localStorage.setItem(ATTEMPTS_KEY, JSON.stringify(all));
+    } catch { /* private mode: the Share button just will not find the clip after a reload */ }
+  }
+
+  /** The local solve that was this account's attempt at the watched board, or null. */
+  attemptSolveId() {
+    const at = this.net?.target?.();
+    if (!at?.dayKey || !at.event || !at.uid) return null;
+    try { return JSON.parse(localStorage.getItem(ATTEMPTS_KEY) || '{}')[`${at.dayKey}|${at.event}|${at.uid}`] || null; }
+    catch { return null; }
   }
 
   /**

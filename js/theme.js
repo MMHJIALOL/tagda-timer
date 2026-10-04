@@ -169,6 +169,8 @@ export const DEFAULTS = {
   webcamKeepOn: false,          // hold the camera between solves (else it goes after each one)
   webcamSync: {},               // camera name -> ms its picture runs behind the clock (the player's Sync)
   webcamCrop: {},               // camera name (+ '|wide' for Landscape) -> the part a video shows, as fractions { x, y, s }
+  sotdShareAuto: false,         // share the Scramble of the Day clip after submitting, without pressing Share (sotd-replays.js)
+  sotdShareSound: false,        // a shared clip keeps its sound; off, the sound track is left out of the copy
   misfireMs: 500,               // a solve under this is asked about (confirmShortSolves)
   soundOnPB: true,
   metronome: false,             // a click on the beat while the timer runs

@@ -143,9 +143,9 @@ export function webcamControls(app, { onWatch = null, compact = false } = {}) {
       render();
     });
     box.replaceChildren(compact
-      ? row(t('Film my solves'), sw, t('kept on this device, never uploaded'))
+      ? row(t('Film my solves'), sw, t('kept on this device. Nothing is uploaded unless you share a Scramble of the Day replay'))
       : row(t('Webcam replay'), sw,
-        t('films every attempt so you can watch it back with the clock running, and save it as a video. Kept on this device, never uploaded')));
+        t('films every attempt so you can watch it back with the clock running, and save it as a video. Kept on this device: nothing is uploaded unless you share a Scramble of the Day replay')));
     if (!on) {
       if (!replaySupported()) box.append(el('div', { class: 'hint-note', text: t('This browser cannot record video.') }));
       return;
@@ -201,9 +201,22 @@ export function webcamControls(app, { onWatch = null, compact = false } = {}) {
       if (v && !(await enableSound())) { soundSw.querySelector('input').checked = false; return; }
       set('webcamSound', v);
       micRow.hidden = !v;
+      shareSoundRow.hidden = !v;
     });
     const micRow = row(t('Microphone'), micPick, note(t('the one beside the camera if it has one. Never the mic a Stackmat is plugged into')));
     micRow.hidden = !S.webcamSound;
+
+    /* Scramble of the Day sharing (sotd-replays.js). Off by default: Share
+       replay under the day's board does it one at a time; this does it every
+       day, as soon as the result is in. The copy leaves out the sound unless
+       asked, the same choice as the tick beside Share replay. */
+    const shareRow = row(t('Always share my SOTD replay'),
+      toggle(S.sotdShareAuto, v => set('sotdShareAuto', v)),
+      compact ? t('after you submit, for others who did it. Kept 7 days')
+        : t('after you submit the Scramble of the Day, a copy of its clip goes up for everyone else who did it to watch, for 7 days. Off, there is a Share replay button under the board instead'));
+    const shareSoundRow = row(t('Include sound in shared replays'), toggle(S.sotdShareSound, v => set('sotdShareSound', v)),
+      note(t('off, the copy that goes up is silent')));
+    shareSoundRow.hidden = !S.webcamSound;
 
     // Labels arrive with permission, and phones come and go as webcams.
     let placed = false;
@@ -250,6 +263,8 @@ export function webcamControls(app, { onWatch = null, compact = false } = {}) {
       row(t('Keep'), chips([50, 200, 1000].map(n => ({ value: n, label: String(n) })), keepCount(), v => set('webcamKeep', +v)),
         compact ? t('PB singles are always kept') : t('the most recent replays to hold on to. PB singles, and any you keep from the player, are never cleared out')),
       el('div', { class: 'row' }, el('div', { class: 'lbl' }, el('span', { text: t('Saved replays') }), usage), wipe),
+      shareRow,
+      shareSoundRow,
       onWatch ? el('button', { class: 'btn primary full', text: t('Watch the last solve  (W)'), onclick: onWatch }) : null,
     ].filter(Boolean));
     attachPreview(video, status, () => requestCamera(), box, soundStatus);
@@ -3006,7 +3021,9 @@ export function buildDaily(app) {
         body.append(group(t('Today’s times'), history.nav(today),
           el('div', { class: 'race-hero-sub', text:
             t(doneCount === 1 ? '{n} person has done today’s scramble.' : '{n} people have done today’s scramble.', { n: doneCount }) }),
-          ui.timeBoard(ctl.ranked(), ctl.revealed),
+          // ▶ on the rows that shared a replay, the same as in the window.
+          ui.timeBoard(ctl.ranked(), ctl.revealed, ctl.net?.target?.().dayKey
+            ? { dayKey: ctl.net.target().dayKey, event: ctl.eventId, onGone: render } : null),
         ));
       } else {
         // The picker below carries the date, so the group title does not repeat it.
