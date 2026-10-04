@@ -36,6 +36,8 @@ import { toast, confirmToast } from './toast.js';
 import { dayIdFromServerMs, sotdDoneOn, clearSotdDone } from './dayid.js';
 import { openPalette, closePalette, paletteOpen } from './palette.js';
 import { initFeedback, feedbackOpen } from './feedback.js';
+import { isPhone } from './phone.js';
+import { initPhoneShell } from './phoneshell.js';
 // The *.vercel.app "we moved" banner, and the tagdatimer.me end of its data move.
 import './moved.js';
 /* panels.js, sharedlg.js (which drags in sharecard.js and cubenet.js) and
@@ -104,6 +106,8 @@ let _share = null;
 const loadShare = lazy(() => import('./sharedlg.js'), m => (_share = m));
 
 let _recon = null;
+/* The phone's dock, tabs and sheets, once wirePhoneShell() has run. */
+let phoneShell = null;
 const loadRecon = lazy(() => import('./recon.js'), m => (_recon = m));
 
 let _xp1 = null;
@@ -422,8 +426,14 @@ function reconLibrary() {
     scramble: s.scramble,
     moves: s.recon || s.fmcSolution || '',
     save: (moves) => { s.recon = moves; Solves.put(s).catch(() => {}); },
+    time: reconTime(s),
   }));
 }
+
+/* The solving time, for turns per second in the replay. Not for a relay (the
+   time is the whole relay, the reconstruction one leg) or a move-count result. */
+const reconTime = (s, leg = null) =>
+  (!leg && !isMoveResult(s) && !s.relay && Number.isFinite(s.timeMs) ? s.timeMs : null);
 
 /** Reconstruct a recorded solve, remembering the work on the solve itself. */
 function reconstructSolve(solve, scramble = null) {
@@ -439,6 +449,7 @@ function reconstructSolve(solve, scramble = null) {
     moves: solve.recon || solve.fmcSolution || '',
     onSave: (moves) => { solve.recon = moves; Solves.put(solve).catch(() => {}); },
     library: reconLibrary(),
+    time: reconTime(solve, scramble),
   });
 }
 app.reconstructSolve = reconstructSolve;
@@ -584,6 +595,7 @@ async function init() {
   wireInput();
   wireScrambleSwipe();
   wireChrome();
+  wirePhoneShell();
   wireShortcuts();
   wireLastActions();
   wireManualEntry();
@@ -1338,6 +1350,11 @@ function fitScrambleToLine(node) {
   if (!node) return;
   node.style.fontSize = '';
   node.classList.remove('oneline', 'wrapped');
+  /* A phone sets the scramble at one size in a card and lets it wrap,
+     balanced (css/phone.css); squeezing it onto one line there is unreadable.
+     Only a very long one (a 7x7, a megaminx) is made smaller, to stay clear of
+     the clock. */
+  if (isPhone()) { fitScrambleHeight(node); return; }
   // Scrambles with real line breaks in them (megaminx, multi-blind) mean it.
   if (node.classList.contains('multiline')) { fitScrambleHeight(node); return; }
   /* A hold is a sentence standing in for a scramble, and the whole of this
@@ -1470,6 +1487,8 @@ function wireTimer() {
     // like nothing was happening at all.
     document.body.classList.toggle('holding', st === 'holding');
     document.body.classList.toggle('armed', st === 'ready');
+    document.body.classList.toggle('timing', st === 'running');
+    if (st === 'running' || st === 'idle') delete document.body.dataset.inspBand;
     updateHoldBar(st);
     metroExternal(st === 'running' && app.settings.metronome ? app.settings.metronomeBpm : 0);
 
@@ -1546,6 +1565,8 @@ function wireTimer() {
     const band = t > 0.8 ? 'hot' : t > 0.53 ? 'warm' : 'cool';
     if (band !== insp.tint) {
       insp.tint = band;
+      // The phone layout warms the screen itself as well as the shader.
+      document.body.dataset.inspBand = band;
       const c = themeColors();
       bg.setColors(c.bg2,
         band === 'hot' ? c.danger : band === 'warm' ? c.warn : c.accent,
@@ -1573,6 +1594,7 @@ function wireTimer() {
 
   timer.addEventListener('cancel', () => {
     phaseReset();
+    delete document.body.dataset.inspBand;
     main.style.opacity = '';
     main.textContent = app.solves.length ? fmt(eff(app.solves.at(-1))) : '0.00';
     resetBgColors();
@@ -2844,6 +2866,7 @@ function renderAll() {
   refreshHeatmap();
   syncLastActions();
   syncReplayPill();
+  phoneShell?.render();
 }
 app.renderAll = renderAll;
 
@@ -3564,6 +3587,8 @@ function updateLabels() {
    Solve context menu
    ========================================================= */
 function solveMenu(solve, anchor) {
+  // A phone gets the whole menu as a sheet from the bottom of the screen.
+  if (phoneShell?.on()) return phoneShell.openSolveSheet(solve);
   const setPenalty = async (p) => {
     solve.penalty = solve.penalty === p ? 'none' : p;
     await Solves.put(solve);
@@ -5657,9 +5682,20 @@ function wireInput() {
   // started the solve. On a phone -- the one place touch is the only input --
   // inspection was therefore skipped entirely and the timer just ran.
   const pointerOK = (e) => timerInputLive() && ((e.pointerType !== 'mouse') || app.settings.mouseTimer);
-  const touchOK = (e) => !modalOpen() && !e.target.closest(
-    'button, a, input, select, .solve-chip, .panel, #topbar'
-  );
+  /* On a phone the whole empty screen is the timer, not only the stage — but
+     never a control, a sheet, the dock, the recent strip, the scramble card or
+     another tab. Above that the stage is the timer, exactly as it always was. */
+  const PHONE_NOT = 'button, a, input, select, textarea, label, [role="button"], [contenteditable], .solve-chip, .panel, '
+    + '#topbar, #scramble-zone, #ph-recent, #ph-dock, .ph-screen, .sheet, .sheet-scrim, #panel-cube';
+  /* Once an attempt is under way (inspection, the hold, the solve) the phone
+     has hidden everything but the clock, and any tap is the timer's — bar the
+     ✕ that cancels inspection and a sheet somebody opened from a shortcut. */
+  const phoneOK = (e) => (FOCUS_STATES.has(timer.state)
+    ? !e.target.closest('#inspect-cancel, .sheet, .sheet-scrim')
+    : phoneShell.tab() === 'timer' && !e.target.closest(PHONE_NOT));
+  const touchOK = (e) => !modalOpen() && (phoneShell?.on()
+    ? phoneOK(e)
+    : (!!e.target.closest('#stage') && !e.target.closest('button, a, input, select, .solve-chip, .panel, #topbar')));
 
   // A second finger landing mid-solve must not count as a stop, and its release
   // must not count as the release of the first. `isPrimary` is exactly that
@@ -5692,8 +5728,9 @@ function wireInput() {
     timer.up(e.timeStamp);
   };
 
-  const stage = $('#stage');
-  stage.addEventListener('pointerdown', down);
+  // On #app rather than #stage so a phone can use the whole screen; touchOK
+  // still keeps a desktop to the stage.
+  $('#app').addEventListener('pointerdown', down);
   // The release goes on the window: a finger that slides off the stage mid-solve
   // would otherwise never deliver its pointerup to #stage, and the solve would
   // keep running with nothing left to stop it.
@@ -5947,6 +5984,38 @@ function wireChrome() {
   // Same window as the algorithm library's, built by the same module.
   const metro = mountMetro(app.settings, persist);
   app.applyMetro = metro.apply;
+}
+
+/* =========================================================
+   Phones — the dock, the tabs and the sheets (js/phoneshell.js)
+   ========================================================= */
+function wirePhoneShell() {
+  const setPenalty = async (solve, p) => {
+    solve.penalty = p;
+    await Solves.put(solve);
+    renderAll();
+    syncTimerDisplay();
+  };
+  phoneShell = initPhoneShell(app, {
+    cube,
+    setEvent, setMode, openRelayBuilder,
+    openPanel: (title, builder, opts, ...rest) => openPanel(title, builder, opts, app, ...rest),
+    reconstructSolve, repeatScramble, openReplay, hasReplay, copyToast, setPenalty,
+    deleteSolve: (solve) => deleteThrottled(solve),
+    saveNote: (solve, text) => {
+      // The live record, found by id, so a solve deleted since the sheet
+      // opened is never written back.
+      const live = app.solves.find(s => s.id === solve.id);
+      if (!live || (live.comment || '') === text) return;
+      live.comment = solve.comment = text;
+      Solves.put(live).then(() => toast(t('Note saved')));
+    },
+    hasCases: () => !!setFor(app.settings.mode),
+    shownSolve, timerIdle, remeasureHistory,
+    sessionSolves: (id) => Solves.bySession(id),
+    spotifyLinked: () => !!spotify?.connected && !accessDenied,
+    click: (sel) => $(sel)?.click(),
+  });
 }
 
 /* =========================================================
