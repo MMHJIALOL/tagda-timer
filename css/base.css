@@ -1037,9 +1037,10 @@ body.sotd #scramble-text.race-hold { font-size: clamp(1.05rem, 1.9vw, 1.4rem); }
    moment — was the least legible thing on screen. Moving the board out to its
    own column removed the reason for the fade rather than tuning it. */
 
-#sotd-bar, #sotd-board { display: none; }
+#sotd-bar, #sotd-board, #sotd-chat { display: none; }
 body.sotd #sotd-bar { display: flex; }
 body.sotd #sotd-board:not([hidden]) { display: block; }
+body.sotd #sotd-chat:not([hidden]) { display: flex; }
 
 /* =================== HOLD / ARM INDICATOR =================== */
 /* Sits under the digits and is the one piece of arming feedback that survives

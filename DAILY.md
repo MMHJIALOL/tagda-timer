@@ -178,7 +178,9 @@ transaction result and adopts it without waiting for the listener.
 | `tools/verify-misfire.mjs` | `node` check of the misfire thresholds in `js/dayid.js` (§7) |
 | `js/sotd-replays.js` | Shared replays: Share replay, the ▶ on the boards, fetching and caching clips (§8) |
 | `worker.js` | The `/replay/*` routes and their limits, in front of the R2 bucket (§8) |
-| `tools/sotd-replay-dev.mjs` | One command for the emulators and `wrangler dev`, to test §8 locally |
+| `tools/sotd-replay-dev.mjs` | One command for the emulators and `wrangler dev`, to test §8 and §9 locally |
+| `js/sotd-chat.js` | The day's chat: the column, the composer, deleting (§9) |
+| `tools/verify-sotd-chat-rules.mjs` | `node` check of the chat's rules against the database emulator (§9) |
 
 > **Republish `firebase.rules.json` before deploying this.** The previous rules end `results`
 > with `"$other": { ".validate": false }` and know nothing about `photo`, so a client that
@@ -196,6 +198,8 @@ cannot be shared with anyone else has nothing to demonstrate.
 Shared replays (§8) need one thing more: the R2 bucket `tagda-replays` bound in
 `wrangler.jsonc`, private, with a rule deleting objects 8 days after upload. Without the new
 rules published, sharing says it is not switched on yet and touches nothing.
+
+The chat (§9) needs only the rules republished. Until then the window has no chat at all.
 
 ---
 
@@ -606,5 +610,71 @@ runs after a share succeeded).
 `node tools/sotd-replay-dev.mjs` starts the Realtime Database and Auth emulators and
 `wrangler dev` (R2 simulated on disk) and prints the URL. `?emu=1` on localhost points the app
 at the emulators, and sign-in is the emulator's fake Google account chooser. `--reset` wipes
-the clips, `--old-rules` starts on the rules from before replays (`rules old|new` swaps them
-live), `--budget <bytes>` shrinks DAY_BUDGET, and `counts` prints the R2 operations so far.
+the clips, `--old-rules` starts on the rules from before the chat (`rules old|new` swaps them
+live, `rules pre-replays` goes back to before replays), `--budget <bytes>` shrinks DAY_BUDGET,
+and `counts` prints the R2 operations so far.
+
+---
+
+## 9. The day's chat
+
+Once your time is in, a chat opens down the right of the window, opposite the board: one room
+per event per day, for everybody who has done that scramble. Below the timer's breakpoint
+there is no right-hand column, so it is a **Chat** tab on the board's sheet instead, with a
+**‹ Board** to go back. It looks like Race mode's chat (it reuses its classes), with a face
+beside each name, because these are the same Google accounts every day.
+
+**Behind the board's gate, word for word.** `chat` is readable only by an account with a row
+in that day's `results`: the same rule as the times. A room you could read before your attempt
+would be a way round that gate. "Free x-cross on white" is help on somebody's one attempt.
+
+```
+daily/<dayKey>/<event>/chat/
+  m/<pushId>     { uid, name, text, at, photo? }
+  last/<uid>     server ms of that account's last message
+```
+
+What the rules ask of a message:
+
+- **A Google account** (`auth.token.firebase.sign_in_provider === 'google.com'`) with a result
+  for that day and event. Race mode's anonymous identities cannot post.
+- **Today's room only.** `$dayStart === '' + (now - ((now + 19800000) % 86400000))`: the
+  server's own 00:00 IST, made a string. Comparing a path key with `now` directly is false
+  (§1); turning `now` into a string first works, and is what this whole section rests on.
+- `uid` is yours, `name` 1–32 characters, `text` 1–200, `photo` a Google avatar (§6), `at`
+  exactly `now` (send `ServerValue.TIMESTAMP`). Nothing else. Never edited.
+- **1.5 s apart.** The message and `last/<uid>` go in one update, each wanting the other to
+  carry the same `now`, and `last` refuses a value less than 1.5 s after the one it replaces.
+  The app waits 2 s between sends, so a fast connection after a slow one is not refused.
+
+**Deleting.** Your own messages, from the × on hover (always showing, faintly, on a touch
+screen), after a confirm. The admin uid in the rules (the same account as `ADMIN_UIDS` in
+`wrangler.jsonc`, mirrored as `CHAT_ADMIN_UIDS` in `js/daily-net.js` for drawing the button)
+can delete anybody's, in any room, without a result of its own. The admin reads a room the same
+way as everyone else, though: after doing that event's scramble. In the chat the owner's badge
+goes by that uid, not by name as on the board: a message's uid is pinned by the rules, and a
+name is free text anyone can type.
+
+**At the reset.** Nothing has to happen at 00:00 IST for the room to vanish: the window reads
+the new day's path, which is empty, and every screen moves to it. The stored copy goes later.
+The first signed-in visitor of a day sends one update per day for the 7 days before it,
+setting every event's `chat` to null (`sweepOldChats`, five seconds after the window
+connects, once per browser per day). The rules let anybody signed in delete a whole room on
+any day but today, so the sweep needs no read, no server and no cron. A clock that is slightly
+off can only fail to clean; it can never clean today.
+
+**What it costs.** A message is about 150–350 bytes. Storage holds at most a day of chat (plus
+any days nobody visited), so it stays in kilobytes. Download is the meter that grows: every
+message goes to everyone with the room open, and opening it loads the newest 60. The chat uses
+the connection the window already has, so it adds no connections.
+
+**Until firebase.rules.json is republished** the read is refused and the window has no chat
+column at all. Nothing is shown or toasted about it; the sweep is refused once a day per
+browser, with a console warning. Nothing else changes.
+
+**Testing it.** `node tools/verify-sotd-chat-rules.mjs` checks the rules against the database
+emulator (in a namespace of its own, so a running `sotd-replay-dev.mjs` is untouched).
+`node tools/sotd-replay-dev.mjs`, then two browsers (or one private window) on the printed URL,
+each signed in with "Add new account". Both solve today's scramble, then talk. The account
+chooser also has **Admin (chat)**, an account with the admin's uid, for the delete buttons on
+other people's messages.

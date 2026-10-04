@@ -3829,6 +3829,87 @@ body.focus #dock-bottom, body.focus #tile-float-layer { opacity: 0; pointer-even
 }
 .sotd-signin-text { font-size: .78rem; line-height: 1.5; color: var(--text-faint); }
 
+/* ---- the day's chat, down the right ----
+   The board's mirror image: the same top (under the scramble), the same
+   width, the other edge. Its foot stops above the cube preview
+   (--sotd-chat-bottom, measured in js/dailyui.js) instead of running behind
+   it. The card is as tall as what is in it, up to the whole column; the
+   column itself lets clicks through below a short card. Messages, composer
+   and emoji tray are race mode's chat, reused (`.race-chat-*`). */
+#sotd-chat {
+  position: fixed; right: 18px; z-index: 91;
+  top: var(--sotd-board-top, 200px);
+  bottom: var(--sotd-chat-bottom, 18px);
+  width: var(--sotd-board-w);
+  flex-direction: column; justify-content: flex-start;
+  pointer-events: none;
+  animation: sotdChatIn 420ms var(--ease);
+}
+@keyframes sotdChatIn { from { transform: translateX(18px); opacity: 0 } to { transform: none; opacity: 1 } }
+.sotd-chat-card {
+  pointer-events: auto;
+  position: relative;
+  display: flex; flex-direction: column; gap: 8px;
+  min-height: 0; max-height: 100%;
+  padding: 14px;
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  backdrop-filter: blur(30px) saturate(1.5); -webkit-backdrop-filter: blur(30px) saturate(1.5);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: 0 24px 60px -30px rgba(0,0,0,.7);
+}
+.sc-head { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.sc-title {
+  margin: 0; flex: none;
+  font-size: .64rem; font-weight: 700; letter-spacing: .18em; text-transform: uppercase;
+  color: var(--text-faint);
+}
+.sc-sub {
+  min-width: 0; font-size: .66rem; color: var(--text-faint); opacity: .75;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* Narrow screens only, where the chat stands in for the board. */
+.sc-back {
+  display: none; flex: none;
+  padding: 2px 8px; font-size: .7rem; color: var(--text-dim);
+  background: none; border: 1px solid var(--border); border-radius: 999px; cursor: pointer;
+}
+.sc-back:hover { color: var(--text); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+/* Race mode's log is capped at 152px in a rail; here it is the column. */
+.sotd-chat-card .sc-log { flex: 1 1 auto; min-height: 72px; max-height: none; gap: 3px; font-size: .76rem; }
+.sc-msg {
+  display: grid; grid-template-columns: 20px minmax(0, 1fr) auto;
+  column-gap: 8px; align-items: start;
+  padding: 4px 6px;
+}
+.sc-msg.run-on { padding-top: 0; }
+.sc-msg .db-face, .sc-face-gap { width: 20px; height: 20px; margin-top: 1px; }
+.sc-face-gap { display: block; }
+.sc-msg.run-on .sc-face-gap { height: 1px; }
+.sc-msg .db-face-letter { font-size: .6rem; }
+.sc-body { min-width: 0; display: flex; flex-direction: column; }
+.sc-meta { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+.sc-meta .race-chat-who {
+  font-size: .66rem; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.sc-time { flex: none; font-size: .6rem; color: var(--text-faint); font-variant-numeric: tabular-nums; }
+/* On hover, so a column of crosses does not sit beside every line you wrote. */
+.sc-del {
+  width: 20px; height: 20px; display: grid; place-items: center; align-self: center;
+  padding: 0; border: 0; border-radius: 5px; background: none;
+  color: var(--text-faint); cursor: pointer; opacity: 0;
+}
+.sc-del svg { width: 11px; height: 11px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; }
+.sc-msg:hover .sc-del, .sc-del:focus-visible { opacity: .85; }
+.sc-del:hover { color: var(--danger); background: color-mix(in srgb, var(--danger) 14%, transparent); }
+/* No hover on a touchscreen: always there, faintly. */
+@media (pointer: coarse) { .sc-del { opacity: .5; width: 28px; height: 28px; } }
+/* Over the log, above the composer: the card's padding plus the 28px form. */
+.sotd-chat-card .race-emoji { left: 14px; right: 14px; bottom: 48px; }
+/* The board's Chat tab is for narrow screens, where there is no column. */
+.sotd-tab-chat { display: none; }
+
 .db-empty, .db-locked-text {
   font-size: .78rem; line-height: 1.55; color: var(--text-faint);
 }
@@ -3862,6 +3943,21 @@ body.focus #dock-bottom, body.focus #tile-float-layer { opacity: 0; pointer-even
      same-named keyframes across conditions is the kind of thing that resolves
      differently per engine, and there is nothing to gain by finding out. */
   #sotd-board { animation-name: sotdBoardUp; }
+
+  /* No column for the chat down here: it takes the board's sheet when its
+     tab is pressed, and gives it back from its own ‹ Board. As tall as what
+     is in it, up to the board's own cap, so a quiet room leaves the time on
+     screen. */
+  #sotd-chat {
+    left: 12px; right: 12px; top: auto; bottom: 0;
+    width: auto;
+    animation-name: sotdBoardUp;
+  }
+  body.sotd:not(.sotd-chat-view) #sotd-chat { display: none; }
+  body.sotd.sotd-chat-view #sotd-board { display: none; }
+  .sotd-chat-card { max-height: min(46vh, var(--sotd-chat-max, 46vh)); border-bottom: 0; border-radius: 16px 16px 0 0; }
+  .sotd-tab-chat { display: inline-block; }
+  .sc-back { display: inline-flex; }
 }
 
 @media (max-width: 520px) {

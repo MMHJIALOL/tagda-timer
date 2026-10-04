@@ -55,6 +55,7 @@ import { isOwnerName, openOwnerCard } from './ownercard.js';
 // Policy lives with the controller — see the comment on it there.
 import { SHOW_COUNT_BOARD } from './daily.js';
 import { canPlay, playButton, replayKept, shareBox, bindReplays } from './sotd-replays.js';
+import { mountChat } from './sotd-chat.js';
 
 /* ---------------------------------------------------------
    A face, or the next best thing
@@ -112,7 +113,7 @@ export function avatar(name, photo) {
 const lockedBoard = () => el('div', { class: 'db-locked' },
   el('div', { class: 'db-locked-icon', text: t('🔒') }),
   el('div', { class: 'db-locked-text', text:
-    t('Submit today’s attempt to unlock the board. Nobody’s time is visible to you until you have sent your own — that is a database rule, not a setting.') }),
+    t('Submit today’s attempt to unlock the board and the chat. Nobody’s time is visible to you until you have sent your own — that is a database rule, not a setting.') }),
 );
 
 /**
@@ -508,6 +509,32 @@ export function openSotd(app, ctl, { onExit, solving = () => false } = {}) {
     shareEl.refresh();
     return shareEl;
   };
+  /* The day's chat (sotd-chat.js): its own column down the right, built
+     the first time it opens and then kept, like the note box. Below the
+     timer's breakpoint there is no right-hand column to give it, so it takes
+     the board's place instead, behind a Chat tab and a way back. */
+  const chatHost = document.getElementById('sotd-chat');
+  let chat = null;
+  let chatShown = false;
+  const chatView = (on) => document.body.classList.toggle('sotd-chat-view', !!on);
+  /** Show, hide or refresh the chat; true when whether it is open changed. */
+  const syncChat = () => {
+    const on = ctl.chatOpen;
+    if (on && !chat) {
+      chat = mountChat(ctl, { avatar, onBack: () => chatView(false) });
+      chatHost.append(chat.node);
+    }
+    chatHost.hidden = !on;
+    if (!on) chatView(false);
+    chat?.refresh();
+    const changed = on !== chatShown;
+    chatShown = on;
+    return changed;
+  };
+  /* A message is no reason to redraw the board. Only the chat opening or
+     closing is, for the narrow screen's Chat tab. */
+  const onChat = () => { if (syncChat()) { renderBoard(); placeBoard(); } };
+
   let mode = 'times';
   const tab = (id, label) => el('button', {
     class: 'sotd-tab', type: 'button', role: 'tab', text: label,
@@ -535,7 +562,14 @@ export function openSotd(app, ctl, { onExit, solving = () => false } = {}) {
            does not repeat it — it says only what kind of board this is. */
         el('div', { class: 'sotd-tabs', role: 'tablist', 'aria-label': t('Board') },
           tab('times', past ? t('Times') : t('Today’s times')),
-          tab('replays', sharedN ? t('Replays · {n}', { n: sharedN }) : t('Replays'))),
+          tab('replays', sharedN ? t('Replays · {n}', { n: sharedN }) : t('Replays')),
+          /* Narrow screens only (the stylesheet hides it elsewhere, where the
+             chat has a column of its own): swaps the board for the chat. */
+          ctl.chatOpen ? el('button', {
+            class: 'sotd-tab sotd-tab-chat', type: 'button', role: 'tab', 'aria-selected': 'false', text: t('Chat'),
+            onclick: () => chatView(true),
+            onkeydown: (e) => e.stopPropagation(),
+          }) : null),
         history.nav(today)),
       /* Today is the LIVE board, off the running listeners and their reveal
          gate. A past day is a one-shot read that never touches them, so the
@@ -574,6 +608,7 @@ export function openSotd(app, ctl, { onExit, solving = () => false } = {}) {
     const st = ctl.status();
     stateNode.textContent = STATE_TEXT[st] || '';
     stateNode.dataset.state = st;
+    syncChat();
     renderBoard();
     placeBoard();
   };
@@ -590,10 +625,31 @@ export function openSotd(app, ctl, { onExit, solving = () => false } = {}) {
    */
   const placeBoard = () => {
     const root = document.documentElement;
-    if (window.innerWidth < 861) { root.style.removeProperty('--sotd-board-top'); return; }
+    if (window.innerWidth < 861) {
+      root.style.removeProperty('--sotd-board-top');
+      root.style.removeProperty('--sotd-chat-bottom');
+      /* The chat's sheet grows with the room, and at the board's 46vh it
+         reached up over the digits on a tall phone. Capped at the room below
+         them instead, but never so short that it stops being a chat. */
+      const digits = document.getElementById('timer-display')?.getBoundingClientRect();
+      if (digits?.height) {
+        root.style.setProperty('--sotd-chat-max', `${Math.max(220, Math.round(window.innerHeight - digits.bottom - 12))}px`);
+      }
+      return;
+    }
+    root.style.removeProperty('--sotd-chat-max');
     const zone = document.getElementById('scramble-zone');
     if (!zone) return;
     root.style.setProperty('--sotd-board-top', `${Math.round(zone.getBoundingClientRect().bottom + 14)}px`);
+    /* The chat's column stops above the cube preview when the preview is in
+       its way, which in its usual bottom-right corner it is. Measured rather
+       than assumed: the preview can be resized, dragged or switched off. */
+    const cube = document.getElementById('panel-cube');
+    const r = cube?.getBoundingClientRect();
+    const colLeft = window.innerWidth - 18 - board.getBoundingClientRect().width;
+    const inWay = r && r.width > 2 && r.height > 2 && r.right > colLeft && r.top < window.innerHeight;
+    if (inWay) root.style.setProperty('--sotd-chat-bottom', `${Math.round(window.innerHeight - r.top + 12)}px`);
+    else root.style.removeProperty('--sotd-chat-bottom');
   };
 
   const tick = () => {
@@ -609,11 +665,20 @@ export function openSotd(app, ctl, { onExit, solving = () => false } = {}) {
     document.body.classList.remove('sotd');
     board.hidden = true;
     board.innerHTML = '';
+    chat?.dispose();
+    chat = null;
+    chatShown = false;
+    chatHost.hidden = true;
+    chatHost.innerHTML = '';
+    chatView(false);
     clearInterval(state.timer);
     document.documentElement.style.removeProperty('--sotd-board-top');
+    document.documentElement.style.removeProperty('--sotd-chat-bottom');
+    document.documentElement.style.removeProperty('--sotd-chat-max');
     window.removeEventListener('resize', placeBoard);
     shareEl?.dispose();
     ctl.removeEventListener('change', onChange);
+    ctl.removeEventListener('chat', onChat);
     document.removeEventListener('keydown', onKey, true);
     exitBtn.removeEventListener('click', close);
     onExit?.();
@@ -629,6 +694,10 @@ export function openSotd(app, ctl, { onExit, solving = () => false } = {}) {
     /* Something open over the window has Esc first: the camera panel (a
        popover, closed by its own handler) or a replay player (a dialog). */
     if (document.querySelector('dialog[open]') || document.getElementById('popover')?.hidden === false) return;
+    /* So does a text field: in the chat or the note, Esc means "stop typing
+       here", and the field's own handler does that. Leaving the window from
+       the middle of a sentence is not what anybody pressing it meant. */
+    if (e.target?.closest?.('input, textarea')) return;
     e.preventDefault();
     e.stopPropagation();
     close();
@@ -638,6 +707,7 @@ export function openSotd(app, ctl, { onExit, solving = () => false } = {}) {
   document.addEventListener('keydown', onKey, true);
   exitBtn.addEventListener('click', close);
   ctl.addEventListener('change', onChange);
+  ctl.addEventListener('chat', onChat);
 
   document.body.classList.add('sotd');
   window.addEventListener('resize', placeBoard);
