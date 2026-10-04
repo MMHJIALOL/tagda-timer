@@ -417,7 +417,7 @@ body.ph #pace-ghost, body.ph #hold-bar, body.ph #manual-entry, body.ph #stackmat
 body.ph #pace-ghost { width: min(320px, 80vw); }
 /* Fewest Moves puts its hour and its solution where the timer's buttons go. */
 body.ph .fmc-zone { order: 3; margin-top: 20px; width: 100%; }
-body.ph.fmc-attempting .ph-recent { display: none; }
+body.ph.fmc-attempting :is(.ph-recent, #last-actions) { display: none; }
 body.ph.fmc-attempting #app { padding-bottom: max(12px, env(safe-area-inset-bottom)); }
 body.ph #manual-entry input { font-size: 16px; }
 
@@ -515,14 +515,14 @@ body.ph #inspect-num {
   margin-top: 4px; text-shadow: none;
 }
 .ph-insp-left { font-size: 15px; color: color-mix(in oklab, var(--warn) 40%, var(--text)); margin-top: 4px; }
-.ph-insp-rule { font-size: 13px; color: color-mix(in oklab, var(--warn) 45%, var(--text-faint)); margin-top: 18px; }
+.ph-insp-rule { font-size: 13px; color: color-mix(in oklab, var(--warn) 35%, var(--text-dim)); margin-top: 18px; }
 #inspect-readout.ph-pen .ph-insp-left { visibility: hidden; }
 .ph-insp-foot {
   position: fixed; left: 0; right: 0; bottom: max(64px, calc(40px + env(safe-area-inset-bottom)));
   text-align: center; padding: 0 var(--phone-gutter);
 }
 .ph-insp-hold { font-size: 15.5px; font-weight: 600; color: color-mix(in oklab, var(--warn) 25%, var(--text)); }
-.ph-insp-gone { font-size: 13px; color: color-mix(in oklab, var(--warn) 45%, var(--text-faint)); margin-top: 6px; }
+.ph-insp-gone { font-size: 13px; color: color-mix(in oklab, var(--warn) 35%, var(--text-dim)); margin-top: 6px; }
 body.ph:is(.holding, .armed) .ph-insp-hold { color: var(--t-ready); }
 body.ph #inspect-cancel {
   position: fixed; top: max(12px, calc(env(safe-area-inset-top) + 4px)); right: 12px; left: auto;
@@ -606,13 +606,14 @@ body.ph[data-tab="times"] #panel-times .tile-grip { display: none; }
 }
 .ph-sv-close svg { width: 20px; height: 20px; }
 .ph-seg {
-  display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 4px;
+  /* Equal thirds, unless a word needs more ("Sin penalización" at 360px). */
+  display: grid; grid-auto-flow: column; grid-auto-columns: minmax(max-content, 1fr); gap: 4px;
   padding: 4px; border-radius: 14px; background: var(--surface);
 }
 .ph-seg-btn {
   display: flex; align-items: center; justify-content: center; gap: 6px;
-  min-height: 44px; border-radius: 11px;
-  font-size: 14px; font-weight: 600; color: var(--text-dim);
+  min-height: 44px; padding: 0 10px; border-radius: 11px;
+  font-size: 14px; font-weight: 600; color: var(--text-dim); white-space: nowrap;
 }
 .ph-seg-btn.on { background: var(--surface-2); color: var(--text); font-weight: 700; box-shadow: 0 1px 0 color-mix(in srgb, var(--text) 6%, transparent) inset; }
 .ph-sv-scr {
