@@ -971,6 +971,18 @@ section('phone sheets');
   const keys = [...src.matchAll(/\bt\(\s*'((?:\\'|[^'])*)'/g)].map(m => m[1].replace(/\\'/g, "'"));
   const missing = keys.filter(k => !(k in es));
   check('every phone-shell string has its Spanish', keys.length > 30 && !missing.length, missing.join(' | ') || String(keys.length));
+
+  // The Times tab's trend card: a dot per time, the best ringed, a DNF crossed.
+  const C = await import('./js/charts.js');
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  const times = [12000, 11000, 13000, 10000, 12500, 11800, null, 12100]
+    .map(ms => (ms ? { timeMs: ms, penalty: 'none' } : { timeMs: 12000, penalty: 'DNF' }));
+  check('the trend draws once there are two times', C.renderDotTrend(svg, times, { width: 300, height: 84 }) === true);
+  check('one dot per time, the best ringed, a DNF crossed',
+    svg.querySelectorAll('.dt-dot').length === 6 && svg.querySelectorAll('.dt-pb').length === 1 && svg.querySelectorAll('.dt-dnf').length === 1,
+    `${svg.querySelectorAll('.dt-dot').length} ${svg.querySelectorAll('.dt-pb').length} ${svg.querySelectorAll('.dt-dnf').length}`);
+  check('the rolling ao5 runs through them', !!svg.querySelector('.dt-ao'));
+  check('one time is not a trend yet', C.renderDotTrend(svg, times.slice(0, 1)) === false);
 }
 
 /* ---------------- the last-layer libraries ----------------

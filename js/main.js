@@ -5937,6 +5937,7 @@ function wirePhoneShell() {
     hasCases: () => !!setFor(app.settings.mode),
     shownSolve, timerIdle, remeasureHistory,
     sessionSolves: (id) => Solves.bySession(id),
+    spotifyLinked: () => !!spotify?.connected && !accessDenied,
     click: (sel) => $(sel)?.click(),
   });
 }

@@ -557,39 +557,196 @@ body.ph #inspect-ring-rect { stroke-width: 5; }
 
 /* ---------------- Times, Train, More ---------------- */
 .ph-screen {
-  position: fixed; inset: 0; z-index: 20;
+  /* Ends just above the dock, so nothing scrolls into the gap beneath it. */
+  position: fixed; inset: 0 0 calc(var(--ph-dock-room) - 6px) 0; z-index: 20;
   display: flex; flex-direction: column; gap: 14px;
-  padding: max(12px, env(safe-area-inset-top)) var(--phone-gutter) var(--ph-dock-room);
+  padding: max(12px, env(safe-area-inset-top)) var(--phone-gutter) 16px;
   overflow-y: auto; overscroll-behavior: contain;
   background: var(--bg); color: var(--text); font-family: var(--font-ui);
   touch-action: pan-y;
 }
 .ph-screen[hidden] { display: none; }
-.ph-screen > * { flex-shrink: 0; }
-.ph-screen-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 52px; }
-.ph-screen-head h1 { margin: 0; font-size: 30px; font-weight: 700; letter-spacing: -.02em; }
-.ph-ctx.small { height: 38px; font-size: 14px; font-weight: 600; color: var(--text-dim); }
-
-.ph-times-sum { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-.ph-stat {
-  display: flex; flex-direction: column; gap: 4px;
-  padding: 12px 14px; border-radius: 18px;
-  background: var(--surface); border: 1px solid var(--border);
+/* ...and the strip the dock floats in is the tab's background, not the timer
+   showing through underneath. */
+body.ph:is([data-tab="times"], [data-tab="train"], [data-tab="more"])::after {
+  content: ''; position: fixed; left: 0; right: 0; bottom: 0; z-index: 39;
+  height: calc(var(--ph-dock-room) - 6px); background: var(--bg); pointer-events: none;
 }
-.ph-stat span { font-size: 12.5px; font-weight: 600; color: var(--text-dim); }
-.ph-stat b { font-family: var(--font-mono); font-size: 22px; font-weight: 600; }
-.ph-times-actions { display: flex; gap: 16px; }
-.ph-times-slot { flex: 1 0 120px; }
-/* The desktop's times list, laid over the slot under the figures. */
+.ph-screen > * { flex-shrink: 0; }
+.ph-screen-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; padding-left: 4px; }
+.ph-screen-head h1 { margin: 0; font-size: 30px; font-weight: 700; letter-spacing: -.025em; }
+.ph-head-r { display: flex; align-items: center; gap: 2px; min-width: 0; }
+.ph-ctx.small { height: 36px; gap: 6px; padding: 0 10px 0 12px; border-radius: 18px; font-size: 13.5px; font-weight: 600; }
+.ph-ctx.small .ph-ctx-ses { color: var(--text); font-size: 13.5px; }
+.ph-icon-btn { flex: none; width: 44px; height: 44px; border-radius: 22px; display: grid; place-items: center; color: var(--text-dim); }
+.ph-icon-btn svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.ph-icon-btn svg .fill { fill: currentColor; stroke: none; }
+
+/* ---------------- Times ---------------- */
+/* The tab itself does not scroll: the list under it does, and it is laid over
+   the space the slot leaves, measured once and again on every resize. */
+#ph-times { overflow: hidden; }
+.ph-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.ph-card { min-width: 0; padding: 12px 14px; border-radius: 18px; background: var(--surface); border: 1px solid var(--border); }
+.ph-card-k { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--text-dim); }
+.ph-card-v {
+  margin-top: 4px; font-family: var(--font-mono); font-size: 27px; font-weight: 600; letter-spacing: -.02em; line-height: 1.15;
+  font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ph-card.is-best .ph-card-v { color: var(--accent-2); }
+.ph-card-sub { margin-top: 1px; font-size: 12px; color: var(--text-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.ph-trend { padding: 12px 14px 14px; border-radius: 18px; background: var(--surface); border: 1px solid var(--border); }
+.ph-trend-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 12px; }
+.ph-legend { display: flex; align-items: center; gap: 12px; font-size: 12px; color: var(--text-dim); }
+.ph-lg { display: flex; align-items: center; gap: 5px; }
+.ph-lg-line { width: 12px; height: 2px; border-radius: 1px; background: var(--accent-2); }
+.ph-lg-dot { width: 5px; height: 5px; border-radius: 3px; background: var(--text-faint); }
+.ph-charts { margin: -14px -8px; padding: 14px 8px; font-size: 12px; font-weight: 600; color: var(--accent-text); }
+.ph-trend-svg { display: block; width: 100%; height: 84px; overflow: visible; }
+.ph-trend-svg[hidden], .ph-trend-empty[hidden] { display: none; }
+.dt-grid { stroke: var(--border); stroke-dasharray: 3 4; }
+.dt-tick { fill: var(--text-faint); font-family: var(--font-mono); font-size: 10px; }
+.dt-ao { fill: none; stroke: var(--accent-2); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.dt-dot { fill: var(--text-faint); }
+.dt-pb { fill: none; stroke: var(--accent-2); stroke-width: 2; }
+.dt-dnf { fill: none; stroke: var(--danger); stroke-width: 1.6; stroke-linecap: round; }
+.ph-trend-empty { margin: 0; padding: 22px 0; text-align: center; font-size: 13px; color: var(--text-faint); }
+.ph-times-slot { flex: 1 1 auto; min-height: 120px; }
+
+/* The desktop's times list, laid over the slot, and set the way the tab draws
+   it: a plain list of 50px rows under sentence-case headings. Sorting, the
+   column pencils and the average cells (which open their solves) all work as
+   they do on the desktop. */
 body.ph[data-tab="times"] #sidebar {
   display: flex !important;
   position: fixed; z-index: 21;
   top: var(--ph-slot-top, 300px); bottom: var(--ph-dock-room);
-  left: var(--phone-gutter); right: var(--phone-gutter);
+  left: 8px; right: 8px;
   height: auto; padding: 0;
 }
 body.ph[data-tab="times"] #panel-times { display: flex !important; flex: 1 1 auto; min-height: 0; }
-body.ph[data-tab="times"] #panel-times .tile-grip { display: none; }
+body.ph #panel-times {
+  --pad: 0px; --idx-col: 44px; --ao-col: calc(70px * var(--times-scale)); --hist-gap: 6px;
+  gap: 0; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none;
+  backdrop-filter: none; -webkit-backdrop-filter: none;
+}
+body.ph #panel-times > :is(.panel-head, .times-foot, .tile-grip),
+body.ph #sidebar > :not(#panel-times) { display: none !important; }
+body.ph #panel-times .hist-cols {
+  min-height: 0; margin: 0 0 4px; padding: 6px 12px 4px; border: 0;
+  font-family: var(--font-ui); font-size: 12px; font-weight: 600; letter-spacing: 0; text-transform: none; color: var(--text-dim);
+}
+body.ph #panel-times .hist-cols > span:first-child::before { content: '#'; }
+body.ph #panel-times .hist-cols > span:last-child:empty { display: none; }
+body.ph #panel-times .hist-cols [data-sort].sorted { color: var(--accent-text); }
+body.ph #panel-times .col-edit { width: 14px; font-size: 11px; opacity: .75; }
+body.ph #hist-list { margin: 0; padding: 0; gap: 0; touch-action: pan-y; }
+body.ph .solve-chip {
+  flex: none; height: 50px; padding: 0 12px; border: 0; border-radius: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+  background: none; color: var(--text);
+  font-size: calc(17px * var(--times-scale)); font-weight: 600;
+  -webkit-tap-highlight-color: transparent;
+}
+body.ph .solve-chip:hover { background: none; border-color: color-mix(in srgb, var(--border) 60%, transparent); }
+body.ph .solve-chip:active { background: color-mix(in srgb, var(--text) 6%, transparent); }
+body.ph .solve-chip .idx { text-align: left; font-size: 13px; font-weight: 500; color: var(--text-faint); }
+body.ph .solve-chip .avg { font-size: calc(14px * var(--times-scale)); font-weight: 500; color: var(--text-dim); padding: 1px 0; }
+body.ph .solve-chip .avg.best { color: var(--accent-2); background: none; font-weight: 600; }
+/* Best teal, DNF red, +2 written with its "+" and nothing else. */
+body.ph .solve-chip:is(.pb, .plus2) { color: var(--text); background: none; }
+body.ph .solve-chip.pb .t { color: var(--accent-2); }
+body.ph .solve-chip.dnf .t { color: var(--danger); text-decoration: none; }
+body.ph .hist-end { padding: 14px 0 8px; font-size: 12px; }
+
+/* ---------------- Train ---------------- */
+.ph-tools, .ph-minis { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.ph-minis { margin-top: -6px; }
+.ph-tool {
+  display: flex; flex-direction: column; align-items: flex-start; min-width: 0;
+  padding: 14px; border-radius: 20px; text-align: left;
+  background: var(--surface); border: 1px solid var(--border); color: var(--text);
+}
+.ph-tool-ico { width: 42px; height: 42px; border-radius: 13px; display: grid; place-items: center; background: var(--accent-tint); color: var(--accent-text); }
+.ph-tool-t { margin-top: 12px; font-size: 16px; font-weight: 600; }
+.ph-tool-s { margin-top: 3px; font-size: 13px; line-height: 1.4; color: var(--text-dim); }
+.ph-mini {
+  display: flex; align-items: center; gap: 10px; min-width: 0; min-height: 60px;
+  padding: 12px; border-radius: 18px; text-align: left;
+  background: var(--surface); border: 1px solid var(--border); color: var(--text);
+}
+.ph-mini.gold { background: color-mix(in srgb, var(--gold) 7%, var(--surface)); border-color: color-mix(in srgb, var(--gold) 26%, transparent); }
+.ph-mini-ico { flex: none; display: grid; color: var(--text-dim); }
+.ph-mini.gold .ph-mini-ico { color: color-mix(in oklab, var(--gold) 80%, var(--text)); }
+.ph-mini-txt { min-width: 0; }
+.ph-mini-t { display: block; font-size: 14px; font-weight: 600; line-height: 1.25; }
+.ph-mini-s { display: block; margin-top: 2px; font-size: 12px; color: var(--text-dim); }
+:is(.ph-tool-ico, .ph-mini-ico, .ph-row-ico, .ph-sync-pic, .ph-link) svg {
+  width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round;
+}
+.ph-sec-head { display: flex; align-items: center; justify-content: space-between; margin: 6px 0 -8px 4px; }
+.ph-sec { margin: 0; font-size: 13px; font-weight: 600; color: var(--text-dim); }
+.ph-link.accent { color: var(--accent-text); text-decoration: none; font-size: 13px; }
+.ph-link.accent svg { width: 18px; height: 18px; }
+
+.ph-group { display: flex; flex-direction: column; overflow: hidden; border-radius: 20px; background: var(--surface); border: 1px solid var(--border); }
+.ph-row { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 54px; padding: 8px 14px; text-align: left; color: var(--text); }
+.ph-row + .ph-row { border-top: 1px solid var(--border); }
+.ph-row:active { background: color-mix(in srgb, var(--text) 6%, transparent); }
+#ph-train .ph-row { min-height: 62px; padding: 8px 16px; }
+.ph-row-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.ph-row-txt .ph-row-t { font-size: 15.5px; font-weight: 600; }
+.ph-row-s { margin-top: 2px; font-size: 12.5px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ph-row.current .ph-row-t { color: var(--accent-text); }
+.ph-due { flex: none; padding: 3px 7px; border-radius: 7px; font-size: 11.5px; font-weight: 700; color: var(--warn); background: color-mix(in srgb, var(--warn) 13%, transparent); }
+.ph-prog { flex: none; width: 76px; display: flex; flex-direction: column; align-items: flex-end; gap: 5px; }
+.ph-prog-t { font-size: 12px; color: var(--text-dim); white-space: nowrap; }
+.ph-prog-t.none { color: var(--text-faint); }
+.ph-prog-bar { width: 76px; height: 4px; border-radius: 2px; overflow: hidden; background: var(--border); }
+.ph-prog-bar i { display: block; height: 4px; border-radius: 2px; background: var(--accent-2); }
+.ph-note.pad { padding: 16px; }
+
+/* ---------------- More ---------------- */
+/* Wraps rather than squeezes: a long sign-in label (Spanish, at 360px) drops
+   below the words instead of crushing them into a column. */
+.ph-sync { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 14px; padding: 16px; border-radius: 20px; background: var(--surface); border: 1px solid var(--border); }
+.ph-sync:has(.ph-sync-in) { padding: 0; }
+.ph-sync-in { display: flex; align-items: center; gap: 14px; width: 100%; padding: 16px; text-align: left; color: var(--text); }
+.ph-sync-pic {
+  flex: none; width: 46px; height: 46px; border-radius: 23px; overflow: hidden;
+  display: grid; place-items: center; background: var(--surface-2); color: var(--text-dim);
+}
+.ph-sync-pic img { width: 100%; height: 100%; object-fit: cover; }
+.ph-sync-pic .account-initial { font-size: 18px; font-weight: 700; color: var(--text); }
+.ph-sync-txt { flex: 1 1 150px; min-width: 0; display: flex; flex-direction: column; }
+.ph-sync-t { font-size: 15.5px; font-weight: 600; overflow-wrap: anywhere; }
+.ph-sync-in .ph-sync-t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ph-sync-s { margin-top: 2px; font-size: 13px; line-height: 1.35; color: var(--text-dim); overflow-wrap: anywhere; }
+.ph-sync-btn {
+  flex: none; position: relative; margin-left: auto; height: 38px; padding: 0 16px; border-radius: 19px;
+  background: var(--accent); color: var(--on-accent); font-size: 14px; font-weight: 700;
+}
+.ph-sync-btn::after { content: ''; position: absolute; inset: -3px 0; }
+.ph-more { display: flex; flex-direction: column; gap: 12px; }
+.ph-row-ico { flex: none; width: 32px; height: 32px; border-radius: 10px; display: grid; place-items: center; background: var(--surface-2); color: var(--text-dim); }
+.ph-row-ico svg { width: 19px; height: 19px; }
+.ph-row > .ph-row-t { flex: 1; min-width: 0; font-size: 15px; font-weight: 500; }
+.ph-row-v { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 14px; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ph-row-vv { display: flex; align-items: center; gap: 6px; }
+.ph-swatches { display: flex; gap: 3px; }
+.ph-swatches i { width: 12px; height: 12px; border-radius: 6px; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text) 16%, transparent); }
+
+/* A short phone keeps all of the Times tab, a little tighter, so the list
+   under it still shows several rows. */
+@media (max-height: 780px) {
+  #ph-times { gap: 10px; }
+  .ph-card { padding: 9px 12px; }
+  .ph-card-v { font-size: 23px; margin-top: 2px; }
+  .ph-trend { padding: 10px 12px 10px; }
+  .ph-trend-head { margin-bottom: 6px; }
+  .ph-trend-svg { height: 60px; }
+}
 
 /* ---------------- sheets the shell opens ---------------- */
 .ph-ev-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }

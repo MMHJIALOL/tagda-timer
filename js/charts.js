@@ -125,6 +125,65 @@ export function renderMiniTrend(svg, solves) {
 }
 
 /* ---------------------------------------------------------
+   The phone's trend card (Times tab)
+   ---------------------------------------------------------
+   The last few singles as dots, the rolling ao5 through them as a line, the
+   session's best single ringed and a DNF drawn as a cross along the top, over
+   a few labelled gridlines. Small enough to read at a glance; the stats drawer
+   behind "Charts" has everything else. Colours come from classes, so the
+   theme decides them (css/phone.css). */
+export function renderDotTrend(svg, solves, { count = 22, width = 326, height = 84 } = {}) {
+  svg.replaceChildren();
+  svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+  const all = solves.map(eff);
+  const from = Math.max(0, solves.length - count);
+  const recent = all.slice(from);
+  const finite = recent.filter(v => v !== DNF);
+  if (finite.length < 2) return false;
+
+  const ao = rollingSeries(solves, 5).slice(from);
+  const span = [...finite, ...ao.filter(v => v !== null && v !== DNF)];
+  let lo = Math.min(...span), hi = Math.max(...span);
+  const moves = solves.some(isMoveResult);
+  const unit = moves ? 1 : 1000;
+  // Gridlines on round numbers: a step that gives two or three lines.
+  const steps = [0.1, 0.2, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300].map(s => s * unit);
+  const step = steps.find(s => (hi - lo) / s <= 3) || steps.at(-1);
+  lo = Math.floor(lo / step) * step; hi = Math.ceil(hi / step) * step;
+  if (hi === lo) hi = lo + step;
+  const top = 10, bottom = height - 6, right = width - 26;
+  const x = (i) => 4 + (i / Math.max(1, recent.length - 1)) * (right - 8);
+  const y = (v) => bottom - ((v - lo) / (hi - lo)) * (bottom - top);
+  const label = (v) => {
+    if (moves) return String(Math.round(v));
+    const s = v / 1000;
+    if (s >= 60) return `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`;
+    return step < 1000 ? s.toFixed(1) : String(Math.round(s));
+  };
+  for (let v = lo + step; v < hi + step / 2; v += step) {
+    svg.append(svgEl('line', { class: 'dt-grid', x1: 0, x2: right, y1: y(v), y2: y(v) }));
+    const tx = svgEl('text', { class: 'dt-tick', x: width, y: y(v) + 3.5, 'text-anchor': 'end' });
+    tx.textContent = label(v);
+    svg.append(tx);
+  }
+  const line = [];
+  ao.forEach((v, i) => { if (v !== null && v !== DNF) line.push([x(i), y(v)]); });
+  if (line.length > 1) svg.append(svgEl('path', { class: 'dt-ao', d: path(line) }));
+  const best = Math.min(...all.filter(v => v !== DNF));
+  recent.forEach((v, i) => {
+    if (v === DNF) {
+      const cx = x(i), cy = top - 4;
+      svg.append(svgEl('path', { class: 'dt-dnf', d: `M${cx - 3} ${cy - 3}l6 6M${cx + 3} ${cy - 3}l-6 6` }));
+    } else if (v === best) {
+      svg.append(svgEl('circle', { class: 'dt-pb', cx: x(i), cy: y(v), r: 4.2 }));
+    } else {
+      svg.append(svgEl('circle', { class: 'dt-dot', cx: x(i), cy: y(v), r: 2.4 }));
+    }
+  });
+  return true;
+}
+
+/* ---------------------------------------------------------
    Full trend chart (stats drawer) with hover scrub
    --------------------------------------------------------- */
 /**
