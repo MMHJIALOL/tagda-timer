@@ -2425,6 +2425,12 @@ export const GH_HANDLE = 'MMHJIALOL';
 export const GH_PROFILE = `https://github.com/${GH_HANDLE}`;
 export const IG_PROFILE_URL = IG_PROFILE;
 export const AVATAR = 'assets/ishaan.jpg';
+/* Ko-fi rather than Buy Me a Coffee: it takes nothing from one-off tips, and
+   it pays out through PayPal, which can receive from abroad in India. A plain
+   link, not Ko-fi's widget script — that would load third-party JS on every
+   visit to a page people leave open while they practise. */
+const KOFI_HANDLE = 'tagdatimer_ishaan';
+const KOFI_URL = `https://ko-fi.com/${KOFI_HANDLE}`;
 
 /** The raceName that marks a leaderboard/room row as the site owner's — see ownercard.js. */
 export const OWNER_NAME = 'cubingngagng';
@@ -2469,6 +2475,12 @@ export function buildAbout(app) {
         arrow(link('Instagram', IG_PROFILE, '@' + IG_HANDLE)),
         arrow(link(t('Latest reels'), IG_REELS, t('always opens on the newest one'))),
         arrow(link('GitHub', GH_PROFILE, '@' + GH_HANDLE)),
+      ),
+
+      group(t('Support the timer'),
+        el('div', { class: 'about-bio', text:
+          t('Tagda Timer is free to use. If it helps your practice, a coffee helps pay for the hosting and sync that keep it running.') }),
+        arrow(link(t('Buy me a coffee on Ko-fi'), KOFI_URL, t('card or PayPal'))),
       ),
 
       group(t('Featured reel'), reelCard),
