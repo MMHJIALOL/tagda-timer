@@ -25,9 +25,15 @@ import { t } from './i18n.js';
    timer stops (takeClip) and gives it the solve once one is recorded, so a
    misfire thrown away is simply never saved, and nothing has to guess which
    solve a clip belongs to from timestamps. The newest `webcamKeep` (50, 200
-   or 1000) are kept, within about CLIP_BYTES each and never more than half of
-   what the browser lets this site store. A PB single's clip is pinned and
-   never pruned, and so is any clip pinned by hand in the player.
+   or 1000) are kept, within a budget per clip for the quality picked
+   (CLIP_BYTES for Standard and HD, FHD_CLIP_BYTES for Full HD) and never more
+   than half of what the browser lets this site store. A PB single's clip is
+   pinned and never pruned, and so is any clip pinned by hand in the player.
+
+   Quality is Standard (640x480), HD (1280x720) or Full HD (1920x1080). Full
+   HD is offered only where the camera can film it, or where that is not
+   known (canFullHd), and the preview says when it is slower than 24 fps or
+   smaller than asked.
 
    Recorders put a keyframe in only every six or seven seconds, so every seek
    decoded up to 200 frames and stepping back and forth glitched. Chrome takes
@@ -79,14 +85,25 @@ import { tx, wrap } from './db.js';
 import { toast, confirmToast } from './toast.js';
 
 const KEEP_DEFAULT = 200;
-const CLIP_BYTES = 12 * 1024 * 1024;     // room budgeted per kept clip: a long HD solve, comfortably
+const CLIP_BYTES = 12 * 1024 * 1024;     // room budgeted per kept clip at Standard and HD: about a 30 s HD solve
+// At Full HD, with room for a 30 s solve: on a busy test picture its stored
+// copy measured 18.3 MB in Chrome and 21.3 MB in Firefox (HD's 12.6 and 14.5).
+const FHD_CLIP_BYTES = 24 * 1024 * 1024;
 const TAIL_MS = 1000;                    // keep filming this long after the stop
 const MAX_MS = 10 * 60 * 1000;           // a clip stops growing here (multi-blind)
 const IDLE_MS = 10 * 60 * 1000;          // kept on between solves: let go after this long without one
+/* Full HD's 5 Mbps is where the picture stops getting better: against the
+   source, 3 Mbps measured 33.1 dB, 4 Mbps 33.7, 5 Mbps 34.1, 8 Mbps 34.2.
+   `clip`: the room budgeted per kept clip, so Keep 200 still means about 200. */
 const QUALITY = {
-  sd: { width: 640, height: 480, bps: 1_000_000 },
-  hd: { width: 1280, height: 720, bps: 2_500_000 },
+  sd: { width: 640, height: 480, bps: 1_000_000, clip: CLIP_BYTES },
+  hd: { width: 1280, height: 720, bps: 2_500_000, clip: CLIP_BYTES },
+  fhd: { width: 1920, height: 1080, bps: 5_000_000, clip: FHD_CLIP_BYTES },
 };
+/* Full HD is a long side of 1920 and a short side of 1080: a phone held
+   upright films 1080x1920, and that counts. */
+const isFullHd = (w, h) => Math.max(w, h) >= 1920 && Math.min(w, h) >= 1080;
+const LOW_FPS = 24;                      // Full HD slower than this: the preview says so
 
 /* The first format this browser can both record and play back. VP8 first: it
    is the cheapest of them to encode, which is CPU the timer keeps. Safari
@@ -107,6 +124,7 @@ export const replaySupported = () => !!MIME && !!navigator.mediaDevices?.getUser
 
 let app = null;                          // main.js's app: settings, setSetting, persist
 const S = () => app?.settings || {};
+const quality = () => QUALITY[S().webcamQuality] || QUALITY.sd;
 let timer = null;
 let enabled = false;
 let perm = 'unknown';                    // the camera permission: granted | denied | prompt | unknown
@@ -182,7 +200,7 @@ export const keepCount = () => [50, 200, 1000].includes(+S().webcamKeep) ? +S().
    the whole lot (pinned ones included, plus `room` for one about to be written)
    fits the budget. The newest clip is never the one to go. */
 async function prune(room = 0) {
-  let limit = keepCount() * CLIP_BYTES;
+  let limit = keepCount() * quality().clip;
   try {
     const est = await navigator.storage?.estimate?.();
     if (est?.quota) limit = Math.min(limit, est.quota * 0.5);
@@ -343,7 +361,12 @@ async function runFinish() {
       dropFinish();
       const got = await loadClip(id);
       if (!got || got.meta.conv) { done(); return; }
-      const job = await (await media()).prepareFinish(got.blob);
+      // A Full HD clip is encoded again at the recorder's own rate: left to
+      // itself Mediabunny picks about 7.3 Mbps there, a third bigger than the
+      // recording for no difference you can see (33.98 against 33.91 dB, a
+      // 15 s clip 13.2 MB against 9.1). Others get what they always have.
+      const fhd = isFullHd(got.meta.w || 0, got.meta.h || 0);
+      const job = await (await media()).prepareFinish(got.blob, undefined, fhd ? QUALITY.fhd.bps : undefined);
       if (!job) { await patchMeta(id, { conv: 'skip' }); done(); return; }   // nothing here can encode it: the original stays
       finishing = { id, job };
     }
@@ -560,8 +583,15 @@ function soundLine(c) {
 }
 
 async function openCamera(key) {
-  const q = QUALITY[S().webcamQuality] || QUALITY.sd;
-  const video = { width: { ideal: q.width }, height: { ideal: q.height }, frameRate: { ideal: 30 } };
+  const q = quality();
+  // Ideals only, never min or exact: a camera that cannot give the size gives
+  // its best rather than failing. Full HD leaves the frame rate out. With an
+  // ideal of 30 there, a webcam that films 1080p only at 5 to 15 fps is
+  // handed over as 720p at 30, quietly; without it, it comes back as Full HD
+  // at its real rate (the browsers lean to 30 among sizes that fit), and the
+  // preview says how slow that is.
+  const video = { width: { ideal: q.width }, height: { ideal: q.height },
+    ...(q === QUALITY.fhd ? {} : { frameRate: { ideal: 30 } }) };
   const gum = (extra) => navigator.mediaDevices.getUserMedia({ video: { ...video, ...extra }, audio: false });
   const want = S().webcamDevice || '';
   // The mic opens alongside the camera, not after it: the clip cannot start
@@ -579,6 +609,43 @@ async function openCamera(key) {
     micP.then(m => stopStream(m.stream));
     throw err;
   }
+}
+
+/* Whether a camera can film Full HD: true, false, or null for not known yet.
+   The largest size it reports (getCapabilities: Chromium browsers, Safari,
+   and current Firefox, 157 at least), else, when Full HD was asked for, the
+   size it sent.
+   Remembered per camera as picked in Settings, so the Quality row knows
+   before the camera is open again. */
+const fullHdKnown = new Map();
+function canFullHd(c, track) {
+  let caps = {};
+  try { caps = track.getCapabilities?.() || {}; } catch { /* not this browser */ }
+  c.maxW = caps.width?.max || 0;
+  c.maxH = caps.height?.max || 0;
+  const id = S().webcamDevice || '';
+  if (c.maxW && c.maxH) c.fhd = isFullHd(c.maxW, c.maxH);
+  else if (quality() === QUALITY.fhd && c.w && c.h) c.fhd = isFullHd(c.w, c.h);
+  else c.fhd = c.missing ? null : fullHdKnown.get(id) ?? null;
+  if (c.fhd !== null && !c.missing) fullHdKnown.set(id, c.fhd);
+}
+
+/** For the Quality row: can the picked camera film Full HD (null: not known). */
+export function fullHdSupport() {
+  if (cam && !cam.missing) return cam.fhd;
+  return fullHdKnown.get(S().webcamDevice || '') ?? null;
+}
+
+/* The line under the preview, when Full HD is picked and is not what the
+   camera is giving: too slow, or smaller. */
+function fullHdLine(c) {
+  if (quality() !== QUALITY.fhd || !c.w || !c.h) return '';
+  if (isFullHd(c.w, c.h)) {
+    return c.fps && c.fps < LOW_FPS ? t('Full HD runs at {n} fps on this camera. HD is smoother', { n: Math.round(c.fps) }) : '';
+  }
+  if (c.fhd) return t('This camera sent {size} instead of Full HD', { size: `${c.w}×${c.h}` });
+  const most = c.maxW && c.maxH ? `${c.maxW}×${c.maxH}` : `${c.w}×${c.h}`;
+  return t('This camera tops out at {size}', { size: most });
 }
 
 async function openVideo(key, gum, want) {
@@ -612,6 +679,7 @@ async function openVideo(key, gum, want) {
     lat: 0,
     group: st.groupId || '',
   };
+  canFullHd(c, track);
   // The handler property, not addEventListener: Firefox delivered an 'ended'
   // to one and not the other in testing. begin() also checks readyState, for
   // a browser that says nothing at all.
@@ -801,9 +869,19 @@ function begin() {
   }).catch((err) => { r.resolve(null); failed(err); });
 }
 
+/* The size asked for is only an ideal: a webcam that tops out at 720p sends
+   720p with Full HD picked. That picture is recorded at HD's rate (or
+   Standard's), not at Full HD's for a picture less than half the size.
+   Standard and HD keep their own rates whatever arrives, as they always have. */
+function bitrate(c) {
+  const q = quality();
+  if (q !== QUALITY.fhd || !c.w || !c.h || isFullHd(c.w, c.h)) return q.bps;
+  return Math.max(c.w, c.h) > QUALITY.sd.width ? QUALITY.hd.bps : QUALITY.sd.bps;
+}
+
 function startRecorder(r, c) {
   const make = (audio) => new MediaRecorder(audio ? new MediaStream([c.track, audio]) : c.stream, {
-    mimeType: audio ? MIME_AV : MIME, videoBitsPerSecond: (QUALITY[S().webcamQuality] || QUALITY.sd).bps,
+    mimeType: audio ? MIME_AV : MIME, videoBitsPerSecond: bitrate(c),
     ...(audio ? { audioBitsPerSecond: MIC_BPS } : {}),
     // A keyframe every half second makes seeking cheap. Chrome honours it;
     // others ignore it, and the clip is converted after the solve instead.
@@ -1065,6 +1143,8 @@ export function attachPreview(video, status, onAllow, area = video, sound = null
     if (c) {
       const size = c.w && c.h ? ` · ${c.w}×${c.h}` : '';
       status.append(`${cameraName(c.label)}${size} · ${Math.round(c.fps)} fps`);
+      const fhd = fullHdLine(c);
+      if (fhd) status.append(el('span', { class: 'rp-preview-warn', text: fhd }));
     } else if (camP) {
       status.append(t('Starting the camera…'));
     } else if (err && err.name !== 'AbortError') {

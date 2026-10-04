@@ -1671,6 +1671,8 @@ body:has(#timer-display.state-running) #goal-line { opacity: 0; }
 /* As tall as its tallest state (the "Turn it on" button), so the rows under it
    do not jump when the camera comes on, under a pointer about to click one. */
 .rp-preview-status { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-height: 30px; font-size: .72rem; color: var(--text-faint); }
+/* Full HD picked and not what the camera gives (too slow, or smaller): its own line, in the warning colour. */
+.rp-preview-warn { flex-basis: 100%; color: var(--warn); }
 /* The sound line sits tight under the camera line: one block saying what is filmed and heard. */
 .rp-sound-status { margin-top: -6px; }
 .rp-settings .ghost-btn[disabled] { opacity: .35; pointer-events: none; }
