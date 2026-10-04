@@ -363,3 +363,360 @@ body.recon-open #bg-root { opacity: 0; }
   max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .rc-pickrow i { font-size: .6rem; font-style: normal; color: var(--accent-2); }
+
+/* ===========================================================
+   Phones (js/phone.js decides; this is the same query)
+
+   A layout of its own rather than the desktop one squeezed: the cube at the
+   top, never scrolled away; one scroll area under it; the bar or the move
+   pad at the bottom. The desktop panels are still in the DOM (hidden) and
+   untouched — js/recon.js moves the few live pieces they share across.
+   =========================================================== */
+.rc-ph { display: none; }
+
+@media (max-width: 640px) {
+  /* In by sliding, never by fading: a full-screen panel that starts at
+     opacity 0 stays invisible for as long as the first frames stall, and the
+     first open here is when the solver and the cube are both loading. */
+  #recon.rc-phone {
+    background: var(--bg);
+    animation: rcPhoneIn 280ms var(--ease) both;
+  }
+  #recon.rc-phone > .rc-top,
+  #recon.rc-phone > .rc-body { display: none; }
+
+  #recon.rc-phone .rc-ph {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column;
+    padding-top: env(safe-area-inset-top);
+    color: var(--text); font-family: var(--font-ui); font-size: 15px; line-height: 1.35;
+  }
+  .rc-ph svg {
+    display: block; width: 22px; height: 22px;
+    fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round;
+  }
+  .rc-ph svg .fill, .sheet svg .fill { fill: currentColor; stroke: none; }
+  .rc-ph button { -webkit-tap-highlight-color: transparent; }
+  .rc-ph button:focus-visible, .rc-ph [role="button"]:focus-visible, .rc-ph [role="slider"]:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 2px;
+  }
+  .rc-ph [hidden] { display: none !important; }
+  /* A small thing to look at, a 44px thing to hit. */
+  .rc-ph .hit, .rc-ph-chip, .rc-ph-mini, .rc-ph .rc-slots .rc-rot { position: relative; }
+  .rc-ph-chip::after, .rc-ph-mini::after, .rc-ph .rc-slots .rc-rot::after {
+    content: ''; position: absolute; inset: -6px -2px;
+  }
+
+  /* ---- header ---- */
+  .rc-ph-head {
+    flex: none; display: flex; align-items: center; justify-content: space-between;
+    height: 48px; padding: 0 6px;
+  }
+  .rc-ph-icon {
+    flex: none; width: 44px; height: 44px; border-radius: 22px;
+    display: grid; place-items: center; color: var(--text);
+  }
+  .rc-ph-icon:active { background: color-mix(in srgb, var(--text) 8%, transparent); }
+  .rc-ph-head .rc-ph-icon:first-child svg { width: 24px; height: 24px; }
+  .rc-ph-titles { min-width: 0; text-align: center; line-height: 1.2; }
+  .rc-ph-titles h1 { margin: 0; font-size: 17px; font-weight: 600; letter-spacing: -.01em; }
+  .rc-ph-sub {
+    margin-top: 2px; font-size: 12.5px; color: var(--text-dim);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+
+  /* ---- the cube ---- */
+  .rc-ph-cube { position: relative; flex: none; height: 222px; }
+  .rc-ph-cube .rc-cube { position: absolute; inset: 0; min-height: 0; display: grid; place-items: center; }
+  .rc-ph-cube .rc-cube twisty-player { width: 100%; height: 100%; }
+  .rc-ph-chip {
+    position: absolute; left: 16px; top: 8px; z-index: 3;
+    display: flex; align-items: center; gap: 7px; max-width: calc(100% - 96px);
+    height: 32px; padding: 0 12px 0 7px; border-radius: 16px;
+    background: var(--surface); border: 1px solid var(--border);
+    font-size: 12.5px; font-weight: 600; color: var(--text);
+  }
+  .rc-ph-chip-txt { display: block; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rc-ph-chip-txt::first-letter { text-transform: uppercase; }
+  .rc-ph-dot {
+    flex: none; width: 18px; height: 18px; border-radius: 9px;
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, #000 25%, transparent);
+  }
+  .rc-ph-dot.auto {
+    background: conic-gradient(#fff 0 60deg, #ffe100 0 120deg, #00b04a 0 180deg, #0051ba 0 240deg, #ec0000 0 300deg, #ff8b00 0);
+  }
+  .rc-ph-tools {
+    position: absolute; right: 12px; bottom: 6px; z-index: 3;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .rc-ph-round {
+    width: 44px; height: 44px; border-radius: 22px;
+    display: grid; place-items: center;
+    background: var(--surface); border: 1px solid var(--border);
+    color: var(--text-dim); font-size: 12.5px; font-weight: 700;
+  }
+  .rc-ph-round svg { width: 19px; height: 19px; }
+  .rc-ph-round.on { color: var(--accent-text); background: var(--accent-tint); border-color: var(--accent); }
+  .rc-ph-movechip, .rc-ph-readout { display: none; }
+
+  /* ---- one scroll area ---- */
+  .rc-ph-scroll {
+    flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+    padding-bottom: 16px; scroll-padding-bottom: 16px;
+  }
+
+  /* ---- phase strip ---- */
+  .rc-ph-strip {
+    list-style: none; margin: 4px 16px 0; padding: 0;
+    display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px;
+  }
+  .rc-ph-strip li { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  .rc-ph-strip .bar { height: 4px; border-radius: 2px; background: var(--border); }
+  .rc-ph-strip .name {
+    font-size: 10.5px; font-weight: 600; color: var(--text-faint);
+    text-align: center; white-space: nowrap; overflow: hidden;
+  }
+  .rc-ph-strip li.done .bar { background: var(--accent-2); }
+  .rc-ph-strip li.done .name { color: var(--text-dim); }
+  .rc-ph-strip li.now .bar { background: var(--accent); }
+  .rc-ph-strip li.now .name { color: var(--text); font-weight: 700; }
+
+  /* ---- solution so far ---- */
+  .rc-ph-sol {
+    margin: 12px 16px 0; padding: 10px 6px 12px 14px;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 18px;
+  }
+  .rc-ph-sol-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .rc-ph-lbl { font-size: 13px; font-weight: 600; color: var(--text-dim); }
+  .rc-ph-sol-tools { display: flex; align-items: center; gap: 2px; }
+  .rc-ph-count { margin-right: 4px; font-family: var(--font-mono); font-size: 13px; color: var(--text-dim); white-space: nowrap; }
+  .rc-ph-mini {
+    width: 36px; height: 36px; border-radius: 18px;
+    display: grid; place-items: center; color: var(--text-dim);
+  }
+  .rc-ph-mini svg { width: 18px; height: 18px; }
+  .rc-ph-mini:active { background: color-mix(in srgb, var(--text) 8%, transparent); }
+  .rc-ph-moves {
+    margin: 2px 8px 0 0;
+    font-family: var(--font-mono); font-size: 14.5px; line-height: 1.65; word-spacing: .1em;
+    overflow-wrap: anywhere;
+  }
+  .rc-ph-moves .rot { color: var(--text-faint); }
+  .rc-ph-moves .sep { color: var(--accent-2); }
+  .rc-ph-moves .hl { background: var(--accent-tint); color: var(--text); border-radius: 5px; padding: 1px 4px; }
+  .rc-ph-moves .rc-ph-empty { font-family: var(--font-ui); font-size: 13.5px; color: var(--text-faint); word-spacing: normal; }
+  .rc-ph-step { border-radius: 6px; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+  .rc-ph-step.sel { background: var(--accent-tint); box-shadow: 0 0 0 2px var(--accent-tint); }
+  .rc-ph-moves .caret {
+    display: inline-block; width: 2px; height: 17px; margin-left: 4px;
+    vertical-align: -3px; border-radius: 1px; background: var(--accent);
+  }
+  .rc-ph-stepbar {
+    display: flex; align-items: center; gap: 6px; margin: 8px 8px 0 0;
+    padding-top: 8px; border-top: 1px solid var(--border);
+  }
+  .rc-ph-stepname { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; color: var(--text-dim); }
+  .rc-ph-stepbtn {
+    display: flex; align-items: center; gap: 6px;
+    height: 44px; padding: 0 14px; border-radius: 13px;
+    background: var(--surface-2); font-size: 14px; font-weight: 600; color: var(--text);
+  }
+  .rc-ph-stepbtn svg { width: 15px; height: 15px; }
+  .rc-ph-stepbtn.danger { color: var(--danger); }
+
+  /* ---- the headline: how far to go ---- */
+  .rc-ph .rc-dist {
+    display: flex; align-items: baseline; gap: 8px;
+    margin: 16px 20px 0; padding: 0; border: 0; background: none; border-radius: 0;
+  }
+  .rc-ph .rc-dist .n { font-size: 26px; line-height: 1; }
+  .rc-ph .rc-dist .lbl { font-size: 14.5px; color: var(--text); line-height: 1.35; }
+  .rc-ph .rc-dist.worse { background: none; }
+
+  /* ---- slot chips ---- */
+  .rc-ph .rc-slots { margin: 10px 16px 0; gap: 6px; }
+  .rc-ph .rc-slots .rc-rots-lbl { display: none; }
+  .rc-ph .rc-slots .rc-rot {
+    min-width: 0; height: 34px; padding: 0 13px; border-radius: 11px;
+    font-family: var(--font-ui); font-size: 13px; font-weight: 700; text-transform: capitalize;
+    background: var(--surface); border: 1px solid var(--border); color: var(--text);
+  }
+  .rc-ph .rc-slots .rc-rot.on {
+    background: var(--accent-tint); border: 1.5px solid var(--accent); color: var(--text);
+  }
+  .rc-ph .rc-slots .rc-rot:disabled {
+    opacity: 1; background: transparent; border: 1px dashed var(--border);
+    color: var(--text-faint); text-decoration: line-through;
+  }
+
+  /* ---- suggestion cards ---- */
+  .rc-ph .rc-sugs { flex: none; overflow: visible; max-height: none; gap: 8px; padding: 10px 16px 0; }
+  .rc-ph .rc-sugs > .rc-empty { padding: 6px 4px; font-size: 13.5px; }
+  .rc-sug.ph {
+    display: block; padding: 0; cursor: default;
+    border-radius: 18px; background: var(--surface); border: 1px solid var(--border);
+  }
+  .rc-sug.ph:hover { background: var(--surface); border-color: var(--border); }
+  .rc-sug.ph.open { border: 1.5px solid var(--accent); }
+  .rc-sug.ph.zb { border-color: color-mix(in srgb, var(--accent-2) 45%, transparent); }
+  .rc-sug-main {
+    width: 100%; display: flex; align-items: center; gap: 12px;
+    padding: 12px 14px; text-align: left; color: var(--text);
+  }
+  .rc-sug-txt { flex: 1; min-width: 0; }
+  .rc-sug.ph .alg {
+    display: block; font-family: var(--font-mono); font-size: 16px; font-weight: 600;
+    word-spacing: .14em; color: var(--text); overflow-wrap: anywhere;
+  }
+  .rc-sug.ph .why { display: block; margin-top: 5px; font-size: 12.5px; color: var(--text-dim); }
+  .rc-sug.ph .len { font-family: var(--font-mono); font-size: 19px; font-weight: 700; color: var(--text); }
+  .rc-sug.ph.best .len, .rc-sug.ph.zb .len { color: var(--accent-2); }
+  .rc-sug-acts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 0 14px 12px; }
+  .rc-sug-play, .rc-sug-use {
+    height: 44px; border-radius: 13px;
+    display: flex; align-items: center; justify-content: center; gap: 7px;
+    font-size: 14px; font-weight: 600;
+  }
+  .rc-sug-play { background: var(--surface-2); color: var(--text); }
+  .rc-sug-play svg { width: 16px; height: 16px; }
+  .rc-sug-use { background: var(--accent); color: var(--on-accent); font-weight: 700; }
+  .rc-ph .rc-more { margin: 12px 16px 0; font-size: 12px; }
+
+  /* ---- the bars at the bottom ---- */
+  .rc-ph-bar {
+    flex: none;
+    padding: 12px 16px max(16px, calc(8px + env(safe-area-inset-bottom)));
+    background: var(--bg); border-top: 1px solid var(--border);
+  }
+  .rc-ph-fieldbox {
+    display: flex; align-items: center; gap: 10px;
+    height: 52px; padding: 0 16px; border-radius: 16px;
+    background: var(--surface); border: 1px solid var(--border); color: var(--text-dim);
+    cursor: text;
+  }
+  .rc-ph-fieldico svg { width: 21px; height: 21px; }
+  .rc-ph-field {
+    flex: 1; min-width: 0; height: 100%; border: 0; outline: none; background: none;
+    color: var(--text); font: inherit; font-size: 15px; caret-color: transparent;
+  }
+  .rc-ph-field::placeholder { color: var(--text-dim); }
+  .rc-ph-rbar { display: grid; grid-template-columns: 1fr 1fr 1.25fr; gap: 8px; }
+  .rc-ph-rbar.two { grid-template-columns: 1fr 1fr; }
+  .rc-ph-rb {
+    height: 50px; border-radius: 15px;
+    display: flex; align-items: center; justify-content: center; gap: 7px;
+    background: var(--surface-2); color: var(--text); font-size: 14px; font-weight: 600;
+  }
+  .rc-ph-rb svg { width: 17px; height: 17px; }
+  .rc-ph-rb.primary { background: var(--accent); color: var(--on-accent); font-weight: 700; font-size: 14.5px; }
+
+  /* ---- the pad is up: the cube becomes a thumbnail beside the last move ---- */
+  .rc-ph.pad-open .rc-ph-cube {
+    height: 132px; display: flex; align-items: center; gap: 12px; padding: 0 16px;
+  }
+  .rc-ph.pad-open .rc-ph-cube .rc-cube { position: relative; inset: auto; flex: none; width: 128px; height: 128px; }
+  .rc-ph.pad-open .rc-ph-chip, .rc-ph.pad-open .rc-ph-tools { display: none; }
+  .rc-ph.pad-open .rc-ph-readout { display: block; flex: 1; min-width: 0; }
+  .rc-ph-ro-lbl { font-size: 12.5px; font-weight: 600; color: var(--text-dim); }
+  .rc-ph-ro-move {
+    font-family: var(--font-mono); font-size: 42px; font-weight: 700; line-height: 1.1;
+    letter-spacing: -.03em; color: var(--accent-text);
+  }
+  .rc-ph-ro-note {
+    display: flex; align-items: center; gap: 6px; margin-top: 6px;
+    font-size: 13.5px; font-weight: 600; color: var(--accent-2);
+  }
+  .rc-ph-ro-note svg { width: 16px; height: 16px; stroke-width: 2.2; }
+
+  /* ---- replay ---- */
+  .rc-ph.replaying .rc-ph-cube { height: 206px; }
+  .rc-ph.replaying .rc-ph-chip, .rc-ph.replaying .rc-ph-tools { display: none; }
+  .rc-ph.replaying .rc-ph-movechip {
+    position: absolute; left: 16px; top: 8px; z-index: 3;
+    display: flex; align-items: center; height: 30px; padding: 0 11px; border-radius: 15px;
+    background: var(--surface); border: 1px solid var(--border);
+    font-family: var(--font-mono); font-size: 12.5px; font-weight: 600; color: var(--text);
+  }
+  .rc-ph-scrubwrap { padding: 0 20px; }
+  .rc-ph-scrub {
+    position: relative; height: 44px; display: flex; align-items: center;
+    touch-action: none; cursor: pointer;
+  }
+  .rc-ph-track { display: flex; gap: 3px; width: 100%; }
+  .rc-ph-track .seg {
+    flex: 1 1 0; height: 6px; border-radius: 3px;
+    background: linear-gradient(90deg, var(--accent-2) var(--fill, 0%), var(--border) var(--fill, 0%));
+  }
+  .rc-ph-track .seg.done { background: var(--accent-2); }
+  .rc-ph-thumb {
+    position: absolute; top: 50%; left: 0; width: 20px; height: 20px; margin: -10px 0 0 -10px;
+    border-radius: 10px; background: var(--text);
+    box-shadow: 0 0 0 4px var(--accent-tint), 0 2px 6px rgba(0, 0, 0, .45);
+    pointer-events: none;
+  }
+  .rc-ph-transport { display: flex; align-items: center; justify-content: space-between; margin-top: 0; }
+  .rc-ph-speed { width: 44px; height: 44px; border-radius: 12px; font-size: 13px; font-weight: 700; color: var(--text-dim); }
+  .rc-ph-tbtn { width: 44px; height: 44px; border-radius: 22px; display: grid; place-items: center; color: var(--text); }
+  .rc-ph-tbtn:active, .rc-ph-speed:active { background: color-mix(in srgb, var(--text) 8%, transparent); }
+  .rc-ph-play {
+    width: 58px; height: 58px; border-radius: 29px;
+    display: grid; place-items: center; background: var(--accent); color: var(--on-accent);
+  }
+  .rc-ph-play svg { width: 26px; height: 26px; }
+  .rc-ph-table {
+    margin: 12px 16px 0; overflow: hidden;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 20px;
+  }
+  .rc-ph-row {
+    width: 100%; min-height: 44px; display: grid; grid-template-columns: 70px minmax(0, 1fr) 28px; gap: 10px; align-items: start;
+    padding: 10px 14px; text-align: left; color: var(--text);
+  }
+  .rc-ph-row + .rc-ph-row { border-top: 1px solid var(--border); }
+  .rc-ph-row .ph { font-size: 12.5px; font-weight: 700; color: var(--text-dim); line-height: 21px; }
+  .rc-ph-row .case { display: block; font-size: 11.5px; font-weight: 500; line-height: 1.2; color: var(--text-dim); }
+  .rc-ph-row .mv { font-family: var(--font-mono); font-size: 14px; line-height: 1.5; word-spacing: .08em; overflow-wrap: anywhere; }
+  .rc-ph-row .mv .rot { color: var(--text-faint); }
+  .rc-ph-row .n { font-family: var(--font-mono); font-size: 14px; line-height: 21px; color: var(--text-dim); text-align: right; }
+  .rc-ph-row.now { background: var(--accent-tint); }
+  .rc-ph-row.now .ph { color: var(--accent-text); }
+  .rc-ph-stats { margin-top: 10px; text-align: center; font-size: 13px; color: var(--text-dim); }
+
+  /* ---- sheets this panel opens ---- */
+  .rc-ph-note { margin: 0 4px; font-size: 13px; line-height: 1.45; color: var(--text-dim); }
+  .rc-ph-rotgrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .rc-ph-rotbtn {
+    height: 50px; border-radius: 14px; background: var(--surface); border: 1px solid var(--border);
+    font-family: var(--font-mono); font-size: 18px; font-weight: 600; color: var(--text);
+  }
+  .rc-ph-rotbtn:active { background: var(--surface-2); }
+  .rc-ph-method {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 15px;
+  }
+  .rc-ph-methodbtn {
+    min-height: 52px; border-radius: 11px; border: 1px solid transparent;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
+    color: var(--text-dim);
+  }
+  .rc-ph-methodbtn b { font-size: 15px; font-weight: 700; }
+  .rc-ph-methodbtn small { font-size: 11.5px; color: var(--text-faint); }
+  .rc-ph-methodbtn.on { background: var(--accent-tint); border-color: var(--accent); color: var(--text); }
+  .rc-ph-methodbtn.on small { color: var(--text-dim); }
+  .rc-ph-swatches { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+  .rc-ph-swatch {
+    width: 44px; height: 44px; border-radius: 22px; display: grid; place-items: center;
+  }
+  .rc-ph-swatch span {
+    width: 30px; height: 30px; border-radius: 15px;
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, #000 25%, transparent);
+  }
+  .rc-ph-swatch.on span { box-shadow: 0 0 0 2px var(--surface-2), 0 0 0 4px var(--accent); }
+  .rc-ph-swatch:disabled { opacity: .25; }
+  .rc-ph-swatch.auto {
+    width: auto; min-width: 56px; height: 44px; margin-left: 4px; padding: 0 14px; border-radius: 22px;
+    background: var(--surface); border: 1px solid var(--border);
+    font-size: 13px; font-weight: 600; color: var(--text-dim);
+  }
+  .rc-ph-swatch.auto.on { color: var(--text); border-color: var(--accent); background: var(--accent-tint); }
+}
+@keyframes rcPhoneIn { from { transform: translateY(100%); } }

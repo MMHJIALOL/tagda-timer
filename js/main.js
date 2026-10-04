@@ -417,8 +417,14 @@ function reconLibrary() {
     scramble: s.scramble,
     moves: s.recon || s.fmcSolution || '',
     save: (moves) => { s.recon = moves; Solves.put(s).catch(() => {}); },
+    time: reconTime(s),
   }));
 }
+
+/* The solving time, for turns per second in the replay. Not for a relay (the
+   time is the whole relay, the reconstruction one leg) or a move-count result. */
+const reconTime = (s, leg = null) =>
+  (!leg && !isMoveResult(s) && !s.relay && Number.isFinite(s.timeMs) ? s.timeMs : null);
 
 /** Reconstruct a recorded solve, remembering the work on the solve itself. */
 function reconstructSolve(solve, scramble = null) {
@@ -434,6 +440,7 @@ function reconstructSolve(solve, scramble = null) {
     moves: solve.recon || solve.fmcSolution || '',
     onSave: (moves) => { solve.recon = moves; Solves.put(solve).catch(() => {}); },
     library: reconLibrary(),
+    time: reconTime(solve, scramble),
   });
 }
 app.reconstructSolve = reconstructSolve;
