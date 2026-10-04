@@ -429,8 +429,15 @@ video is recorded live instead, which takes as long as the clip (and is a WebM i
 Pick **any camera** the device can see: a phone's front or back camera, or a phone connected
 to a laptop as a webcam (Phone Link, Continuity Camera, DroidCam). The camera panel shows a
 live preview to aim it with. If the chosen camera is unplugged, the next attempt is filmed on
-another one and says so, and plugging it back switches back. Standard (640×480) or HD
-(1280×720).
+another one and says so, and plugging it back switches back.
+
+Quality is **Standard** (640×480), **HD** (1280×720) or **Full HD** (1920×1080). Full HD is
+offered when the camera can film it (or the browser cannot tell), and a phone held upright
+(1080×1920) counts. HD takes about three times the space of Standard and Full HD about four
+and a half (a 30-second solve is roughly 20 MB at Full HD), and the newest 50, 200 or 1000 are
+kept either way. The saved videos are the same sizes whatever you film at, but from a Full HD
+clip the picture in them is sharp instead of stretched. If Full HD runs below 24 fps on your
+camera, or the camera sends less than Full HD, the line under the preview says so.
 
 Clips stay **on this device only**, in their own database, never synced. Keep the newest
 **50, 200 or 1000**; a **PB single's clip is kept for good**, and so is any you mark
