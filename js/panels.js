@@ -26,7 +26,7 @@ import { DEFAULT_SPEFFZ_MAP, DEFAULT_BLD, CORNER_STICKER_KEYS, EDGE_STICKER_KEYS
          pieceName, samePiece, diagnose } from './bldtrace.js';
 import { FACES } from './cube3.js';
 import { enableReplay, enableSound, requestCamera, attachPreview, onCamerasChanged, listCameras, listMics, cameraName,
-         replayUsage, clearReplays, hasReplay, openReplay, keepCount, replaySupported } from './replay.js';
+         replayUsage, clearReplays, hasReplay, openReplay, keepCount, replaySupported, fullHdSupport } from './replay.js';
 
 /* ---------------- drawer shell ---------------- */
 
@@ -218,13 +218,33 @@ export function webcamControls(app, { onWatch = null, compact = false } = {}) {
       note(t('off, the copy that goes up is silent')));
     shareSoundRow.hidden = !S.webcamSound;
 
-    // Labels arrive with permission, and phones come and go as webcams.
+    // Full HD only where the camera can film it, or where that is not known
+    // yet, and always while it is the one picked: plugging the Full HD camera
+    // back in should just work, and the row never shows nothing chosen.
+    const fullHdShown = () => S.webcamQuality === 'fhd' || fullHdSupport() !== false;
+    let fullHd = fullHdShown();
+    const qualityRow = () => row(t('Quality'), chips([
+      { value: 'sd', label: t('Standard') },
+      { value: 'hd', label: 'HD' },
+      ...(fullHd ? [{ value: 'fhd', label: t('Full HD') }] : []),
+    ], S.webcamQuality || 'sd', v => set('webcamQuality', v)),
+    note(t('HD is sharper and takes about three times the space, Full HD about four and a half. Full HD shows up when the camera can film it')));
+    let quality = qualityRow();
+
+    // Labels arrive with permission, and phones come and go as webcams. The
+    // Quality row follows the camera that opens.
     let placed = false;
     onCamerasChanged(() => {
       if (pick.isConnected) placed = true;
       else if (placed) return false;
       fill();
       fillMics();
+      if (fullHdShown() !== fullHd) {
+        fullHd = !fullHd;
+        const next = qualityRow();
+        quality.replaceWith(next);
+        quality = next;
+      }
       return true;
     });
 
@@ -253,10 +273,7 @@ export function webcamControls(app, { onWatch = null, compact = false } = {}) {
       row(t('Camera'), pick, note(t('anything this device can film with, a phone connected as a webcam included'))),
       row(t('Record sound'), soundSw, compact ? t('it hears voices too') : t('the sound of the solve goes in the replay and the saved videos. It hears voices too, so it starts off')),
       micRow,
-      row(t('Quality'), chips([
-        { value: 'sd', label: t('Standard') },
-        { value: 'hd', label: 'HD' },
-      ], S.webcamQuality || 'sd', v => set('webcamQuality', v)), note(t('HD is sharper and takes about two and a half times the space'))),
+      quality,
       row(t('Camera on between solves'), toggle(S.webcamKeepOn, v => set('webcamKeepOn', v)),
         compact ? t('otherwise it switches off after each solve')
           : t('off, it switches off after every solve and when you leave the tab, and wakes on your next press. Turn this on if you solve without inspection, so the clip catches the very start')),

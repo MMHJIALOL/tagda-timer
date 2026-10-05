@@ -54,7 +54,10 @@
           }
         },
 
-        "settings": { ".validate": "newData.hasChildren() || !newData.exists()" },
+        "settings": {
+          ".validate": "newData.hasChildren() || !newData.exists()",
+          "avatar": { ".read": "auth != null && (!data.exists() || (data.isString() && data.val().length <= 40000))" }
+        },
         "learn": { ".validate": "newData.hasChildren() || !newData.exists()" },
 
         "gear":        { "$id":   { ".validate": "newData.hasChildren(['id']) && newData.child('id').val() === $id" } },

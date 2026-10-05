@@ -2420,6 +2420,16 @@ section('scramble of the day — whose avatar URL is safe to fetch');
   check('the count board strips a bad photo instead of passing it to an <img>',
     D.rankByCount({ u_a: { n: 2, name: 'Mallory', photo: 'https://evil.example/t.png' } }, null)[0].photo === null
     && D.rankByCount({ u_b: { n: 2, name: 'Real', photo: good } }, null)[0].photo === good);
+
+  /* An uploaded picture (faces.js) is read from the uploader's own settings,
+     which they can write anything into, so it gets the same treatment. */
+  const { safeAvatar, AVATAR_MAX_LEN } = await import('./js/faces.js');
+  const up = 'data:image/webp;base64,UklGRhIAAABXRUJQVlA4TAYAAAAvAAAAAAfQ//73v/+BiOh/AAA=';
+  check('an uploaded picture is kept only as the WebP or JPEG data URL the app makes',
+    safeAvatar(up) === up && safeAvatar(up.replace('webp', 'jpeg')) !== ''
+    && safeAvatar('data:image/svg+xml;base64,PHN2Zz4=') === '' && safeAvatar(good) === ''
+    && safeAvatar(up + '"><script>') === '' && safeAvatar(`data:image/webp;base64,${'A'.repeat(AVATAR_MAX_LEN)}`) === ''
+    && safeAvatar(null) === '' && safeAvatar({}) === '');
 }
 
 section('scramble of the day — ranking the two boards');

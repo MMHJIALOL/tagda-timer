@@ -208,16 +208,16 @@ async function packetTimes(blob) {
  * Pausing rather than cancelling means no work thrown away, and no decoded
  * frames abandoned mid-flight for the garbage collector to find.
  */
-export async function prepareFinish(blob, order = STORE_CODECS) {
+export async function prepareFinish(blob, order = STORE_CODECS, bitrate) {
   const inp = input(blob);
   const track = await inp.getPrimaryVideoTrack();
   if (!track) return null;
-  const enc = await encoder(even(track.displayWidth), even(track.displayHeight), order);
+  const enc = await encoder(even(track.displayWidth), even(track.displayHeight), order, bitrate);
   if (!enc) return null;
   const output = new MB.Output({ format: enc.format, target: new MB.BufferTarget() });
   const conv = await MB.Conversion.init({
     input: inp, output,
-    video: { codec: enc.codec, keyFrameInterval: 0.5, forceTranscode: true },
+    video: { codec: enc.codec, keyFrameInterval: 0.5, forceTranscode: true, ...(bitrate ? { bitrate } : {}) },
     // The sound as recorded: copied, not encoded again (Opus goes in WebM and MP4 alike).
     audio: { forceTranscode: false },
   });
@@ -236,8 +236,8 @@ export async function prepareFinish(blob, order = STORE_CODECS) {
 }
 
 /** The same, start to finish in one go (tests, and anything that cannot be paused). */
-export async function finishClip(blob, signal, order = STORE_CODECS) {
-  const job = await prepareFinish(blob, order);
+export async function finishClip(blob, signal, order = STORE_CODECS, bitrate) {
+  const job = await prepareFinish(blob, order, bitrate);
   if (!job) return null;
   const stop = () => job.cancel();
   signal?.addEventListener('abort', stop);

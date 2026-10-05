@@ -161,7 +161,7 @@ export const DEFAULTS = {
   webcamReplay: false,          // film each attempt (replay.js); asks for the camera when turned on
   webcamDevice: '',             // a deviceId; '' is whatever the browser calls the default camera
   webcamLabel: '',              // its name, to find it again if the id changes
-  webcamQuality: 'sd',          // sd 640x480 | hd 1280x720
+  webcamQuality: 'sd',          // sd 640x480 | hd 1280x720 | fhd 1920x1080
   webcamSound: false,           // record sound with the picture; off by default, it hears voices too
   webcamMic: '',                // a mic's deviceId; '' picks one: the camera's own, else the default (never the Stackmat's)
   webcamMicLabel: '',           // its name, to find it again if the id changes
