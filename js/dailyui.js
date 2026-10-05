@@ -48,13 +48,13 @@ import { t } from './i18n.js';
 
 import { el, fmt } from './util.js';
 import { signIn } from './sync-auth.js';
-import { toast } from './toast.js';
+import { toast, confirmToast } from './toast.js';
 import { formatCountdown, safePhotoUrl, shiftDayId, cleanNote, NOTE_MAX_LEN, dayStartMs } from './daily-net.js';
 import { RACE_EMOJI } from './raceapp.js';
 import { isOwnerName, openOwnerCard } from './ownercard.js';
 // Policy lives with the controller — see the comment on it there.
 import { SHOW_COUNT_BOARD } from './daily.js';
-import { canPlay, playButton, replayKept, shareBox, bindReplays } from './sotd-replays.js';
+import { canPlay, playButton, replayKept, shareBox, bindReplays, dropClip } from './sotd-replays.js';
 import { mountChat } from './sotd-chat.js';
 import { knownFace, lookupFace } from './faces.js';
 
@@ -123,23 +123,34 @@ export function avatar(name, photo, { uid = null, me = false } = {}) {
    The time board — who solved today's scramble fastest
    --------------------------------------------------------- */
 
-const lockedBoard = () => el('div', { class: 'db-locked' },
+const lockedBoard = (text = null) => el('div', { class: 'db-locked' },
   el('div', { class: 'db-locked-icon', text: t('🔒') }),
-  el('div', { class: 'db-locked-text', text:
+  el('div', { class: 'db-locked-text', text: text ||
     t('Submit today’s attempt to unlock the board and the chat. Nobody’s time is visible to you until you have sent your own — that is a database rule, not a setting.') }),
 );
+
+/** Why today's board is shut for somebody whose time an admin removed, or null for the usual reason. */
+export function lockText(ctl) {
+  if (ctl.status?.() === 'removed') {
+    return t('An admin removed your time today, and it was your backup, so the board and the chat stay locked until the reset.');
+  }
+  if (ctl.removal) return t('An admin removed your time. Solve the backup scramble to get back on the board and into the chat.');
+  return null;
+}
 
 /**
  * @param rows      what daily.js's ranked() returned
  * @param revealed  whether this viewer has earned the right to see times
  * @param replays   { dayKey, event, onGone }: put a ▶ on rows with a shared
  *                  replay (sotd-replays.js). Left out, there are none.
+ * @param opts      { remove, locked }: the admin's × on every row (adminRemover),
+ *                  and what the lock says instead of the usual (lockText).
  */
-export function timeBoard(rows, revealed, replays = null) {
-  if (!revealed) return lockedBoard();
+export function timeBoard(rows, revealed, replays = null, { remove = null, locked = null } = {}) {
+  if (!revealed) return lockedBoard(locked);
   if (!rows.length) return el('div', { class: 'db-empty', text: t('Nobody has posted a time yet today.') });
 
-  return el('div', { class: 'db-board' }, rows.map((r, i) => timeRow(r, i, replays)));
+  return el('div', { class: 'db-board' }, rows.map((r, i) => timeRow(r, i, replays, remove)));
 }
 
 /**
@@ -148,8 +159,8 @@ export function timeBoard(rows, revealed, replays = null) {
  * built from the same rows: the `replay` flag on each, nothing listed from
  * storage. Nothing is fetched until a ▶ is pressed.
  */
-export function replaysBoard(rows, revealed, replays, { past = false } = {}) {
-  if (!revealed) return lockedBoard();
+export function replaysBoard(rows, revealed, replays, { past = false, remove = null, locked = null } = {}) {
+  if (!revealed) return lockedBoard(locked);
   if (!replayKept(replays.dayKey)) {
     return el('div', { class: 'db-empty', text: t('Replays are kept for 7 days.') });
   }
@@ -159,12 +170,57 @@ export function replaysBoard(rows, revealed, replays, { past = false } = {}) {
       ? t('Nobody shared a replay that day.')
       : t('Nobody has shared a replay yet today. Turn on webcam replay with the camera button, and yours can be the first.') });
   }
-  return el('div', { class: 'db-board' }, shared.map(([r, i]) => timeRow(r, i, replays)));
+  return el('div', { class: 'db-board' }, shared.map(([r, i]) => timeRow(r, i, replays, remove)));
 }
 
-function timeRow(r, i, replays = null) {
+const timeText = (res) => (res.penalty === 'DNF' ? 'DNF' : fmt(res.timeMs) + (res.penalty === '+2' ? '+' : ''));
+
+const DEL_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7L7 17"/></svg>';
+
+/**
+ * The admin's × on a board row, or null for everybody else: takes that time
+ * off the board after a confirm. On today's board the person gets the backup
+ * scramble as a final attempt, unless the time was already on the backup.
+ * The rules have the final say (firebase.rules.json, `removed/$uid`).
+ *
+ * @param dayKey  the board's day key
+ * @param past    true on a past day's board, where there is no next attempt
+ * @param onDone  after it lands, with the row: a past day's one-shot read has
+ *                no listener to drop the row by itself
+ */
+export function adminRemover(ctl, { dayKey, past = false, onDone = null } = {}) {
+  if (!ctl.admin || !dayKey) return null;
+  const event = ctl.eventId;
+  return async (r) => {
+    const res = r.result || {};
+    const vars = { name: res.name || 'Cuber', time: timeText(res) };
+    const msg = past
+      ? (r.isMe ? t('Remove your {time} from that day’s board?', vars) : t('Remove {name}’s {time} from that day’s board?', vars))
+      : res.backup
+        ? (r.isMe ? t('Remove your {time}? It was your backup, so that’s it for you today.', vars)
+                  : t('Remove {name}’s {time}? It was their backup, so that’s it for them today.', vars))
+        : (r.isMe ? t('Remove your {time}? You get the backup scramble as a final attempt.', vars)
+                  : t('Remove {name}’s {time}? They get the backup scramble as a final attempt.', vars));
+    if (!(await confirmToast(msg, t('Remove'), { timeout: 10000 }))) return;
+    try {
+      await ctl.removeResult(r, dayKey, event);
+    } catch (err) {
+      console.warn('[daily] remove refused', err?.code || err);
+      toast(/permission.denied/i.test(String(err?.code || err?.message || err))
+        ? t('The board refused that — firebase.rules.json needs publishing first')
+        : t('Couldn’t remove that time, try again'), { kind: 'bad', long: true });
+      return;
+    }
+    // The clip goes too: nobody can reach it without the row, and deletes are free.
+    if (res.replay === true) dropClip({ dayKey, event, uid: r.uid });
+    toast(r.isMe ? t('Removed your time') : t('Removed {name}’s time', vars));
+    onDone?.(r);
+  };
+}
+
+function timeRow(r, i, replays = null, remove = null) {
   const res = r.result || {};
-  const shown = res.penalty === 'DNF' ? 'DNF' : fmt(res.timeMs) + (res.penalty === '+2' ? '+' : '');
+  const shown = timeText(res);
   const owner = isOwnerName(res.name);
   const face = avatar(res.name, res.photo, { uid: r.uid, me: r.isMe });
   const nameEl = el('span', {
@@ -186,7 +242,17 @@ function timeRow(r, i, replays = null) {
           ? 'The submitted time is shorter than the window the server timed it in'
           : 'Far faster than this player’s own recent average' })
       : null,
-    el('span', { class: 'db-time', text: shown },
+    el('span', { class: 'db-time' },
+      /* First in the cell, so the times still line up down the right on a
+         board where some rows have a ▶ and some do not. */
+      remove ? el('button', {
+        class: 'db-del', type: 'button', html: DEL_SVG,
+        title: t('Remove this time (admin)'), 'aria-label': t('Remove this time'),
+        onclick: (e) => { e.stopPropagation(); remove(r); },
+        // Space on a focused × is not the timer's.
+        onkeydown: (e) => e.stopPropagation(),
+      }) : null,
+      document.createTextNode(shown),
       /* Ranked like any other time; the tag only says which scramble it was. */
       res.backup ? el('span', { class: 'db-flag db-backup', text: t('backup'),
         title: t('Solved on the backup scramble after a misfire') }) : null,
@@ -344,7 +410,13 @@ export function dayHistory(ctl, redraw) {
       // the panel both let the event change underneath this picker.
       const cur = (got && got.dayId === day && got.eventId === eventId) ? got : null;
       if (!cur) load(day, eventId);
-      return pastView(cur, mode, { dayKey: String(dayStartMs(day)), event: eventId, onGone: redraw });
+      const dayKey = String(dayStartMs(day));
+      // A one-shot read has no listener to drop a removed row, so it is dropped here.
+      const remove = adminRemover(ctl, { dayKey, past: true, onDone: (r) => {
+        if (cur) cur.rows = cur.rows.filter(x => x.uid !== r.uid);
+        redraw();
+      } });
+      return pastView(cur, mode, { dayKey, event: eventId, onGone: redraw }, remove);
     },
 
     /** The ‹ · › control itself. `today` is the live day id, or null before it loads. */
@@ -381,7 +453,7 @@ export function dayHistory(ctl, redraw) {
  * the same "send your own time first" bargain today's board makes, which for
  * a day already over simply cannot be met any more.
  */
-function pastView(got, mode = 'times', replays = null) {
+function pastView(got, mode = 'times', replays = null, remove = null) {
   if (!got) return el('div', { class: 'db-empty', text: t('Loading that day’s board…') });
   if (got.error) {
     return el('div', { class: 'db-empty', text:
@@ -393,8 +465,8 @@ function pastView(got, mode = 'times', replays = null) {
       el('div', { class: 'db-locked-text', text:
         t('You did not submit an attempt for this event that day, so its board stays locked. The reveal rule applies to every day, not just today.') }));
   }
-  if (mode === 'replays' && replays) return replaysBoard(got.rows, true, replays, { past: true });
-  return timeBoard(got.rows, true, replays);
+  if (mode === 'replays' && replays) return replaysBoard(got.rows, true, replays, { past: true, remove });
+  return timeBoard(got.rows, true, replays, { remove });
 }
 
 /* ---------------------------------------------------------
@@ -462,6 +534,7 @@ const STATE_TEXT = {
   ready: t('this is today’s scramble — one attempt'),
   backup: t('backup scramble — final attempt'),
   done: t('attempt submitted'),
+  removed: t('time removed — no attempts left today'),
 };
 
 /** The live window, or null. At most one is ever open. */
@@ -565,6 +638,8 @@ export function openSotd(app, ctl, { onExit, solving = () => false } = {}) {
     const rows = past ? [] : ctl.ranked();
     const dayKey = past ? String(dayStartMs(past)) : ctl.net?.target?.().dayKey;
     const replays = dayKey ? { dayKey, event: ctl.eventId, onGone: () => { renderBoard(); placeBoard(); } } : null;
+    // Today's rows only: a past day's picker builds its own (it has to drop the row itself).
+    const opts = { remove: past ? null : adminRemover(ctl, { dayKey }), locked: lockText(ctl) };
     const sharedN = replays ? rows.filter(r => r.result?.replay === true).length : 0;
     board.append(el('div', { class: 'sotd-board-card' },
       /* The heading and the picker share a row: the column is narrow and
@@ -589,8 +664,8 @@ export function openSotd(app, ctl, { onExit, solving = () => false } = {}) {
          bar above, the rollover check and an armed attempt all stay pointed
          at today however far back this has been walked. */
       past ? history.view(ctl.eventId, mode)
-        : mode === 'replays' && replays ? replaysBoard(rows, ctl.revealed, replays)
-        : timeBoard(rows, ctl.revealed, replays),
+        : mode === 'replays' && replays ? replaysBoard(rows, ctl.revealed, replays, opts)
+        : timeBoard(rows, ctl.revealed, replays, opts),
       /* Under the board rather than over it: the board is what the window is
          for, and the note is something you do once, after reading it. Today
          only — a past day's rows come from a one-shot read that the composer

@@ -108,8 +108,9 @@ one press at a time or a setting you turn on yourself (§8).
 | `timeMs` checked against the server-stamped solve window | Pausing the app and typing in a fabricated number afterwards |
 | `backup` readable only once your own `backupClaim` exists | Looking at the backup scramble without giving up the main attempt |
 | a claim forces `backup: true` on your result, and `backup: true` needs a claim | Peeking at the backup and then submitting as though you never did |
+| only the admin uid deletes a result, and only with a `removed/<uid>` record in the same write | A sus time staying up, and a removed one coming back as a second go at the main scramble |
 
-The last two are §7.
+The two backup rows are §7; removals are §10.
 
 The timing check is the same formula Race mode's rounds use: your submitted time against the
 gap between the `startedAt` and `finishedAt` stamps written with `ServerValue.TIMESTAMP`,
@@ -128,7 +129,8 @@ A time far below your own rolling average gets a ⚑ next to it on the board. **
 blocked** — a genuine personal best looks exactly like this, and a feature that eats your best
 solve of the year to protect a stranger has its priorities backwards. Because the board resets
 in 24 hours, a fake or flagged time is only embarrassing for a day — the same reasoning that
-makes a daily board safer to run loosely than a permanent one.
+makes a daily board safer to run loosely than a permanent one. A person decides instead: the
+admin can take a time down by hand, and its owner gets the backup scramble (§10).
 
 ---
 
@@ -181,6 +183,7 @@ transaction result and adopts it without waiting for the listener.
 | `tools/sotd-replay-dev.mjs` | One command for the emulators and `wrangler dev`, to test §8 and §9 locally |
 | `js/sotd-chat.js` | The day's chat: the column, the composer, deleting (§9) |
 | `tools/verify-sotd-chat-rules.mjs` | `node` check of the chat's rules against the database emulator (§9) |
+| `tools/verify-sotd-remove-rules.mjs` | `node` check of the admin removal rules against the database emulator (§10) |
 
 > **Republish `firebase.rules.json` before deploying this.** The previous rules end `results`
 > with `"$other": { ".validate": false }` and know nothing about `photo`, so a client that
@@ -200,6 +203,7 @@ Shared replays (§8) need one thing more: the R2 bucket `tagda-replays` bound in
 rules published, sharing says it is not switched on yet and touches nothing.
 
 The chat (§9) needs only the rules republished. Until then the window has no chat at all.
+Admin removals (§10) are the same: until then the × is drawn, and pressing it is refused.
 
 ---
 
@@ -543,7 +547,8 @@ R2 bucket tagda-replays (never public)
 
 daily/<dayKey>/<event>/
   replayClaim/<uid>          server ms. Write-once, own uid only, only once results/<uid>
-                             exists. Readable by its owner. Never deleted.
+                             exists. Readable by its owner. Deleted only when an admin
+                             removes that time (§10), so the backup solve can be shared.
   results/<uid>/replay       true, or absent. Its own .write (owner only, like note), and
                              true only with a claim. The ▶ and the Replays view come from this.
 ```
@@ -586,6 +591,9 @@ has to make going over impossible.
 
 The Worker itself stays on **Workers Free**, where every limit fails rather than bills, and
 static assets are not metered: `run_worker_first` is `/__/auth/*` and `/replay/*` only.
+
+An admin removal (§10) clears the person's claim, so they can share once more: one more
+`list` and `put` per removal, done by hand, one row at a time.
 
 Two honest edges. Class A is bounded by claims, so going over would take roughly 16,000
 claims a day, every day for a month: over a thousand Google accounts each submitting every
@@ -678,3 +686,75 @@ emulator (in a namespace of its own, so a running `sotd-replay-dev.mjs` is untou
 each signed in with "Add new account". Both solve today's scramble, then talk. The account
 chooser also has **Admin (chat)**, an account with the admin's uid, for the delete buttons on
 other people's messages.
+
+---
+
+## 10. Removing a time (admin)
+
+The admin (the same uid as the chat's, §9) gets a × on every row of a board, faint until the
+row is hovered and always faintly there on a touch screen. It is on today's board in the
+window and in the drawer, and on past days in the picker. Pressing it asks first, saying
+what will happen, then takes the time off. Nobody else gets a ×, and nobody can take their
+own time down: that would be a free second go.
+
+What happens to the person depends on which scramble the time was on:
+
+- **The main scramble**: they get the **backup** scramble as a final attempt (§7). If their
+  window is open, it moves there at once ("An admin removed your Scramble of the Day time.
+  You get the backup scramble — final attempt."). If it is not, it opens straight onto the
+  backup next time. Until they submit, their board and chat are locked again, saying why.
+- **The backup**: that is their day. The bar says *time removed — no attempts left today*,
+  the timer stays shut, and the board stays locked until the reset.
+- **A past day's board**: the row just goes. There is no attempt to give back.
+
+The admin can remove their own time too, and gets the backup like anyone else. If the row
+had a shared replay, the clip is deleted from the bucket as well (deletes are free).
+
+### What one removal writes
+
+One update to `daily/<dayKey>/<event>`, so it all lands or none of it does:
+
+```
+results/<uid>             null. The board and the chat lock for them (the rules' gate).
+removed/<uid>             { at: now, final }. Readable by its owner only; this is what
+                          their app watches. `final` is whether the time was already on the
+                          backup, and the rules check it: it must equal "a backupClaim exists".
+progress/<uid>/submitted  null, so "n people have done today's scramble" drops by one.
+replayClaim/<uid>         null, so a replay of the backup solve can be shared (§8).
+```
+
+What the rules ask:
+
+- **Only the admin uid**, and the row's delete and the record have to arrive together: a
+  delete without a fresh `removed/<uid>` (its `at` is the server's `now`) is refused, and so
+  is a record for somebody with no row, or one that leaves the row in place. Nobody can
+  delete or rewrite a record afterwards, the person included.
+- **A new result after a removal** must be on the backup (`backup: true`, which already
+  needs a claim) and is refused outright once the record says `final`. So a removed person
+  can never go back to the main scramble, and a removed backup is the end of the day. The
+  claim's own rule is unchanged: it needs `progress/<uid>`, which a removal leaves in place.
+- `progress/<uid>/submitted` and `replayClaim/<uid>` can be cleared by the admin only in
+  the same write as a removal.
+
+### On the person's side
+
+`js/daily-net.js` watches `removed/<uid>` for the watched day, event and account, and
+`_checkOwnResult` reads it alongside "do I have a result?" on every connect. A record newer
+than the last one acted on is a fresh removal: the results and chat listeners are dropped
+(the rules have already cut them off), the toast goes up, and the check runs again. With no
+result and a non-final record it claims the backup itself, exactly as a misfire would, and
+arms it. A refused claim is retried a few times and says so on the scramble line.
+
+### Until firebase.rules.json is republished
+
+The update is refused as a whole, nothing moves, and the admin gets *The board refused that —
+firebase.rules.json needs publishing first*. Reading `removed/<uid>` is refused too, which is
+read as "never removed". Nothing else changes.
+
+### Testing it
+
+`node tools/verify-sotd-remove-rules.mjs` (45 checks, its own namespace) covers every path
+above: who may remove, the record's shape, the lock, the backup after a removal, a removed
+backup being final, the admin's own time, a past day, and everybody else being untouched.
+In the app, `node tools/sotd-replay-dev.mjs` and its **Admin (chat)** account: both submit,
+then the admin hovers the other row.

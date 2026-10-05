@@ -100,12 +100,12 @@ export const NOTE_MAX_LEN = 80;
    --------------------------------------------------------- */
 
 /**
- * Who may delete anybody's message. Must match the uid in firebase.rules.json
- * (`chat/m/$msgId`), where it is what actually counts; this copy only decides
- * who is shown the delete button on other people's messages. Same account as
- * ADMIN_UIDS in wrangler.jsonc.
+ * Who may delete anybody's message, and take anybody's time off a board. Must
+ * match the uid in firebase.rules.json (`chat/m/$msgId`, `results/$uid`,
+ * `removed/$uid`), where it is what actually counts; this copy only decides
+ * who is shown the delete buttons. Same account as ADMIN_UIDS in wrangler.jsonc.
  */
-export const CHAT_ADMIN_UIDS = ['8lSr96LEO1cdHDVlMDv8tCCFQag1'];
+export const ADMIN_UIDS = ['8lSr96LEO1cdHDVlMDv8tCCFQag1'];
 
 /**
  * Least time between two messages from one account, in this client. The rule
@@ -134,6 +134,10 @@ export function cleanNote(text) {
 const emptySnapshot = (event) => ({
   event, dayId: null, uid: null, signedIn: false, displayName: null, photoURL: null,
   scramble: null, progress: {}, results: {}, resultsUnlocked: false, readError: null,
+  /* `removed/<uid>` for the signed-in account: { at, final } once an admin has
+     taken its time off this board, else null. Watched, so a removal reaches an
+     open window at once rather than at the next reload. */
+  removed: null,
   /* Whether the scramble node has actually reported yet.
      `scramble: null` alone cannot answer "has anybody published today's?" —
      it is also what a listener that has not yet delivered its first value
@@ -175,6 +179,8 @@ export class DailyTransport extends EventTarget {
     this.chat = emptyChat();
     this._chatUnsub = null;
     this._chatRetried = null;
+    this._removedUnsub = null;
+    this._removedKey = null;
   }
 
   async init() {
@@ -202,6 +208,7 @@ export class DailyTransport extends EventTarget {
     this.snap.signedIn = !!user;
     this.snap.displayName = user?.displayName || user?.email || null;
     this.snap.photoURL = user?.photoURL || null;
+    this._watchRemoved();
     this._emit();
   }
 
@@ -260,7 +267,31 @@ export class DailyTransport extends EventTarget {
        solve-count board is the same board whichever event the picker is on,
        so switching events must not tear it down and refetch it. */
     this._watchCounts();
+    this._watchRemoved();
     this._emit();
+  }
+
+  /**
+   * Follow `removed/<uid>` for the watched day, event and account: the one
+   * node that says an admin has taken this account's time off the board.
+   * Re-pointed whenever any of the three changes (setUser as well as watch).
+   * Owner-readable only, so a refusal is rules from before removals, where
+   * nothing can have been removed, and is left at null.
+   */
+  _watchRemoved() {
+    const { uid, event } = this.snap;
+    const key = uid && event && this._dayKey ? `${this._dayKey}/${event}/removed/${uid}` : null;
+    if (key === this._removedKey) return;
+    this._removedUnsub?.();
+    this._removedUnsub = null;
+    this._removedKey = key;
+    this.snap.removed = null;
+    if (!key || !this._sdk) return;
+    this._removedUnsub = this._sdk.onValue(this._ref(`daily/${key}`), (s) => {
+      if (this._removedKey !== key) return;
+      this.snap.removed = s.val() || null;
+      this._emit();
+    }, () => {});
   }
 
   /**
@@ -305,6 +336,9 @@ export class DailyTransport extends EventTarget {
     this._eventUnsubs = [];
     this._resultsUnsub?.();
     this._resultsUnsub = null;
+    this._removedUnsub?.();
+    this._removedUnsub = null;
+    this._removedKey = null;
     this._dayKey = null;
     this._chatUnsub?.();
     this._chatUnsub = null;
@@ -472,6 +506,63 @@ export class DailyTransport extends EventTarget {
          have claimed one. */
       return /permission.denied/i.test(String(err?.code || err?.message || err)) ? false : null;
     }
+  }
+
+  /**
+   * Whether an admin has taken this account's time off the watched board:
+   * `{ at, final }`, or false. Same null/false split as hasOwnResult, and a
+   * refusal is rules from before removals, where nothing was ever removed.
+   */
+  async removal() {
+    const { event, uid } = this.snap;
+    if (!this._dayKey || !event || !uid) return null;
+    try {
+      return (await this._sdk.get(this._ref(`daily/${this._dayKey}/${event}/removed/${uid}`))).val() || false;
+    } catch (err) {
+      return /permission.denied/i.test(String(err?.code || err?.message || err)) ? false : null;
+    }
+  }
+
+  /**
+   * Take somebody's time off a board (the admin only: the rules refuse anybody
+   * else). One update, so it all lands or none of it does:
+   *   results/<uid>             gone, so the board and the chat lock for them
+   *   removed/<uid>             { at, final }: what tells their app, and what
+   *                             the rules read before taking another result.
+   *                             `final` is whether that time was already on the
+   *                             backup; the rules check it against the claim.
+   *   progress/<uid>/submitted  gone, so "n people have done it" drops by one
+   *   replayClaim/<uid>         gone, so a replay of the backup solve can be shared
+   */
+  async removeResult({ dayKey, event, uid, final }) {
+    if (!dayKey || !event || !uid) throw new Error('nothing-to-remove');
+    const S = this._sdk;
+    await S.update(this._ref(`daily/${dayKey}/${event}`), {
+      [`results/${uid}`]: null,
+      [`removed/${uid}`]: { at: S.serverTimestamp(), final: !!final },
+      [`progress/${uid}/submitted`]: null,
+      [`replayClaim/${uid}`]: null,
+    });
+  }
+
+  /**
+   * Shut the board and the chat again after this account's own row was taken
+   * away. The rules have already revoked both reads, and an errored listener
+   * has detached; this forgets them, so the next unlockResults() (after the
+   * backup solve lands) attaches fresh ones instead of finding the gate open.
+   */
+  relock() {
+    this._resultsUnsub?.();
+    this._resultsUnsub = null;
+    this.snap.resultsUnlocked = false;
+    this.snap.results = {};
+    this._chatUnsub?.();
+    this._chatUnsub = null;
+    clearTimeout(this._chatRetry);
+    this._chatRetried = null;
+    this.chat = emptyChat();
+    this._emitChat();
+    this._emit();
   }
 
   /**

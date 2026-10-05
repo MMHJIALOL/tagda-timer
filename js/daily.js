@@ -27,7 +27,7 @@ import {
   CLOCK_SLACK_MS, CLOCK_SLACK_RATIO,
   countSolvesForDay, rankByCount, dayStartMs, safePhotoUrl, cleanNote,
   markSotdDone, clearSotdDone, sotdDoneOn, misfireAction,
-  CHAT_ADMIN_UIDS, CHAT_GAP_MS,
+  ADMIN_UIDS, CHAT_GAP_MS,
 } from './daily-net.js';
 import { SUSPECT_RATIO } from './raceapp.js';
 
@@ -176,6 +176,19 @@ export class Daily extends EventTarget {
     this._switching = false;
     /** A misfire question is on screen — see holdMisfire. */
     this._held = false;
+
+    /**
+     * `{ at, final }` once an admin has taken this account's time off the
+     * watched board, else null. Not final: the main attempt is gone and the
+     * backup is next. Final: that was the backup, and the day is over.
+     */
+    this.removal = null;
+    /** The removal already acted on, so the listener's echo of it is not a new one. */
+    this._knownRemovalAt = 0;
+    /** The backup claim after a removal was refused; and how many retries so far. */
+    this._removalClaimError = null;
+    this._removalTries = 0;
+    this._claimRetry = 0;
   }
 
   get revealed() { return this.submittedToday; }
@@ -224,6 +237,7 @@ export class Daily extends EventTarget {
        has changed — arming below on the previous key's answer would hand out
        an attempt the new key has not been checked for. */
     this._checkOwnResult();
+    this._maybeRemoved();
     /* Arm as soon as there is something to arm ON, rather than only at the
        moment the window opened. Today's scramble usually arrives a beat after
        that — it may still be being generated and written by whoever got there
@@ -380,7 +394,10 @@ export class Daily extends EventTarget {
        one used to be another read of the same row. */
     if (!key || !this.net || this._resultChecked || this._checking === key) return;
     this._checking = key;
+    // Asked alongside, not after: one round trip, not two, before anything is armed.
+    const asking = this.net.removal?.();
     const has = await this.net.hasOwnResult();
+    const removal = asking ? await asking : false;
     /* A backup claimed before a reload is still claimed, and the attempt is
        on the backup — asked before anything is armed, or the main scramble
        would come back for a moment first. */
@@ -393,12 +410,18 @@ export class Daily extends EventTarget {
        the reset". Left unchecked and asked again shortly, because a quiet day
        may bring no further snapshot to ask on. */
     if (this._ownKey() !== key) return;
-    if (has === null || claimed === null) {
+    if (has === null || claimed === null || removal === null) {
       clearTimeout(this._recheck);
       this._recheck = setTimeout(() => this._checkOwnResult(), RECHECK_MS);
       return;
     }
-    if (has || claimed) this._dropHeld();
+    /* Taken off the board by an admin. Read with the rest, so a reload lands
+       on the backup (or on "nothing left today") instead of the main scramble
+       a second time, and the listener's copy of the same record is not news. */
+    this.removal = removal || null;
+    this._knownRemovalAt = Math.max(this._knownRemovalAt, removal?.at || 0);
+    const spent = !has && !!removal?.final;
+    if (has || claimed || removal) this._dropHeld();
     if (claimed && !this.onBackup) {
       this.onBackup = true;
       this._loadBackup();
@@ -409,6 +432,16 @@ export class Daily extends EventTarget {
       this.net.unlockResults();
       this.attempting = false;
       markSotdDone(this.snap.dayId);
+    } else if (spent) {
+      // Both attempts are used up: there is nothing to arm until the reset.
+      this.attempting = false;
+      markSotdDone(this.snap.dayId);
+    } else if (removal && !claimed) {
+      /* The main attempt was taken off the board, so the backup is next.
+         Claimed here, by this account, exactly as a misfire would be: the
+         rules want the claim before the backup can be read or a result taken. */
+      if (sotdDoneOn(this.snap.dayId)) clearSotdDone();
+      this._claimAfterRemoval(key);
     } else {
       if (sotdDoneOn(this.snap.dayId)) {
         /* The note says today is spent and the database says it is not, so the
@@ -423,6 +456,53 @@ export class Daily extends EventTarget {
          along to arm it, and the window sat on its placeholder with today's
          scramble already in hand. */
       if (this.engaged) this._armIfPossible();
+    }
+    this._changed();
+    // A removal that landed while this was asking has not been acted on yet.
+    this._maybeRemoved();
+  }
+
+  /**
+   * An admin has just taken this account's time off the board, seen live by
+   * the `removed/<uid>` listener. The board and the chat are already shut by
+   * the rules; this shuts them here too and asks again from the top, which
+   * puts the backup up (or says there is nothing left today).
+   */
+  _maybeRemoved() {
+    const r = this.snap?.removed;
+    if (!r?.at || !this._resultChecked || r.at <= this._knownRemovalAt) return;
+    this._knownRemovalAt = r.at;
+    this.net.relock?.();
+    this.submittedToday = false;
+    this.attempting = false;
+    this._resultChecked = false;
+    toast(r.final
+      ? t('An admin removed your Scramble of the Day time. It was your backup, so that’s it for today.')
+      : t('An admin removed your Scramble of the Day time. You get the backup scramble — final attempt.'),
+    { kind: 'bad', hold: true });
+    this.dispatchEvent(new CustomEvent('removed', { detail: { at: this.net.target?.(), final: !!r.final } }));
+    this._checkOwnResult();
+    this._changed();
+  }
+
+  /** Claim the backup for an account whose main time was removed; tried again a few times if refused. */
+  async _claimAfterRemoval(key) {
+    if (this.onBackup || this._switching) return;
+    this._removalClaimError = null;
+    const ok = await this.switchToBackup();
+    if (this._ownKey() !== key) return;
+    if (ok) {
+      this._removalTries = 0;
+      if (this.engaged) this._armIfPossible();
+      this._changed();
+      return;
+    }
+    this._removalClaimError = 'claim-refused';
+    if (this._removalTries < PUBLISH_BACKOFF_MS.length) {
+      clearTimeout(this._claimRetry);
+      this._claimRetry = setTimeout(() => {
+        if (this._ownKey() === key && !this.onBackup) this._claimAfterRemoval(key);
+      }, PUBLISH_BACKOFF_MS[this._removalTries++]);
     }
     this._changed();
   }
@@ -456,7 +536,9 @@ export class Daily extends EventTarget {
        had submitted yet and handed out a fresh crack at today's scramble
        even when the account had already spent it. */
     return !!(this.snap?.signedIn && this.snap.scramble && this._resultChecked
-      && !this.submittedToday && !this.attempting);
+      && !this.submittedToday && !this.attempting
+      // Removed by an admin: the backup or nothing, never the main scramble again.
+      && (!this.removal || (!this.removal.final && this.onBackup)));
   }
 
   attempt() {
@@ -604,7 +686,7 @@ export class Daily extends EventTarget {
     /* The rules' clock check measures the result against startedAt and
        finishedAt, which still bracket the solve just thrown away. The backup
        solve stamps its own when it starts and stops. */
-    this.net.setProgress({ status: 'inspecting', startedAt: null, finishedAt: null }, at)
+    this.net.setProgress({ status: 'inspecting', startedAt: null, finishedAt: null, submitted: null }, at)
       .catch(err => console.warn('[daily] progress reset refused', err));
     this._loadBackup(at);
     this._changed();
@@ -641,6 +723,12 @@ export class Daily extends EventTarget {
     this.backupScramble = null;
     this.backupError = null;
     this._switching = false;
+    // A removal belongs to one account, day and event too.
+    clearTimeout(this._claimRetry);
+    this.removal = null;
+    this._knownRemovalAt = 0;
+    this._removalClaimError = null;
+    this._removalTries = 0;
   }
 
   cancelAttempt() {
@@ -654,6 +742,7 @@ export class Daily extends EventTarget {
   status() {
     if (!this.snap?.signedIn) return 'signed-out';
     if (this.submittedToday) return 'done';
+    if (this.removal?.final && this._resultChecked) return 'removed';
     if (!this.snap.scramble) return 'waiting';
     if (this.onBackup) return 'backup';
     if (this.attempting) return 'ready';
@@ -749,6 +838,14 @@ export class Daily extends EventTarget {
       }
       return t('Publishing today’s scramble…');
     }
+    if (this.removal?.final && this._resultChecked) {
+      return t('An admin removed your time, and it was your backup — come back after the reset');
+    }
+    if (this.removal && !this.onBackup) {
+      return this._removalClaimError
+        ? t('Your time was removed, and the backup scramble could not be claimed — reload to try again.')
+        : t('Your time was removed — getting your backup scramble…');
+    }
     if (this.onBackup) {
       if (!this.backupError) return t('Fetching your backup scramble…');
       return this._backupTries < PUBLISH_BACKOFF_MS.length
@@ -786,6 +883,7 @@ export class Daily extends EventTarget {
        or a press of space answered it Keep AND started a stray solve on the
        "already done" line that replaced the scramble. */
     if (this._held || this._switching || (this.onBackup && !this.backupScramble)) return true;
+    if (this.removal && (this.removal.final || !this.onBackup)) return true;
     return this.submittedToday;
   }
 
@@ -1028,9 +1126,21 @@ export class Daily extends EventTarget {
     return this.revealed && ['loading', 'live'].includes(this.chat.state);
   }
 
-  /** Whether this account may delete other people's messages (the rules have the final say). */
-  get chatAdmin() {
-    return !!this.snap?.uid && CHAT_ADMIN_UIDS.includes(this.snap.uid);
+  /** Whether this account may delete other people's messages and times (the rules have the final say). */
+  get admin() {
+    return !!this.snap?.uid && ADMIN_UIDS.includes(this.snap.uid);
+  }
+
+  /**
+   * Take a time off a board: today's, or a past day's from the picker. The
+   * person gets the backup scramble as a final attempt, unless that time was
+   * already on the backup, in which case they are done for the day. Their own
+   * app finds out from `removed/<uid>` (see _maybeRemoved). Throws when the
+   * rules refuse, which until firebase.rules.json is published is always.
+   */
+  async removeResult(row, dayKey = this.net?.target?.().dayKey, eventId = this.eventId) {
+    if (!this.admin || !this.net || !row?.uid || !dayKey) throw new Error('not-admin');
+    await this.net.removeResult({ dayKey, event: eventId, uid: row.uid, final: row.result?.backup === true });
   }
 
   /**
@@ -1153,6 +1263,7 @@ export class Daily extends EventTarget {
     clearTimeout(this._publishRetry);
     clearTimeout(this._recheck);
     clearTimeout(this._backupRetry);
+    clearTimeout(this._claimRetry);
     this._authUnsub?.();
     this.net?.destroy();
     this.net = null;

@@ -135,6 +135,7 @@ export function playButton({ dayKey, event, uid, result, onGone }) {
 const jobs = new Map();      // key -> { phase: 'preparing' | 'uploading', pct }
 const spent = new Map();     // key -> whether today's one share for it is used (shared, or shared and removed)
 const off = new Set();       // keys whose board runs rules from before replays: nothing can be shared yet
+const asked = new Set();     // keys whose claim has been read once
 const boxes = new Set();     // share boxes on screen, repainted as a job moves
 const repaint = () => boxes.forEach(b => b.refresh());
 
@@ -267,11 +268,34 @@ async function removeShared(at, { asked = false } = {}) {
   return true;
 }
 
+/**
+ * An admin took a row off the board: its clip goes as well, quietly. Nobody
+ * can reach it without the row's flag anyway, and deletes cost nothing; the
+ * bucket's lifecycle rule would get it within 8 days if this does not.
+ */
+export async function dropClip(at) {
+  clips.delete(keyOf(at));
+  const token = await idToken().catch(() => null);
+  if (!token) return;
+  try { await fetch(pathOf(at), { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } }); }
+  catch (err) { console.warn('[sotd-replays] clip delete', err); }
+}
+
 /** "Always share my SOTD replay": a result landing starts the share. Once per controller. */
 const bound = new WeakSet();
 export function bindReplays(ctl) {
   if (bound.has(ctl)) return;
   bound.add(ctl);
+  /* Your own time was removed by an admin: the removal cleared your share
+     claim, so a replay of the backup solve can be shared. Forget what was
+     known about the first one. */
+  ctl.addEventListener('removed', (e) => {
+    const at = e.detail?.at;
+    if (!at?.dayKey) return;
+    const key = keyOf(at);
+    for (const s of [clips, gone, spent, off, asked]) s.delete(key);
+    repaint();
+  });
   ctl.addEventListener('submitted', (e) => {
     const { solve, at } = e.detail || {};
     if (!replaySettings().sotdShareAuto || !solve || !hasReplay(solve.id)) return;
@@ -287,7 +311,6 @@ export function bindReplays(ctl) {
 export function shareBox(ctl) {
   const box = el('div', { class: 'db-share', hidden: true });
   const metaCache = new Map();          // solve id -> whether its clip has sound
-  const asked = new Set();              // keys whose claim has been read once
   box.refresh = () => {
     const at = ctl.net?.target?.();
     const solveId = ctl.attemptSolveId?.();
@@ -301,7 +324,7 @@ export function shareBox(ctl) {
       ctl.net.hasReplayClaim(at).then((v) => {
         if (v === 'off') off.add(key);
         else if (v != null && !spent.has(key)) spent.set(key, v);
-        box.refresh();
+        repaint();
       });
     }
     if (local && !metaCache.has(solveId)) {

@@ -26,7 +26,7 @@ import { RACE_EMOJI, CHAT_MAX_LEN } from './raceapp.js';
 import { cleanChat } from './race-net.js';
 import { openOwnerCard } from './ownercard.js';
 import { eventOf } from './events.js';
-import { CHAT_ADMIN_UIDS } from './daily-net.js';
+import { ADMIN_UIDS } from './daily-net.js';
 
 const EMOJI_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9 10h.01M15 10h.01M8.5 14.5a4.5 4.5 0 0 0 7 0"/></svg>';
 const SEND_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h13M12 5l7 7-7 7"/></svg>';
@@ -153,7 +153,7 @@ export function mountChat(ctl, { avatar, onBack } = {}) {
   const draw = () => {
     const { state, messages } = ctl.chat;
     const me = ctl.snap?.uid;
-    const admin = ctl.chatAdmin;
+    const admin = ctl.admin;
     const next = `${state}|${me}|${admin}|${messages.map(m => `${m.id}:${m.at}`).join(',')}`;
     if (next === sig) return;
     sig = next;
@@ -173,7 +173,7 @@ export function mountChat(ctl, { avatar, onBack } = {}) {
            pin a message's uid to the account that sent it, and in a room
            anyone can type into, a name anyone can take is not good enough
            for the owner's badge. */
-        const owner = CHAT_ADMIN_UIDS.includes(m.uid);
+        const owner = ADMIN_UIDS.includes(m.uid);
         // textContent, not el()'s `text`: that one runs labels through the
         // translator, and a stranger's message is not a label.
         const text = el('span', { class: 'race-chat-text' });
