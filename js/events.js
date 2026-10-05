@@ -153,3 +153,14 @@ export const relayLabel = (list = []) => list.map(id => eventOf(id).short).join(
 
 export const eventOf  = id => EVENTS[id] || EVENTS['333'];
 export const modeOf   = id => MODES[id]  || MODES['wca'];
+
+/**
+ * Whether an event gets a Scramble of the Day. Same reason as race mode: a
+ * relay is not one scramble and one time, and FMC and multi-blind are not a
+ * time at all. Here rather than in daily.js so the admin page can list the
+ * day's boards without loading the controller.
+ */
+export function dailyEligible(eventId) {
+  const ev = eventOf(eventId);
+  return !ev.fmc && !ev.multi && !ev.relay;
+}

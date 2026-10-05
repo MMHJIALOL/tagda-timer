@@ -282,3 +282,23 @@ select.ad-inp { appearance: none; -webkit-appearance: none; background-image: li
 .ad-uid { font-family: var(--font-mono); font-size: .74rem; color: var(--text-faint); overflow-wrap: anywhere; }
 .ad-reason { font-size: .86rem; color: var(--text); overflow-wrap: anywhere; }
 .ad-entry.ad-ended { opacity: .6; }
+
+/* ---------------- moderate (js/admin-mod.js) ---------------- */
+
+.ad-subtabs { display: flex; gap: 6px; margin-top: 14px; overflow-x: auto; scrollbar-width: none; }
+.ad-subtabs::-webkit-scrollbar { display: none; }
+.ad-subtab {
+  flex: none; min-height: 36px; padding: 0 14px; display: grid; place-items: center; border-radius: 99px;
+  font-size: .86rem; font-weight: 600; color: var(--text-dim);
+  background: var(--surface); border: 1px solid var(--border);
+}
+.ad-subtab.on { color: var(--on-accent); background: var(--accent); border-color: var(--accent); }
+/* An entry with buttons under it: the text gets the whole width on a phone. */
+.ad-entry:has(.ad-entry-actions) { flex-direction: column; align-items: stretch; gap: 10px; }
+.ad-entry-actions { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+.ad-chat-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ad-time { font-family: var(--font-mono); font-weight: 650; }
+.ad-small { font-size: .8rem; padding: 14px 0; }
+.ad-btn.danger { color: var(--danger-text); border-color: color-mix(in srgb, var(--danger) 40%, var(--border)); }
+.ad-sheet-actions.ad-wrap { flex-wrap: wrap; }
+.ad-video video { width: 100%; max-height: 60dvh; border-radius: 12px; background: #000; }

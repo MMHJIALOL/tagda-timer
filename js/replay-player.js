@@ -137,12 +137,13 @@ export async function openPlayer(solve) {
  * yours. `onRemove` (admins only) takes it down for everyone; it resolves
  * whether it did, and is asked about inside the player first. `onBan`
  * (admins only, with onRemove) bans the person who shared it as well.
+ * `onReport` (everybody else) reports it to the admins.
  */
-export function openSharedPlayer({ blob, meta, timeMs, penalty = 'none', name = '', onRemove = null, onBan = null }) {
+export function openSharedPlayer({ blob, meta, timeMs, penalty = 'none', name = '', onRemove = null, onBan = null, onReport = null }) {
   dlg?.close();
   show({
     id: null, m: meta, blob, sv: null, timeMs: timeMs ?? meta.timeMs, pen: penalty || 'none',
-    camName: '', adj: Number(meta.adj) || 0, shared: { name, onRemove, onBan },
+    camName: '', adj: Number(meta.adj) || 0, shared: { name, onRemove, onBan, onReport },
   });
 }
 
@@ -179,7 +180,7 @@ function show({ id, m, blob, sv, timeMs, pen, camName, adj, shared = null }) {
     onclick: () => setRate(rate),
   })));
   // A shared clip has nothing under ⋯ but an admin's Remove.
-  const moreBtn = shared && !shared.onRemove ? null : btn('more', t('More'), () => openMenu(moreBtn, moreItems()), 'rp-more');
+  const moreBtn = shared && !shared.onRemove && !shared.onReport ? null : btn('more', t('More'), () => openMenu(moreBtn, moreItems()), 'rp-more');
   // Only a clip filmed with sound has the button. It opens muted the first
   // time; unmuting is remembered for every replay after.
   const soundBtn = m.sound ? btn('muted', t('Sound on / off  (M)'), () => setMuted(!video.muted), 'rp-mute') : null;
@@ -414,8 +415,11 @@ function show({ id, m, blob, sv, timeMs, pen, camName, adj, shared = null }) {
     fit();
   };
   const moreItems = () => shared ? [
-    { label: t('Remove this replay'), sub: t('for everyone · admin'), danger: true, run: () => ask(
-      t('Remove this replay for everyone?'), t('Remove'), async () => { if (await shared.onRemove()) d.close(); }) },
+    shared.onReport ? { label: t('Report this replay'), sub: t('to the admins'), run: () => ask(
+      t('Report {name}’s replay to the admins?', { name: shared.name || 'Cuber' }), t('Report'),
+      async () => { await shared.onReport(); exportBox.hidden = true; fit(); }) } : null,
+    shared.onRemove ? { label: t('Remove this replay'), sub: t('for everyone · admin'), danger: true, run: () => ask(
+      t('Remove this replay for everyone?'), t('Remove'), async () => { if (await shared.onRemove()) d.close(); }) } : null,
     shared.onBan ? { label: t('Remove and ban'), sub: t('the replay, and {name} from the boards, chats and replays', { name: shared.name || 'Cuber' }), danger: true, run: () => ask(
       t('Remove this replay and ban {name}?', { name: shared.name || 'Cuber' }), t('Remove and ban'),
       async () => { if (await shared.onRemove()) { await shared.onBan(); d.close(); } }) } : null,

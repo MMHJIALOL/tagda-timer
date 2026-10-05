@@ -2527,7 +2527,7 @@ section('admin console — settings and the rules that guard them');
 
   // Every word the admin page shows goes through t(), and Spanish has each one.
   const { es } = await import('./locales/es.js');
-  const src = await (await fetch('./js/admin.js')).text();
+  const src = (await (await fetch('./js/admin.js')).text()) + (await (await fetch('./js/admin-mod.js')).text());
   const q = String.raw`'((?:\\'|[^'])*)'`;
   const keys = [
     ...[...src.matchAll(new RegExp(String.raw`\bt\(\s*` + q, 'g'))].map(m => m[1]),
@@ -2563,6 +2563,18 @@ section('admin console — settings and the rules that guard them');
   check('a ban with no end date holds; one with an end date holds until then, and not after',
     A.banActive({ at: 1, reason: 'x' }, at) && A.banActive({ at: 1, until: at + 1 }, at)
     && !A.banActive({ at: 1, until: at }, at) && !A.banActive(null, at));
+
+  /* A report is one per account per item because reportOnce/<uid>/<key> is
+     write-once, and the rule builds <key> from the report's own kind and path
+     ("kind|path" with every / made a |). The app's key must be the same string. */
+  const Mo = await import('./js/moderation.js');
+  check('the app builds a report’s reportOnce key exactly as the rule does',
+    Mo.reportKey('chat', 'daily/1791138600000/333/chat/m/-Nx_9') === 'chat|daily|1791138600000|333|chat|m|-Nx_9'
+    && Mo.reportKey('raceChat', 'rooms/ABCDE/chat/-a') === 'raceChat|rooms|ABCDE|chat|-a'
+    && rulesText.includes(`newData.child('kind').val() + '|' + newData.child('path').val().replace('/', '|')`));
+  const rem = Mo.removalUpdate('u1', true, 5);
+  check('a SOTD removal is the four writes the rules want together',
+    Object.keys(rem).sort().join() === 'progress/u1/submitted,removed/u1,replayClaim/u1,results/u1' && rem['removed/u1'].final === true);
 
   const SR = await import('./js/sotd-replays.js');
   const day = 1_791_138_600_000;

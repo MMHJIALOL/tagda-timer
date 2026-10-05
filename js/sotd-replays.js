@@ -99,7 +99,7 @@ export const canPlay = (dayKey, event, uid, result) =>
   result?.replay === true && replaysOn() && replayKept(dayKey) && !gone.has(keyOf({ dayKey, event, uid }));
 
 /** Fetch (once) and play somebody's shared clip. `button` shows it loading. */
-export async function playShared({ dayKey, event, uid, name, timeMs, penalty, button = null, onGone = null, onBan = null }) {
+export async function playShared({ dayKey, event, uid, name, timeMs, penalty, button = null, onGone = null, onBan = null, onReport = null }) {
   const at = { dayKey, event, uid };
   const key = keyOf(at);
   if (!replaysOn()) { toast(offText()); return; }
@@ -119,6 +119,7 @@ export async function playShared({ dayKey, event, uid, name, timeMs, penalty, bu
       // The player asks first: a toast's buttons cannot be pressed under a modal.
       onRemove: got.admin ? () => removeShared(at, { asked: true }).then((ok) => { if (ok) onGone?.(); return ok; }) : null,
       onBan: got.admin && onBan ? () => onBan({ uid, name }) : null,
+      onReport: !got.admin && onReport ? () => onReport({ uid, name }) : null,
     });
   } catch (err) {
     if (err instanceof ReplayError) {
@@ -134,7 +135,7 @@ export async function playShared({ dayKey, event, uid, name, timeMs, penalty, bu
 }
 
 /** The ▶ on a board row. */
-export function playButton({ dayKey, event, uid, result, onGone, onBan = null }) {
+export function playButton({ dayKey, event, uid, result, onGone, onBan = null, onReport = null }) {
   const name = result?.name || 'Cuber';
   const b = el('button', {
     class: 'db-play', type: 'button', html: PLAY,
@@ -142,7 +143,7 @@ export function playButton({ dayKey, event, uid, result, onGone, onBan = null })
   });
   b.addEventListener('click', (e) => {
     e.stopPropagation();
-    playShared({ dayKey, event, uid, name, timeMs: result?.timeMs, penalty: result?.penalty || 'none', button: b, onGone, onBan });
+    playShared({ dayKey, event, uid, name, timeMs: result?.timeMs, penalty: result?.penalty || 'none', button: b, onGone, onBan, onReport });
   });
   // The keys belong to the timer behind the board: space on a focused ▶ must not start a solve.
   b.addEventListener('keydown', (e) => e.stopPropagation());

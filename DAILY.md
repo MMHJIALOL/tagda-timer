@@ -651,7 +651,8 @@ there is no right-hand column, so it is a **Chat** tab on the board's sheet inst
 beside each name, because these are the same Google accounts every day.
 
 **Behind the board's gate, word for word.** `chat` is readable only by an account with a row
-in that day's `results`: the same rule as the times. A room you could read before your attempt
+in that day's `results`: the same rule as the times. The one exception, for both, is an admin
+([ADMIN.md](ADMIN.md) §6), who reads every room and board of the day to moderate them. A room you could read before your attempt
 would be a way round that gate. "Free x-cross on white" is help on somebody's one attempt.
 
 ```
@@ -677,6 +678,10 @@ What the rules ask of a message:
   than 200). The rules read those directly, with the numbers above when nothing is set; the app
   waits half a second more than the gap, and puts the admin's message where the box was.
 - **Not banned** (`bans/<uid>`, ADMIN.md §5). A banned account's box shows why instead.
+
+**Reporting.** Beside somebody else's message there is a ⚑ (next to where the × would be): it
+asks first, then files a report for the admins (`reports/`, one per account per message,
+ADMIN.md §6). A shared replay has **Report this replay** in the player's **⋯**.
 
 **Deleting.** Your own messages, from the × on hover (always showing, faintly, on a touch
 screen), after a confirm. An admin (a Google account with `admins/<uid>: true` in the

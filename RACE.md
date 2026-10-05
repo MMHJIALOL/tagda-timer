@@ -71,6 +71,7 @@ No camera. No microphone. No screen recording. Ever. What there is:
 | a message needs `chatLast/<uid>` at the server's `now` in the same update, and that some time after the last one | Flooding the room: 0.5 s apart by default, longer from the admin console |
 | no new room's `meta` while `config/race/enabled` is false | New rooms while race mode is switched off for maintenance; open rooms carry on |
 | no message from an account in `bans/` | An admin's ban, on a throwaway race account for as long as that tab keeps it |
+| an admin (Google, `admins/`) may delete any message or result, and read every room | Spam and fake times staying up: the admin console's Moderate tab ([ADMIN.md](ADMIN.md) §6) |
 
 The timing check compares your submitted time against the gap between the `startedAt` and
 `finishedAt` stamps written with `ServerValue.TIMESTAMP` — a clock the client cannot move.
@@ -152,6 +153,11 @@ message shown in this panel), switch off room chat (`raceChat.enabled`), and mak
 limit slower (`raceChat.gapMs`, 500 ms at least) or its messages shorter (`raceChat.maxLen`, 200 at
 most). The rules read them. Race chat had no limit on the server before, only the client's 0.7 s
 cooldown; the rule is new, and a client on rules from before it sends the message the old way.
+
+A message from somebody else has a ⚑ to report it, when the browser is also signed in to the timer
+with Google: reports need a Google account, and a race identity is anonymous. The admin console
+lists every race room made in the last day, with its chat and its flagged times, and can take any
+of them down.
 
 ### Developing against the emulator
 

@@ -18,7 +18,7 @@ import { t } from './i18n.js';
 
 import { toast } from './toast.js';
 import { fmt } from './util.js';
-import { eventOf, EVENT_ORDER } from './events.js';
+import { eventOf, EVENT_ORDER, dailyEligible } from './events.js';
 import { eff, bestAvg } from './stats.js';
 import { generate } from './scramble.js';
 import { onAuthChange } from './sync-auth.js';
@@ -116,11 +116,7 @@ const within = (p, ms, why) => Promise.race([
 ]);
 
 /** An event only counts as a daily challenge if "one scramble, one time" describes it. */
-export function dailyEligible(eventId) {
-  const ev = eventOf(eventId);
-  // Same reason as race mode: a relay is not one scramble and one time.
-  return !ev.fmc && !ev.multi && !ev.relay;
-}
+export { dailyEligible };
 
 export class Daily extends EventTarget {
   constructor(app) {
@@ -1207,6 +1203,18 @@ export class Daily extends EventTarget {
 
   async deleteChat(id) {
     await this.net?.deleteChat(id);
+  }
+
+  /** Report somebody's message to the admins: 'sent', 'already', or null when banned (said so). */
+  async reportChat(m) {
+    if (this.banned) { toast(banLine(this.snap.ban), { kind: 'bad', long: true }); return null; }
+    return this.net?.reportChat(m);
+  }
+
+  /** Report somebody's shared replay on `dayKey`'s board for `event`. */
+  async reportReplay(at) {
+    if (this.banned) { toast(banLine(this.snap.ban), { kind: 'bad', long: true }); return null; }
+    return this.net?.reportReplay(at);
   }
 
   /**

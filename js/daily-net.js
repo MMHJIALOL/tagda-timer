@@ -55,6 +55,7 @@ import { t } from './i18n.js';
 import { getDatabaseHandle } from './sync-auth.js';
 import { adminStatus } from './admins.js';
 import { getConfig } from './config.js';
+import { removalUpdate, sendReport } from './moderation.js';
 import { CLOCK_SLACK_MS, CLOCK_SLACK_RATIO, CHAT_HISTORY } from './raceapp.js';
 import { cleanChat } from './race-net.js';
 
@@ -585,12 +586,18 @@ export class DailyTransport extends EventTarget {
   async removeResult({ dayKey, event, uid, final }) {
     if (!dayKey || !event || !uid) throw new Error('nothing-to-remove');
     const S = this._sdk;
-    await S.update(this._ref(`daily/${dayKey}/${event}`), {
-      [`results/${uid}`]: null,
-      [`removed/${uid}`]: { at: S.serverTimestamp(), final: !!final },
-      [`progress/${uid}/submitted`]: null,
-      [`replayClaim/${uid}`]: null,
-    });
+    await S.update(this._ref(`daily/${dayKey}/${event}`), removalUpdate(uid, final, S.serverTimestamp()));
+  }
+
+  /** Report a message in the watched room (moderation.js): 'sent' or 'already'. */
+  reportChat(m) {
+    const { dayKey, event } = this.target();
+    return sendReport(this._sdk, { kind: 'chat', path: `daily/${dayKey}/${event}/chat/m/${m.id}`, text: m.text });
+  }
+
+  /** Report somebody's shared replay on the board `dayKey`, `event`. */
+  reportReplay({ dayKey, event, uid, name }) {
+    return sendReport(this._sdk, { kind: 'replay', path: `daily/${dayKey}/${event}/results/${uid}`, text: name || '' });
   }
 
   /**
@@ -828,7 +835,8 @@ export class DailyTransport extends EventTarget {
     /* The replay counts of the same days, bar yesterday's, whose replays can
        still be shared. One blind update; refused on rules from before them. */
     if (rest.length) {
-      S.update(this._ref(''), Object.fromEntries(rest.map(k => [`replayDay/${k}`, null])))
+      // The root: ref(db, '') is refused as an empty path.
+      S.update(S.ref(S.db), Object.fromEntries(rest.map(k => [`replayDay/${k}`, null])))
         .catch(err => console.warn('[daily] replay count sweep refused', err?.code || err));
     }
     return true;
