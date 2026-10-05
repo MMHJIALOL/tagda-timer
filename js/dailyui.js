@@ -56,6 +56,7 @@ import { isOwnerName, openOwnerCard } from './ownercard.js';
 import { SHOW_COUNT_BOARD } from './daily.js';
 import { canPlay, playButton, replayKept, shareBox, bindReplays } from './sotd-replays.js';
 import { mountChat } from './sotd-chat.js';
+import { knownFace, lookupFace } from './faces.js';
 
 /* ---------------------------------------------------------
    A face, or the next best thing
@@ -79,10 +80,15 @@ import { mountChat } from './sotd-chat.js';
  * because this is the last point before a stranger's string becomes a fetch
  * from the viewer's browser — and it is the only check that also covers rows
  * written before that rule existed. See safePhotoUrl.
+ *
+ * A picture the player uploaded beats the Google one (faces.js). `uid` is
+ * whose row this is and `me` whether it is the viewer's own. Without them
+ * the row keeps its Google picture.
  */
-export function avatar(name, photo) {
+export function avatar(name, photo, { uid = null, me = false } = {}) {
   const initial = (String(name || '').trim()[0] || '').toUpperCase();
-  const src = safePhotoUrl(photo);
+  const custom = knownFace(uid, me);
+  const src = custom || safePhotoUrl(photo);
   const owner = isOwnerName(name);
   const ownerBits = owner
     ? { title: t('{name} — that’s the site owner, click for the card', { name }),
@@ -95,14 +101,21 @@ export function avatar(name, photo) {
       decoding: 'async', referrerpolicy: 'no-referrer', ...ownerBits,
     });
     // A broken image is a torn box with an alt cross in it. Fall back to the
-    // initial instead, which is what this row would have had anyway.
-    face.addEventListener('error', () => face.replaceWith(avatar(name, null)), { once: true });
-    return face;
+    // Google picture or the initial instead, which is what this row would
+    // have had anyway.
+    face.addEventListener('error', () => face.replaceWith(avatar(name, custom ? photo : null)), { once: true });
+  } else {
+    face = el('span', {
+      class: `db-face db-face-letter${owner ? ' owner' : ''}`, text: initial || '·', 'aria-hidden': 'true',
+      ...ownerBits,
+    });
   }
-  face = el('span', {
-    class: `db-face db-face-letter${owner ? ' owner' : ''}`, text: initial || '·', 'aria-hidden': 'true',
-    ...ownerBits,
-  });
+  /* Not asked about yet: draw what the row has, and swap when the answer is
+     a picture and this face is still on screen. The board is redrawn from
+     scratch often, and a redraw after the answer reads it from the cache. */
+  if (custom === undefined) {
+    lookupFace(uid).then(url => { if (url && face.isConnected) face.replaceWith(avatar(name, photo, { uid, me })); });
+  }
   return face;
 }
 
@@ -153,7 +166,7 @@ function timeRow(r, i, replays = null) {
   const res = r.result || {};
   const shown = res.penalty === 'DNF' ? 'DNF' : fmt(res.timeMs) + (res.penalty === '+2' ? '+' : '');
   const owner = isOwnerName(res.name);
-  const face = avatar(res.name, res.photo);
+  const face = avatar(res.name, res.photo, { uid: r.uid, me: r.isMe });
   const nameEl = el('span', {
     class: `db-name${owner ? ' owner-shine' : ''}`, text: res.name || 'Cuber',
     title: owner ? t('{name} — that’s the site owner, click for the card', { name: res.name }) : '',
@@ -395,7 +408,7 @@ export function countBoard(rows) {
   return el('div', { class: 'db-board' }, rows.map((r, i) =>
     el('div', { class: 'db-row', dataset: { me: String(r.isMe), rank: String(i + 1) } },
       el('span', { class: 'db-rank', text: String(i + 1) }),
-      avatar(r.name, r.photo),
+      avatar(r.name, r.photo, { uid: r.uid, me: r.isMe }),
       el('span', { class: 'db-name', text: r.name }),
       el('span', { class: 'db-time', text: String(r.n) }),
       el('span', { class: 'db-unit', text: r.n === 1 ? 'solve' : 'solves' }),

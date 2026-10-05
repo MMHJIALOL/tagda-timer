@@ -196,7 +196,7 @@ export function mountChat(ctl, { avatar, onBack } = {}) {
           dataset: { me: String(m.uid === me) },
           title: m.at ? new Date(m.at).toLocaleString() : '',
         },
-          runOn ? el('span', { class: 'sc-face-gap' }) : (avatar ? avatar(m.name, m.photo) : el('span', { class: 'sc-face-gap' })),
+          runOn ? el('span', { class: 'sc-face-gap' }) : (avatar ? avatar(m.name, m.photo, { uid: m.uid, me: m.uid === me }) : el('span', { class: 'sc-face-gap' })),
           el('div', { class: 'sc-body' }, who, text),
           canDelete ? el('button', {
             class: 'sc-del', type: 'button', html: DEL_SVG,
