@@ -828,7 +828,8 @@ export class DailyTransport extends EventTarget {
     /* The replay counts of the same days, bar yesterday's, whose replays can
        still be shared. One blind update; refused on rules from before them. */
     if (rest.length) {
-      S.update(this._ref(''), Object.fromEntries(rest.map(k => [`replayDay/${k}`, null])))
+      // The root: ref(db, '') is refused as an empty path.
+      S.update(S.ref(S.db), Object.fromEntries(rest.map(k => [`replayDay/${k}`, null])))
         .catch(err => console.warn('[daily] replay count sweep refused', err?.code || err));
     }
     return true;
