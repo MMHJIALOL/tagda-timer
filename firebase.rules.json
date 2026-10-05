@@ -179,8 +179,19 @@
           "replayClaim": {
             "$uid": {
               ".read": "auth != null && auth.uid === $uid",
-              ".write": "auth != null && auth.uid === $uid && !data.exists() && root.child('daily/' + $dayStart + '/' + $event + '/results/' + $uid).exists()",
+              ".write": "auth != null && ((auth.uid === $uid && !data.exists() && root.child('daily/' + $dayStart + '/' + $event + '/results/' + $uid).exists()) || (auth.uid === '8lSr96LEO1cdHDVlMDv8tCCFQag1' && !newData.exists() && newData.parent().parent().child('removed/' + $uid + '/at').val() === now))",
               ".validate": "newData.isNumber() && newData.val() <= now + 2000"
+            }
+          },
+
+          "removed": {
+            "$uid": {
+              ".read": "auth != null && auth.uid === $uid",
+              ".write": "auth != null && auth.uid === '8lSr96LEO1cdHDVlMDv8tCCFQag1' && newData.exists() && root.child('daily/' + $dayStart + '/' + $event + '/results/' + $uid).exists() && !newData.parent().parent().child('results/' + $uid).exists()",
+              ".validate": "newData.hasChildren(['at', 'final'])",
+              "at":     { ".validate": "newData.val() === now" },
+              "final":  { ".validate": "newData.isBoolean() && newData.val() === root.child('daily/' + $dayStart + '/' + $event + '/backupClaim/' + $uid).exists()" },
+              "$other": { ".validate": false }
             }
           },
 
@@ -191,7 +202,7 @@
               "status":     { ".validate": "newData.isString() && newData.val().length <= 12" },
               "startedAt":  { ".validate": "newData.isNumber() && newData.val() <= now + 2000" },
               "finishedAt": { ".validate": "newData.isNumber() && newData.val() <= now + 2000" },
-              "submitted":  { ".validate": "newData.isBoolean()" },
+              "submitted":  { ".write": "auth != null && auth.uid === '8lSr96LEO1cdHDVlMDv8tCCFQag1' && !newData.exists() && newData.parent().parent().parent().child('removed/' + $uid + '/at').val() === now", ".validate": "newData.isBoolean()" },
               "$other":     { ".validate": false }
             }
           },
@@ -200,9 +211,9 @@
             ".read": "auth != null && data.child(auth.uid).exists()",
 
             "$uid": {
-              ".write": "auth != null && auth.uid === $uid && !data.exists()",
+              ".write": "auth != null && ((auth.uid === $uid && !data.exists()) || (auth.uid === '8lSr96LEO1cdHDVlMDv8tCCFQag1' && data.exists() && !newData.exists() && newData.parent().parent().child('removed/' + $uid + '/at').val() === now))",
 
-              ".validate": "newData.hasChildren(['timeMs']) && (!root.child('daily/' + $dayStart + '/' + $event + '/backupClaim/' + $uid).exists() || newData.child('backup').val() === true) && (!root.child('daily/' + $dayStart + '/' + $event + '/progress/' + auth.uid + '/startedAt').exists() || !root.child('daily/' + $dayStart + '/' + $event + '/progress/' + auth.uid + '/finishedAt').exists() || newData.child('timeMs').val() >= (root.child('daily/' + $dayStart + '/' + $event + '/progress/' + auth.uid + '/finishedAt').val() - root.child('daily/' + $dayStart + '/' + $event + '/progress/' + auth.uid + '/startedAt').val()) * 0.75 - 4000)",
+              ".validate": "newData.hasChildren(['timeMs']) && (!root.child('daily/' + $dayStart + '/' + $event + '/backupClaim/' + $uid).exists() || newData.child('backup').val() === true) && (!root.child('daily/' + $dayStart + '/' + $event + '/removed/' + $uid).exists() || (root.child('daily/' + $dayStart + '/' + $event + '/removed/' + $uid + '/final').val() !== true && newData.child('backup').val() === true)) && (!root.child('daily/' + $dayStart + '/' + $event + '/progress/' + auth.uid + '/startedAt').exists() || !root.child('daily/' + $dayStart + '/' + $event + '/progress/' + auth.uid + '/finishedAt').exists() || newData.child('timeMs').val() >= (root.child('daily/' + $dayStart + '/' + $event + '/progress/' + auth.uid + '/finishedAt').val() - root.child('daily/' + $dayStart + '/' + $event + '/progress/' + auth.uid + '/startedAt').val()) * 0.75 - 4000)",
 
               "timeMs":      { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 36000000" },
               "penalty":     { ".validate": "newData.isString() && newData.val().length <= 8" },

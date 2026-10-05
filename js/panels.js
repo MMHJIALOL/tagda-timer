@@ -3023,7 +3023,8 @@ export function buildDaily(app) {
             t(doneCount === 1 ? '{n} person has done today’s scramble.' : '{n} people have done today’s scramble.', { n: doneCount }) }),
           // ▶ on the rows that shared a replay, the same as in the window.
           ui.timeBoard(ctl.ranked(), ctl.revealed, ctl.net?.target?.().dayKey
-            ? { dayKey: ctl.net.target().dayKey, event: ctl.eventId, onGone: render } : null),
+            ? { dayKey: ctl.net.target().dayKey, event: ctl.eventId, onGone: render } : null,
+          { remove: ui.adminRemover(ctl, { dayKey: ctl.net?.target?.().dayKey }), locked: ui.lockText(ctl) }),
         ));
       } else {
         // The picker below carries the date, so the group title does not repeat it.
