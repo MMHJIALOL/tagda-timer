@@ -23,6 +23,7 @@
 import { allAnnouncements, pick, memoryFor, inAudience } from './announce.js';
 import { annNode } from './announce-ui.js';
 import { getConfig, storedAnnouncements } from './config.js';
+import { loadRoles, roles } from './audience.js';
 
 const MEM_KEY = 'tdt-ann';
 const OPENED_KEY = 'tdt-opened';
@@ -147,8 +148,28 @@ function show(a, as) {
   }
 }
 
+/* Whether this account is a tester or an admin, read only once an
+   announcement is for one of those, and on the signed-in app's own
+   connection: until it has answered on this page, neither. */
+let rolesKnown = false;
+let rolesAsked = false;
+async function askRoles() {
+  if (rolesAsked || !host.signedIn()) return;
+  rolesAsked = true;
+  try {
+    const sdk = await (await import('./sync-auth.js')).getDatabaseHandle();
+    await sdk.auth.authStateReady?.();
+    if (!sdk.auth.currentUser) return;
+    await loadRoles(sdk, sdk.auth.currentUser);
+    rolesKnown = roles().uid === sdk.auth.currentUser.uid;
+    if (rolesKnown) setTimeout(tick, 300);
+  } catch { rolesAsked = false; }
+}
+
 function who() {
-  return { signedIn: host.signedIn(), webcamOn: host.webcamOn(), solves: host.solves(), opened: new Set(Object.keys(readJson(OPENED_KEY))) };
+  const r = rolesKnown && host.signedIn() ? roles() : {};
+  return { signedIn: host.signedIn(), webcamOn: host.webcamOn(), solves: host.solves(), opened: new Set(Object.keys(readJson(OPENED_KEY))),
+    tester: !!r.tester, admin: !!r.admin };
 }
 
 /** Look for something to show, if nothing is going on. */
@@ -156,6 +177,7 @@ function tick() {
   if (!host || current) return;
   if (document.hidden || !host.idle() || host.blocked()) return;
   const anns = allAnnouncements(storedAnnouncements(), getConfig);
+  if (!rolesKnown && Object.values(anns).some(a => a.audience === 'testers' || a.audience === 'admins')) askRoles();
   // Only what may appear here, and not past this load's share of appearances.
   const sotd = host.inSotd();
   for (const [id, a] of Object.entries(anns)) {
@@ -173,6 +195,9 @@ function tick() {
  * announcement on screen whose audience they have left counts as done.
  */
 export function reconsider() {
+  // A sign-in or sign-out: whoever this is now has not been asked about.
+  rolesKnown = false;
+  rolesAsked = false;
   if (!current) { setTimeout(tick, 1000); return; }
   if (!inAudience(current.a, who())) answer(current.a, 'clicked');
 }

@@ -30,6 +30,7 @@ import {
   CHAT_GAP_MS,
 } from './daily-net.js';
 import { getConfig, setOf } from './config.js';
+import { hasFeature } from './audience.js';
 import { banActive, banLine, banAccount } from './admins.js';
 
 /**
@@ -1134,9 +1135,15 @@ export class Daily extends EventTarget {
     return this.net?.chat || { key: null, state: 'locked', messages: [] };
   }
 
-  /** Whether the chat is open to this viewer: their time is in, and the room answered. */
+  /** Whether the chat is open to this viewer: their time is in, the room answered, and it is a chat for them (its audience). */
   get chatOpen() {
-    return this.revealed && ['loading', 'live'].includes(this.chat.state);
+    return this.revealed && ['loading', 'live'].includes(this.chat.state) && hasFeature('sotdChat', this.snap?.uid);
+  }
+
+  /** Today's featured event, if an admin picked one (DAILY.md §3) and it has a daily scramble. */
+  get featured() {
+    const f = this.net?.featured;
+    return f && sotdEligible(f) ? f : null;
   }
 
   /** Whether an admin has banned this account (bans/<uid>), as of the server's clock. */

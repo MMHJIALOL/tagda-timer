@@ -2992,7 +2992,8 @@ export function buildDaily(app) {
       }
 
       const snap = ctl.snap;
-      const options = EVENT_ORDER.filter(dailyEligible).map(id => ({ value: id, label: EVENTS[id]?.short || id }));
+      // Today's featured event (an admin's pick, DAILY.md §3) is starred.
+      const options = EVENT_ORDER.filter(dailyEligible).map(id => ({ value: id, label: `${EVENTS[id]?.short || id}${id === ctl.featured ? ' ★' : ''}` }));
 
       /* ---- today, and the way into the window ---- */
       const countdown = el('b', { text: '—' });

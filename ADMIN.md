@@ -11,7 +11,10 @@ rooms, bans, and a way to make every open tab reload onto a new deploy (§4, §5
 moderation: a report button, and one place to read every chat, flagged time and shared replay
 of the day and take any of it down (§6). Phase 4 replaced the hand-written popups and cards with
 announcements you write on the page (§7), and moved the support card, the feedback form, the
-Spotify connection, the SOTD extras and race mode's tuning into settings (§3).
+Spotify connection, the SOTD extras and race mode's tuning into settings (§3). Phase 5 added the
+Today tab, with the day's numbers and what the page cannot see (§8), testers and a per-feature
+audience (§9), changes scheduled for later (§10), and a day's scramble and featured event set
+ahead (§11).
 
 ![The admin console on a phone: the sections, a form with unsaved edits, the review before saving, and the change log](docs/screenshots/admin-phone.webp)
 
@@ -33,7 +36,8 @@ Once, in this order:
    else's is in Authentication → Users. The console writes past the rules, which is the only
    way this node is ever written.
 2. **Publish `firebase.rules.json`.** Realtime Database → Rules, paste, Publish.
-3. **Deploy** as usual. Nothing new in `wrangler.jsonc`, no secret, no bucket.
+3. **Deploy** as usual. For changes scheduled for later (§10), one secret,
+   `FIREBASE_SERVICE_ACCOUNT`; everything else works without it.
 4. Open **tagdatimer.me/admin** on the phone and sign in with the same Google account as the
    timer. *Add to Home Screen* (Safari's share sheet, or Chrome's menu) puts it there as
    **Tagda Admin**, with its own icon.
@@ -75,8 +79,8 @@ Where it is checked:
 
 | Where | What an admin may do |
 |---|---|
-| `firebase.rules.json` | read every day's SOTD board and chat without having solved; read every race room; delete anybody's SOTD or race chat message; remove a SOTD time (`results`, `removed`, `progress/<uid>/submitted`, `replayClaim`, all in one write, DAILY.md §10) or a race time; clear a replay's flag; write `config`, `configMeta`, `configLog`, `bans`; read and dismiss `reports`; read `configMeta`, `configLog`, `bans` and the `admins` list |
-| `worker.js` | delete anybody's shared replay; watch any (the board's read rule lets an admin through); get `x-replay-admin` when watching one, so the player offers **Remove** and **Remove and ban** |
+| `firebase.rules.json` | read every day's SOTD board and chat without having solved; read every race room; delete anybody's SOTD or race chat message; remove a SOTD time (`results`, `removed`, `progress/<uid>/submitted`, `replayClaim`, all in one write, DAILY.md §10) or a race time; clear a replay's flag; write `config`, `configMeta`, `configLog`, `bans`, `testers`, `configScheduled`, `sotdFeatured` and a day ahead's scramble; read and dismiss `reports`; read `configMeta`, `configLog`, `bans`, `testers` and the `admins` list |
+| `worker.js` | delete anybody's shared replay; watch any (the board's read rule lets an admin through); get `x-replay-admin` when watching one, so the player offers **Remove** and **Remove and ban**; read `/replay/usage` (§8); have replays whatever their audience (§9) |
 | `js/admins.js` | nothing: it only decides who is *shown* the buttons (`js/daily-net.js`) and who gets past the admin page's front door |
 
 **Before the new rules are published** nothing changes. The old rules hard-code the owner's uid;
@@ -94,7 +98,7 @@ The gold badge on the owner's chat messages goes by the owner's uid (`OWNER_UID`
 
 ```
 config/<section>/<key>   public read; written only by an admin, only together with its
-                         log entry (§8), and only with a value of its type, inside its range
+                         log entry (§12), and only with a value of its type, inside its range
 ```
 
 `js/config-table.js` is the one list of settings: `CONFIG`, a section per feature, each key with
@@ -107,9 +111,10 @@ where it is enforced. Everything else is made from it:
 - **The Worker** imports the same table for `config/replays` (§4).
 - **The rules**: `node tools/config-rules.mjs` writes the `config` block of `firebase.rules.json`
   from the table, one rule per key with its type and range, so the database refuses anything
-  outside it too. `test.html` fails if the committed file and the table disagree.
+  outside it too, and the `configScheduled` block (§10) with the same checks. `test.html` fails if
+  the committed file and the table disagree.
 - **The admin page** draws its forms from it: a switch, a number box with its range shown (in
-  MB where the setting is bytes), or a text field with a character count.
+  MB where the setting is bytes), a text field with a character count, or a list to pick from.
 - **This file**: the table below.
 
 **Reading it costs no connection.** The Firebase project is on the Spark plan, 100 connections at
@@ -126,12 +131,14 @@ rules enforce takes effect at once, whatever any tab has cached.
 | Setting | Type | Default | Range | Enforced by | What it does |
 |---|---|---|---|---|---|
 | `replays.enabled` | switch | on | | Worker | Off: no sharing and no watching. The clips stay in R2 and come back when it is on |
+| `replays.audience` | choice | everybody | everybody, testers and admins, admins only | Worker | Who has replays while they are on (§9) |
 | `replays.message` | text | empty | 200 characters | app | Shown where **Share replay** would be while off |
 | `replays.maxPerDay` | whole number | 1000 | 0 to **1000** | Worker | The first this many shares of the day, all events together |
 | `replays.maxClipBytes` | MB | 10 | 1 to **10** | Worker (and the app's encoder) | The biggest clip; the copy is encoded to fit |
 | `replays.dayBudgetBytes` | MB | 1024 | 10 to **1024** | Worker | Space for the whole day, all events together |
 | `replays.keepDays` | days | 7 | 1 to **7** | Worker (and the app's ▶) | How long after its day a clip can be watched |
 | `sotdChat.enabled` | switch | on | | rules | Off: nobody can post in the day's chat. Reading and deleting carry on |
+| `sotdChat.audience` | choice | everybody | everybody, testers and admins, admins only | rules | Who has the day's chat while it is on (§9) |
 | `sotdChat.message` | text | empty | 200 characters | app | Shown in place of the box you type in |
 | `sotdChat.gapMs` | ms | 1500 | **1500** to 600000 | rules | Least time between two messages from one account |
 | `sotdChat.maxLen` | characters | 200 | 20 to **200** | rules | Longest message |
@@ -194,6 +201,9 @@ ceiling is a code change and a conversation, never a setting.
    enforced by `firebase.rules.json` or `worker.js`: a setting only the app reads protects nothing.
 4. Spanish for its label in `locales/es.js` (`test.html` checks), a row in the table above, and
    publish the rules.
+
+A new **feature** also gets an `audience` key (§9), defaulting to `admins`, so it can go out to
+admins, then testers, then everybody, without a deploy between.
 
 ---
 
@@ -299,8 +309,8 @@ delete it).
 
 **Banning.** In the timer, an admin's delete on somebody's SOTD chat message, the × on their board
 row, and **⋯** on their shared replay each offer a second choice, *Delete and ban* or *Remove and
-ban*, never the default. The reason is filled in from what was removed. On the admin page, the
-**Bans** tab lists every ban with **Unban**, and can ban by uid with a reason and a length (until
+ban*, never the default. The reason is filled in from what was removed. On the admin page,
+**People › Bans** lists every ban with **Unban**, and can ban by uid with a reason and a length (until
 unbanned, a day, a week, 30 days). A ban is not a setting, so it is not in the change log; the
 record itself says who made it and when.
 
@@ -412,10 +422,145 @@ field is typed and capped as above; a link must be https, a panel one of the lis
 one record per announcement and version: it becomes `shown` the first time, then `clicked` or
 `dismissed`, and never anything else, so nobody can inflate a count by reloading.
 
-## 8. The change log
+## 8. Today
+
+![Today on a phone, a day's scramble set ahead with its net drawn, and a change scheduled for later](docs/screenshots/admin-today.webp)
+
+The tab the page opens on: the day so far, by the server's clock (it turns over at 00:00 IST).
+
+| Number | Where it comes from |
+|---|---|
+| Scramble of the Day times, per event, and the day's featured event | the Moderate tab's listeners on today's boards |
+| Replays: clips against `replays.maxPerDay`, bytes against `replays.dayBudgetBytes` | the Worker's `GET /replay/usage`, admins only: one R2 `list` of today's clips (the same list a share makes), with the limits in force |
+| Chat messages in the day's rooms, and in race rooms | each event's room read with `?shallow=true` over REST, so only the message ids come down; race rooms from the Moderate tab's read |
+| Race rooms open now (somebody seen within `race.staleRoomMin`), the people in them, rooms made in the last day | the Moderate tab's read of the last day's rooms |
+| Open reports, active bans, testers | their listeners |
+| What is scheduled next | `configScheduled` (§10) |
+
+The reads (the Worker's list, the chats' sizes) happen when the tab opens and on **Refresh**, at
+most once a minute. Nothing on this tab is a new listener.
+
+**What it can't see** is listed beside the numbers, with where to look: the database's
+connections (Spark: 100 at once) and downloads (*Firebase › Realtime Database › Usage*), the
+Worker's requests (*Cloudflare › Workers*), and billing (*Cloudflare › R2*, the only part that bills
+past its free tier rather than failing; *Firebase › Usage and billing*). None of them can be read
+from a browser without a credential this page should not hold, so none is guessed at.
+
+## 9. Testers and audiences
 
 ```
-configLog/<pushId>         { uid, at, path, from?, to?, undo? }   admins only; written once, never edited
+testers/<uid>               { at, by, name? }               admins write and read the list; each account reads its own
+config/<section>/audience   'everyone' | 'testers' | 'admins'   default everyone
+```
+
+**A tester** is an account an admin added on the **People** tab. Its picker finds names on today's
+boards and in today's chats; anybody else goes in by account id. Admins count as testers too. It
+needs a Google sign-in on the timer. (The brief's shape was `testers/<uid>: true`; the entry keeps
+who added it and when, and a name for the list. The rules only ask that it exists.)
+
+**An audience** turns a feature on for testers, or for admins only, before everybody. While the
+feature is switched on, its audience decides who has it, and anybody outside it sees nothing of
+it: no "switched off" line, no button. Today that is:
+
+| Feature | Setting | Enforced by | Outside the audience |
+|---|---|---|---|
+| Shared replays | `replays.audience` | the Worker: sharing and watching both answer `403 not-yet` | no Replays tab, no ▶, no Share replay |
+| The day's chat | `sotdChat.audience` | the rules: the message is refused | no chat column, no Chat tab |
+| Announcements | an announcement's own audience | the app (an announcement protects nothing) | *Testers (and admins)* and *Admins only* on the Announce tab |
+
+A new feature gets an `audience` key in its section (a `choice` of `AUDIENCES` in
+`js/config-table.js`), with `audienceRule(section)` from `js/config-rules.js` in the rules or
+`inAudience` in the Worker wherever the server decides, and `hasFeature(section)` in the app.
+
+**Race rooms and race chat have none.** Race accounts are anonymous, so neither the rules nor the
+Worker could tell a tester from anybody, and an audience the server cannot check would be a
+suggestion.
+
+**How the app knows.** `js/audience.js` reads the account's own `testers/<uid>` and
+`admins/<uid>`, once per account per page, on the connection the signed-in app already holds,
+never a new one. It keeps the answer in `localStorage`. Until the database has answered, nobody is
+a tester, so a feature for testers appears a moment after the page loads instead of flickering
+off. Signing out is nobody's.
+
+## 10. Scheduled changes
+
+```
+configScheduled/<section>/<key>/<pushId>   { to | def: true, at, by, createdAt }   public read; admins write
+```
+
+Any change can wait for a time instead of applying now: **When** in the review sheet, *At a
+time…*, in the phone's own clock, from a minute to a year ahead. Changes reviewed together get the
+same time. A scheduled change is listed under **Scheduled** at the top of Settings, on its own row
+(*Scheduled: … on …*, with **Cancel**), and on Today. It is checked when it is made exactly as the
+setting is (type, range, ceiling), so a schedule cannot raise a limit either. Like `config`, it can
+be read by anybody.
+
+**The Worker applies it**, once a minute: a Cron Trigger in `wrangler.jsonc`, part of Workers Free.
+A minute with nothing due costs one small public read. When something is due, the Worker signs in
+as an account of its own, `tagda-scheduler`, with a custom token it signs with a service-account
+key (the `FIREBASE_SERVICE_ACCOUNT` secret). Per change, it writes the same chain a Save writes, in
+one update: the value, its `configMeta` pointer, a `configLog` entry, and the schedule deleted. The
+log shows it at the moment it applied, as *scheduled by* the admin who made it.
+
+**The scheduler can do one thing.** The rules name its uid only together with the custom sign-in,
+which no browser can make. It may write a setting only when its log entry names a schedule that
+exists, is due (`at <= now`), is deleted in the same update, holds exactly the value being
+written, and was made by somebody who is still an admin. It cannot schedule anything, ban, write an
+announcement, delete a schedule without applying it, or change a setting the way an admin does.
+
+**Overdue.** A schedule more than three minutes late is marked *Overdue* on the page. In order of
+likelihood: the secret is not set or its key was revoked (the Worker's log says
+`schedule: no-credential` or `sign-in-refused`); the admin who made it has been removed since (the
+rules refuse it: cancel it, or schedule it again). Anything else (the setting changed a moment
+before) is tried again the next minute.
+
+**The secret.** Firebase console → Project settings → Service accounts → *Generate new private
+key*, then the whole JSON file as a secret:
+
+```
+npx wrangler secret put FIREBASE_SERVICE_ACCOUNT
+```
+
+(or Cloudflare dashboard → Workers & Pages → tagda-timer → Settings → Variables and Secrets → Add,
+type *Secret*). The key could do anything on the Firebase project, so it lives only there, and the
+Worker uses it for nothing but the scheduler's sign-in. Deleting the key in Google Cloud (IAM →
+Service accounts → the account → Keys) stops scheduled changes and nothing else. Without the
+secret, everything but scheduling works as before.
+
+## 11. Days ahead
+
+```
+daily/<dayStart>/<event>/scramble   today's: anybody signed in, once, as before
+                                    a day ahead: admins only, and changeable until the day starts
+sotdFeatured/<dayStart>             one event id, for today or a day ahead; public read; admins write
+```
+
+**Days ahead**, from Today: today and the next thirteen days. For each day, its **featured event**
+(saved as soon as it is picked) and each event's scramble, set by hand (**Set**, **Change**,
+**Clear**) or *Random, made when the first person opens it*. A 2x2 to 7x7 scramble (blind and
+one-handed too) is read as it is typed and its net drawn, and one this page cannot read is not
+saved. Any other puzzle's is taken as typed, with a note to check it.
+
+A scramble set by hand is the day's main scramble for everybody. The backup scramble (DAILY.md §7)
+is still made at random. Today's can be set only while nobody has opened it; once it is out, it is
+the day's.
+
+**A day ahead used to be open to anybody.** The rule was "signed in, and not there yet" for any day,
+so anybody could plant tomorrow's scramble and solve it in advance. (`js/dayid.js` explains that the
+day key is a number precisely so this could be checked; the check was never written.) Now anybody
+may publish only today's, with five minutes either side of midnight for a clock that is a little
+out, and a day ahead is an admin's.
+
+**The featured event** is starred in the Scramble of the Day panel's event list, and over the
+window's board: *★ Today's featured event is 4x4 · Go to it* (which moves the timer there, never
+mid-attempt), or *★ Today's featured event* when you are on it.
+
+Neither is in the change log, which is for settings; both are on this tab.
+
+## 12. The change log
+
+```
+configLog/<pushId>         { uid, at, path, from?, to?, undo?, sched?, by? }   admins only; written once, never edited
 configMeta/<section>/<key> { at, by, log }                        admins only; points at the entry
 ```
 
@@ -445,14 +590,19 @@ nothing to undo, and its button is off.
 **Use default** deletes the stored value, so the setting follows its built-in default again,
 including a future change to that default. Setting the same number by hand would pin it instead.
 
+**A scheduled change** (§10) is logged when it applies, with `uid: 'tagda-scheduler'`, `sched` (the
+schedule's id) and `by` (the admin who scheduled it), and shown as *scheduled by* them. It undoes
+like any other.
+
 ---
 
-## 9. The page
+## 13. The page
 
 | File | What it is |
 |---|---|
 | `admin.html` | The page, served at `/admin` (`html_handling: auto-trailing-slash` in `wrangler.jsonc`) |
-| `js/admin.js` | Sign-in, the front door, the forms, review, save, bans, the log, Undo |
+| `js/admin.js` | Sign-in, the front door, the forms, review, save or schedule, bans, the log, Undo |
+| `js/admin-live.js` | The Today tab, Days ahead, and testers (§8, §9, §11) |
 | `js/admin-mod.js` | The Moderate tab (§6) |
 | `js/admin-ann.js` | The Announce tab (§7) |
 | `js/announce.js`, `js/announce-ui.js`, `css/announce.css` | What an announcement is and who sees it, and drawing one: shared with the timer |
@@ -462,15 +612,17 @@ including a future change to that default. Setting the same number by hand would
 | `admin.webmanifest`, `assets/admin-*.png` | Home-screen install: start URL `/admin`, its own name and icon |
 | `js/config-table.js` | The settings table, pure enough for the Worker to bundle |
 | `js/config.js` | `getConfig()` and `loadConfig()`, the app's live copy |
-| `js/config-rules.js`, `tools/config-rules.mjs` | The `config` rules, made from the table |
-| `js/admins.js` | *Am I an admin?*, and bans, for the app and this page |
+| `js/config-rules.js`, `tools/config-rules.mjs` | The `config`, `configScheduled` and `sotdFeatured` rules, made from the table |
+| `js/admins.js` | *Am I an admin?*, testers and bans, for the app and this page |
+| `js/audience.js` | The app's side of audiences: who this account is, and `hasFeature()` (§9) |
 | `js/version.js` | `APP_VERSION`, for `app.minVersion` |
 | `tools/verify-admin-rules.mjs` | `node` check of admins, config and the log against the database emulator |
 | `tools/verify-safety-rules.mjs` | `node` check of the switches, bans and the replay count |
 | `tools/verify-moderation-rules.mjs` | `node` check of reports and of an admin reading and taking down |
 | `tools/verify-announce-rules.mjs` | `node` check of announcements, their stats, and the newer setting types |
+| `tools/verify-live-rules.mjs` | `node` check of testers, audiences, schedules and the scheduler, days ahead and the featured event |
 
-Phone first: five tabs (Settings, Moderate, Announce, Bans, Log); a list of sections, each opening a form;
+Phone first: six tabs (Today, Settings, Moderate, Announce, People, Log), a count as a badge on its tab; a list of sections, each opening a form;
 edits collect in a bar at the foot (*3 unsaved changes · Discard · Review*); **Review** lists each
 change as *from → to* before anything is written. A value outside its range is marked on its row
 and Review stays off. Light or dark follows the phone (the timer's Paper and Nebula themes).
@@ -484,13 +636,13 @@ loads (it checks the requesting page) from its cache, and stores none of it, so 
 always the deployed one. It needs a connection anyway. A link out of it to the timer is still
 served offline as usual.
 
-**Connections.** The page uses live listeners (on `config`, `configMeta`, `bans`, the log,
-`reports`, and today's boards and chats): one connection per admin with it open. Nobody else
-gets that far.
+**Connections.** The page uses live listeners (on `config`, `configMeta`, `configScheduled`,
+`bans`, `testers`, the log, `reports`, the featured days, and today's boards and chats): one
+connection per admin with it open. Nobody else gets that far.
 
 ---
 
-## 10. Until firebase.rules.json is republished
+## 14. Until firebase.rules.json is republished
 
 Everything keeps working as it did, on the defaults:
 
@@ -508,14 +660,21 @@ Everything keeps working as it did, on the defaults:
 On older rules than the page's, the parts that need newer ones say so and the rest works:
 **Bans**, **Reports** and **Announce** ask for the newer rules, **Chats** lists only what the admin could
 already read, and the app's ⚑ is refused with *Couldn't send the report*. A setting the published
-rules do not know yet (every one Phase 4 added, from race tuning to Spotify) is refused when saved,
-and the page says a new setting needs its rules published; the app keeps using its default.
+rules do not know yet (every one Phase 4 added, from race tuning to Spotify, and the two audiences)
+is refused when saved, and the page says a new setting needs its rules published; the app keeps
+using its default.
+
+Phase 5 on Phase 4's rules: **Today** works (its numbers come from rules already out, and from the
+Worker once this version's `worker.js` is deployed). **Days ahead** and **Testers** ask for the newer
+rules, and scheduling is refused, saying so; saving now works as before. The app reads no featured
+event and nobody is a tester. Anybody can still publish a day ahead's scramble, as before, until the
+rules are out. The cron finds nothing to apply.
 
 ---
 
-## 11. Testing it
+## 15. Testing it
 
-- `node tools/verify-admin-rules.mjs`: 82 checks against the database emulator, in a namespace
+- `node tools/verify-admin-rules.mjs`: 94 checks against the database emulator, in a namespace
   of its own. Every write four ways (an admin; a signed-in Google account that is not one; an
   anonymous account listed under `admins/` by mistake; signed out), the change log's chain
   (a value without its pointer, a pointer without its entry, an entry with a wrong `from` or
@@ -535,13 +694,23 @@ and the page says a new setting needs its rules published; the app keeps using i
   its log entry, every field's type and cap, no deleting, the version only going up; stats one
   record per account per version that only moves from shown; and the newer setting types (a set
   of events, an https link, a date and time).
+- `node tools/verify-live-rules.mjs`: 86 checks. Testers four ways and who reads them; the day's
+  chat with each audience; schedules (who may make one, a time past or too far, a value past its
+  setting's range or ceiling, both or neither of a value and "default", cancelling); the scheduler
+  applying one, and every way it may not (a Google or anonymous account with its uid, another
+  custom account, a different value, the schedule left behind, a schedule not due, one by somebody
+  no longer an admin, anything but applying); a day ahead's scramble (admins only, changeable until
+  the day, today's once by anybody); the featured event.
 - `node tools/verify-sotd-chat-rules.mjs` and `node tools/verify-sotd-remove-rules.mjs` seed
   `admins/` the way the console would, and still pass.
 - `node tools/config-rules.mjs --check`, and `test.html`'s *admin console* section (the rules
   match the table, `getConfig` clipping, `APP_VERSION` against `?v=`, the replay ceilings, bans
   ending, every string's Spanish).
 - In the browser: `node tools/sotd-replay-dev.mjs`, then `http://localhost:8787/admin?emu=1`,
-  and **Admin** in the fake account chooser. Any other account gets the admins-only line.
+  and **Admin** in the fake account chooser. Any other account gets the admins-only line. The
+  rig makes up a service-account key each start and points the Worker at the Auth emulator, so
+  the scheduler's real signing and sign-in run locally:
+  `curl http://127.0.0.1:8787/cdn-cgi/handler/scheduled` runs the cron once.
   `node tools/sotd-replay-dev.mjs rules pre-admin` (or `pre-safety`) puts the emulator on the
   rules from before this page (or before its switches), and `rules new` back. `?emu=1` points
   race mode at the emulators too, so a local race test never reaches the real project.

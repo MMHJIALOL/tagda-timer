@@ -31,6 +31,7 @@ import { el } from './util.js';
 import { toast, confirmToast } from './toast.js';
 import { idToken } from './sync-auth.js';
 import { getConfig, loadConfig } from './config.js';
+import { hasFeature } from './audience.js';
 import { banLine } from './admins.js';
 import { hasReplay, loadClip, clipMeta, clipReady, holdFinish, openReplay, replaySettings,
          setReplaySetting } from './replay.js';
@@ -44,7 +45,9 @@ export const keepDays = () => getConfig('replays', 'keepDays');
 /** The Worker's rule exactly: gone once the day is more than keepDays() over. */
 export const replayKept = (dayKey, now = Date.now()) => now <= Number(dayKey) + (keepDays() + 1) * DAY_MS;
 /** Sharing and watching switched on (config/replays/enabled). */
-export const replaysOn = () => getConfig('replays', 'enabled');
+export const replaysOn = () => getConfig('replays', 'enabled') && hasFeature('replays');
+/** Whether replays are a thing for this account at all (their audience, ADMIN.md §9): if not, nothing about them is drawn. */
+export const replaysForMe = () => hasFeature('replays');
 const offText = () => getConfig('replays', 'message') || t('Replays are switched off for now');
 const FULL = () => t('Today’s replay slots are full');
 
@@ -208,7 +211,7 @@ export async function shareReplay(ctl, at, solveId, { quiet = false } = {}) {
   try {
     // The admin console's switches first: off, or banned, and nothing else is worth doing.
     await loadConfig();
-    if (!replaysOn()) { if (!quiet) toast(offText(), { long: true }); return false; }
+    if (!replaysOn()) { if (!quiet && replaysForMe()) toast(offText(), { long: true }); return false; }
     if (ctl.banned) { if (!quiet) toast(banLine(ctl.snap?.ban), { kind: 'bad', long: true }); return false; }
     /* One read before any work: rules not published yet, or today's share
        already used, is known without encoding or uploading anything. */
@@ -404,6 +407,8 @@ export function shareBox(ctl) {
           else playShared({ ...at, name: row.name, timeMs: row.timeMs, penalty: row.penalty });
         } }),
         el('button', { class: 'ghost-btn sm danger', type: 'button', text: t('Remove'), onclick: () => removeShared(at) }))];
+    } else if (!replaysForMe()) {
+      kids = [];
     } else if (!replaysOn() && local) {
       kids = [el('div', { class: 'db-share-row' }, el('span', { class: 'db-share-note', text: offText() }))];
     } else if (ctl.banned && local) {

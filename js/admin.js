@@ -6,15 +6,17 @@ import { t, translateDOM } from './i18n.js';
    use it is admins/<uid> in the database (js/admins.js); what the settings
    are is js/config.js; ADMIN.md has the rest.
 
-   Five tabs: Settings, Moderate (js/admin-mod.js: reports, every chat,
-   flagged times, shared replays), Announce (js/admin-ann.js), Bans (bans/,
-   who may not post, share or submit) and the Log.
+   Six tabs: Today (js/admin-live.js: the day's numbers, and the days
+   ahead), Settings, Moderate (js/admin-mod.js: reports, every chat, flagged
+   times, shared replays), Announce (js/admin-ann.js), People (testers/ and
+   bans/) and the Log.
 
    Every Save is one multi-path update: the value, its configMeta pointer and
    a configLog entry saying who changed what from what to what. The rules
    refuse a value that arrives without both, so the log cannot miss a change
    made from anywhere. Undo is an ordinary change that names the entry it
-   undoes.
+   undoes. A change can also be scheduled instead (configScheduled/), and
+   the Worker's cron applies it at its time, through the same chain.
 
    Live listeners are fine here, unlike in the app (config.js): only admins
    get past the front door, so this page costs one of the Spark plan's 100
@@ -26,9 +28,11 @@ import { toast } from './toast.js';
 import { onAuthChange, signIn, signOutUser, getDatabaseHandle, preloadAuth, takeRedirectError } from './sync-auth.js';
 import { adminStatus, banAccount, unbanAccount, banActive } from './admins.js';
 import { CONFIG, spec, clean, valid } from './config.js';
+import { SCHEDULER_UID, SCHEDULE_AHEAD_MS } from './config-rules.js';
 import { APP_VERSION } from './version.js';
 import { createModeration } from './admin-mod.js';
 import { createAnnounce } from './admin-ann.js';
+import { createLive } from './admin-live.js';
 import { eventOf } from './events.js';
 
 /** How many log entries the page keeps live. Older ones stay in the database. */
@@ -58,7 +62,10 @@ const S = {
   meta: {},
   log: [],
   bans: {},
-  loaded: { config: false, log: false, bans: false },
+  testers: {},
+  /** configScheduled: { section: { key: { id: { to?, def?, at, by, createdAt } } } } */
+  scheduled: {},
+  loaded: { config: false, log: false, bans: false, testers: false },
   /** 'section/key' -> the value Save will write, or DEFAULT. */
   edits: new Map(),
   unsubs: [],
@@ -94,6 +101,7 @@ function show(sp, v) {
     return sp.def === '' ? t('default (empty)') : t('default ({v})', { v: show(sp, sp.def) });
   }
   if (sp?.type === 'bool' || typeof v === 'boolean') return v ? t('On') : t('Off');
+  if (sp?.type === 'choice') return t(CHOICE[v] || v);
   if (sp?.type === 'time') return new Date(v).toLocaleString(undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
   if (sp?.type === 'set') {
     const items = String(v).split(',').filter(Boolean);
@@ -115,7 +123,10 @@ function ago(ms) {
   return new Date(ms).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
-const who = (uid) => (uid === S.user?.uid ? t('you') : `${String(uid).slice(0, 6)}…`);
+const who = (uid) => (uid === S.user?.uid ? t('you') : uid === SCHEDULER_UID ? t('the scheduler') : `${String(uid).slice(0, 6)}…`);
+
+/** What a 'choice' setting's options are called (the audiences, ADMIN.md §9). */
+const CHOICE = { everyone: 'Everybody', testers: 'Testers and admins', admins: 'Admins only' };
 
 /** One option of a 'set' setting, as people know it (the events: 3x3, OH…). */
 const optionLabel = (o) => eventOf(o)?.short || o;
@@ -150,8 +161,13 @@ function scheduleRender() {
 
 function route() {
   const h = location.hash.replace(/^#/, '');
+  if (h === '' || h === 'today') return { view: 'today' };
   if (h === 'log') return { view: 'log' };
-  if (h === 'bans') return { view: 'bans' };
+  if (h === 'bans') return { view: 'people', sub: 'bans' };
+  const people = /^people(?:\/(testers|bans))?$/.exec(h);
+  if (people) return { view: 'people', sub: people[1] || 'bans' };
+  const days = /^days(?:\/(\d{13}))?$/.exec(h);
+  if (days) return { view: 'days', sub: days[1] || null };
   const mod = /^mod(?:\/(reports|chats|suspect|replays))?$/.exec(h);
   if (mod) return { view: 'mod', sub: mod[1] || 'reports' };
   const ann = /^ann(?:\/(new|[a-z0-9-]{1,40}))?$/.exec(h);
@@ -166,7 +182,8 @@ function render() {
   const admin = S.status === 'admin';
   $tabs.hidden = !admin;
   if (admin) renderTabs();
-  $main.replaceChildren(...view());
+  // A view may hand back a group of nodes, or nothing, in place of one: never the text "null".
+  $main.replaceChildren(...view().flat().filter(Boolean));
   renderSavebar();
   document.body.dataset.status = S.status;
 }
@@ -189,8 +206,10 @@ function view() {
       el('button', { class: 'ad-btn', text: 'Try again', onclick: () => onUser(S.user) }))];
     default: {
       const r = route();
+      if (r.view === 'today') return live.viewToday();
+      if (r.view === 'days') return live.viewDays(r.sub);
       if (r.view === 'log') return viewLog();
-      if (r.view === 'bans') return viewBans();
+      if (r.view === 'people') return viewPeople(r.sub);
       if (r.view === 'mod') return moderation.view(r.sub);
       if (r.view === 'ann') return announce.view(r.sub);
       if (r.view === 'section') return viewSection(r.section);
@@ -219,14 +238,16 @@ function renderAccount() {
 
 function renderTabs() {
   const r = route().view;
-  const tab = (href, label, on) => el('a', { class: `ad-tab${on ? ' on' : ''}`, href, 'aria-current': on ? 'page' : null, text: label });
-  const banned = Object.values(S.bans).filter(b => banActive(b)).length;
+  // Six across a phone: a count is a badge on the tab, not words beside it.
+  const tab = (href, label, on, n = 0) => el('a', { class: `ad-tab${on ? ' on' : ''}`, href, 'aria-current': on ? 'page' : null },
+    el('span', { text: label }), n ? raw('span', { class: 'ad-tab-n', 'aria-label': t('{n} open', { n }) }, String(n)) : null);
   const open = moderation.counts().reports;
   $tabs.replaceChildren(
+    tab('#today', 'Today', r === 'today' || r === 'days'),
     tab('#settings', 'Settings', r === 'sections' || r === 'section'),
-    tab('#mod', open ? t('Moderate · {n}', { n: open }) : t('Moderate'), r === 'mod'),
+    tab('#mod', 'Moderate', r === 'mod', open),
     tab('#ann', 'Announce', r === 'ann'),
-    tab('#bans', banned ? t('Bans · {n}', { n: banned }) : t('Bans'), r === 'bans'),
+    tab('#people', 'People', r === 'people'),
     tab('#log', 'Log', r === 'log'));
 }
 
@@ -235,17 +256,24 @@ function renderTabs() {
 function viewSections() {
   return [
     el('h1', { class: 'ad-h1', text: 'Settings' }),
-    el('p', { class: 'ad-sub', text: 'Each setting runs on its built-in default until it is changed here. Every change is logged and can be undone.' }),
+    el('p', { class: 'ad-sub', text: 'Each setting runs on its built-in default until it is changed here. Every change is logged and can be undone, and any change can be given a time instead of now.' }),
+    scheduledList().length ? [
+      el('h2', { class: 'ad-h2 ad-gap', text: 'Scheduled' }),
+      el('ol', { class: 'ad-log' }, ...scheduledList().map(scheduledRow)),
+      el('h2', { class: 'ad-h2 ad-gap', text: 'Sections' }),
+    ] : null,
     el('div', { class: 'ad-list' }, ...Object.entries(CONFIG).map(([s, sec]) => {
       const keys = Object.keys(sec.keys);
       const changed = keys.filter(k => stored(`${s}/${k}`) !== undefined).length;
       const pending = keys.filter(k => S.edits.has(`${s}/${k}`)).length;
+      const planned = keys.filter(k => Object.keys(S.scheduled?.[s]?.[k] || {}).length).length;
       return el('a', { class: 'ad-card', href: `#settings/${s}` },
         el('div', { class: 'ad-card-main' },
           el('b', { text: sec.title }),
           el('span', { class: 'ad-card-sub', text: sec.about })),
         el('div', { class: 'ad-card-side' },
           pending ? el('span', { class: 'ad-pill warn', text: t('{n} unsaved', { n: pending }) }) : null,
+          planned ? el('span', { class: 'ad-pill', text: t('{n} scheduled', { n: planned }) }) : null,
           el('span', { class: 'ad-pill', text: changed ? t('{n} of {m} changed', { n: changed, m: keys.length }) : t('all default') }),
           raw('span', { class: 'ad-chev', 'aria-hidden': 'true' }, '›')));
     })),
@@ -302,6 +330,10 @@ function settingRow(s, k, sp) {
         el('button', { class: 'ad-link', text: 'Use default', onclick: () => { S.edits.set(path, DEFAULT); render(); } }));
     }
     if (has) kids.push(el('button', { class: 'ad-link', text: 'Keep as it was', onclick: () => { S.edits.delete(path); render(); } }));
+    for (const e of scheduledList().filter(x => x.path === path)) {
+      kids.push(raw('span', { class: 'ad-sched' }, t('Scheduled: {v} on {when}', { v: show(sp, e.def ? DEFAULT : e.to), when: whenText(e.at) })),
+        el('button', { class: 'ad-link', text: 'Cancel', onclick: () => askCancel(e) }));
+    }
     status.replaceChildren(...kids);
     renderSavebar();
   };
@@ -342,6 +374,11 @@ function settingRow(s, k, sp) {
     const input = el('input', { id, class: 'ad-inp', type: 'datetime-local' });
     input.value = toLocal(shownValue(path, sp));
     input.addEventListener('input', () => { setEdit(path, sp, input.value ? new Date(input.value).getTime() : sp.def); refresh(); });
+    control = el('div', { class: 'ad-text' }, input);
+  } else if (sp.type === 'choice') {
+    const input = el('select', { id, class: 'ad-inp' }, ...sp.options.map(o => raw('option', { value: o }, t(CHOICE[o] || o))));
+    input.value = shownValue(path, sp);
+    input.addEventListener('change', () => { setEdit(path, sp, input.value); refresh(); });
     control = el('div', { class: 'ad-text' }, input);
   } else if (sp.type === 'set') {
     // A tick each, in the table's order; stored as the ticked ones, comma-separated.
@@ -391,6 +428,7 @@ function rangeText(sp) {
   if (sp.deployed) return t('A whole number from {min} to {max}: no deploy is newer than this one yet', { min: sp.min, max: maxHere(sp) });
   if (sp.type === 'int') return t('A whole number from {min} to {max}', { min: sp.min / fac(sp), max: sp.max / fac(sp) });
   if (sp.type === 'text') return t('At most {max} characters', { max: sp.max });
+  if (sp.type === 'choice') return t('One of the choices');
   return t('On or off');
 }
 
@@ -443,22 +481,133 @@ function diffRow(label, sp, from, to) {
       raw('span', { class: 'ad-to' }, show(sp, to))));
 }
 
+/** The next whole hour, as a datetime-local input wants it. */
+function nextHourLocal() {
+  const d = new Date(Date.now() + 3_600_000);
+  d.setMinutes(0, 0, 0);
+  const p2 = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}T${p2(d.getHours())}:${p2(d.getMinutes())}`;
+}
+
+const whenText = (ms) => new Date(ms).toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+
 function review() {
   const list = pendingChanges();
   if (!list.length || list.some(c => !c.ok)) return;
-  const save = el('button', { class: 'ad-btn primary', text: list.length === 1 ? t('Save it') : t('Save all {n}', { n: list.length }) });
+  const label = () => (when.value === 'later'
+    ? (list.length === 1 ? t('Schedule it') : t('Schedule all {n}', { n: list.length }))
+    : (list.length === 1 ? t('Save it') : t('Save all {n}', { n: list.length })));
+  const when = el('select', { class: 'ad-inp', 'aria-label': t('When') },
+    raw('option', { value: 'now' }, t('Now')), raw('option', { value: 'later' }, t('At a time…')));
+  const at = el('input', { class: 'ad-inp', type: 'datetime-local', 'aria-label': t('At') });
+  at.value = nextHourLocal();
+  const atField = el('label', { class: 'ad-field', hidden: true }, el('span', { class: 'ad-label', text: 'At (this device’s time)' }), at,
+    el('span', { class: 'ad-help', text: 'Applied by the Worker within a minute of it, and logged then, as the scheduler’s change on your behalf.' }));
+  const save = el('button', { class: 'ad-btn primary', text: label() });
+  when.addEventListener('change', () => { atField.hidden = when.value !== 'later'; save.textContent = label(); });
   save.addEventListener('click', async () => {
+    const changes = list.map(c => ({ path: c.path, to: c.to }));
+    if (when.value === 'later') {
+      const ms = at.value ? new Date(at.value).getTime() : NaN;
+      if (!(ms > Date.now() + 60_000) || ms > Date.now() + SCHEDULE_AHEAD_MS - 60_000) {
+        toast(t('A time from a minute from now to a year ahead'), { kind: 'bad', long: true });
+        return;
+      }
+      save.disabled = true;
+      if (await schedule(changes, ms)) {
+        S.edits.clear(); closeSheet(); render();
+        toast(t('Scheduled for {when}.', { when: whenText(ms) }), { kind: 'good', long: true });
+      } else save.disabled = false;
+      return;
+    }
     save.disabled = true;
-    const ok = await write(list.map(c => ({ path: c.path, to: c.to })));
+    const ok = await write(changes);
     if (ok) { S.edits.clear(); closeSheet(); render(); toast(t('Saved. It is in the change log.'), { kind: 'good', long: true }); }
     else save.disabled = false;
   });
   openSheet(
     el('h2', { class: 'ad-h2', text: list.length === 1 ? t('Save this change?') : t('Save these {n} changes?', { n: list.length }) }),
     el('ul', { class: 'ad-diffs' }, ...list.map(c => diffRow(labelOf(c.path), c.sp, c.from, c.to))),
+    el('label', { class: 'ad-field' }, el('span', { class: 'ad-label', text: 'When' }), when),
+    atField,
     el('div', { class: 'ad-sheet-actions' },
       el('button', { class: 'ad-btn', text: 'Back', onclick: closeSheet }),
       save));
+}
+
+/* ---------------- scheduled changes (ADMIN.md §10) ---------------- */
+
+/** Every scheduled change, soonest first: [{ path, id, to?, def?, at, by, createdAt }]. */
+function scheduledList() {
+  const out = [];
+  for (const [s, keys] of Object.entries(S.scheduled || {})) {
+    for (const [k, ids] of Object.entries(keys || {})) {
+      for (const [id, e] of Object.entries(ids || {})) out.push({ path: `${s}/${k}`, id, ...e });
+    }
+  }
+  return out.sort((a, b) => (a.at || 0) - (b.at || 0));
+}
+
+/** One update for the lot: a configScheduled entry per setting. The rules check each value as they would the setting. */
+async function schedule(changes, at) {
+  const { db, ref, push, update, serverTimestamp } = S.sdk;
+  const body = {};
+  for (const { path, to } of changes) {
+    const id = push(ref(db, `configScheduled/${path}`)).key;
+    const rec = { at, by: S.user.uid, createdAt: serverTimestamp() };
+    if (to === DEFAULT) rec.def = true; else rec.to = to;
+    body[`configScheduled/${path}/${id}`] = rec;
+  }
+  try {
+    await update(ref(db), body);
+    return true;
+  } catch (err) {
+    console.warn('[admin] schedule refused', err?.code || err);
+    toast(t('The database refused that. Scheduling needs the firebase.rules.json from this version of the page.'), { kind: 'bad', hold: true });
+    return false;
+  }
+}
+
+/** A scheduled change as a row: what, when, whose, and whether it is late (the Worker has not run it). */
+function scheduledRow(e) {
+  const [s, k] = e.path.split('/');
+  const sp = spec(s, k);
+  const late = e.at < Date.now() - 3 * 60_000;
+  return el('li', { class: `ad-entry${late ? ' ad-late' : ''}` },
+    el('div', { class: 'ad-entry-main' },
+      raw('b', {}, labelOf(e.path)),
+      el('span', { class: 'ad-diff-vals' },
+        raw('span', { class: 'ad-from' }, show(sp, stored(e.path))),
+        raw('span', { class: 'ad-arrow', 'aria-hidden': 'true' }, '→'),
+        raw('span', { class: 'ad-to' }, show(sp, e.def ? DEFAULT : e.to))),
+      raw('span', { class: 'ad-entry-meta' }, [whenText(e.at), t('by {who}', { who: who(e.by) })].join(' · ')),
+      late ? el('span', { class: 'ad-err', text: 'Overdue: the Worker has not applied it. ADMIN.md §10 says what to check.' }) : null),
+    el('button', { class: 'ad-btn small', text: 'Cancel', onclick: () => askCancel(e) }));
+}
+
+function askCancel(e) {
+  const [s, k] = e.path.split('/');
+  const sp = spec(s, k);
+  const go = el('button', { class: 'ad-btn primary', text: 'Cancel it' });
+  go.addEventListener('click', async () => {
+    go.disabled = true;
+    try {
+      await S.sdk.remove(S.sdk.ref(S.sdk.db, `configScheduled/${e.path}/${e.id}`));
+      closeSheet();
+      toast(t('Cancelled. Nothing changes.'), { kind: 'good' });
+    } catch (err) {
+      console.warn('[admin] cancel refused', err?.code || err);
+      toast(t('The database refused that'), { kind: 'bad', hold: true });
+      go.disabled = false;
+    }
+  });
+  openSheet(
+    el('h2', { class: 'ad-h2', text: 'Cancel this scheduled change?' }),
+    el('ul', { class: 'ad-diffs' }, diffRow(labelOf(e.path), sp, stored(e.path), e.def ? DEFAULT : e.to)),
+    raw('p', { class: 'ad-sub' }, t('It was due {when}.', { when: whenText(e.at) })),
+    el('div', { class: 'ad-sheet-actions' },
+      el('button', { class: 'ad-btn', text: 'Back', onclick: closeSheet }),
+      go));
 }
 
 /**
@@ -531,7 +680,7 @@ function logRow(e, byId) {
         raw('span', { class: 'ad-arrow', 'aria-hidden': 'true' }, '→'),
         raw('span', { class: 'ad-to' }, show(sp, e.to))),
       raw('span', { class: 'ad-entry-meta', title: e.at ? new Date(e.at).toLocaleString() : '' },
-        [who(e.uid), ago(e.at), e.undo ? (undone ? t('undid the change from {when}', { when: ago(undone.at) }) : t('an undo')) : '']
+        [e.sched ? t('scheduled by {who}', { who: who(e.by) }) : who(e.uid), ago(e.at), e.undo ? (undone ? t('undid the change from {when}', { when: ago(undone.at) }) : t('an undo')) : '']
           .filter(Boolean).join(' · '))),
     el('button', {
       class: 'ad-btn small', text: 'Undo', disabled: !can,
@@ -573,9 +722,18 @@ const banFor = () => [
   { label: t('30 days'), ms: 30 * 86_400_000 },
 ];
 
+/** People: testers (admin-live.js) and bans, as two views of one tab. */
+function viewPeople(sub) {
+  const nav = el('nav', { class: 'ad-subtabs', 'aria-label': t('People') },
+    ...[['bans', t('Bans'), Object.values(S.bans).filter(b => banActive(b)).length], ['testers', t('Testers'), Object.keys(S.testers || {}).length]]
+      .map(([id, label, n]) => raw('a', { class: `ad-subtab${sub === id ? ' on' : ''}`, href: `#people/${id}`, 'aria-current': sub === id ? 'page' : null },
+        n ? `${label} · ${n}` : label)));
+  const head = [el('h1', { class: 'ad-h1', text: 'People' }), nav];
+  return [...head, ...(sub === 'testers' ? live.viewTesters() : viewBans())];
+}
+
 function viewBans() {
   const head = [
-    el('h1', { class: 'ad-h1', text: 'Bans' }),
     el('p', { class: 'ad-sub', text: 'A banned account cannot post in either chat, share a replay, or put a time or a note on the Scramble of the Day board. Its timer and its own synced solves are untouched. The database rules and the Worker enforce it. In the timer, an admin can also ban from a chat message, a board row or a shared replay.' }),
   ];
   const field = (label, input) => el('label', { class: 'ad-field' }, el('span', { class: 'ad-label', text: label }), input);
@@ -703,9 +861,10 @@ async function doSignOut() {
 function teardown() {
   moderation.stop();
   announce.stop();
+  live.stop();
   for (const off of S.unsubs.splice(0)) off();
-  S.config = {}; S.meta = {}; S.log = []; S.bans = {};
-  S.loaded = { config: false, log: false, bans: false };
+  S.config = {}; S.meta = {}; S.log = []; S.bans = {}; S.testers = {}; S.scheduled = {};
+  S.loaded = { config: false, log: false, bans: false, testers: false };
 }
 
 /** A read the rules refuse mid-session: this account was taken off admins/. */
@@ -733,6 +892,10 @@ function listen() {
        the Bans tab says so, and everything else carries on. */
     onValue(ref(db, 'bans'), (s) => { S.bans = s.val() || {}; S.loaded.bans = true; S.bansRefused = false; scheduleRender(); },
       () => { S.bansRefused = true; S.loaded.bans = true; scheduleRender(); }),
+    // The same for rules from before testers and schedules (phase 4's).
+    onValue(ref(db, 'testers'), (s) => { S.testers = s.val() || {}; S.loaded.testers = true; S.testersRefused = false; scheduleRender(); },
+      () => { S.testersRefused = true; S.loaded.testers = true; scheduleRender(); }),
+    onValue(ref(db, 'configScheduled'), (s) => { S.scheduled = s.val() || {}; scheduleRender(); }, () => { S.scheduled = {}; }),
   );
 }
 
@@ -761,6 +924,7 @@ async function onUser(user) {
 
 const moderation = createModeration({ S, scheduleRender, raw, ago, who, openSheet, closeSheet, askBan, gate });
 const announce = createAnnounce({ S, scheduleRender, raw, ago, who, openSheet, closeSheet, gate, cfg });
+const live = createLive({ S, scheduleRender, raw, ago, who, openSheet, closeSheet, gate, cfg, moderation, scheduledList, scheduledRow });
 
 window.addEventListener('hashchange', () => { closeSheet(); render(); window.scrollTo(0, 0); });
 window.addEventListener('beforeunload', (e) => { if (S.edits.size) e.preventDefault(); });

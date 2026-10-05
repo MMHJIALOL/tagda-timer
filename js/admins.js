@@ -38,6 +38,38 @@ export async function adminStatus(sdk, user) {
 }
 
 /* ---------------------------------------------------------
+   Testers
+   ---------------------------------------------------------
+
+   testers/<uid>: { at, by, name? }, written by an admin from the admin
+   page's People tab, readable by admins and by the account itself. A tester
+   gets a feature whose audience is 'testers' (ADMIN.md §9, audience.js).
+   --------------------------------------------------------- */
+
+/** Whether `user` is listed under testers/. Refused (rules from before testers): no. */
+export async function testerStatus(sdk, user) {
+  if (!user) return false;
+  try {
+    return (await sdk.get(sdk.ref(sdk.db, `testers/${user.uid}`))).exists();
+  } catch (err) {
+    if (!/permission/i.test(`${err?.code} ${err?.message}`)) throw err;
+    return false;
+  }
+}
+
+/** Make `uid` a tester (admins only; the rules refuse anybody else). */
+export function addTester(sdk, { uid, name = '' }) {
+  const rec = { at: sdk.serverTimestamp(), by: sdk.auth.currentUser.uid };
+  if (name) rec.name = String(name).slice(0, 32);
+  return sdk.set(sdk.ref(sdk.db, `testers/${uid}`), rec);
+}
+
+/** Take `uid` off the testers. */
+export function removeTester(sdk, uid) {
+  return sdk.remove(sdk.ref(sdk.db, `testers/${uid}`));
+}
+
+/* ---------------------------------------------------------
    Bans
    ---------------------------------------------------------
 

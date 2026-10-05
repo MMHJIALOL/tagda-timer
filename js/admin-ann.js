@@ -10,7 +10,7 @@ import { t } from './i18n.js';
 
    Every save is one update: announcements/<id> and its configLog entry
    (`path: 'ann/<id>'`), which the rules require of each other, the same
-   chain as a setting's (ADMIN.md §8).
+   chain as a setting's (ADMIN.md §12).
    =========================================================== */
 
 import { el } from './util.js';
@@ -21,6 +21,7 @@ import { annNode } from './announce-ui.js';
 const AUDIENCE = {
   everyone: 'Everyone', signedIn: 'Signed in', webcamOff: 'Camera off', notOpened: 'Has not opened that panel',
   newUsers: 'New (under 50 solves here)', returningUsers: 'Returning (50 solves or more)',
+  testers: 'Testers (and admins)', admins: 'Admins only',
 };
 const STYLE = { popup: 'Popup', card: 'Card', pill: 'Pill' };
 const PANEL = {

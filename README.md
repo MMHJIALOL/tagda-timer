@@ -812,8 +812,9 @@ From it you can switch shared replays, either chat or new race rooms off with a 
 people while they are off, tighten their limits (never past the free-tier ceilings in the code),
 ban an account from posting, sharing and submitting, make every open tab reload onto a new
 deploy once its timer is idle, moderate every chat, report, flagged time and shared replay of the
-day, and write announcements (a popup, a card or a pill) with an audience, a schedule and their
-own numbers. How to turn it on, what each setting does and where it is
+day, write announcements (a popup, a card or a pill) with an audience, a schedule and their
+own numbers, see the day's numbers on one screen, turn a feature on for testers first, schedule a
+change for later, and set a day's scramble and featured event ahead of time. How to turn it on, what each setting does and where it is
 enforced: [ADMIN.md](ADMIN.md).
 
 ---

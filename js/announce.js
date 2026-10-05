@@ -19,7 +19,7 @@
    =========================================================== */
 
 export const ANN_STYLES = ['popup', 'card', 'pill'];
-export const ANN_AUDIENCES = ['everyone', 'signedIn', 'webcamOff', 'notOpened', 'newUsers', 'returningUsers'];
+export const ANN_AUDIENCES = ['everyone', 'signedIn', 'webcamOff', 'notOpened', 'newUsers', 'returningUsers', 'testers', 'admins'];
 /** What a button may open: main.js maps each to its panel (ANN_OPEN). */
 export const ANN_PANELS = ['camera', 'sotd', 'race', 'stats', 'appearance', 'settings', 'spotify', 'gear', 'about'];
 /** Fewer solves than this on this device is a new user; this many or more, a returning one. */
@@ -119,6 +119,9 @@ export function inAudience(a, who) {
     case 'notOpened': return !(a.button?.action === 'panel' && who.opened?.has(a.button.target));
     case 'newUsers': return (who.solves ?? 0) < NEW_USER_SOLVES;
     case 'returningUsers': return (who.solves ?? 0) >= NEW_USER_SOLVES;
+    // testers/<uid> and admins/<uid>, as audience.js last read them for this account (ADMIN.md §9).
+    case 'testers': return !!(who.tester || who.admin);
+    case 'admins': return !!who.admin;
     default: return true;
   }
 }
