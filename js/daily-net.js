@@ -53,6 +53,7 @@ import { t } from './i18n.js';
    =========================================================== */
 
 import { getDatabaseHandle } from './sync-auth.js';
+import { adminStatus } from './admins.js';
 import { CLOCK_SLACK_MS, CLOCK_SLACK_RATIO, CHAT_HISTORY } from './raceapp.js';
 import { cleanChat } from './race-net.js';
 
@@ -100,14 +101,6 @@ export const NOTE_MAX_LEN = 80;
    --------------------------------------------------------- */
 
 /**
- * Who may delete anybody's message, and take anybody's time off a board. Must
- * match the uid in firebase.rules.json (`chat/m/$msgId`, `results/$uid`,
- * `removed/$uid`), where it is what actually counts; this copy only decides
- * who is shown the delete buttons. Same account as ADMIN_UIDS in wrangler.jsonc.
- */
-export const ADMIN_UIDS = ['8lSr96LEO1cdHDVlMDv8tCCFQag1'];
-
-/**
  * Least time between two messages from one account, in this client. The rule
  * says 1.5 s between the server's two timestamps; asking for a little more
  * here keeps a message sent on a fast connection after one sent on a slow one
@@ -138,6 +131,10 @@ const emptySnapshot = (event) => ({
      taken its time off this board, else null. Watched, so a removal reaches an
      open window at once rather than at the next reload. */
   removed: null,
+  /* Whether this account is an admin (js/admins.js): who may delete anybody's
+     message and take anybody's time off a board. Only draws the buttons; the
+     rules decide, by admins/<uid>. */
+  admin: false,
   /* Whether the scramble node has actually reported yet.
      `scramble: null` alone cannot answer "has anybody published today's?" —
      it is also what a listener that has not yet delivered its first value
@@ -181,6 +178,7 @@ export class DailyTransport extends EventTarget {
     this._chatRetried = null;
     this._removedUnsub = null;
     this._removedKey = null;
+    this._adminUid = null;
   }
 
   async init() {
@@ -191,6 +189,7 @@ export class DailyTransport extends EventTarget {
     this.snap.signedIn = !!auth.currentUser;
     this.snap.displayName = auth.currentUser?.displayName || auth.currentUser?.email || null;
     this.snap.photoURL = auth.currentUser?.photoURL || null;
+    this._checkAdmin(auth.currentUser);
 
     // Auth-state changes reach this transport through setUser(), called by the
     // controller from sync-auth.js's onAuthChange — the db handle above only
@@ -208,8 +207,27 @@ export class DailyTransport extends EventTarget {
     this.snap.signedIn = !!user;
     this.snap.displayName = user?.displayName || user?.email || null;
     this.snap.photoURL = user?.photoURL || null;
+    this._checkAdmin(user);
     this._watchRemoved();
     this._emit();
+  }
+
+  /** Ask admins/<uid> once per account; until it answers, not an admin. */
+  _checkAdmin(user) {
+    const uid = user?.uid || null;
+    if (!this._sdk || uid === this._adminUid) return;
+    this._adminUid = uid;
+    this.snap.admin = false;
+    if (!uid) return;
+    adminStatus(this._sdk, user).then(({ admin }) => {
+      if (this._adminUid !== uid || !admin) return;
+      this.snap.admin = true;
+      this._emit();
+    }, (err) => {
+      // Offline, most likely: the next auth event asks again.
+      if (this._adminUid === uid) this._adminUid = null;
+      console.warn('[daily] could not ask admins/', err?.code || err);
+    });
   }
 
   serverNow() { return Date.now() + this._offset; }
@@ -226,7 +244,7 @@ export class DailyTransport extends EventTarget {
     this._teardownEvent();
 
     this.snap = { ...emptySnapshot(eventId), uid: this.snap.uid, signedIn: this.snap.signedIn,
-      displayName: this.snap.displayName, photoURL: this.snap.photoURL,
+      displayName: this.snap.displayName, photoURL: this.snap.photoURL, admin: this.snap.admin,
       // The count board is not per-event, so switching events must not blank it.
       counts: this.snap.counts || {}, serverNow: now };
     this.snap.dayId = dayId;

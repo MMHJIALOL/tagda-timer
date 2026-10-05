@@ -2471,6 +2471,76 @@ section('scramble of the day — ranking the two boards');
 const Gear = await import('./js/gear.js');
 const Ev = await import('./js/events.js');
 
+section('admin console — settings and the rules that guard them');
+{
+  /* js/config.js is the one list of settings, and firebase.rules.json's
+     config block is written from it (node tools/config-rules.mjs). A setting
+     in one and not the other is either refused by the database or not checked
+     by it, so the committed file has to be exactly what the table makes. */
+  const C = await import('./js/config.js');
+  const R = await import('./js/config-rules.js');
+  const rulesText = await (await fetch('./firebase.rules.json', { cache: 'no-store' })).text();
+  const rules = JSON.parse(rulesText).rules;
+  check('firebase.rules.json’s config block is what js/config.js makes (node tools/config-rules.mjs)',
+    R.replaceBlock(rulesText, R.configBlock()) === rulesText);
+  check('every setting’s default is inside its own range, and has a write and a validate rule',
+    C.allSettings().every(([s, k, sp]) => C.valid(sp, sp.def) && rules.config[s][k]['.write'] && rules.config[s][k]['.validate']));
+
+  // Who is an admin is admins/<uid>, never a uid written into the rules, and
+  // always a Google sign-in, so race mode's anonymous accounts can never be one.
+  const asks = (rulesText.match(/root\.child\('admins\/' \+ auth\.uid\)\.val\(\) === true/g) || []).length;
+  const google = (rulesText.match(/auth\.token\.firebase\.sign_in_provider === 'google\.com' && root\.child\('admins\/' \+ auth\.uid\)\.val\(\) === true/g) || []).length;
+  check('no uid is hard-coded as an admin: every admin check reads admins/, and wants a Google sign-in',
+    !/auth\.uid === '/.test(rulesText) && asks >= 10 && google === asks, `${asks} ${google}`);
+  check('admins/ is writable by nobody from the client',
+    !JSON.stringify(rules.admins).includes('.write'));
+
+  /* getConfig: the default with nothing stored, the stored value clipped to
+     its range, and the default again for the wrong type. This shares
+     localStorage with the app on this origin, so the cached copy is put back. */
+  let saved = null;
+  try { saved = localStorage.getItem('tdt-config'); } catch {}
+  const n = () => C.getConfig('sandbox', 'n');
+  C.applyConfig({});
+  check('with nothing stored, a setting is its built-in default',
+    n() === 5 && C.getConfig('sandbox', 'on') === false && C.getConfig('sandbox', 'text') === '');
+  C.applyConfig({ sandbox: { n: 7, on: true, text: 'hi' } });
+  check('a stored value is what the app gets', n() === 7 && C.getConfig('sandbox', 'on') === true && C.getConfig('sandbox', 'text') === 'hi');
+  C.applyConfig({ sandbox: { n: 9999, on: 'yes', text: 5 } });
+  check('past its ceiling a number is clipped to it, and the wrong type is the default',
+    n() === 10 && C.getConfig('sandbox', 'on') === false && C.getConfig('sandbox', 'text') === '');
+  C.applyConfig({ sandbox: { n: -3 } });
+  const low = n();
+  C.applyConfig({ sandbox: { n: 2.6, text: 'x'.repeat(500) } });
+  check('below its minimum it is the minimum; a fraction rounds; long text is cut',
+    low === 0 && n() === 3 && C.getConfig('sandbox', 'text').length === 80);
+  C.applyConfig(null);
+  check('junk instead of a config is the defaults', n() === 5);
+  let threw = false;
+  try { C.getConfig('sandbox', 'nope'); } catch { threw = true; }
+  check('asking for a setting that does not exist throws rather than quietly defaulting', threw);
+  const sp = (k) => C.spec('sandbox', k);
+  check('the admin page refuses what the rules refuse, before sending',
+    C.valid(sp('n'), 10) && !C.valid(sp('n'), 11) && !C.valid(sp('n'), 2.5) && !C.valid(sp('n'), '5')
+    && C.valid(sp('text'), 'x'.repeat(80)) && !C.valid(sp('text'), 'x'.repeat(81)) && !C.valid(sp('on'), 'true'));
+  try { if (saved === null) localStorage.removeItem('tdt-config'); else localStorage.setItem('tdt-config', saved); } catch {}
+
+  // Every word the admin page shows goes through t(), and Spanish has each one.
+  const { es } = await import('./locales/es.js');
+  const src = await (await fetch('./js/admin.js')).text();
+  const q = String.raw`'((?:\\'|[^'])*)'`;
+  const keys = [
+    ...[...src.matchAll(new RegExp(String.raw`\bt\(\s*` + q, 'g'))].map(m => m[1]),
+    ...[...src.matchAll(new RegExp(String.raw`(?:\btext|\btitle|'aria-label'):\s*` + q, 'g'))].map(m => m[1]),
+    ...[...src.matchAll(new RegExp(String.raw`\bgate\(\s*` + q + String.raw`(?:,\s*` + q + ')?', 'g'))].flatMap(m => [m[1], m[2]]),
+    ...[...(/const WHERE = \{([\s\S]*?)\};/.exec(src)?.[1] || '').matchAll(new RegExp(q, 'g'))].map(m => m[1]),
+    ...Object.values(C.CONFIG).flatMap(sec => [sec.title, sec.about,
+      ...Object.values(sec.keys).flatMap(k => [k.label, k.help, k.unit])]),
+  ].filter(Boolean).map(k => k.replace(/\\'/g, "'"));
+  const missing = [...new Set(keys)].filter(k => !(k in es));
+  check('every admin page string has its Spanish', keys.length > 40 && !missing.length, missing.join(' | ') || String(keys.length));
+}
+
 section('gear — seed files');
 {
   const cubes = await (await fetch('./cubes.json')).json();

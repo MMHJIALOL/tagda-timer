@@ -96,7 +96,19 @@ async function tokenOk(env, sub, token) {
   return r.ok;
 }
 
-const admins = (env) => String(env.ADMIN_UIDS || '').split(',').map(s => s.trim()).filter(Boolean);
+/**
+ * Whether this account is an admin: a Google sign-in whose admins/<uid> is
+ * true (ADMIN.md). Each account may read its own entry, so the rules answer.
+ * A refused read is the rules from before the admin console, where ADMIN_UIDS
+ * is still the list; a bad token gets there too, which is why every caller
+ * proves the token separately before acting.
+ */
+async function isAdmin(env, who, sub, token) {
+  if (who?.firebase?.sign_in_provider !== 'google.com') return false;
+  const r = await rtdb(env, `admins/${sub}`, token).catch(() => null);
+  if (r?.ok) return (await r.json()) === true;
+  return String(env.ADMIN_UIDS || '').split(',').map(s => s.trim()).includes(sub);
+}
 
 function magicOk(type, b) {
   if (type === 'video/webm') return b[0] === 0x1a && b[1] === 0x45 && b[2] === 0xdf && b[3] === 0xa3;
@@ -205,7 +217,10 @@ async function get(request, env, { dayKey, event, uid }) {
   if (!sub) return fail(401, 'bad-token');
 
   // Allowed only if the viewer has a row on this board; non-null only if the target does.
-  const r = await rtdb(env, `daily/${dayKey}/${event}/results/${uid}`, token);
+  const [r, admin] = await Promise.all([
+    rtdb(env, `daily/${dayKey}/${event}/results/${uid}`, token),
+    isAdmin(env, who, sub, token),
+  ]);
   if (r.status === 401) return (await tokenOk(env, sub, token)) ? fail(403, 'not-submitted') : fail(401, 'bad-token');
   if (!r.ok) return fail(502, 'db');
   const row = await r.json();
@@ -228,7 +243,7 @@ async function get(request, env, { dayKey, event, uid }) {
       'cache-control': 'private, max-age=86400',
       'vary': 'Authorization',
       'x-replay-meta': JSON.stringify(meta),
-      ...(admins(env).includes(sub) ? { 'x-replay-admin': '1' } : {}),
+      ...(admin ? { 'x-replay-admin': '1' } : {}),
     },
   });
 }
@@ -242,7 +257,8 @@ async function del(request, env, { dayKey, event, uid }) {
   const sub = typeof who?.sub === 'string' && UID.test(who.sub) ? who.sub : null;
   if (!sub) return fail(401, 'bad-token');
   const owner = sub === uid;
-  if (!owner && !admins(env).includes(sub)) return fail(403, 'not-yours');
+  if (!owner && !(await isAdmin(env, who, sub, token))) return fail(403, 'not-yours');
+  // After the admin check too: a forged token falls back to ADMIN_UIDS above.
   if (!(await tokenOk(env, sub, token))) return fail(401, 'bad-token');
   if (owner) {
     // The flag first, so the board stops offering it before the clip goes.

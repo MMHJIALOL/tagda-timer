@@ -23,7 +23,7 @@ leaderboard, and a theme engine that lets you rebuild the entire look.
 - [Making it yours](#making-it-yours) — themes, backgrounds, panels, Spotify
 - [Your data](#your-data) — storage, sync, import/export, offline, gear
 - [Keyboard shortcuts](#keyboard-shortcuts)
-- [Layout](#layout) · [Deploying](#deploying) · [Not in this version](#not-in-this-version)
+- [Layout](#layout) · [Deploying](#deploying) · [Admin console](#admin-console) · [Not in this version](#not-in-this-version)
 
 ---
 
@@ -801,6 +801,14 @@ That is why the old domain still serves the app instead of redirecting.
 
 Whatever the host, it must serve the whole folder (`vendor/` included) with
 JavaScript files as `text/javascript`. Every host above does that by default.
+
+### Admin console
+**tagdatimer.me/admin** is a page for the site's admins: the app's settings, changed from a
+phone, with every change logged and undoable. An admin is a Google account listed under
+`admins/` in the database, added by hand in the Firebase console; everybody else who opens the
+page is told it is for the site's admins, and the database rules refuse their writes anyway. It
+installs to the home screen as its own app, and the service worker never serves it from cache.
+How to turn it on, what each setting does and where it is enforced: [ADMIN.md](ADMIN.md).
 
 ---
 

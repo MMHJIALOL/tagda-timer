@@ -108,7 +108,7 @@ one press at a time or a setting you turn on yourself (§8).
 | `timeMs` checked against the server-stamped solve window | Pausing the app and typing in a fabricated number afterwards |
 | `backup` readable only once your own `backupClaim` exists | Looking at the backup scramble without giving up the main attempt |
 | a claim forces `backup: true` on your result, and `backup: true` needs a claim | Peeking at the backup and then submitting as though you never did |
-| only the admin uid deletes a result, and only with a `removed/<uid>` record in the same write | A sus time staying up, and a removed one coming back as a second go at the main scramble |
+| only an admin (`admins/<uid>`, [ADMIN.md](ADMIN.md)) deletes a result, and only with a `removed/<uid>` record in the same write | A sus time staying up, and a removed one coming back as a second go at the main scramble |
 
 The two backup rows are §7; removals are §10.
 
@@ -204,6 +204,10 @@ rules published, sharing says it is not switched on yet and touches nothing.
 
 The chat (§9) needs only the rules republished. Until then the window has no chat at all.
 Admin removals (§10) are the same: until then the × is drawn, and pressing it is refused.
+
+Since the admin console ([ADMIN.md](ADMIN.md)), an admin is whoever `admins/<uid>` says in the
+database, not a uid written into the rules. Add yourself there **before** publishing them: until
+the entry exists, the rules refuse your × and your chat deletes, and the app stops drawing them.
 
 ---
 
@@ -559,7 +563,7 @@ The Worker (`worker.js`, `/replay/*`) is the only way to the bucket:
 |---|---|---|
 | `PUT /replay/<dayKey>/<event>` | you, your clip | path, and today's or yesterday's day → headers (meta, type, length) → the body really that size, really WebM or MP4 → Google sign-in, a result on the board → **the claim** → `list` the day, under DAY_BUDGET → `put`, then the flag |
 | `GET /replay/<dayKey>/<event>/<uid>` | anyone with a result that day | path → not past 7 days → reading `results/<uid>` with your token (allowed only once yours exists) and its flag → `get` |
-| `DELETE /replay/<dayKey>/<event>/<uid>` | the owner, or an `ADMIN_UIDS` uid | path → token → the flag (owner) → `delete` |
+| `DELETE /replay/<dayKey>/<event>/<uid>` | the owner, or an admin (`admins/<uid>`; `ADMIN_UIDS` while the rules are older, [ADMIN.md](ADMIN.md)) | path → token → the flag (owner) → `delete` |
 
 400 bad path or day, 401 token, 403 not submitted or not a Google account, 404 removed,
 409 already shared today, 410 past 7 days, 411 no length, 413 over CLIP_MAX, 415 not a video,
@@ -656,12 +660,13 @@ What the rules ask of a message:
   The app waits 2 s between sends, so a fast connection after a slow one is not refused.
 
 **Deleting.** Your own messages, from the × on hover (always showing, faintly, on a touch
-screen), after a confirm. The admin uid in the rules (the same account as `ADMIN_UIDS` in
-`wrangler.jsonc`, mirrored as `CHAT_ADMIN_UIDS` in `js/daily-net.js` for drawing the button)
-can delete anybody's, in any room, without a result of its own. The admin reads a room the same
-way as everyone else, though: after doing that event's scramble. In the chat the owner's badge
-goes by that uid, not by name as on the board: a message's uid is pinned by the rules, and a
-name is free text anyone can type.
+screen), after a confirm. An admin (a Google account with `admins/<uid>: true` in the
+database, [ADMIN.md](ADMIN.md); the app asks `admins/<uid>` once to draw the button) can delete
+anybody's, in any room, without a result of its own. An admin reads a room the same way as
+everyone else, though: after doing that event's scramble. In the chat the owner's badge goes by
+the owner's uid (`OWNER_UID` in `js/ownercard.js`), not by name as on the board: a message's uid
+is pinned by the rules, and a name is free text anyone can type. The badge is cosmetic; being an
+admin is the database's say.
 
 **At the reset.** Nothing has to happen at 00:00 IST for the room to vanish: the window reads
 the new day's path, which is empty, and every screen moves to it. The stored copy goes later.
@@ -684,14 +689,14 @@ browser, with a console warning. Nothing else changes.
 emulator (in a namespace of its own, so a running `sotd-replay-dev.mjs` is untouched).
 `node tools/sotd-replay-dev.mjs`, then two browsers (or one private window) on the printed URL,
 each signed in with "Add new account". Both solve today's scramble, then talk. The account
-chooser also has **Admin (chat)**, an account with the admin's uid, for the delete buttons on
+chooser also has **Admin**, an account listed under `admins/`, for the delete buttons on
 other people's messages.
 
 ---
 
 ## 10. Removing a time (admin)
 
-The admin (the same uid as the chat's, §9) gets a × on every row of a board, faint until the
+An admin (§9, [ADMIN.md](ADMIN.md)) gets a × on every row of a board, faint until the
 row is hovered and always faintly there on a touch screen. It is on today's board in the
 window and in the drawer, and on past days in the picker. Pressing it asks first, saying
 what will happen, then takes the time off. Nobody else gets a ×, and nobody can take their
@@ -725,7 +730,7 @@ replayClaim/<uid>         null, so a replay of the backup solve can be shared (�
 
 What the rules ask:
 
-- **Only the admin uid**, and the row's delete and the record have to arrive together: a
+- **Only an admin** (`admins/<uid>`), and the row's delete and the record have to arrive together: a
   delete without a fresh `removed/<uid>` (its `at` is the server's `now`) is refused, and so
   is a record for somebody with no row, or one that leaves the row in place. Nobody can
   delete or rewrite a record afterwards, the person included.
@@ -756,5 +761,5 @@ read as "never removed". Nothing else changes.
 `node tools/verify-sotd-remove-rules.mjs` (45 checks, its own namespace) covers every path
 above: who may remove, the record's shape, the lock, the backup after a removal, a removed
 backup being final, the admin's own time, a past day, and everybody else being untouched.
-In the app, `node tools/sotd-replay-dev.mjs` and its **Admin (chat)** account: both submit,
+In the app, `node tools/sotd-replay-dev.mjs` and its **Admin** account: both submit,
 then the admin hovers the other row.

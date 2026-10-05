@@ -138,6 +138,10 @@ player per round — no media — against an allowance of 100 simultaneous conne
 of transfer a month. Set a budget alert if you move to the paid tier. Check the current limits
 in the console rather than trusting these numbers indefinitely.
 
+The rest of the app is careful with that 100. The admin console ([ADMIN.md](ADMIN.md)) holds one
+connection per admin with it open. The app reads the settings it changes with a plain REST
+request, never a listener, so they cost no connection at all (ADMIN.md §3).
+
 ### Developing against the emulator
 
 To iterate on rules without touching a real project or burning quota:
