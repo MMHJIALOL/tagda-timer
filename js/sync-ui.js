@@ -13,6 +13,7 @@ import { popover } from './popover.js';
 import { onAuthChange, signIn, signOutUser } from './sync-auth.js';
 import { initSync, syncNow } from './sync.js';
 import { KV, onWrite } from './db.js';
+import { safeAvatar } from './faces.js';
 
 let _initStarted = false;
 
@@ -245,13 +246,6 @@ function editUsername(btn, setSetting) {
 
 const AVATAR_PX = 96;
 const AVATAR_MAX_BYTES = 25e6;
-const AVATAR_MAX_LEN = 40000;
-
-/* Settings sync from other devices, so anything that isn't the image data
-   URL this file makes is dropped rather than put in an <img src>. */
-function safeAvatar(v) {
-  return typeof v === 'string' && v.length <= AVATAR_MAX_LEN && /^data:image\/(webp|jpeg);base64,[A-Za-z0-9+/=]+$/.test(v) ? v : '';
-}
 
 /**
  * Any image the browser can decode (PNG, JPEG, WebP, AVIF, GIF, HEIC in
@@ -321,9 +315,9 @@ function changeAvatar(btn, setSetting) {
  * signed in.
  *
  * The avatar is the Google account's photo unless the user picked their
- * own (changeAvatar). That one is shown here only: the daily boards still
- * carry the Google photo, since their rules accept googleusercontent URLs
- * and nothing else.
+ * own (changeAvatar). The Scramble of the Day board and chat look that one
+ * up separately (faces.js): their rows carry only the Google photo, since
+ * their rules accept googleusercontent URLs and nothing else.
  */
 export function wireAccountButton(btn, { setSetting } = {}) {
   if (btn.dataset.wired) { autoStart(); return; }
