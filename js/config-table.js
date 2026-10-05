@@ -22,13 +22,19 @@
    =========================================================== */
 
 const MB = 1024 * 1024;
+/** The events that can have a Scramble of the Day (events.js dailyEligible), written out:
+    this file imports nothing, so the Worker can bundle it. test.html checks the two agree. */
+export const SOTD_EVENTS = ['333', '222', '444', '555', '666', '777', '333bf', '333oh', 'clock', 'minx', 'pyram', 'skewb', 'sq1', '444bf', '555bf', 'fto'];
+/** The latest a time setting can be: 2100. */
+const TIME_MAX = 4102444800000;
 
 /**
  * One entry per section, one per key inside it.
- *   type   'bool' | 'int' | 'text'
+ *   type   'bool' | 'int' | 'text' | 'time' (ms since 1970) | 'set' (some of `options`, comma-separated)
  *   def    the built-in default
  *   min, max   ints: the range. text: `max` characters.
  *   unit, factor   ints shown in the admin page as value / factor, in `unit`
+ *   pattern  text: 'https', a web address
  *   where  where it is enforced: 'rules', 'worker', 'app' or 'nowhere' (ADMIN.md)
  */
 export const CONFIG = {
@@ -65,12 +71,23 @@ export const CONFIG = {
   },
   race: {
     title: 'Race rooms',
-    about: 'Live rooms between people, on anonymous accounts. Read by the database rules.',
+    about: 'Live rooms between people, on anonymous accounts. The switch is in the database rules; the tuning is read by the app.',
     keys: {
       enabled: { type: 'bool', def: true, label: 'New rooms', where: 'rules',
         help: 'Off: no new rooms. Rooms already open carry on until everybody leaves.' },
       message: { type: 'text', def: '', max: 200, label: 'Message while off', where: 'app',
         help: 'Shown in the race panel. Empty: “New race rooms are switched off for now”.' },
+      roomMax: { type: 'int', def: 24, min: 2, max: 24, unit: 'people', label: 'Room size', where: 'app',
+        help: 'Checked when somebody joins; the rules cannot count, so it is a limit, not a guarantee. 24 is the ceiling.' },
+      graceSec: { type: 'int', def: 45, min: 5, max: 600, unit: 's', label: 'Wait for stragglers', where: 'app',
+        help: 'Once everybody else is done, how long a round waits for the rest.' },
+      hardTimeoutSec: { type: 'int', def: 75, min: 30, max: 600, unit: 's', label: 'Silence before a racer is dropped', where: 'app' },
+      heartbeatSec: { type: 'int', def: 15, min: 15, max: 120, unit: 's', label: 'Presence every', where: 'app',
+        help: 'Each racer writes this often. 15 s is the floor: more often costs database writes.' },
+      staleRoomMin: { type: 'int', def: 10, min: 1, max: 1440, unit: 'min', label: 'Empty room reaped after', where: 'app' },
+      rowsBeforeFold: { type: 'int', def: 6, min: 1, max: 24, unit: 'rows', label: 'Rows before “+N more”', where: 'app' },
+      suspectPct: { type: 'int', def: 45, min: 10, max: 90, unit: '%', label: 'Flag times under', where: 'app',
+        help: 'Of the person’s own recent average: the ⚑ on race and Scramble of the Day boards. Flagged, never blocked.' },
     },
   },
   raceChat: {
@@ -84,6 +101,50 @@ export const CONFIG = {
       gapMs: { type: 'int', def: 500, min: 500, max: 600000, unit: 'ms', label: 'Time between messages', where: 'rules',
         help: 'Per account, in the rules since this page. The app waits 0.7 s or this plus half a second, whichever is longer.' },
       maxLen: { type: 'int', def: 200, min: 20, max: 200, unit: 'characters', label: 'Longest message', where: 'rules' },
+    },
+  },
+  sotd: {
+    title: 'Scramble of the Day',
+    about: 'The daily scramble, its boards and its misfire rules. Read by the app.',
+    keys: {
+      events: { type: 'set', def: SOTD_EVENTS.join(','), options: SOTD_EVENTS, label: 'Events with a daily scramble', where: 'app',
+        help: 'Unticked events have no window, board or chat. What is already in the database stays.' },
+      countBoard: { type: 'bool', def: false, label: 'The “most solves today” board', where: 'app',
+        help: 'Built and switched off (DAILY.md §6): a volume board with nothing behind it.' },
+      autoDiscardMs: { type: 'int', def: 2000, min: 0, max: 5000, unit: 'ms', label: 'Misfire: thrown away under', where: 'app',
+        help: 'A main-scramble solve this short is discarded and the backup comes up. 2x2, Pyraminx, Skewb and Clock never are.' },
+      askMs: { type: 'int', def: 5000, min: 0, max: 15000, unit: 'ms', label: 'Misfire: asked under', where: 'app',
+        help: 'Under this (and over the line above), “misfire? Use backup / Keep”.' },
+    },
+  },
+  support: {
+    title: 'Support card',
+    about: 'The “Enjoying Tagda Timer?” card that points at the coffee link in About. Read by the app.',
+    keys: {
+      enabled: { type: 'bool', def: true, label: 'Shown at all', where: 'app' },
+      oddsPct: { type: 'int', def: 1, min: 0, max: 100, unit: '%', label: 'Page loads that ask', where: 'app',
+        help: 'After the one ask everybody who has solved gets, and the quiet days after an answer.' },
+      quietDays: { type: 'int', def: 30, min: 1, max: 365, unit: 'days', label: 'Quiet after an answer', where: 'app' },
+      shows: { type: 'int', def: 2, min: 0, max: 10, label: 'Times on one page load', where: 'app' },
+    },
+  },
+  feedback: {
+    title: 'Feedback form',
+    about: 'The built-in “Help shape Tagda Timer” announcement takes its form and its end from here. Change the link and the end, then Show again on the Announce tab.',
+    keys: {
+      url: { type: 'text', def: 'https://docs.google.com/forms/d/e/1FAIpQLScQ9uZRzZke7bBtlw3lkCW41-UXi9cZ-DksEKKliibsM5UCPQ/viewform',
+        max: 300, pattern: 'https', label: 'Form link', where: 'app' },
+      endAt: { type: 'time', def: Date.parse('2026-10-01T12:22:00Z'), min: 0, max: TIME_MAX, label: 'Ends', where: 'app' },
+    },
+  },
+  spotify: {
+    title: 'Spotify',
+    about: 'The built-in connection works only while the site owner has Spotify Premium (SPOTIFY.md §3.4). People with their own connection are not affected.',
+    keys: {
+      enabled: { type: 'bool', def: true, label: 'Built-in connection', where: 'app',
+        help: 'Off: Connect is turned off and nothing polls Spotify through it.' },
+      message: { type: 'text', def: '', max: 200, label: 'Message while off', where: 'app',
+        help: 'Shown in the Spotify panel. Empty: “The built-in Spotify connection is off for now”.' },
     },
   },
   app: {
@@ -125,22 +186,42 @@ export function allSettings() {
 export function clean(sp, v) {
   if (!sp) return undefined;
   if (sp.type === 'bool') return typeof v === 'boolean' ? v : undefined;
-  if (sp.type === 'int') {
+  if (sp.type === 'int' || sp.type === 'time') {
     if (typeof v !== 'number' || !Number.isFinite(v)) return undefined;
     return Math.min(sp.max, Math.max(sp.min, Math.round(v)));
   }
-  if (sp.type === 'text') return typeof v === 'string' ? v.slice(0, sp.max) : undefined;
+  if (sp.type === 'text') {
+    if (typeof v !== 'string') return undefined;
+    if (sp.pattern === 'https' && !HTTPS.test(v)) return undefined;
+    return v.slice(0, sp.max);
+  }
+  if (sp.type === 'set') {
+    if (typeof v !== 'string') return undefined;
+    // Unknown items dropped, order kept to the table's.
+    const got = new Set(v.split(',').filter(Boolean));
+    return sp.options.filter(o => got.has(o)).join(',');
+  }
   return undefined;
 }
+
+const HTTPS = /^https:\/\/[^\s]+$/;
 
 /** Whether `v` may be written as it is: what the rules accept, checked before sending. */
 export function valid(sp, v) {
   if (!sp) return false;
   if (sp.type === 'bool') return typeof v === 'boolean';
-  if (sp.type === 'int') return Number.isInteger(v) && v >= sp.min && v <= sp.max;
-  if (sp.type === 'text') return typeof v === 'string' && v.length <= sp.max;
+  if (sp.type === 'int' || sp.type === 'time') return Number.isInteger(v) && v >= sp.min && v <= sp.max;
+  if (sp.type === 'text') return typeof v === 'string' && v.length <= sp.max && (sp.pattern !== 'https' || HTTPS.test(v));
+  if (sp.type === 'set') {
+    if (typeof v !== 'string') return false;
+    const items = v ? v.split(',') : [];
+    return items.every(i => sp.options.includes(i)) && new Set(items).size === items.length;
+  }
   return false;
 }
+
+/** A 'set' setting as an array. */
+export const setOf = (v) => (v ? String(v).split(',').filter(Boolean) : []);
 
 /** A whole section of stored values ({ key: value }) with every key cleaned or defaulted. */
 export function sectionOf(section, stored) {

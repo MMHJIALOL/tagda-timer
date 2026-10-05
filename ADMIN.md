@@ -9,7 +9,9 @@ It is built in phases. Phase 1 laid the ground: who is an admin, the settings no
 the change log and the page. Phase 2 put real switches on it: shared replays, both chats, race
 rooms, bans, and a way to make every open tab reload onto a new deploy (§4, §5). Phase 3 added
 moderation: a report button, and one place to read every chat, flagged time and shared replay
-of the day and take any of it down (§6).
+of the day and take any of it down (§6). Phase 4 replaced the hand-written popups and cards with
+announcements you write on the page (§7), and moved the support card, the feedback form, the
+Spotify connection, the SOTD extras and race mode's tuning into settings (§3).
 
 ![The admin console on a phone: the sections, a form with unsaved edits, the review before saving, and the change log](docs/screenshots/admin-phone.webp)
 
@@ -92,7 +94,7 @@ The gold badge on the owner's chat messages goes by the owner's uid (`OWNER_UID`
 
 ```
 config/<section>/<key>   public read; written only by an admin, only together with its
-                         log entry (§7), and only with a value of its type, inside its range
+                         log entry (§8), and only with a value of its type, inside its range
 ```
 
 `js/config-table.js` is the one list of settings: `CONFIG`, a section per feature, each key with
@@ -139,6 +141,25 @@ rules enforce takes effect at once, whatever any tab has cached.
 | `raceChat.message` | text | empty | 200 characters | app | Shown in place of the box you type in |
 | `raceChat.gapMs` | ms | 500 | **500** to 600000 | rules | Least time between two messages from one account (new: there was no server limit before) |
 | `raceChat.maxLen` | characters | 200 | 20 to **200** | rules | Longest message |
+| `race.roomMax` | people | 24 | 2 to **24** | app | Room size, checked on join (the rules cannot count, RACE.md §2) |
+| `race.graceSec` | seconds | 45 | 5 to 600 | app | How long a round waits for stragglers once everybody else is done |
+| `race.hardTimeoutSec` | seconds | 75 | 30 to 600 | app | Silence before a racer stops counting for the round |
+| `race.heartbeatSec` | seconds | 15 | **15** to 120 | app | How often each racer writes its presence: more often costs writes |
+| `race.staleRoomMin` | minutes | 10 | 1 to 1440 | app | How long a player row may sit silent before a join reaps it |
+| `race.rowsBeforeFold` | rows | 6 | 1 to 24 | app | Rows drawn before "+N more" |
+| `race.suspectPct` | % | 45 | 10 to 90 | app | The ⚑ on race and SOTD boards: under this share of the person's own average |
+| `sotd.events` | events | all 16 | any of them | app | Which events have a Scramble of the Day. Data already there stays |
+| `sotd.countBoard` | switch | off | | app | The "most solves today" board (DAILY.md §6) |
+| `sotd.autoDiscardMs` | ms | 2000 | 0 to 5000 | app | A main-scramble solve under this is a misfire, thrown away (DAILY.md §7) |
+| `sotd.askMs` | ms | 5000 | 0 to 15000 | app | Under this, "misfire? Use backup / Keep" |
+| `support.enabled` | switch | on | | app | The "Enjoying Tagda Timer?" card at all |
+| `support.oddsPct` | % | 1 | 0 to 100 | app | Page loads that ask, after the first ask and the quiet days |
+| `support.quietDays` | days | 30 | 1 to 365 | app | Quiet after somebody answers it |
+| `support.shows` | times | 2 | 0 to 10 | app | Times it may come back on one page load |
+| `feedback.url` | https link | the current form | 300 characters | app | The built-in feedback announcement's button (§7) |
+| `feedback.endAt` | date and time | 1 Oct 2026 | | app | When that announcement stops |
+| `spotify.enabled` | switch | on | | app | The built-in Spotify connection: off, Connect is turned off and nothing polls through it. Somebody's own connection is untouched |
+| `spotify.message` | text | empty | 200 characters | app | Shown in the Spotify panel while off |
 | `app.minVersion` | whole number | 0 | 0 to this deploy's version | app | Tabs older than this reload once they are idle (§4) |
 | `sandbox.*` | switch, number, text | off, 5, empty | | nothing | Nothing. For trying the page |
 
@@ -333,7 +354,65 @@ filed again by the same person. Reports are readable and deletable by admins onl
 accepted by the rules for a board row, but nothing in the app offers it yet: a flagged time is
 already in **Suspect**.
 
-## 7. The change log
+## 7. Announcements
+
+![The Announce tab: the list, the editor with its preview, and a popup as people see it](docs/screenshots/admin-announce.webp)
+
+```
+announcements/<id>   { title, text, button?: { label, action: 'link' | 'panel', target },
+                       style: 'popup' | 'card' | 'pill', audience, startAt, endAt?, maxShows,
+                       version, reminder?, log, by, updatedAt }        public read; admin write
+annStats/<id>/<version>/<uid>   'shown', then 'clicked' or 'dismissed'  admins read
+```
+
+What the timer used to show from hand-written code (the webcam card under the camera, its twin
+in the SOTD window, and the feedback form's popup with its pill) is one system now. The app reads
+`announcements.json` with the same plain REST fetch as the settings, and shows at most one at a
+time, with the old cards' manners: never during a solve or inspection (one on screen steps aside
+when an attempt starts and comes back after it), never over a panel, a dialog or the support card,
+never in a hidden tab, and inside the SOTD window only a card about a button the window has (the
+camera). An answer (the button, Not now, ×, Escape) is remembered in `localStorage` by id and
+version; a show counts once per page load against `maxShows` (0: until answered).
+
+**Styles.** *Popup*: a dialog in the middle. With `reminder`, Maybe later leaves a *pill* on the
+main screen until it is crossed out, which is what the feedback form did. *Card*: under the
+button of the panel it opens, with an arrow (in the SOTD window, under the window's own camera
+button), or in the corner when it has no panel. *Pill*: a slim button at the top of the timer.
+
+**Audiences.** *Everyone*; *Signed in* (a Google session on this browser); *Camera off* (webcam
+replay not on); *Has not opened that panel* (the panel the button opens, never opened on this
+browser; for a link, until answered); *New* (fewer than 50 solves on this device); *Returning*
+(50 or more).
+
+**The button** opens a link (https only, in a new tab) or a panel: webcam replay, the Scramble of
+the Day, race, statistics, appearance, settings, Spotify, gear or About.
+
+**Built in.** Two are part of the app, so they behave with no database at all, and they keep the
+answers people gave the old cards (carried over once, from the old flags):
+`webcam-replay` (a card, audience *Camera off*, until answered) and `feedback` (a popup with a
+reminder pill, its link and end from `config/feedback`; it ended on 1 Oct 2026). The old camera
+card's second version, "Your attempt will be filmed" for people who already had the camera on, is
+gone: its audience is no longer anybody the card is for. Editing a built-in one on the page saves a
+copy in the database, which replaces it. The built-in two are in Spanish for people who chose it;
+anything written on the page is shown as written.
+
+**The Announce tab** lists every announcement with whether it is live, scheduled or ended, its
+version, and its numbers. **Edit** opens the editor, whose **Preview** is drawn by the same code
+and stylesheet as the timer (`announce-ui.js`, `css/announce.css`). **End now** sets its end to
+now. **Show again** bumps the version, so everybody in its audience who answered is asked once
+more; an ended one starts again for a week. Saving never shows anything again by itself: an edit
+keeps the version.
+
+**What the rules hold.** Only an admin writes an announcement, never deletes one, and only with a
+`configLog` entry in the same update (`path: 'ann/<id>'`, with an `action`), which the change log
+shows. The version can only go up (down would ask again people who answered a later one). Every
+field is typed and capped as above; a link must be https, a panel one of the list.
+
+**Stats** count signed-in browsers only, and the page says so beside the numbers. Each account has
+one record per announcement and version: it becomes `shown` the first time, then `clicked` or
+`dismissed`, and never anything else, so nobody can inflate a count by reloading.
+
+## 8. The change log
 
 ```
 configLog/<pushId>         { uid, at, path, from?, to?, undo? }   admins only; written once, never edited
@@ -368,13 +447,16 @@ including a future change to that default. Setting the same number by hand would
 
 ---
 
-## 8. The page
+## 9. The page
 
 | File | What it is |
 |---|---|
 | `admin.html` | The page, served at `/admin` (`html_handling: auto-trailing-slash` in `wrangler.jsonc`) |
 | `js/admin.js` | Sign-in, the front door, the forms, review, save, bans, the log, Undo |
 | `js/admin-mod.js` | The Moderate tab (§6) |
+| `js/admin-ann.js` | The Announce tab (§7) |
+| `js/announce.js`, `js/announce-ui.js`, `css/announce.css` | What an announcement is and who sees it, and drawing one: shared with the timer |
+| `js/announcer.js` | The timer's side: when to show one, and what each browser answered |
 | `js/moderation.js` | Reports and the SOTD removal, shared by the app and the page |
 | `css/admin.css` | Its look: only the theme tokens from `css/tokens.css`, nothing from the timer's own CSS |
 | `admin.webmanifest`, `assets/admin-*.png` | Home-screen install: start URL `/admin`, its own name and icon |
@@ -386,8 +468,9 @@ including a future change to that default. Setting the same number by hand would
 | `tools/verify-admin-rules.mjs` | `node` check of admins, config and the log against the database emulator |
 | `tools/verify-safety-rules.mjs` | `node` check of the switches, bans and the replay count |
 | `tools/verify-moderation-rules.mjs` | `node` check of reports and of an admin reading and taking down |
+| `tools/verify-announce-rules.mjs` | `node` check of announcements, their stats, and the newer setting types |
 
-Phone first: four tabs (Settings, Moderate, Bans, Change log); a list of sections, each opening a form;
+Phone first: five tabs (Settings, Moderate, Announce, Bans, Log); a list of sections, each opening a form;
 edits collect in a bar at the foot (*3 unsaved changes · Discard · Review*); **Review** lists each
 change as *from → to* before anything is written. A value outside its range is marked on its row
 and Review stays off. Light or dark follows the phone (the timer's Paper and Nebula themes).
@@ -407,7 +490,7 @@ gets that far.
 
 ---
 
-## 9. Until firebase.rules.json is republished
+## 10. Until firebase.rules.json is republished
 
 Everything keeps working as it did, on the defaults:
 
@@ -423,12 +506,12 @@ Everything keeps working as it did, on the defaults:
 - **The admin page**: the owner sees *Publish the rules first*, everybody else the admins-only line.
 
 On older rules than the page's, the parts that need newer ones say so and the rest works:
-**Bans** and **Reports** ask for the newer rules, **Chats** lists only what the admin could
+**Bans**, **Reports** and **Announce** ask for the newer rules, **Chats** lists only what the admin could
 already read, and the app's ⚑ is refused with *Couldn't send the report*.
 
 ---
 
-## 10. Testing it
+## 11. Testing it
 
 - `node tools/verify-admin-rules.mjs`: 82 checks against the database emulator, in a namespace
   of its own. Every write four ways (an admin; a signed-in Google account that is not one; an
@@ -446,6 +529,10 @@ already read, and the app's ⚑ is refused with *Couldn't send the report*.
   replay flag; every way a report can be wrong (anonymous, banned, the wrong shape for its kind, a
   path that does not exist, no `reportOnce`, one naming another report, somebody else's name, a
   client clock), one per account per item even after a dismissal, and who reads and deletes them.
+- `node tools/verify-announce-rules.mjs`: 48 checks. Who may write an announcement and only with
+  its log entry, every field's type and cap, no deleting, the version only going up; stats one
+  record per account per version that only moves from shown; and the newer setting types (a set
+  of events, an https link, a date and time).
 - `node tools/verify-sotd-chat-rules.mjs` and `node tools/verify-sotd-remove-rules.mjs` seed
   `admins/` the way the console would, and still pass.
 - `node tools/config-rules.mjs --check`, and `test.html`'s *admin console* section (the rules

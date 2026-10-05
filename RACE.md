@@ -146,12 +146,16 @@ The rest of the app is careful with that 100. The admin console ([ADMIN.md](ADMI
 connection per admin with it open. The app reads the settings it changes with a plain REST
 request, never a listener, so they cost no connection at all (ADMIN.md §3).
 
-### The admin console's switches
+### The admin console's switches and tuning
 
 The admin console ([ADMIN.md](ADMIN.md) §4) can switch off new rooms (`race.enabled`, with a
 message shown in this panel), switch off room chat (`raceChat.enabled`), and make the chat's rate
 limit slower (`raceChat.gapMs`, 500 ms at least) or its messages shorter (`raceChat.maxLen`, 200 at
-most). The rules read them. Race chat had no limit on the server before, only the client's 0.7 s
+most). The rules read them. The room's tuning in `js/raceapp.js` (room size, the stragglers'
+grace, the timeouts, the presence heartbeat, reaping, the fold, and the ⚑ threshold) is the default
+of `config/race/*`, which the app reads instead; the room size can only go down from 24 and the
+heartbeat only slow from 15 s. The clock slack is not a setting: the rules hold the same numbers.
+Race chat had no limit on the server before, only the client's 0.7 s
 cooldown; the rule is new, and a client on rules from before it sends the message the old way.
 
 A message from somebody else has a ⚑ to report it, when the browser is also signed in to the timer

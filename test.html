@@ -2527,13 +2527,14 @@ section('admin console — settings and the rules that guard them');
 
   // Every word the admin page shows goes through t(), and Spanish has each one.
   const { es } = await import('./locales/es.js');
-  const src = (await (await fetch('./js/admin.js')).text()) + (await (await fetch('./js/admin-mod.js')).text());
+  const src = (await Promise.all(['admin.js', 'admin-mod.js', 'admin-ann.js'].map(f => fetch(`./js/${f}`).then(r => r.text())))).join(' ');
   const q = String.raw`'((?:\\'|[^'])*)'`;
   const keys = [
     ...[...src.matchAll(new RegExp(String.raw`\bt\(\s*` + q, 'g'))].map(m => m[1]),
     ...[...src.matchAll(new RegExp(String.raw`(?:\btext|\btitle|'aria-label'):\s*` + q, 'g'))].map(m => m[1]),
     ...[...src.matchAll(new RegExp(String.raw`\bgate\(\s*` + q + String.raw`(?:,\s*` + q + ')?', 'g'))].flatMap(m => [m[1], m[2]]),
-    ...[...(/const WHERE = \{([\s\S]*?)\};/.exec(src)?.[1] || '').matchAll(new RegExp(q, 'g'))].map(m => m[1]),
+    // The label maps (where a setting is enforced, an announcement's audience, style and panel).
+    ...[...src.matchAll(/const (?:WHERE|AUDIENCE|STYLE|PANEL) = \{([\s\S]*?)\};/g)].flatMap(b => [...b[1].matchAll(new RegExp(q, 'g'))].map(m => m[1])),
     ...Object.values(C.CONFIG).flatMap(sec => [sec.title, sec.about,
       ...Object.values(sec.keys).flatMap(k => [k.label, k.help, k.unit])]),
   ].filter(Boolean).map(k => k.replace(/\\'/g, "'"));
@@ -2580,6 +2581,54 @@ section('admin console — settings and the rules that guard them');
   const day = 1_791_138_600_000;
   check('a shared replay is kept the day itself and keepDays more, exactly as worker.js counts',
     SR.replayKept(day, day + 8 * 86_400_000) && !SR.replayKept(day, day + 8 * 86_400_000 + 1));
+}
+
+section('admin console — announcements, and the settings moved into it');
+{
+  const T = await import('./js/config-table.js');
+  const Ev = await import('./js/events.js');
+  check('the table’s list of SOTD events is events.js’s, written out (the Worker cannot import events.js)',
+    T.SOTD_EVENTS.join() === Ev.EVENT_ORDER.filter(Ev.dailyEligible).join());
+
+  const D = await import('./js/dayid.js');
+  check('misfire cut-offs moved from the admin console are used, and the ask line never sits below the discard one',
+    D.misfireAction(2500, '333', { discard: 3000, ask: 6000 }) === 'discard'
+    && D.misfireAction(5500, '333', { discard: 3000, ask: 6000 }) === 'ask'
+    && D.misfireAction(2500, '333', { discard: 3000, ask: 1000 }) === 'discard'
+    && D.misfireAction(3500, '333', { discard: 3000, ask: 1000 }) === 'keep'
+    && D.misfireAction(1000, '222', { discard: 3000, ask: 6000 }) === 'keep');
+
+  const N = await import('./js/announce.js');
+  const cfg = (s, k) => ({ 'feedback.url': 'https://forms.example/x', 'feedback.endAt': 9e12 })[`${s}.${k}`];
+  const all = N.allAnnouncements({ hello: { title: 'Hi', text: 'x', style: 'popup', audience: 'everyone', startAt: 0, maxShows: 1, version: 2 } }, cfg);
+  check('the two built-in announcements are there with no database, and the feedback one takes config/feedback’s link and end',
+    all['webcam-replay']?.style === 'card' && all['webcam-replay'].audience === 'webcamOff'
+    && all.feedback?.button?.target === 'https://forms.example/x' && all.feedback.endAt === 9e12 && all.hello?.version === 2);
+  check('a record with a style, audience or link that is not allowed is refused or cut down',
+    N.normalise({ title: 'x', style: 'banner' }) === null
+    && N.normalise({ title: 'x', style: 'card', audience: 'all' }).audience === 'everyone'
+    && N.normalise({ title: 'x', style: 'card', button: { label: 'Go', action: 'link', target: 'http://x' } }).button === null
+    && N.normalise({ title: 'x', style: 'card', button: { label: 'Go', action: 'panel', target: 'nowhere' } }).button === null
+    && N.normalise({ title: 'y'.repeat(200), style: 'pill' }).title.length === 80);
+  const who = { signedIn: false, webcamOn: false, solves: 10, opened: new Set(['camera']) };
+  const card = { id: 'c', title: 'c', style: 'card', audience: 'everyone', startAt: 0, endAt: 0, maxShows: 2, version: 1 };
+  check('each audience is who it says',
+    N.inAudience({ audience: 'signedIn' }, who) === false && N.inAudience({ audience: 'webcamOff' }, who) === true
+    && N.inAudience({ audience: 'newUsers' }, who) === true && N.inAudience({ audience: 'returningUsers' }, who) === false
+    && N.inAudience({ audience: 'notOpened', button: { action: 'panel', target: 'camera' } }, who) === false
+    && N.inAudience({ audience: 'notOpened', button: { action: 'panel', target: 'race' } }, who) === true);
+  check('due: live, in the audience, not answered for this version, under maxShows',
+    N.due(card, {}, who) === 'card' && N.due(card, { c: { v: 1, answer: 'dismissed' } }, who) === null
+    && N.due(card, { c: { v: 0, answer: 'dismissed' } }, who) === 'card'
+    && N.due(card, { c: { v: 1, shows: 2 } }, who) === null
+    && N.due({ ...card, startAt: Date.now() + 1e6 }, {}, who) === null && N.due({ ...card, endAt: 1 }, {}, who) === null
+    && N.due({ ...card, style: 'popup', reminder: true }, { c: { v: 1, answer: 'later' } }, who) === 'pill');
+  const pk = N.pick({ a: { ...card, id: 'a' }, b: { ...card, id: 'b', style: 'popup' }, p: { ...card, id: 'p', style: 'pill' } }, {}, who);
+  check('one at a time, popups before cards before pills', pk?.a.id === 'b' && pk.as === 'popup');
+  const rulesText = await (await fetch('./firebase.rules.json', { cache: 'no-store' })).text();
+  check('the rules allow exactly the styles, audiences and panels announce.js knows',
+    rulesText.includes(`(${N.ANN_STYLES.join('|')})`) && rulesText.includes(`(${N.ANN_AUDIENCES.join('|')})`)
+    && rulesText.includes(`(${N.ANN_PANELS.join('|')})`));
 }
 
 section('gear — seed files');

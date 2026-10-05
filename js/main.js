@@ -35,7 +35,7 @@ import { toast, confirmToast } from './toast.js';
 // dependencies of its own to drag in with it.
 import { dayIdFromServerMs, sotdDoneOn, clearSotdDone } from './dayid.js';
 import { openPalette, closePalette, paletteOpen } from './palette.js';
-import { initFeedback, feedbackOpen } from './feedback.js';
+import { startAnnouncements, announcementModal, announcementShowing, markOpened, reconsider, placeChanged } from './announcer.js';
 import { isPhone } from './phone.js';
 import { getConfig, loadConfig } from './config.js';
 import { APP_VERSION } from './version.js';
@@ -236,6 +236,11 @@ async function enterSotd() {
     [mod, ui] = await Promise.all([loadDaily(), loadSotdUi()]);
   } catch (err) { return lazyFailed(t('the Scramble of the Day'), err); }
 
+  if (!mod.sotdEvents().length) {
+    // Every event switched off from the admin console (config/sotd/events).
+    toast(t('No event has a Scramble of the Day right now'), { long: true });
+    return;
+  }
   if (!mod.cloudAvailable()) {
     toast('No leaderboard is configured on this deployment — see RACE.md', { kind: 'bad', long: true });
     return;
@@ -297,13 +302,13 @@ async function enterSotd() {
       /* Leaving with the misfire question up answers it Keep. Leaving must
          never be a way to put the main scramble back for another go. */
       pendingMisfire?.dismiss();
-      sotdHint?.hide();
       ctl.disengage();
       refit();
       syncSotdChip();
       // The practice session's last time comes back the moment the window
       // that was hiding it goes.
       syncTimerDisplay();
+      placeChanged();
     },
     // Esc mid-solve still means "abandon this solve", not "leave the window".
     solving: () => timer && timer.state !== 'idle' && timer.state !== 'cooldown',
@@ -313,9 +318,9 @@ async function enterSotd() {
   // time off the digits rather than leaving it under today's scramble.
   syncTimerDisplay();
   syncCameraButton();
-  // The top bar's card points at a button this window hides; this one has its own, a beat after it settles.
-  camHint?.hide();
-  setTimeout(showSotdCameraHint, 1200);
+  markOpened('sotd');
+  // A card under the top bar's camera moves to the window's own, a beat after it settles.
+  placeChanged();
 }
 
 /**
@@ -368,6 +373,11 @@ const loadPalette = lazy(() => import('./albumpalette.js'), m => m);
  */
 const clientId = () => app.settings.spotifyClientId || SPOTIFY_CLIENT_ID;
 const usingOwnApp = () => !!app.settings.spotifyClientId;
+/* The admin console can switch the built-in app off (config/spotify): it only
+   works while the owner pays for Premium (spotifyapp.js). Somebody's own app
+   is theirs and is never affected. */
+const builtInOff = () => !usingOwnApp() && !getConfig('spotify', 'enabled');
+const builtInOffText = () => getConfig('spotify', 'message') || t('The built-in Spotify connection is off for now');
 
 /** null until a link is attempted; the poller lives here once it is. */
 let spotify = null;
@@ -462,6 +472,7 @@ app.reconstructSolve = reconstructSolve;
  * not exist yet at the call site.
  */
 async function openPanel(title, builder, opts, ...args) {
+  if (PANEL_OF[builder]) markOpened(PANEL_OF[builder]);
   let m;
   try { m = await loadPanels(); }
   catch (err) { return lazyFailed(title.toLowerCase(), err); }
@@ -593,7 +604,6 @@ async function init() {
   wireTimer();
   wireReplayUI();
   wireSupportNudge();
-  initFeedback(timer);
   wireInput();
   wireScrambleSwipe();
   wireChrome();
@@ -669,6 +679,8 @@ async function init() {
 
   // The admin console's settings: one REST read, and the "new version" check.
   wireConfig();
+  // Its announcements, and the two the app used to hand-write (announce.js).
+  wireAnnouncements();
 
   // Cloud sync, if this browser was ever signed in. Same shape as the line
   // above: a visitor who has never signed in never downloads any of it.
@@ -1688,6 +1700,7 @@ app.openCommands = () => openPaletteWithCommands();
    Day bar's (#sotd-camera), since the top bar is hidden in that window. */
 async function openCameraPanel(anchor = $('#btn-camera')) {
   if (!timerIdle()) return;
+  markOpened('camera');
   let m;
   try { m = await loadPanels(); }
   catch (err) { return lazyFailed(t('webcam replay'), err); }
@@ -1735,113 +1748,72 @@ function syncReplayPill() {
   pill.hidden = !(last && idle && hasReplay(last.id));
 }
 
-/* The announcement. It used to count as seen the moment it appeared, close
-   itself after 20 seconds or the instant an attempt started, and give up
-   after half a minute of trying, so anyone mid-session never really saw it.
-   Now it waits for a gap between solves, steps aside while an attempt runs
-   and comes back after it, and stays until it is answered (Try it, Not now,
-   the cross, or turning replay on). Only an answer is remembered; the key is
-   new so that the people the old hint flashed past get it properly. At most
-   HINT_SHOWS times per page load, so a long session is not nagged by it
-   after every single solve. */
-const HINT_KEY = 'replayNewsSeen';
-const HINT_SHOWS = 3;
-let camHint = null;
-let hintArmed = false;       // this browser has not answered it yet
-let hintShown = 0;
+/* =========================================================
+   Announcements (announce.js, announcer.js, ADMIN.md §7)
 
+   What used to be two hand-written cards (the webcam one under the top
+   bar's camera and its twin in the SOTD window) and the feedback form's
+   popup are announcements now: built in, so they work with no database,
+   and pushable again from the admin page with anything else. This is only
+   what the manager needs from the app: what each panel is, where its button
+   is, and whether anything is going on.
+   ========================================================= */
+
+/** Nothing under way: no solve, inspection or hold. */
 const timerIdle = () => !timer || timer.state === 'idle' || timer.state === 'cooldown';
 
-function placeCameraHint() {
-  const tip = camHint;
-  const r = $('#btn-camera')?.getBoundingClientRect();
-  if (!tip) return;
-  if (!r?.width) return tip.hide();
-  const w = tip.offsetWidth;
-  const left = Math.max(10, Math.min(r.left + r.width / 2 - w + 28, innerWidth - w - 10));
-  tip.style.left = `${left}px`;
-  tip.style.top = `${r.bottom + 12}px`;
-  tip.style.setProperty('--arrow', `${r.left + r.width / 2 - left}px`);
-}
+const inSotdWindow = () => document.body.classList.contains('sotd');
+const cameraButton = () => (inSotdWindow() ? $('#sotd-camera') : $('#btn-camera'));
 
-function answerCameraHint() {
-  if (!hintArmed) return;
-  hintArmed = false;
-  KV.set(HINT_KEY, true).catch(() => {});
-  camHint?.hide();
-}
+/** The panels an announcement's button may open (announce.js ANN_PANELS). */
+const ANN_OPEN = {
+  camera: () => openCameraPanel(cameraButton()),
+  sotd: () => enterSotd(),
+  race: () => openPanel('Race', 'buildRace', undefined, app),
+  stats: () => openPanel('Statistics', 'buildStats', { wide: true }, app),
+  appearance: () => openPanel('Appearance', 'buildAppearance', undefined, app),
+  settings: () => openPanel('Settings', 'buildSettings', undefined, app),
+  spotify: () => openPanel('Spotify', 'buildSpotify', undefined, app),
+  gear: () => openPanel('Gear', 'buildGear', { wide: true }, app),
+  about: () => openPanel('About', 'buildAbout', undefined, app),
+};
+/** Each one's button, for a card to point at. */
+const ANN_BUTTON = {
+  camera: cameraButton, sotd: () => $('#btn-daily'), race: () => $('#btn-race'), stats: () => $('#btn-stats'),
+  appearance: () => $('#btn-theme'), settings: () => $('#btn-settings'), spotify: () => $('#btn-spotify'),
+  gear: () => $('#btn-gear'), about: () => $('#btn-about'),
+};
+/** openPanel's builder → the panel id it is, for the notOpened audience. */
+const PANEL_OF = {
+  buildStats: 'stats', buildGear: 'gear', buildAppearance: 'appearance', buildSettings: 'settings',
+  buildSpotify: 'spotify', buildRace: 'race', buildAbout: 'about',
+};
 
-function showCameraHint() {
-  if (!hintArmed || camHint || hintShown >= HINT_SHOWS) return;
-  if (app.settings.webcamReplay) return answerCameraHint();
-  // Not in the SOTD window: its top bar is hidden but still laid out, and that window has its own card.
-  if (document.body.classList.contains('sotd')) return;
-  if (!$('#btn-camera')?.getBoundingClientRect().width || modalOpen() || document.hidden || !timerIdle()) return;
-  hintShown++;
-  const hide = () => { tip.remove(); if (camHint === tip) camHint = null; removeEventListener('resize', placeCameraHint); };
-  const tip = camHint = el('div', { class: 'cam-hint', role: 'status', 'aria-live': 'polite' },
-    el('button', { class: 'cam-hint-x', 'aria-label': t('Not now'), title: t('Not now'), html: '&times;', onclick: answerCameraHint }),
-    el('b', { text: t('New: replay your solves') }),
-    el('span', { text: t('Film every attempt with your webcam, watch it back with the clock running, and save it as a video.') }),
-    el('div', { class: 'cam-hint-row' },
-      el('button', { class: 'btn primary', text: t('Try it'), onclick: () => { answerCameraHint(); openCameraPanel(); } }),
-      el('button', { class: 'ghost-btn sm', text: t('Not now'), onclick: answerCameraHint })));
-  tip.hide = hide;
-  document.body.append(tip);
-  placeCameraHint();
-  addEventListener('resize', placeCameraHint);
-}
-
-/* The same news inside the Scramble of the Day window, where the top bar and
-   its camera are hidden: a card under the window's own camera button, so
-   people see it is there. Once per browser until answered (its own key: the
-   top bar's announcement being answered says nothing about this one), at most
-   HINT_SHOWS times a page load, out of the way the moment an attempt starts.
-   Replay off, it offers to turn it on; on, it says the attempt is filmed and
-   can be shared after. */
-const SOTD_HINT_KEY = 'sotdCameraNewsSeen';
-let sotdHint = null;
-let sotdHintShown = 0;
-
-function placeSotdHint() {
-  const tip = sotdHint;
-  const r = $('#sotd-camera')?.getBoundingClientRect();
-  if (!tip) return;
-  if (!r?.width || !document.body.classList.contains('sotd')) return tip.hide();
-  const w = tip.offsetWidth;
-  const left = Math.max(10, Math.min(r.left + r.width / 2 - w / 2, innerWidth - w - 10));
-  tip.style.left = `${left}px`;
-  tip.style.top = `${r.bottom + 12}px`;
-  tip.style.setProperty('--arrow', `${r.left + r.width / 2 - left}px`);
-}
-
-async function showSotdCameraHint() {
-  const btn = $('#sotd-camera');
-  const ready = () => !sotdHint && sotdHintShown < HINT_SHOWS && document.body.classList.contains('sotd')
-    && !!btn?.getBoundingClientRect().width && !btn.disabled && timerIdle() && !modalOpen() && !document.hidden;
-  if (!replaySupported() || !ready()) return;
-  if (await KV.get(SOTD_HINT_KEY, false).catch(() => true)) return;
-  if (!ready()) return;                       // the window may have moved on during the read
-  sotdHintShown++;
-  const on = !!app.settings.webcamReplay;
-  const hide = () => { tip.remove(); if (sotdHint === tip) sotdHint = null; removeEventListener('resize', placeSotdHint); };
-  const answer = () => { KV.set(SOTD_HINT_KEY, true).catch(() => {}); hide(); };
-  const tip = sotdHint = el('div', { class: 'cam-hint sotd-cam-hint', role: 'status', 'aria-live': 'polite' },
-    el('button', { class: 'cam-hint-x', 'aria-label': t('Not now'), title: t('Not now'), html: '&times;', onclick: answer }),
-    el('b', { text: on ? t('Your attempt will be filmed') : t('New: film your attempt') }),
-    el('span', { text: on
-      ? t('Webcam replay is on. After you submit, Share replay puts your clip on the board for everyone who did today’s scramble.')
-      : t('Turn on the camera here to film today’s attempt. After you submit, you can share the replay with everyone who did the same scramble.') }),
-    el('div', { class: 'cam-hint-row' }, ...(on
-      ? [el('button', { class: 'btn primary', text: t('Got it'), onclick: answer })]
-      : [el('button', { class: 'btn primary', text: t('Turn it on'), onclick: () => { answer(); openCameraPanel(btn); } }),
-         el('button', { class: 'ghost-btn sm', text: t('Not now'), onclick: answer })])));
-  // Its buttons take Space and Enter themselves; the timer behind does not get them.
-  tip.addEventListener('keydown', (e) => e.stopPropagation());
-  tip.hide = hide;
-  document.body.append(tip);
-  placeSotdHint();
-  addEventListener('resize', placeSotdHint);
+function wireAnnouncements() {
+  let solves = 0;
+  Solves.count().then((n) => { solves = n; }).catch(() => {});
+  timer.addEventListener('stop', () => { solves++; });
+  let signedIn = () => false;
+  import('./sync-auth.js').then((m) => { signedIn = m.hasPersistedSession; }).catch(() => {});
+  startAnnouncements({
+    idle: timerIdle,
+    // Panels, dialogs, the SOTD intro, and the support card: one thing at a time.
+    blocked: () => modalOpen() || !!document.querySelector('.sotd-intro, dialog[open], .coffee-nudge'),
+    inSotd: inSotdWindow,
+    open: (id) => ANN_OPEN[id]?.(),
+    anchor: (id) => {
+      // The camera card means nothing where this browser cannot record.
+      if (id === 'camera' && !replaySupported()) return null;
+      const btn = ANN_BUTTON[id]?.();
+      return btn && btn.getBoundingClientRect().width && !btn.disabled ? btn : null;
+    },
+    available: (id) => id !== 'camera' || replaySupported(),
+    signedIn: () => signedIn(),
+    webcamOn: () => !!app.settings.webcamReplay,
+    solves: () => solves,
+    kvGet: (k) => KV.get(k, false),
+    onTimerState: (fn) => timer.addEventListener('state', ({ detail: { state } }) => fn(state === 'idle' || state === 'cooldown')),
+  });
 }
 
 function wireReplayUI() {
@@ -1857,32 +1829,17 @@ function wireReplayUI() {
   syncCameraButton();
   onReplayChange((e) => {
     if (e.type === 'state') {
-      if (replayStatus().enabled) answerCameraHint();
+      // Turning the camera on answers the webcam announcement (its audience is webcamOff).
+      if (replayStatus().enabled) reconsider();
       return syncCameraButton();
     }
     syncReplayPill();
     if (e.type === 'saved' || e.type === 'removed') renderHistory();
   });
-  timer.addEventListener('state', ({ detail: { state } }) => {
+  timer.addEventListener('state', () => {
     syncReplayPill();
     syncCameraButton();
-    // Out of the way the moment an attempt starts, back once it is over.
-    if (state !== 'idle' && state !== 'cooldown') { camHint?.hide(); sotdHint?.hide(); }
-    else if (hintArmed && !camHint) setTimeout(showCameraHint, 1500);
   });
-  // A few seconds after boot, then whenever nothing else is going on: a
-  // panel open at the time, or a tab in the background, only delays it.
-  if (replaySupported() && !app.settings.webcamReplay) {
-    KV.get(HINT_KEY, false).then((seen) => {
-      if (seen) return;
-      hintArmed = true;
-      setTimeout(showCameraHint, 2500);
-      const tick = setInterval(() => {
-        if (!hintArmed || hintShown >= HINT_SHOWS) return clearInterval(tick);
-        showCameraHint();
-      }, 4000);
-    }).catch(() => {});
-  }
 }
 
 /* =========================================================
@@ -1898,14 +1855,14 @@ function wireReplayUI() {
    Answered (either button or the cross), the 1-in-100 stays away for a
    month even if the dice come up again.
    ========================================================= */
-const COFFEE_ODDS = 0.01;
+/* Its numbers are config/support (ADMIN.md): the share of page loads that
+   ask, the quiet days after an answer, the times on one load, and whether it
+   shows at all. The defaults are the old constants: 1 %, 30 days, 2. */
 const COFFEE_KEY = 'coffeeNudgeAt';
 const COFFEE_ASKED_KEY = 'coffeeAsked';    // the once-for-everyone ask has been shown
-const COFFEE_QUIET_MS = 30 * 24 * 60 * 60 * 1000;
-const COFFEE_SHOWS = 2;
 
 function wireSupportNudge() {
-  const lucky = Math.random() < COFFEE_ODDS;
+  const lucky = Math.random() * 100 < getConfig('support', 'oddsPct');
   let firstAsk = false;
   let card = null;
   let shown = 0;
@@ -1913,8 +1870,8 @@ function wireSupportNudge() {
   const hide = () => { card?.remove(); card = null; };
   const answer = () => { done = true; hide(); KV.set(COFFEE_KEY, Date.now()).catch(() => {}); };
   const show = () => {
-    if (done || card || shown >= COFFEE_SHOWS) return;
-    if (!timerIdle() || modalOpen() || document.hidden || camHint || hintArmed) return;
+    if (done || card || shown >= getConfig('support', 'shows') || !getConfig('support', 'enabled')) return;
+    if (!timerIdle() || modalOpen() || document.hidden || announcementShowing()) return;
     shown++;
     if (firstAsk) { firstAsk = false; KV.set(COFFEE_ASKED_KEY, true).catch(() => {}); }
     card = el('div', { class: 'cam-hint coffee-nudge', role: 'status', 'aria-live': 'polite' },
@@ -1929,7 +1886,7 @@ function wireSupportNudge() {
   // Counted now, during boot, before this load's own first solve can land.
   Promise.all([KV.get(COFFEE_KEY, 0), KV.get(COFFEE_ASKED_KEY, false), Solves.count()]).then(([at, asked, solves]) => {
     firstAsk = !asked && !at && solves > 0;
-    if (!firstAsk && (!lucky || Date.now() - at < COFFEE_QUIET_MS)) return;
+    if (!firstAsk && (!lucky || Date.now() - at < getConfig('support', 'quietDays') * 86_400_000)) return;
     timer.addEventListener('stop', () => setTimeout(show, 2000));
     timer.addEventListener('state', ({ detail: { state } }) => {
       if (state !== 'idle' && state !== 'cooldown') hide();
@@ -4464,6 +4421,8 @@ async function startAlbumTheming() {
                  || new URLSearchParams(location.search).has('error');
   const stored = await KV.get('spotifyTokens', null);
   if (!returning && !stored) return;
+  // Switched off: nothing polls Spotify through the built-in app.
+  if (builtInOff()) return;
 
   const id = clientId();
   const { Spotify } = await loadSpotify();
@@ -4863,6 +4822,7 @@ app.disconnectSpotify = async () => {
 };
 
 app.connectSpotify = async () => {
+  if (builtInOff()) { toast(builtInOffText(), { long: true }); return; }
   const id = clientId();
   const { Spotify } = await loadSpotify();
   if (!spotify) { spotify = new Spotify(); wireSpotify(); wireControls(); }
@@ -4892,6 +4852,7 @@ app.spotifyState = () => {
   return {
     configured: true,               // there is always an app to connect to now
     usingOwnApp: usingOwnApp(),
+    builtInOff: builtInOff() ? builtInOffText() : null,
     devModeLimit: DEV_MODE_LIMIT,
     connected: !!spotify?.connected,
     canControl: !!spotify?.canControl,
@@ -5558,7 +5519,7 @@ const isTyping = () => {
   // whole keyboard — spacebar included — goes dead.
   return editable && a.offsetParent !== null;
 };
-const modalOpen = () => drawerOpen() || paletteOpen() || popoverOpen() || shareOpen() || reconOpen() || xp1Open() || feedbackOpen() || replayOpen();
+const modalOpen = () => drawerOpen() || paletteOpen() || popoverOpen() || shareOpen() || reconOpen() || xp1Open() || announcementModal() || replayOpen();
 
 /* Swipe the scramble on a touch screen, the way csTimer does: left for the
    next one, right for the one before. Only on #scramble-zone, which is outside

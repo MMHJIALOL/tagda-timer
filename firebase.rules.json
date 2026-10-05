@@ -350,6 +350,34 @@
           ".write": "auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true && newData.parent().parent().parent().child('configMeta/race/message/at').val() === now",
           ".validate": "newData.isString() && newData.val().length <= 200"
         },
+        "roomMax": {
+          ".write": "auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true && newData.parent().parent().parent().child('configMeta/race/roomMax/at').val() === now",
+          ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 2 && newData.val() <= 24"
+        },
+        "graceSec": {
+          ".write": "auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true && newData.parent().parent().parent().child('configMeta/race/graceSec/at').val() === now",
+          ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 5 && newData.val() <= 600"
+        },
+        "hardTimeoutSec": {
+          ".write": "auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true && newData.parent().parent().parent().child('configMeta/race/hardTimeoutSec/at').val() === now",
+          ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 30 && newData.val() <= 600"
+        },
+        "heartbeatSec": {
+          ".write": "auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true && newData.parent().parent().parent().child('configMeta/race/heartbeatSec/at').val() === now",
+          ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 15 && newData.val() <= 120"
+        },
+        "staleRoomMin": {
+          ".write": "auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true && newData.parent().parent().parent().child('configMeta/race/staleRoomMin/at').val() === now",
+          ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 1 && newData.val() <= 1440"
+        },
+        "rowsBeforeFold": {
+          ".write": "auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true && newData.parent().parent().parent().child('configMeta/race/rowsBeforeFold/at').val() === now",
+          ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 1 && newData.val() <= 24"
+        },
+        "suspectPct": {
+          ".write": "auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true && newData.parent().parent().parent().child('configMeta/race/suspectPct/at').val() === now",
+          ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 10 && newData.val() <= 90"
+        },
         "$other": { ".validate": false }
       },
 
@@ -369,6 +397,70 @@
         "maxLen": {
           ".write": "auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true && newData.parent().parent().parent().child('configMeta/raceChat/maxLen/at').val() === now",
           ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 20 && newData.val() <= 200"
+        },
+        "$other": { ".validate": false }
+      },
+
+      "sotd": {
+        "events": {
+          ".write": "auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true && newData.parent().parent().parent().child('configMeta/sotd/events/at').val() === now",
+          ".validate": "newData.isString() && newData.val().matches(/^((333|222|444|555|666|777|333bf|333oh|clock|minx|pyram|skewb|sq1|444bf|555bf|fto)(,(333|222|444|555|666|777|333bf|333oh|clock|minx|pyram|skewb|sq1|444bf|555bf|fto))*)?$/)"
+        },
+        "countBoard": {
+          ".write": "auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true && newData.parent().parent().parent().child('configMeta/sotd/countBoard/at').val() === now",
+          ".validate": "newData.isBoolean()"
+        },
+        "autoDiscardMs": {
+          ".write": "auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true && newData.parent().parent().parent().child('configMeta/sotd/autoDiscardMs/at').val() === now",
+          ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 0 && newData.val() <= 5000"
+        },
+        "askMs": {
+          ".write": "auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true && newData.parent().parent().parent().child('configMeta/sotd/askMs/at').val() === now",
+          ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 0 && newData.val() <= 15000"
+        },
+        "$other": { ".validate": false }
+      },
+
+      "support": {
+        "enabled": {
+          ".write": "auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true && newData.parent().parent().parent().child('configMeta/support/enabled/at').val() === now",
+          ".validate": "newData.isBoolean()"
+        },
+        "oddsPct": {
+          ".write": "auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true && newData.parent().parent().parent().child('configMeta/support/oddsPct/at').val() === now",
+          ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 0 && newData.val() <= 100"
+        },
+        "quietDays": {
+          ".write": "auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true && newData.parent().parent().parent().child('configMeta/support/quietDays/at').val() === now",
+          ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 1 && newData.val() <= 365"
+        },
+        "shows": {
+          ".write": "auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true && newData.parent().parent().parent().child('configMeta/support/shows/at').val() === now",
+          ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 0 && newData.val() <= 10"
+        },
+        "$other": { ".validate": false }
+      },
+
+      "feedback": {
+        "url": {
+          ".write": "auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true && newData.parent().parent().parent().child('configMeta/feedback/url/at').val() === now",
+          ".validate": "newData.isString() && newData.val().length <= 300 && newData.val().matches(/^https:[/][/][^ ]+$/)"
+        },
+        "endAt": {
+          ".write": "auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true && newData.parent().parent().parent().child('configMeta/feedback/endAt/at').val() === now",
+          ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 0 && newData.val() <= 4102444800000"
+        },
+        "$other": { ".validate": false }
+      },
+
+      "spotify": {
+        "enabled": {
+          ".write": "auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true && newData.parent().parent().parent().child('configMeta/spotify/enabled/at').val() === now",
+          ".validate": "newData.isBoolean()"
+        },
+        "message": {
+          ".write": "auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true && newData.parent().parent().parent().child('configMeta/spotify/message/at').val() === now",
+          ".validate": "newData.isString() && newData.val().length <= 200"
         },
         "$other": { ".validate": false }
       },
@@ -453,6 +545,46 @@
       }
     },
 
+    "announcements": {
+      ".read": true,
+      "$id": {
+        ".write": "auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true && newData.exists()",
+        ".validate": "$id.matches(/^[a-z0-9-]{1,40}$/) && newData.hasChildren(['title', 'style', 'audience', 'startAt', 'maxShows', 'version', 'log', 'by', 'updatedAt']) && newData.parent().parent().child('configLog/' + newData.child('log').val() + '/path').val() === 'ann/' + $id && newData.parent().parent().child('configLog/' + newData.child('log').val() + '/at').val() === now",
+        "title":     { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 80" },
+        "text":      { ".validate": "newData.isString() && newData.val().length <= 400" },
+        "button": {
+          ".validate": "newData.hasChildren(['label', 'action', 'target'])",
+          "label":   { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 30" },
+          "action":  { ".validate": "newData.isString() && newData.val().matches(/^(link|panel)$/)" },
+          "target":  { ".validate": "newData.isString() && newData.val().length <= 300 && ((newData.parent().child('action').val() === 'link' && newData.val().matches(/^https:[/][/][^ ]+$/)) || (newData.parent().child('action').val() === 'panel' && newData.val().matches(/^(camera|sotd|race|stats|appearance|settings|spotify|gear|about)$/)))" },
+          "$other":  { ".validate": false }
+        },
+        "style":     { ".validate": "newData.isString() && newData.val().matches(/^(popup|card|pill)$/)" },
+        "audience":  { ".validate": "newData.isString() && newData.val().matches(/^(everyone|signedIn|webcamOff|notOpened|newUsers|returningUsers)$/)" },
+        "startAt":   { ".validate": "newData.isNumber() && newData.val() >= 0" },
+        "endAt":     { ".validate": "newData.isNumber() && newData.val() >= 0" },
+        "maxShows":  { ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 0 && newData.val() <= 100" },
+        "version":   { ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 1 && newData.val() <= 100000 && (!data.exists() || newData.val() >= data.val())" },
+        "reminder":  { ".validate": "newData.isBoolean()" },
+        "log":       { ".validate": "newData.isString() && newData.val().matches(/^[A-Za-z0-9_-]{1,32}$/)" },
+        "by":        { ".validate": "newData.val() === auth.uid" },
+        "updatedAt": { ".validate": "newData.val() === now" },
+        "$other":    { ".validate": false }
+      }
+    },
+
+    "annStats": {
+      ".read": "auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true",
+      "$id": {
+        "$version": {
+          "$uid": {
+            ".write": "auth != null && auth.uid === $uid && auth.token.firebase.sign_in_provider === 'google.com' && newData.exists() && (root.child('announcements/' + $id).exists() || $id === 'webcam-replay' || $id === 'feedback')",
+            ".validate": "$version.matches(/^[0-9]{1,6}$/) && newData.isString() && newData.val().matches(/^(shown|clicked|dismissed)$/) && (!data.exists() || (data.val() === 'shown' && newData.val() !== 'shown'))"
+          }
+        }
+      }
+    },
+
     "configMeta": {
       ".read": "auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true",
       "$section": {
@@ -471,13 +603,15 @@
       ".read": "auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true",
       "$id": {
         ".write": "auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true && !data.exists() && newData.exists()",
-        ".validate": "newData.hasChildren(['uid', 'at', 'path']) && newData.child('path').isString() && newData.child('path').val().matches(/^[a-zA-Z]{1,24}[/][a-zA-Z]{1,24}$/) && ((newData.child('to').exists() && newData.child('to').val() === newData.parent().parent().child('config/' + newData.child('path').val()).val()) || (!newData.child('to').exists() && !newData.parent().parent().child('config/' + newData.child('path').val()).exists())) && ((newData.child('from').exists() && newData.child('from').val() === root.child('config/' + newData.child('path').val()).val()) || (!newData.child('from').exists() && !root.child('config/' + newData.child('path').val()).exists())) && newData.parent().parent().child('configMeta/' + newData.child('path').val() + '/log').val() === $id",
+        ".validate": "newData.hasChildren(['uid', 'at', 'path']) && ((newData.child('path').isString() && newData.child('path').val().matches(/^[a-zA-Z]{1,24}[/][a-zA-Z]{1,24}$/) && ((newData.child('to').exists() && newData.child('to').val() === newData.parent().parent().child('config/' + newData.child('path').val()).val()) || (!newData.child('to').exists() && !newData.parent().parent().child('config/' + newData.child('path').val()).exists())) && ((newData.child('from').exists() && newData.child('from').val() === root.child('config/' + newData.child('path').val()).val()) || (!newData.child('from').exists() && !root.child('config/' + newData.child('path').val()).exists())) && newData.parent().parent().child('configMeta/' + newData.child('path').val() + '/log').val() === $id) || (newData.child('path').val().matches(/^ann[/][a-z0-9-]{1,40}$/) && newData.child('action').exists() && newData.parent().parent().child('announcements/' + newData.child('path').val().replace('ann/', '') + '/log').val() === $id))",
         "uid":    { ".validate": "newData.val() === auth.uid" },
         "at":     { ".validate": "newData.val() === now" },
         "path":   { ".validate": "newData.isString()" },
         "from":   { ".validate": "newData.isBoolean() || newData.isNumber() || (newData.isString() && newData.val().length <= 300)" },
         "to":     { ".validate": "newData.isBoolean() || newData.isNumber() || (newData.isString() && newData.val().length <= 300)" },
         "undo":   { ".validate": "newData.isString() && newData.val().length <= 32 && root.child('configLog/' + newData.val()).exists()" },
+        "action": { ".validate": "newData.isString() && newData.val().matches(/^(create|edit|end|again)$/)" },
+        "title":  { ".validate": "newData.isString() && newData.val().length <= 80" },
         "$other": { ".validate": false }
       }
     }

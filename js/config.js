@@ -13,9 +13,9 @@
    fails, the last copy or the defaults stay in use and nothing breaks.
    =========================================================== */
 
-import { CONFIG, NAME, spec, allSettings, clean, valid, sectionOf } from './config-table.js';
+import { CONFIG, NAME, spec, allSettings, clean, valid, sectionOf, setOf } from './config-table.js';
 
-export { CONFIG, NAME, spec, allSettings, clean, valid, sectionOf };
+export { CONFIG, NAME, spec, allSettings, clean, valid, sectionOf, setOf };
 
 /** How long a fetched copy is trusted before the next page load asks again. */
 export const CACHE_MS = 5 * 60_000;
@@ -24,6 +24,7 @@ const CACHE_KEY = 'tdt-config';
 /* ---------------- the live copy ---------------- */
 
 let live = null;
+let ann = null;
 let at = 0;
 
 function readCache() {
@@ -36,7 +37,7 @@ function readCache() {
 
 {
   const got = readCache();
-  if (got) { live = got.data; at = got.at; }
+  if (got) { live = got.data; ann = got.ann && typeof got.ann === 'object' ? got.ann : null; at = got.at; }
 }
 
 /** The setting's value: the database's, clipped to its range, or the default. */
@@ -47,19 +48,43 @@ export function getConfig(section, key) {
   return v === undefined ? sp.def : v;
 }
 
-/** Replace the live copy (a fetch's result, or a test's). Announces 'tdt-config'. */
-export function applyConfig(data, when = Date.now()) {
+/** announcements/ as last fetched (announce.js makes sense of it), or null. */
+export const storedAnnouncements = () => ann;
+
+/**
+ * Replace the live copy (a fetch's result, or a test's). Announces
+ * 'tdt-config'. `announcements` left out keeps the ones already held.
+ */
+export function applyConfig(data, when = Date.now(), announcements = ann) {
   live = data && typeof data === 'object' ? data : {};
+  ann = announcements && typeof announcements === 'object' ? announcements : null;
   at = when;
-  try { localStorage.setItem(CACHE_KEY, JSON.stringify({ at, data: live })); } catch { /* still live for this page */ }
+  try { localStorage.setItem(CACHE_KEY, JSON.stringify({ at, data: live, ann })); } catch { /* still live for this page */ }
   if (typeof dispatchEvent === 'function') dispatchEvent(new CustomEvent('tdt-config'));
 }
 
 let inflight = null;
 
+/** One public node over REST: its value, null for refused (rules from before it) or empty, undefined for a failure. */
+async function readPublic(base, path, q) {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 8000);
+  try {
+    const r = await fetch(`${base}/${path}.json${q}`, { signal: ctl.signal, cache: 'no-store' });
+    if (r.status === 401) return null;
+    if (!r.ok) return undefined;
+    return await r.json();
+  } catch {
+    return undefined;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /**
- * Fetch /config.json unless the cached copy is younger than `maxAge`. Never
- * throws: on any failure the cached copy (or the defaults) stays in use.
+ * Fetch /config.json and /announcements.json unless the cached copy is
+ * younger than `maxAge`. Never throws: on any failure the cached copy (or
+ * the defaults) stays in use. Two small public reads, no connection.
  */
 export function loadConfig({ maxAge = CACHE_MS } = {}) {
   if (live && Date.now() - at < maxAge) return Promise.resolve(false);
@@ -67,19 +92,13 @@ export function loadConfig({ maxAge = CACHE_MS } = {}) {
   inflight = (async () => {
     try {
       const [{ FIREBASE_CONFIG }, { EMULATED }] = await Promise.all([import('./raceapp.js'), import('./sync-auth.js')]);
-      const url = EMULATED
-        ? 'http://127.0.0.1:9000/config.json?ns=tagda-timer-default-rtdb'
-        : `${FIREBASE_CONFIG.databaseURL}/config.json`;
-      const ctl = new AbortController();
-      const timer = setTimeout(() => ctl.abort(), 8000);
-      const r = await fetch(url, { signal: ctl.signal, cache: 'no-store' }).finally(() => clearTimeout(timer));
-      // 401 is rules from before the console: nothing has been set, so the defaults.
-      if (r.status === 401) { applyConfig({}); return true; }
-      if (!r.ok) return false;
-      applyConfig(await r.json());
+      const base = EMULATED ? 'http://127.0.0.1:9000' : FIREBASE_CONFIG.databaseURL;
+      const q = EMULATED ? '?ns=tagda-timer-default-rtdb' : '';
+      const [cfg, anns] = await Promise.all([readPublic(base, 'config', q), readPublic(base, 'announcements', q)]);
+      // Refused or empty is "nothing set": the defaults. A failed read keeps what is held.
+      if (cfg === undefined) return false;
+      applyConfig(cfg || {}, Date.now(), anns === undefined ? ann : anns);
       return true;
-    } catch {
-      return false;
     } finally {
       inflight = null;
     }
