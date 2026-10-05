@@ -487,7 +487,7 @@ async function write(changes, { undo = null } = {}) {
     return true;
   } catch (err) {
     console.warn('[admin] save refused', err?.code || err);
-    toast(t('The database refused that. If somebody changed it a moment ago, check it and save again.'), { kind: 'bad', hold: true });
+    toast(t('The database refused that. If somebody changed it a moment ago, check it and save again. A setting new in this version needs its firebase.rules.json published first.'), { kind: 'bad', hold: true });
     return false;
   } finally {
     S.saving = false;

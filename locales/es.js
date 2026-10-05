@@ -2232,7 +2232,7 @@ export const es = {
   "Saved. It is in the change log.": "Guardado. Está en el registro de cambios.",
   "Save this change?": "¿Guardar este cambio?",
   "Save these {n} changes?": "¿Guardar estos {n} cambios?",
-  "The database refused that. If somebody changed it a moment ago, check it and save again.": "La base de datos lo rechazó. Si alguien lo cambió hace un momento, revísalo y vuelve a guardar.",
+  "The database refused that. If somebody changed it a moment ago, check it and save again. A setting new in this version needs its firebase.rules.json published first.": "La base de datos lo rechazó. Si alguien lo cambió hace un momento, revísalo y vuelve a guardar. Un ajuste nuevo en esta versión necesita antes su firebase.rules.json publicado.",
   "undid the change from {when}": "deshizo el cambio de {when}",
   "an undo": "un deshacer",
   "That setting no longer exists": "Ese ajuste ya no existe",

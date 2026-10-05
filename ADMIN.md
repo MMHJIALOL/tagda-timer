@@ -507,7 +507,9 @@ Everything keeps working as it did, on the defaults:
 
 On older rules than the page's, the parts that need newer ones say so and the rest works:
 **Bans**, **Reports** and **Announce** ask for the newer rules, **Chats** lists only what the admin could
-already read, and the app's ⚑ is refused with *Couldn't send the report*.
+already read, and the app's ⚑ is refused with *Couldn't send the report*. A setting the published
+rules do not know yet (every one Phase 4 added, from race tuning to Spotify) is refused when saved,
+and the page says a new setting needs its rules published; the app keeps using its default.
 
 ---
 
