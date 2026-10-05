@@ -184,6 +184,7 @@ transaction result and adopts it without waiting for the listener.
 | `js/sotd-chat.js` | The day's chat: the column, the composer, deleting (§9) |
 | `tools/verify-sotd-chat-rules.mjs` | `node` check of the chat's rules against the database emulator (§9) |
 | `tools/verify-sotd-remove-rules.mjs` | `node` check of the admin removal rules against the database emulator (§10) |
+| `tools/verify-safety-rules.mjs` | `node` check of the admin console's switches and bans on the chat, the board and replays ([ADMIN.md](ADMIN.md)) |
 
 > **Republish `firebase.rules.json` before deploying this.** The previous rules end `results`
 > with `"$other": { ".validate": false }` and know nothing about `photo`, so a client that
@@ -561,13 +562,21 @@ The Worker (`worker.js`, `/replay/*`) is the only way to the bucket:
 
 | Request | Who | Order of checks |
 |---|---|---|
-| `PUT /replay/<dayKey>/<event>` | you, your clip | path, and today's or yesterday's day → headers (meta, type, length) → the body really that size, really WebM or MP4 → Google sign-in, a result on the board → **the claim** → `list` the day, under DAY_BUDGET → `put`, then the flag |
-| `GET /replay/<dayKey>/<event>/<uid>` | anyone with a result that day | path → not past 7 days → reading `results/<uid>` with your token (allowed only once yours exists) and its flag → `get` |
+| `PUT /replay/<dayKey>/<event>` | you, your clip | path, and today's or yesterday's day → switched on (`config/replays`) → headers (meta, type, length) → the body really that size, really WebM or MP4 → Google sign-in, a result on the board, not banned → **the claim** → the day's count entry → `list` the day: fewer than the day's clips, under DAY_BUDGET → `put`, then the flag |
+| `GET /replay/<dayKey>/<event>/<uid>` | anyone with a result that day | path → switched on → not past 7 days → reading `results/<uid>` with your token (allowed only once yours exists) and its flag → `get` |
 | `DELETE /replay/<dayKey>/<event>/<uid>` | the owner, or an admin (`admins/<uid>`; `ADMIN_UIDS` while the rules are older, [ADMIN.md](ADMIN.md)) | path → token → the flag (owner) → `delete` |
 
-400 bad path or day, 401 token, 403 not submitted or not a Google account, 404 removed,
+400 bad path or day, 401 token, 403 not submitted, not a Google account, or banned, 404 removed,
 409 already shared today, 410 past 7 days, 411 no length, 413 over CLIP_MAX, 415 not a video,
-503 rules not published yet, 507 the day is full. A clip is served with its stored type
+429 the day's replay slots are full, 503 switched off (`off`, with the admin's message) or rules
+not published yet (`not-enabled`), 507 the day is full.
+
+**The admin console can tighten every one of these and loosen none** ([ADMIN.md](ADMIN.md) §4):
+switch sharing and watching off, take the day's clip count below 1000, a clip below 10 MB, the
+day below 1 GB, or the days kept below 7. The Worker reads `config/replays` about once a minute
+and always uses `min(setting, the constant)`. Every step before the claim (the switch, a ban, the
+size) costs the person nothing; a day that is full is found out after it, and the app reads the
+day's count (`replayDay/`) before uploading so that rarely happens. A clip is served with its stored type
 (WebM or MP4 only), `nosniff`, `Content-Security-Policy: sandbox; default-src 'none'` and
 `Cache-Control: private, max-age=86400`: these are strangers' uploads on tagdatimer.me.
 
@@ -598,6 +607,11 @@ static assets are not metered: `run_worker_first` is `/__/auth/*` and `/replay/*
 
 An admin removal (§10) clears the person's claim, so they can share once more: one more
 `list` and `put` per removal, done by hand, one row at a time.
+
+The day's count is `replayDay/<dayKey>/<event>/<uid>`, one entry per claim, written by the Worker
+right after it with the person's own token. The rules allow an entry only for an account that has
+a claim, once, so it can never count more claims than there are; anybody signed in may read it and
+nobody may delete it, except the sweep of days older than yesterday (§9's, once a day).
 
 Two honest edges. Class A is bounded by claims, so going over would take roughly 16,000
 claims a day, every day for a month: over a thousand Google accounts each submitting every
@@ -658,6 +672,11 @@ What the rules ask of a message:
 - **1.5 s apart.** The message and `last/<uid>` go in one update, each wanting the other to
   carry the same `now`, and `last` refuses a value less than 1.5 s after the one it replaces.
   The app waits 2 s between sends, so a fast connection after a slow one is not refused.
+- **The admin console** ([ADMIN.md](ADMIN.md) §4) can switch posting off, make the gap longer
+  (`config/sotdChat/gapMs`, never shorter than 1.5 s) or messages shorter (`maxLen`, never longer
+  than 200). The rules read those directly, with the numbers above when nothing is set; the app
+  waits half a second more than the gap, and puts the admin's message where the box was.
+- **Not banned** (`bans/<uid>`, ADMIN.md §5). A banned account's box shows why instead.
 
 **Deleting.** Your own messages, from the × on hover (always showing, faintly, on a touch
 screen), after a confirm. An admin (a Google account with `admins/<uid>: true` in the

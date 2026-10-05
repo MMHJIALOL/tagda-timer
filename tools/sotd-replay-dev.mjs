@@ -7,6 +7,7 @@
        node tools/sotd-replay-dev.mjs rules old|new      swap the rules on the running emulator (old: before the chat)
        node tools/sotd-replay-dev.mjs rules pre-replays  the rules from before replays
        node tools/sotd-replay-dev.mjs rules pre-admin    the rules from before the admin console (admins/, config/)
+       node tools/sotd-replay-dev.mjs rules pre-safety   the rules from before its safety switches (bans/, chatLast/)
        node tools/sotd-replay-dev.mjs counts             R2 puts / lists / gets / deletes so far
 
    What runs: the Firebase Realtime Database and Auth emulators (firebase-tools
@@ -47,6 +48,7 @@ const BEFORE = {
   old: ['sign_in_provider', 'the chat'],
   'pre-replays': ['replayClaim', 'replays'],
   'pre-admin': ['configLog', 'the admin console'],
+  'pre-safety': ['chatLast', 'the safety switches'],
 };
 function oldRules(which = 'old') {
   const [marker, what] = BEFORE[which];
@@ -156,6 +158,8 @@ writeFileSync(join(ROOT, '.dev.vars'), [
   '# Written by tools/sotd-replay-dev.mjs on every start. Local only (gitignored).',
   `RTDB_URL=${RTDB}`,
   `RTDB_NS=${NS}`,
+  // Settings from the admin page reach the Worker in a second or two, not a minute.
+  'CONFIG_TTL_MS=1500',
   budget ? `DAY_BUDGET=${budget}` : '',
   clipMax ? `CLIP_MAX=${clipMax}` : '',
 ].filter(Boolean).join('\n') + '\n');
@@ -227,6 +231,7 @@ console.log(`
   │  node tools/sotd-replay-dev.mjs rules old|new   swap rules live
   │  node tools/verify-sotd-chat-rules.mjs          the chat rules' own checks
   │  node tools/verify-admin-rules.mjs              the admin console's rules
+  │  node tools/verify-safety-rules.mjs             its switches and bans
   │  node tools/sotd-replay-dev.mjs counts          R2 operations so far
   │  Ctrl+C stops everything. --reset next time wipes the clips.
   └──────────────────────────────────────────────────────────────

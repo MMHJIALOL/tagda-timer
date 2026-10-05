@@ -37,6 +37,8 @@ import { dayIdFromServerMs, sotdDoneOn, clearSotdDone } from './dayid.js';
 import { openPalette, closePalette, paletteOpen } from './palette.js';
 import { initFeedback, feedbackOpen } from './feedback.js';
 import { isPhone } from './phone.js';
+import { getConfig, loadConfig } from './config.js';
+import { APP_VERSION } from './version.js';
 import { initPhoneShell } from './phoneshell.js';
 // The *.vercel.app "we moved" banner, and the tagdatimer.me end of its data move.
 import './moved.js';
@@ -665,6 +667,9 @@ async function init() {
   // origin, a policy) still gets exactly the app it got before.
   registerServiceWorker();
 
+  // The admin console's settings: one REST read, and the "new version" check.
+  wireConfig();
+
   // Cloud sync, if this browser was ever signed in. Same shape as the line
   // above: a visitor who has never signed in never downloads any of it.
   startCloudSync().catch(err => console.warn('[sync] not started', err));
@@ -697,7 +702,7 @@ async function init() {
      after, so a reload does not silently rejoin a room you have since left. */
   const invited = new URLSearchParams(location.search).get('race');
   if (invited) {
-    history.replaceState(null, '', location.pathname);
+    dropParam('race');
     app.joinRace(invited);
   }
 }
@@ -719,6 +724,62 @@ function registerServiceWorker() {
     const urls = performance.getEntriesByType('resource').map(e => e.name);
     reg.active?.postMessage({ type: 'cache', urls: [location.href, ...urls] });
   }).catch(err => console.warn('[sw] not registered', err));
+}
+
+/* =========================================================
+   The admin console's settings, and "a new version is ready"
+   ========================================================= */
+
+/**
+ * config/ (ADMIN.md) is one plain REST read at boot, kept five minutes, and
+ * asked again when the tab comes back into view or every half hour while it
+ * is in view: never a listener, so it costs none of the Spark plan's 100
+ * connections. Nothing waits on it; until it lands, every setting is its
+ * built-in default.
+ */
+function wireConfig() {
+  const check = () => loadConfig().then(maybeReloadForVersion, () => {});
+  check();
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) check(); });
+  setInterval(() => { if (!document.hidden) check(); }, 30 * 60_000);
+}
+
+const RELOADED_KEY = 'tdt-reloaded-for';
+let reloadPending = false;
+
+/**
+ * app.minVersion above APP_VERSION: this tab is a deploy the admin has
+ * retired. Say so and reload, but only once nothing is going on (no solve,
+ * no open panel, no race room or SOTD window, nothing being typed), and at
+ * most once per minVersion per tab: a typo on the admin page costs one
+ * reload, never a loop. The reload empties the worker's cache first, so it
+ * cannot come back up on the same old files.
+ */
+function maybeReloadForVersion() {
+  const min = getConfig('app', 'minVersion');
+  if (!(min > APP_VERSION) || reloadPending) return;
+  try { if (sessionStorage.getItem(RELOADED_KEY) === String(min)) return; } catch { return; }
+  reloadPending = true;
+  const busy = () => !timerIdle() || modalOpen() || fmcAttempting() || !!raceCtl()?.inRoom
+    || document.body.classList.contains('sotd') || !!dailyCtl()?.engaged
+    || /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName || '') || !!document.activeElement?.isContentEditable;
+  let told = false;
+  const tick = () => {
+    if (busy()) { setTimeout(tick, 5000); return; }
+    if (!told && !document.hidden) {
+      told = true;
+      toast(t('A new version is ready — reloading'), { hold: true });
+      setTimeout(tick, 2500);
+      return;
+    }
+    try { sessionStorage.setItem(RELOADED_KEY, String(min)); } catch { /* checked above */ }
+    const sw = navigator.serviceWorker?.controller;
+    if (!sw) { location.reload(); return; }
+    navigator.serviceWorker.addEventListener('message', (e) => { if (e.data?.type === 'dropped') location.reload(); });
+    sw.postMessage({ type: 'drop' });
+    setTimeout(() => location.reload(), 3000);   // a worker that never answers
+  };
+  tick();
 }
 
 /** Animations are only safe to run when the document timeline is actually moving. */
@@ -3929,7 +3990,9 @@ app.joinRace = async (code) => {
     toast(t('Joined {room}', { room: id }), { kind: 'good' });
   } catch (err) {
     console.error('[race] join failed:', err);
-    toast(err?.message === 'room-full' ? t('That room is full') : 'Could not join that room', { kind: 'bad' });
+    toast(err?.message === 'room-full' ? t('That room is full')
+      : err?.message === 'race-off' ? (getConfig('race', 'message') || t('New race rooms are switched off for now'))
+        : 'Could not join that room', { kind: 'bad' });
   }
 };
 
@@ -5165,11 +5228,22 @@ async function setMode(id) {
  * straight after for the same reason the race invite is: a reload should not
  * silently re-apply a choice you have since changed.
  */
+/**
+ * Take one parameter out of the address bar and leave the rest. Clearing the
+ * whole query also took ?emu=1 with it, so every module loaded after an
+ * invite thought it was on the real site (sync-auth.js EMULATED).
+ */
+function dropParam(name) {
+  const u = new URL(location.href);
+  u.searchParams.delete(name);
+  history.replaceState(null, '', u.pathname + u.search + u.hash);
+}
+
 async function applyTrainerHandoff() {
   const p = new URLSearchParams(location.search);
   const modeId = p.get('train');
   if (!modeId) return;
-  history.replaceState(null, '', location.pathname);
+  dropParam('train');
 
   const mode = MODES[modeId];
   const set = await loadSetFor(modeId);

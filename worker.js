@@ -23,6 +23,10 @@
      bucket's lifecycle rule deletes clips about 8 days after upload.
    Every cheap check runs first, then the database, and R2 is touched last.
 
+   The admin console's settings (config/replays, ADMIN.md) can switch this
+   off or tighten it, never loosen it: every limit is min(setting, the
+   constant above), so a typo on the admin page cannot cost money.
+
    No crypto here. The ID token goes to the database REST API as ?auth=, and
    a read the rules allow is the proof that it is genuine; only then is its
    payload decoded (unverified, it is the same string) for the uid and the
@@ -30,9 +34,14 @@
    Bearer header as an admin OAuth credential, which skips every rule.
    =========================================================== */
 
+import { sectionOf } from './js/config-table.js';
+
 const DAY_MS = 86_400_000;
 const IST_MS = 19_800_000;            // the day starts at 00:00 IST (js/dayid.js)
-const KEEP_MS = 8 * DAY_MS;           // the day itself, then 7 more
+const MB = 1024 * 1024;
+/* The ceilings. Settings only ever go below them. */
+const KEEP_DAYS = 7;                  // after the day itself; the bucket deletes at 8 days
+const PER_DAY = 1000;                 // one page of R2's list, all events together
 const TYPES = ['video/webm', 'video/mp4'];
 const META_KEYS = ['v', 'mime', 'insp', 'start', 'stop', 'timeMs', 'w', 'h', 'fps', 'lat', 'adj', 'sound', 'at'];
 const PATH = /^\/replay\/(\d{13})\/([a-z0-9]{2,12})(?:\/([A-Za-z0-9]{1,128}))?$/;
@@ -110,6 +119,53 @@ async function isAdmin(env, who, sub, token) {
   return String(env.ADMIN_UIDS || '').split(',').map(s => s.trim()).includes(sub);
 }
 
+/* ---------------- settings (ADMIN.md) ---------------- */
+
+let settings = { at: 0, data: null };
+
+/**
+ * config/replays, public to read, kept in this isolate for a minute
+ * (CONFIG_TTL_MS) so a busy day costs a few database reads rather than one a
+ * request. Refused (rules from before the console) is the defaults, which
+ * are the constants; a failed fetch keeps the last copy if there is one.
+ */
+async function replaySettings(env, now = Date.now()) {
+  if (settings.data && now - settings.at < num(env.CONFIG_TTL_MS, 60_000)) return settings.data;
+  let stored;
+  try {
+    const q = env.RTDB_NS ? `?ns=${encodeURIComponent(env.RTDB_NS)}` : '';
+    const r = await fetch(`${String(env.RTDB_URL || '').replace(/\/+$/, '')}/config/replays.json${q}`);
+    stored = r.ok ? await r.json() : r.status === 401 ? null : undefined;
+  } catch { stored = undefined; }
+  const data = stored === undefined && settings.data ? settings.data : sectionOf('replays', stored);
+  settings = { at: now, data };
+  return data;
+}
+
+/** Every limit at min(setting, ceiling). */
+function limits(env, cfg) {
+  return {
+    clipMax: Math.min(num(env.CLIP_MAX, 10 * MB), cfg.maxClipBytes),
+    budget: Math.min(num(env.DAY_BUDGET, 1024 * MB), cfg.dayBudgetBytes),
+    perDay: Math.min(PER_DAY, cfg.maxPerDay),
+    keepMs: (Math.min(KEEP_DAYS, cfg.keepDays) + 1) * DAY_MS,   // the day itself, then keepDays more
+  };
+}
+
+const switchedOff = (cfg) => json(503, { error: 'off', message: cfg.message || '' });
+
+/**
+ * Whether the account is banned (bans/<uid>, readable by its owner). Refused
+ * is the rules from before bans, where nobody is; the claim's own rule
+ * checks the ban again, so this is for the right refusal, not the only one.
+ */
+async function isBanned(env, sub, token, now) {
+  const r = await rtdb(env, `bans/${sub}`, token).catch(() => null);
+  if (!r?.ok) return false;
+  const ban = await r.json();
+  return !!ban && !(typeof ban.until === 'number' && ban.until <= now);
+}
+
 function magicOk(type, b) {
   if (type === 'video/webm') return b[0] === 0x1a && b[1] === 0x45 && b[2] === 0xdf && b[3] === 0xa3;
   return b[4] === 0x66 && b[5] === 0x74 && b[6] === 0x79 && b[7] === 0x70;      // 'ftyp'
@@ -149,6 +205,10 @@ async function put(request, env, { dayKey, event }) {
   const today = todayKey(now);
   // 1. Today's or yesterday's, by this clock.
   if (dayKey !== today && dayKey !== today - DAY_MS) return fail(400, 'bad-day');
+  // Switched on, before anything else costs anything.
+  const cfg = await replaySettings(env, now);
+  if (!cfg.enabled) return switchedOff(cfg);
+  const lim = limits(env, cfg);
 
   // 2. Headers.
   const token = bearer(request);
@@ -158,7 +218,7 @@ async function put(request, env, { dayKey, event }) {
   if (!meta || typeof meta !== 'object' || Array.isArray(meta)) return fail(400, 'bad-meta');
   const type = (request.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
   if (!TYPES.includes(type)) return fail(415, 'bad-type');
-  const max = num(env.CLIP_MAX, 10 * 1024 * 1024);
+  const max = lim.clipMax;
   const declared = request.headers.get('content-length');
   if (declared == null || !/^\d+$/.test(declared)) return fail(411, 'no-length');
   if (Number(declared) > max) return fail(413, 'too-big');
@@ -178,6 +238,7 @@ async function put(request, env, { dayKey, event }) {
   if (row.status === 401) return (await tokenOk(env, sub, token)) ? fail(403, 'not-submitted') : fail(401, 'bad-token');
   if (!row.ok) return fail(502, 'db');
   if ((await row.json()) == null) return fail(403, 'not-submitted');
+  if (await isBanned(env, sub, token, now)) return fail(403, 'banned');
 
   // 5. The claim: write-once, so this is the one attempt today that reaches R2.
   const claim = await rtdb(env, `${base}/replayClaim/${sub}`, token, { method: 'PUT', body: '{".sv":"timestamp"}' });
@@ -188,13 +249,18 @@ async function put(request, env, { dayKey, event }) {
     if (had.ok && (await had.json()) != null) return fail(409, 'already-shared');
     return fail(503, 'not-enabled');
   }
+  /* The day's count, one entry per claim, which the app reads before it
+     uploads anything (replayDay/, ADMIN.md). Not needed for the check below,
+     which counts R2 itself; refused on rules from before it, and that is fine. */
+  await rtdb(env, `replayDay/${dayKey}/${event}/${sub}`, token, { method: 'PUT', body: '{".sv":"timestamp"}' }).catch(() => null);
 
-  // 6. Today's room, all events together. More than one page of clips counts as full.
-  const budget = num(env.DAY_BUDGET, 1024 ** 3);
+  // 6. Today's room, all events together: the first lim.perDay clips, inside
+  // the day's budget. More than one page of clips counts as full.
   const listed = await env.REPLAYS.list({ prefix: `r/${dayKey}/`, limit: 1000 });
   log('list', `r/${dayKey}/`, { n: listed.objects.length });
+  if (listed.truncated || listed.objects.length >= lim.perDay) return fail(429, 'slots-full');
   const used = listed.objects.reduce((n, o) => n + o.size, 0);
-  if (listed.truncated || used + body.byteLength > budget) return fail(507, 'full');
+  if (used + body.byteLength > lim.budget) return fail(507, 'full');
 
   // 7. The clip, then the flag the board shows it by.
   const key = `r/${dayKey}/${event}/${sub}`;
@@ -208,8 +274,10 @@ async function put(request, env, { dayKey, event }) {
 async function get(request, env, { dayKey, event, uid }) {
   const now = Date.now();
   if (dayKey > todayKey(now)) return fail(400, 'bad-day');
-  // Kept 7 days after the day ends, exactly, whatever the lifecycle rule has got round to.
-  if (now > dayKey + KEEP_MS) return fail(410, 'expired');
+  const cfg = await replaySettings(env, now);
+  if (!cfg.enabled) return switchedOff(cfg);
+  // Kept keepDays after the day ends, exactly, whatever the lifecycle rule has got round to.
+  if (now > dayKey + limits(env, cfg).keepMs) return fail(410, 'expired');
   const token = bearer(request);
   if (!token) return fail(401, 'no-token');
   const who = claims(token);

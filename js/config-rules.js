@@ -6,7 +6,7 @@
    that the committed firebase.rules.json still matches the table).
    =========================================================== */
 
-import { CONFIG } from './config.js';
+import { CONFIG } from './config-table.js';
 
 /**
  * An admin, in the rules: a Google sign-in whose uid is true under admins/.
