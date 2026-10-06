@@ -6,6 +6,6 @@
     "test:settings-search": "node --test js/settings-search.check.mjs"
   },
   "devDependencies": {
-    "jsdom": "30.1.0"
+    "jsdom": "26.1.0"
   }
 }
