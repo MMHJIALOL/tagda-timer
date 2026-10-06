@@ -6,6 +6,8 @@ import { t, translateDOM } from './i18n.js';
 import { $, $$, el, uid, fmt, fmtLive, fmtResult, clamp, copy, download, toCSV, debounce,
          parseTimeInput, parseScrambleList, parseGoal } from './util.js';
 import { Solves, Sessions, KV, Assets, LetterPairs, importAll, onWrite } from './db.js';
+import { initCompetition, competitionOpen, competitionTiming, recordCompetitionSolve, rememberCompetitionScramble, leaveCompetition } from './competition.js';
+import { competitionResult } from './competition-stats.js';
 import { activeGearId, Gear, gearLabel } from './gear.js';
 import { EVENTS, EVENT_ORDER, MODES, modesForEvent, eventOf, modeOf, virtualSize,
          relayLabel } from './events.js';
@@ -627,6 +629,8 @@ async function init() {
   } catch { /* an unreadable list is not worth failing the boot over */ }
   updateCustomBar();
 
+  await initCompetition(app, timer);
+
   // Before the first scramble, not after: learn mode decides which case that
   // scramble is, and loading its schedule a moment late would deal you a
   // random case on every reload.
@@ -978,6 +982,10 @@ async function nextScramble({ clear = false } = {}) {
      after correctly showing today's: a boot-time generator call was still
      warming up when the window opened and arrived late, unopposed. */
   const token = ++scrambleToken;
+  if (app.initialCompetitionScramble) {
+    const restored = app.initialCompetitionScramble; app.initialCompetitionScramble = null;
+    showScramble(restored); return;
+  }
 
   // Switching event: a big-cube random-state scramble takes a couple of seconds,
   // and leaving the previous event's scramble on screen invites you to solve
@@ -1119,12 +1127,12 @@ async function nextScramble({ clear = false } = {}) {
    when the clock started, and the solution in the box is being judged against
    that one. Stepping the scramble under it would leave the two disagreeing. */
 /** Why the scramble will not step. Two features hold it, for two reasons. */
-const spokenForWhy = () => (fmcAttempting()
+const spokenForWhy = () => (competitionTiming() ? t('Competition Mode shows only the current attempt scramble') : fmcAttempting()
   ? t('Your attempt is on this scramble — submit or abandon it first')
   : t('Today’s scramble is the only one in here'));
 
 const scrambleIsSpokenFor = () =>
-  document.body.classList.contains('sotd') || !!dailyCtl()?.engaged || fmcAttempting();
+  competitionTiming() || document.body.classList.contains('sotd') || !!dailyCtl()?.engaged || fmcAttempting();
 
 function prevScramble() {
   if (scrambleIsSpokenFor()) { toast(spokenForWhy()); return; }
@@ -1260,6 +1268,7 @@ function revealMoves(node, text) {
 
 function showScramble(s, silent = false) {
   app.scramble = s;
+  rememberCompetitionScramble(s);
   const ev = eventOf(app.settings.event);
   const node = $('#scramble-text');
 
@@ -2485,7 +2494,7 @@ async function onSolveFinished(res) {
     toast(t('Misfire on your backup — that was the last attempt, so it counts as a DNF'), { kind: 'bad', hold: true });
   }
 
-  if (!sotd && res.suspicious && app.settings.confirmShortSolves) {
+  if (!sotd && !competitionTiming() && res.suspicious && app.settings.confirmShortSolves) {
     // A misfire is obvious the instant it happens — you felt the stack move.
     // No answer means keep the solve. It stays up long enough to read, and
     // starting the next solve closes it early (see the timer 'state' listener).
@@ -2595,6 +2604,16 @@ async function recordSolve({ timeMs, penalty = 'none', inspectionMs = 0, splits 
     relaySplits = relayParts.map(p => p.splitMs);
     renderRelayRail();
   }
+  // Membership and the solve commit atomically before any UI or replay keeps it.
+  let inCompetition = false;
+  try { inCompetition = await recordCompetitionSolve(solve); }
+  catch (err) {
+    // Concurrent tabs or a changed context cannot cost the measured time.
+    // Preserve it as ordinary practice and ask the user to resume the set.
+    delete solve.competitionSetId; delete solve.competitionAttempt; delete solve.competitionTiming;
+    toast(err.message + t(' · Measured time saved as ordinary practice.'), { kind: 'bad', hold: true });
+  }
+  if (!inCompetition) await Solves.put(solve);
   app.solves.push(solve);
 
   // personal bests — judged and chimed before the writes and the re-render
@@ -2616,7 +2635,6 @@ async function recordSolve({ timeMs, penalty = 'none', inspectionMs = 0, splits 
   // Its replay, if this attempt was filmed. A new best single's is kept for good.
   clip?.keep(solve, { pb: pb?.[0] === 'single' });
 
-  await Solves.put(solve);
   /* Submitted after the local write, never before: the solve is yours whatever
      the room makes of it, and a refused upload must not cost you the time. */
   if (racing) race.onSolveRecorded(solve).catch(err => console.warn('[race] submit failed', err));
@@ -2649,7 +2667,11 @@ async function recordSolve({ timeMs, penalty = 'none', inspectionMs = 0, splits 
     const g = app.session.goal;
     celebratePB(g.stat, goalHit, `Goal hit: sub-${goalTarget(g.value)} ${g.stat}!`);
   } else if (pb) celebratePB(...pb);
-  nextScramble();
+  /* Only a Competition attempt waits for the next scramble, so the set has
+     saved it before the next attempt. Anything else must not: a typed time
+     or an FMC submit would sit behind a big-cube or Square-1 scrambler. */
+  const next = nextScramble();
+  if (inCompetition) { await next; await app.competitionScrambleSaved; }
 }
 
 /**
@@ -2695,6 +2717,7 @@ function shownSolve() {
 async function penalizeLast(p) {
   const last = app.solves.at(-1);
   if (!last) return toast('No solves yet');
+  if (last.competitionSetId) last.penaltyUpdatedAt=Date.now();
   last.penalty = last.penalty === p ? 'none' : p;
   await Solves.put(last);
   renderAll();
@@ -2707,6 +2730,8 @@ function syncLastActions() {
   const row = $('#last-actions');
   const last = shownSolve();
   row.classList.toggle('empty', !last);
+  const del = row.querySelector('[data-act="delete"]');
+  if (del) del.hidden = !!last?.competitionSetId;
   for (const b of row.querySelectorAll('[data-act="+2"], [data-act="DNF"]')) {
     b.setAttribute('aria-pressed', String(last?.penalty === b.dataset.act));
   }
@@ -3093,6 +3118,7 @@ function historyRowData(i) {
     solve: s,
     cls: [
       'solve-chip',
+      s.competitionSetId ? 'competition-member' : '',
       s.penalty === 'DNF' ? 'dnf' : '',
       s.penalty === '+2' ? 'plus2' : '',
       v === best && v !== DNF ? 'pb' : '',
@@ -3125,8 +3151,9 @@ const rowSig = (d) =>
   `${d.cls}|${d.idx}|${d.time}|${d.replay ? 1 : 0}|` + d.avgs.map(a => `${a.n}:${a.text}:${a.best ? 1 : 0}`).join(',');
 
 /** One row. `i` is the index into app.solves, so #1 is always #1. */
-function historyChip(i, data) {
+function historyChip(i, data, grouped = false) {
   const d = data || historyRowData(i);
+  if (grouped) { d.idx = String(d.solve.competitionAttempt); d.avgs = []; }
   /* One click from the times list into the reconstruction. The solve menu
      still carries the same entry, which is the only way in on a touch screen,
      where this column is dropped entirely. */
@@ -3164,6 +3191,10 @@ function historyChip(i, data) {
     class: 't', text: d.time,
     title: d.solve.phases?.length ? t('Has a phase breakdown — click for the split') : '',
   });
+  if (d.solve.competitionSetId && !grouped) timeCell.append(el('button', {
+    class: 'competition-badge', text: `C${d.solve.competitionAttempt}`, title: t('Competition Mode · attempt {n}', { n:d.solve.competitionAttempt }),
+    onclick: e => { e.stopPropagation(); app.openCompetitionSet(d.solve.competitionSetId); },
+  }));
   /* Filmed: a play button right after the time, inside its own (flexible)
      column, so no row changes shape. Its click stops here, not at the menu. */
   if (d.replay) {
@@ -3173,7 +3204,7 @@ function historyChip(i, data) {
       onclick: (e) => { e.stopPropagation(); openReplay(d.solve); },
     }));
   }
-  const chip = el('div', { class: d.cls, role: 'listitem' },
+  const chip = el('div', { class: `${d.cls}${grouped ? ' competition-set-attempt' : ''}`, role: 'listitem' },
     el('span', { class: 'idx', text: d.idx }),
     timeCell,
     ...cells,
@@ -3255,6 +3286,56 @@ function syncScrollbarGutter() {
   });
 }
 
+function renderCompetitionHistoryGroups(list, order) {
+  const prevScroll = list.scrollTop;
+  const visible = order.slice(0, histShown), groups = new Map();
+  for (const i of visible) {
+    const s = app.solves[i];
+    if (s.competitionSetId && !groups.has(s.competitionSetId)) groups.set(s.competitionSetId, []);
+    if (s.competitionSetId) groups.get(s.competitionSetId).push(i);
+  }
+  const members = new Map();
+  for (const s of app.solves) if (s.competitionSetId) {
+    if (!members.has(s.competitionSetId)) members.set(s.competitionSetId, new Map());
+    members.get(s.competitionSetId).set(s.id, s);
+  }
+  const frag = document.createDocumentFragment(), added = new Set();
+  const box = (id, indices) => {
+    const c = app.competitionSets?.get(id), mine = members.get(id) || new Map();
+    const ss = c ? c.solveIds.map(sid => mine.get(sid)) : [];
+    const r = c ? competitionResult(c, ss) : { complete: false };
+    const title = c ? `Ao${c.size} · ${t('Set {n}', { n: c.sequence })}` : t('Competition average');
+    const summary = c ? (r.complete ? fmtResult(r.value) : `${mine.size}/${c.size}`) : t('Syncing…');
+    const head = el('button', { class: 'competition-set-heading', onclick: () => app.openCompetitionSet(id), 'aria-label': `${title} · ${summary}` },
+      el('span', { class: 'competition-set-title', text: title }),
+      el('strong', { class: 'competition-set-result', text: summary }));
+    const rows = el('div', { class: 'competition-set-rows', role: 'list' });
+    for (const i of indices.sort((a,b) => app.solves[a].competitionAttempt - app.solves[b].competitionAttempt)) {
+      const d = historyRowData(i);
+      if (r.trimmed?.has(d.solve.competitionAttempt-1)) { d.time = `(${d.time})`; d.cls += ' competition-trimmed'; }
+      rows.append(historyChip(i, d, true));
+    }
+    if (!indices.length) rows.removeAttribute('role');
+    const note = c && c.solveIds.length > indices.length ? t('{n} attempts · open set for all results', { n:c.solveIds.length })
+      : c?.status === 'active' ? t('In progress') : r.complete ? t('Completed') : t('Syncing…');
+    return el('div', { class: 'competition-set-box', role: 'listitem', dataset: { setId:id } }, head, rows,
+      el('button', { class:'competition-set-footer', text:note, onclick:()=>app.openCompetitionSet(id) }));
+  };
+  // Show an empty new round, so its boundary exists before attempt one.
+  for (const c of app.competitionSets?.values() || []) if (c.status === 'active' && c.sessionId === app.session.id && !c.solveIds.length) {
+    frag.append(box(c.id, [])); added.add(c.id);
+  }
+  for (const i of visible) {
+    const id = app.solves[i].competitionSetId;
+    if (!id) { frag.append(historyChip(i)); continue; }
+    if (added.has(id)) continue;
+    added.add(id); frag.append(box(id, groups.get(id)));
+  }
+  if (histShown >= order.length && order.length) frag.append(el('div', { class:'hist-end', text:t('start of the session') }));
+  list.replaceChildren(frag); list.scrollTop = prevScroll;
+  histIds = []; histSigs = []; histOrdered = null;
+}
+
 function renderHistory() {
   const list = $('#hist-list');
   const n = app.solves.length;
@@ -3265,7 +3346,13 @@ function renderHistory() {
      (and Lighthouse's aria-required-children) rightly calls broken. */
   if (!n) list.removeAttribute('role');
   else list.setAttribute('role', 'list');
-  if (!n) {
+  const grouped = app.solves.some(s => s.competitionSetId) || [...(app.competitionSets?.values() || [])].some(c => c.status === 'active' && c.sessionId === app.session.id);
+  const setOnly = grouped && app.solves.every(s => s.competitionSetId);
+  const headings = document.querySelector('.hist-cols');
+  if (headings) headings.hidden = setOnly;
+  if (setOnly) histSort = null;
+  list.classList.toggle('has-competition-sets', grouped);
+  if (!n && !grouped) {
     histShown = HIST_PAGE;
     histIds = [];
     histSigs = [];
@@ -3297,6 +3384,11 @@ function renderHistory() {
       return { n: len, values, best: valid.length ? Math.min(...valid) : null };
     }),
   };
+  if (grouped) {
+    list.setAttribute('role', 'list');
+    renderCompetitionHistoryGroups(list, histOrder());
+    return;
+  }
 
   /* A sorted list is rebuilt rather than diffed. The incremental path exists
      because solve order only ever changes at one end — which is exactly what
@@ -3398,6 +3490,9 @@ function wireHistoryScroll() {
     const n = app.solves.length;
     if (histShown >= n) return;
     if (list.scrollHeight - list.scrollTop - list.clientHeight > 300) return;
+    if (list.classList.contains('has-competition-sets')) {
+      histShown = Math.min(histShown + HIST_PAGE, n); renderHistory(); return;
+    }
     if (histSort) {
       const from = histShown;
       histShown = Math.min(histShown + HIST_PAGE, n);
@@ -3608,12 +3703,14 @@ function solveMenu(solve, anchor) {
   // A phone gets the whole menu as a sheet from the bottom of the screen.
   if (phoneShell?.on()) return phoneShell.openSolveSheet(solve);
   const setPenalty = async (p) => {
+    if (solve.competitionSetId) solve.penaltyUpdatedAt=Date.now();
     solve.penalty = solve.penalty === p ? 'none' : p;
     await Solves.put(solve);
     renderAll();
     syncTimerDisplay();
   };
   popover(anchor, [
+    ...(solve.competitionSetId ? [{ title: t('Competition Mode · attempt {n}', {n:solve.competitionAttempt}) }] : []),
     { title: `#${app.solves.indexOf(solve) + 1} · ${fmtResult(eff(solve), isMoveResult(solve))}` },
     { label: t('No penalty'), on: solve.penalty === 'none', onSelect: () => setPenalty('none') },
     { label: '+2', badge: '2', on: solve.penalty === '+2', onSelect: () => setPenalty('+2') },
@@ -3675,7 +3772,7 @@ function solveMenu(solve, anchor) {
             el('div', { class: 'rl-scramble', text: p.scramble })))) },
     ] : []),
     { sep: true },
-    { label: t('Delete solve'), badge: 'Del', onSelect: () => deleteThrottled(solve) },
+    ...(solve.competitionSetId ? [{ label: t('Open Competition average · whole-set deletion only'), onSelect: () => app.openCompetitionSet(solve.competitionSetId) }] : [{ label: t('Delete solve'), badge: 'Del', onSelect: () => deleteThrottled(solve) }]),
   ]);
 }
 app.solveMenu = solveMenu;
@@ -3686,6 +3783,7 @@ app.solveMenu = solveMenu;
  * arming it would just be a picture.
  */
 async function repeatScramble(solve) {
+  if (competitionTiming()) { toast(t('Leave the Competition view before repeating another scramble')); return; }
   if (!solve.scramble) { toast('That solve has no scramble saved'); return; }
   timer.reset();
   /* A skewb trainer scramble is written in its algorithms' notation, and the
@@ -3730,10 +3828,11 @@ function deleteThrottled(solve) {
 }
 
 async function deleteSolve(solve) {
+  if (solve.competitionSetId) { toast(t('Competition attempts belong to a set. Delete the entire average.'), { hold: true }); return; }
   const i = app.solves.indexOf(solve);
   if (i === -1) return;
-  app.solves.splice(i, 1);
   await Solves.del(solve.id);
+  app.solves.splice(i, 1);
   app.lastDeleted = { solves: [solve], sessionId: app.session.id, label: t('1 solve') };
   app.sessionCounts.set(app.session.id, app.solves.length);
   renderAll();
@@ -3786,6 +3885,7 @@ app.switchSession = async (id) => {
      before the switch, because after it app.settings.event is already the new
      session's — and a relay set takes seconds to make, so leaving the previous
      session's scramble sitting there invites you to solve it. */
+  if (competitionTiming() && id !== app.session.id) await leaveCompetition();
   const changedEvent = !!s.event && s.event !== app.settings.event;
   const wasRelay = relayOn();
   app.session = s;
@@ -3800,6 +3900,7 @@ app.switchSession = async (id) => {
   // event alone does not settle whether the scramble has to be thrown away.
   refreshQueue(); nextScramble({ clear: changedEvent || wasRelay || relayOn() });
   renderAll();
+  await app.competitionContextChanged?.();
   toast(t('Switched to {name}', { name: s.name }));
 };
 
@@ -3954,16 +4055,24 @@ app.joinRace = async (code) => {
 };
 
 app.deleteSession = async (id) => {
+  const sets = (await (await import('./db.js')).CompetitionSets.all()).filter(c => c.sessionId === id);
+  if (sets.length && !await confirmToast(t('Deleting this session also removes {n} Competition sets and all their local replays. This cannot be undone.', { n: sets.length }), t('Delete session'), { timeout: 15000 })) return false;
+  if (competitionTiming()) await leaveCompetition();
   await Solves.clearSession(id);
   await Sessions.del(id);
+  if (sets.length) { await app.competitionRefresh(); await (await import('./competition-replay.js')).cleanupCompetitionMedia(); }
   app.sessions = app.sessions.filter(s => s.id !== id);
   app.sessionCounts.delete(id);
   if (app.session.id === id) await app.switchSession(app.sessions[0].id);
 };
 
 async function clearSession() {
-  if (!app.solves.length) { toast('Session is already empty'); return; }
+  const sessionSets = (await (await import('./db.js')).CompetitionSets.all()).filter(c=>c.sessionId===app.session.id);
+  if (!app.solves.length && !sessionSets.length) { toast('Session is already empty'); return; }
   if (!await confirmToast(t('Delete all {n} solves in "{name}"?', { n: app.solves.length, name: app.session.name }), t('clear it'))) return;
+  const hasCompetition = app.solves.some(s => s.competitionSetId) || sessionSets.length > 0;
+  if (hasCompetition && !await confirmToast(t('This also removes every Competition set and its local replays. Whole-set deletion cannot be undone.'), t('Clear session'), { timeout: 15000 })) return;
+  if (hasCompetition) await leaveCompetition();
   const backup = [...app.solves];
   await Solves.clearSession(app.session.id);
   app.solves = [];
@@ -3972,12 +4081,16 @@ async function clearSession() {
   lastStats = {};
   renderAll();
   syncTimerDisplay();
-  app.lastDeleted = {
+  app.lastDeleted = hasCompetition ? null : {
     solves: backup,
     sessionId: app.session.id,
     label: t('{n} solves', { n: backup.length }),
   };
-  toast(t('Cleared {n} solves — Ctrl+Z', { n: backup.length }), { action: 'undo', onAction: undoDelete });
+  if (hasCompetition) {
+    await app.competitionRefresh();
+    await (await import('./competition-replay.js')).cleanupCompetitionMedia();
+    toast(t('Session and Competition sets cleared'));
+  } else toast(t('Cleared {n} solves — Ctrl+Z', { n: backup.length }), { action: 'undo', onAction: undoDelete });
 }
 
 
@@ -5095,6 +5208,7 @@ const openRelayBuilder = () => openPanel('Relay', 'buildRelay', {}, app);
 app.openRelayBuilder = openRelayBuilder;
 
 async function setEvent(id) {
+  if (competitionTiming()) await leaveCompetition();
   /* Relay is not an event you can simply switch to: it is a relay, and a
      relay is a list of puzzles that has to exist before there is anything to
      scramble. Picking it opens the builder instead. */
@@ -5153,6 +5267,7 @@ async function trainingSession(modeId, event) {
 
 let modeWanted = null;
 async function setMode(id) {
+  if (competitionTiming()) await leaveCompetition();
   modeWanted = id;
   await loadSetFor(id);
   const trainer = MODES[id]?.kind === 'case' ? await trainingSession(id, app.settings.event) : null;
@@ -5519,7 +5634,7 @@ const isTyping = () => {
   // whole keyboard — spacebar included — goes dead.
   return editable && a.offsetParent !== null;
 };
-const modalOpen = () => drawerOpen() || paletteOpen() || popoverOpen() || shareOpen() || reconOpen() || xp1Open() || announcementModal() || replayOpen();
+const modalOpen = () => competitionOpen() || drawerOpen() || paletteOpen() || popoverOpen() || shareOpen() || reconOpen() || xp1Open() || announcementModal() || replayOpen();
 
 /* Swipe the scramble on a touch screen, the way csTimer does: left for the
    next one, right for the one before. Only on #scramble-zone, which is outside
@@ -5841,6 +5956,9 @@ function wireChrome() {
       { title: t('Sessions') }, ...list, { sep: true },
       { label: t('+ New session'), onSelect: () => app.newSession() },
       { label: 'Manage…', onSelect: () => openPanel('Sessions', 'buildSessions', undefined, app) },
+      { sep: true },
+      { label: t('Start Competition Mode'), onSelect: () => app.openCompetition() },
+      { label: t('Competition history'), onSelect: () => app.competitionHistory() },
     ]);
   });
 
@@ -6026,6 +6144,7 @@ function wireChrome() {
    ========================================================= */
 function wirePhoneShell() {
   const setPenalty = async (solve, p) => {
+    if (solve.competitionSetId) solve.penaltyUpdatedAt=Date.now();
     solve.penalty = p;
     await Solves.put(solve);
     renderAll();
@@ -6306,6 +6425,8 @@ function openPaletteWithCommands() {
       { kind: 'do', label: 'Fullscreen', key: 'F', run: () => document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen?.() },
       { kind: 'do', label: t('Export backup'), run: () => $('#btn-settings').click() },
       { kind: 'do', label: t('Clear this session'), run: clearSession },
+      { kind: 'do', label: t('Start Competition Mode'), run: () => app.openCompetition() },
+      { kind: 'do', label: t('Competition history'), run: () => app.competitionHistory() },
     );
     for (const [id, p] of Object.entries({
       nebula: 'Nebula', carbon: 'Carbon', vaporwave: 'Vaporwave', ice: 'Ice',
@@ -6319,3 +6440,22 @@ function openPaletteWithCommands() {
 
 /* keep unused imports honest */
 void Assets; void KV; void beep; void byCase;
+
+
+// Small integration surface for Competition Mode; reuse the normal queue and timer.
+app.restoreCompetitionScramble = scramble => {
+  if (!app.scramble) app.initialCompetitionScramble = scramble;
+  else showScramble(scramble);
+};
+app.prepareCompetition = async event => {
+  timer.reset();
+  app.settings.event = event; app.settings.mode = 'wca';
+  app.custom = { list: [], pos: 0 }; await KV.del('customScrambles'); updateCustomBar();
+  syncEventConfig(); refreshQueue(); await nextScramble({ clear: true });
+  persist(); renderAll();
+};
+app.redrawCompetition = () => { renderAll(); syncTimerDisplay(); };
+app.reloadCompetitionSolves = async () => {
+  app.solves = await Solves.bySession(app.session.id);
+  await refreshCounts(); lastStats = {}; resetHistoryWindow(); renderAll(); syncTimerDisplay();
+};

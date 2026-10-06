@@ -60,6 +60,25 @@ const St = await import('./js/stats.js');
 const U = await import('./js/util.js');
 const mk = (t, p = 'none') => ({ timeMs: t, penalty: p });
 
+section('Competition Mode scoring');
+const Comp = await import('./js/competition-stats.js');
+const compSolves = [13000,15000,14000,11000,16000].map(n => mk(n));
+const compSet = { size:5, status:'complete' };
+check('Competition Ao5 reuses averageOf', Comp.competitionResult(compSet,compSolves).value === St.averageOf(compSolves.map(St.eff)));
+check('Competition best/worst trims agree', Comp.competitionResult(compSet,compSolves).trimmed.has(3) && Comp.competitionResult(compSet,compSolves).trimmed.has(4));
+compSolves[0].penalty = '+2';
+check('Competition +2 recalculates without changing raw time', Comp.competitionResult(compSet,compSolves).value === St.averageOf(compSolves.map(St.eff)) && compSolves[0].timeMs === 13000);
+compSolves[0].penalty='DNF';compSolves[1].penalty='DNF';
+check('Competition two DNFs produce DNF', Comp.competitionResult(compSet,compSolves).value === Infinity);
+check('Unfinished Competition has no final score', Comp.competitionResult({...compSet,status:'active'},compSolves.slice(0,2)).value === null);
+check('Missing synced attempt cannot produce a result', Comp.competitionResult(compSet,[...compSolves.slice(0,4),null]).value === null);
+check('Custom Ao1000 is supported without clamping', Comp.validateCompetitionSize('1000') === 1000);
+for (const input of ['', '4', '5.5','NaN','1e2','9007199254740992','-5']) {
+  let rejected=false;try{Comp.validateCompetitionSize(input);}catch{rejected=true;}
+  check(`Competition rejects invalid size ${JSON.stringify(input)}`,rejected);
+}
+check('Ao12 and custom trim math agree', [12,25,100].every(n=>{const list=Array.from({length:n},(_,i)=>mk(10000+i*10));return Comp.competitionResult({size:n,status:'complete'},list).value===St.averageOf(list.map(St.eff));}));
+
 section('statistics');
 check('eff applies +2', St.eff(mk(10000, '+2')) === 12000);
 check('eff maps DNF to Infinity', St.eff(mk(10000, 'DNF')) === St.DNF);

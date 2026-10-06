@@ -20,3 +20,6 @@ __pycache__/
 # Wrangler's local state and its local vars (tools/sotd-replay-dev.mjs writes .dev.vars)
 .wrangler/
 .dev.vars
+
+# Disposable Competition Mode browser verification screenshots
+competition-qa/

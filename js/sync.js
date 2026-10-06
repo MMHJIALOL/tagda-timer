@@ -24,7 +24,7 @@ import { t } from './i18n.js';
    solve as something the other side is missing.
    =========================================================== */
 
-import { Solves, Sessions, KV, Tombstones, onWrite, tx, wrap } from './db.js';
+import { Solves, Sessions, KV, Tombstones, onWrite, tx, wrap, CompetitionSets, normalizeCompetition } from './db.js';
 import { onAuthChange, getDatabaseHandle } from './sync-auth.js';
 
 const QUEUE_KEY = '_syncQueue';
@@ -32,7 +32,7 @@ const KV_DEBOUNCE_MS = 1500;
 
 /* Record stores mirrored to users/<uid>/<store>, and the field each is keyed
    by. Cubes and their log, and the 3BLD letter-pair dictionary. */
-const RECORD_STORES = { gear: 'id', gearLog: 'id', letterPairs: 'pair' };
+const RECORD_STORES = { gear: 'id', gearLog: 'id', letterPairs: 'pair', competitionSets: 'id' };
 
 /* KV keys mirrored to users/<uid>/kv/<key>, besides 'settings' and 'learn'
    which keep their own nodes. Left out on purpose: spotify tokens (a secret
@@ -312,6 +312,37 @@ function isEcho(key, value) {
   return false;
 }
 
+
+function pushCompetition({ sets = [], solves = [], deleted }) {
+  const updates = {};
+  for (const c of sets) updates[userPath('competitionSets', c.id)] = c;
+  for (const s of solves) updates[userPath('solves', s.id)] = s;
+  if (deleted) {
+    // Retain a small durable deletion record: offline devices cannot restore
+    // the old set simply by uploading their stale metadata on reconnect.
+    updates[userPath('competitionSets', deleted.id)] = deleted.set;
+    deleted.ids.forEach(id => { updates[userPath('solves', id)] = null; });
+  }
+  pushUpdateOrQueue(updates);
+}
+
+/**
+ * Moves Competition sets, and solves that belong to one, out of a multi-path
+ * update into one of their own. An update is all-or-nothing, and until
+ * firebase.rules.json is published the rules refuse these nodes: sharing a
+ * batch, they would hold back every ordinary solve the merge has to upload.
+ */
+export function splitCompetition(updates, setsPath) {
+  const competition = {};
+  for (const [path, value] of Object.entries(updates)) {
+    if (path.startsWith(setsPath + '/') || value?.competitionSetId) {
+      competition[path] = value;
+      delete updates[path];
+    }
+  }
+  return competition;
+}
+
 function pushSolve(solve) {
   if (isEcho(`solves:${solve.id}`, solve)) return;
   pushOrQueue(userPath('solves', solve.id), solve);
@@ -389,6 +420,11 @@ async function rejectAsDeleted(store, id) {
   // refusal wait on a round trip would serialise that behind the network.
   // Caught, though — an unhandled rejection here would surface as a bare
   // console error with nothing to tie it to the delete it came from.
+  if (store === 'competitionSets') {
+    const deleted = await KV.get('_competitionDeleted', {});
+    if (deleted[id]) pushOrQueue(userPath(store, id), deleted[id]);
+    return true;
+  }
   removeOrQueue(userPath(store, id)).catch(err =>
     console.warn('[sync] could not re-remove a deleted record', store, id, err?.code || err));
   return true;
@@ -423,13 +459,17 @@ function queueIncoming(store, rec) {
 
 async function applyIncoming() {
   _incomingTimer = 0;
+  await Tombstones.refresh();
   let changed = false;
   for (const store of ['solves', 'sessions']) {
     const recs = [..._incoming[store].values()];
     _incoming[store].clear();
     if (!recs.length) continue;
     const live = [];
-    for (const r of recs) if (!(await rejectAsDeleted(store, r.id))) live.push(r);
+    for (const r of recs) {
+      if (store === 'solves' && r.competitionSetId && await Tombstones.has('competitionSets', r.competitionSetId)) continue;
+      if (!(await rejectAsDeleted(store, r.id))) live.push(r);
+    }
     const os = await tx(store);
     const current = await Promise.all(live.map(r => wrap(os.get(r.id))));
     const fresh = live.filter((r, i) => !sameRecord(r, current[i]));
@@ -458,6 +498,8 @@ async function applyRemoteSolveRemoved(id) {
   if (!id || isUnconfirmed('solves', id)) return;
   _incoming.solves.delete(id);
   if (!(await Solves.get(id))) return; // our own delete coming back
+  // Competition removal is driven by the set's durable deletion record.
+  if ((await Solves.get(id))?.competitionSetId) return;
   _lastRemoteJSON.set(`solvesDel:${id}`, JSON.stringify(null));
   await Solves.del(id);
   notifyRemote();
@@ -467,6 +509,8 @@ async function applyRemoteSessionRemoved(id) {
   if (!id || isUnconfirmed('sessions', id)) return;
   _incoming.sessions.delete(id);
   if (!(await Sessions.get(id))) return;
+  // Session deletion is one operation with every competition it contains.
+  if ((await CompetitionSets.all()).some(c=>c.sessionId===id)) await Solves.clearSession(id);
   _lastRemoteJSON.set(`sessionsDel:${id}`, JSON.stringify(null));
   await Sessions.del(id);
   notifyRemote();
@@ -475,12 +519,16 @@ async function applyRemoteSessionRemoved(id) {
 async function applyRemoteRec(store, rec) {
   const id = rec?.[RECORD_STORES[store]];
   if (id == null) return;
+  if (store === 'competitionSets' && rec.status === 'discarded') { await CompetitionSets.delete(id); await Tombstones.record(store, [id]); notifyRemote(); return; }
   if (await rejectAsDeleted(store, id)) return;
+  if (store === 'competitionSets') rec = normalizeCompetition(rec);
   await wrap((await tx(store, 'readwrite')).put(rec));
+  if (store === 'competitionSets') notifyRemote();
 }
 
 async function applyRemoteRecRemoved(store, id) {
   if (!id || isUnconfirmed(store, id)) return;
+  if (store === 'competitionSets') { await CompetitionSets.delete(id); await Tombstones.record(store, [id]); notifyRemote(); return; }
   await wrap((await tx(store, 'readwrite')).delete(id));
 }
 
@@ -644,6 +692,11 @@ async function performMerge({ localSolves, localSessions, cloudSolves, cloudSess
      at a time, then uploading all of it again, was most of what made the
      merge slow — and uploading this device's stale copies was how an edit
      made on another device got undone the next time this one opened. */
+  const cloudSets = val(recs[2 * stores.indexOf('competitionSets') + 1], {});
+  const goneSets = new Set(Object.values(cloudSets).filter(c => c.status === 'discarded').map(c => c.id));
+  for (const id of goneSets) { await CompetitionSets.delete(id); await Tombstones.record('competitionSets',[id]); }
+  localSolves = localSolves.filter(s => !goneSets.has(s.competitionSetId));
+  cloudSolves = cloudSolves.filter(s => !goneSets.has(s.competitionSetId));
   const solves = diffById(localSolves, cloudSolves, localWins);
   const sessions = diffById(localSessions, cloudSessions, localWins);
   const cloudLearn = val(learnSnap, {});
@@ -669,8 +722,10 @@ async function performMerge({ localSolves, localSessions, cloudSolves, cloudSess
     const idKey = RECORD_STORES[store];
     const local = recs[2 * i], cloud = val(recs[2 * i + 1], {});
     for (const r of local) if (!(r[idKey] in cloud)) updates[userPath(store, r[idKey])] = r;
-    for (const id of Object.keys(cloud)) if (tombs[store]?.[id]) updates[userPath(store, id)] = null;
+    if (store !== 'competitionSets') for (const id of Object.keys(cloud)) if (tombs[store]?.[id]) updates[userPath(store, id)] = null;
   });
+  const deletedSets = await KV.get('_competitionDeleted', {});
+  for (const [id, c] of Object.entries(deletedSets)) updates[userPath('competitionSets', id)] = c;
   const cloudKv = val(kvSnap, {});
   for (const [key, value] of localKv) {
     if (isSyncedKv(key) && !(encKey(key) in cloudKv)) updates[userPath('kv', encKey(key))] = value;
@@ -679,7 +734,9 @@ async function performMerge({ localSolves, localSessions, cloudSolves, cloudSess
   // uploads the union rather than a second pass that could half-apply.
   for (const id of dead.solves) updates[userPath('solves', id)] = null;
   for (const id of dead.sessions) updates[userPath('sessions', id)] = null;
+  const competition = splitCompetition(updates, userPath('competitionSets'));
   await pushUpdateOrQueue(updates);
+  await pushUpdateOrQueue(competition);
   // Stamped here rather than by the dialog, so the silent path counts too:
   // once this browser and this account have been reconciled, every later
   // sign-in — including the one a page reload performs for you — goes
@@ -702,6 +759,7 @@ async function start() {
     onWrite('solvesBatch', pushSolvesBatch),
     onWrite('sessions', pushSession),
     onWrite('solvesDel', pushSolvesDel),
+    onWrite('competition', pushCompetition),
     onWrite('sessionsDel', pushSessionsDel),
     onWrite('kv', pushKv),
     onWrite('rec', pushRec),

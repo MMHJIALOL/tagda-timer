@@ -2130,7 +2130,7 @@ export function buildHistory(app) {
     solves.forEach((s, i) => {
       const v = eff(s);
       const cls = [s.penalty === 'DNF' ? 'dnf' : '', s.penalty === '+2' ? 'plus2' : '', v === best ? 'pb' : ''].join(' ');
-      const r = el('div', { class: `st-row ${cls}` },
+      const r = el('div', { class: `st-row ${cls}`, title: s.competitionSetId ? t('Competition Mode · attempt {n}', {n:s.competitionAttempt}) : '' },
         el('span', { class: 'st-i', text: String(solves.length - i) }),
         el('span', { class: 'st-t', text: v === DNF ? 'DNF' : fmtResult(v, isMoveResult(s)) + (s.penalty === '+2' ? '+' : '') }),
         el('span', { class: 'st-s', text: s.scramble.replace(/\n/g, t(' | ')) }),
@@ -2143,7 +2143,7 @@ export function buildHistory(app) {
     body.append(
       el('div', { class: 'row' },
         el('div', { class: 'lbl' }, el('span', { text: t('{n} solves', { n: solves.length }) }),
-          el('span', { class: 'sub', text: t('click a row for penalties, comment, delete') })),
+          el('span', { class: 'sub', text: t('Click a row for penalties and details. Competition attempts can only be deleted as a whole set.') })),
         el('button', { class: 'ghost-btn', text: t('copy all'), onclick: () => app.copyToast(
           app.solves.map((s, i) => `${i + 1}. ${fmtResult(eff(s), isMoveResult(s))}   ${(s.scramble || '').replace(/\s+/g, ' ')}`).join(NEWLINE),
           'Session') }),

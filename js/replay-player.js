@@ -31,6 +31,7 @@ import { toast } from './toast.js';
 import { loadClip, forgetReplay, clockAt, cameraName, replaySettings, setReplaySetting,
          setPinned, deleteClip, holdFinish, TAIL_MS } from './replay.js';
 import { eventOf } from './events.js';
+import { competitionClockAt } from './competition-stats.js';
 
 /**
  * Frame times, in seconds, of the blocks in a WebM file. Just enough EBML to
@@ -147,12 +148,21 @@ export function openSharedPlayer({ blob, meta, timeMs, penalty = 'none', name = 
   });
 }
 
-function show({ id, m, blob, sv, timeMs, pen, camName, adj, shared = null }) {
+export function openCompetitionPlayer(set, solves, replay) {
+  dlg?.close();
+  const timed = solves.filter(s => s?.competitionTiming);
+  show({ id: set.id, m: { ...replay.meta, start: timed[0]?.competitionTiming.start ?? 0,
+    stop: timed.at(-1)?.competitionTiming.stop ?? replay.meta.durationMs }, blob: replay.blob,
+    sv: null, timeMs: replay.meta.durationMs, pen: 'none', camName: '', adj: 0,
+    competition: { set, solves } });
+}
+
+function show({ id, m, blob, sv, timeMs, pen, camName, adj, shared = null, competition = null }) {
   const S = replaySettings();
   const url = URL.createObjectURL(blob);
   const prec = S.precision === 3 ? 3 : 2;
   const fps = clamp(m.fps || 30, 5, 120);
-  const final = fmt(timeMs, { showMs: prec === 3 });
+  const final = competition ? `Ao${competition.set.size} · ${t('Set {n}', { n: competition.set.sequence })}` : fmt(timeMs, { showMs: prec === 3 });
   // `adj`: ms this camera's picture runs behind the clock (the uploader's, for a shared clip).
   let pinned = !!m.pinned;
   const ac = new AbortController();               // every window listener, and an export, go with the player
@@ -180,7 +190,7 @@ function show({ id, m, blob, sv, timeMs, pen, camName, adj, shared = null }) {
     onclick: () => setRate(rate),
   })));
   // A shared clip has nothing under ⋯ but an admin's Remove.
-  const moreBtn = shared && !shared.onRemove && !shared.onReport ? null : btn('more', t('More'), () => openMenu(moreBtn, moreItems()), 'rp-more');
+  const moreBtn = competition || (shared && !shared.onRemove && !shared.onReport) ? null : btn('more', t('More'), () => openMenu(moreBtn, moreItems()), 'rp-more');
   // Only a clip filmed with sound has the button. It opens muted the first
   // time; unmuting is remembered for every replay after.
   const soundBtn = m.sound ? btn('muted', t('Sound on / off  (M)'), () => setMuted(!video.muted), 'rp-mute') : null;
@@ -194,8 +204,8 @@ function show({ id, m, blob, sv, timeMs, pen, camName, adj, shared = null }) {
   const saveBtn = shared ? null : el('button', {
     class: 'btn primary rp-save', html: `${ICON.save}<span>${t('Save video')}</span>`, title: t('Download as a video file'),
     onclick: () => openMenu(saveBtn, [
-      { label: t('Reel  ·  9:16'), sub: t('choose a square of the picture; the clock, the scrambled cube and the scramble go under it. For Instagram, TikTok, Shorts'), run: () => chooseCrop('reel') },
-      { label: t('Landscape  ·  16:9'), sub: t('choose the part of the picture that fills the left, with the clock, the cube and the scramble in a panel beside it'), run: () => chooseCrop('wide') },
+      { label: t('Reel  ·  9:16'), sub: competition ? t('Square video with the attempt clock below. For Instagram, TikTok, Shorts') : t('choose a square of the picture; the clock, the scrambled cube and the scramble go under it. For Instagram, TikTok, Shorts'), run: () => chooseCrop('reel') },
+      { label: t('Landscape  ·  16:9'), sub: competition ? t('Video with the attempt clock in the side panel') : t('choose the part of the picture that fills the left, with the clock, the cube and the scramble in a panel beside it'), run: () => chooseCrop('wide') },
       { label: t('Original  ·  as filmed'), sub: t('just the video, with a small tagdatimer.me in the corner'), run: () => makeVideo('clean') },
     ]),
   });
@@ -212,7 +222,7 @@ function show({ id, m, blob, sv, timeMs, pen, camName, adj, shared = null }) {
 
   // Clock delay, under ⋯: what used to be "Sync".
   const delayNote = el('span', { class: 'rp-sync-note' });
-  const syncBox = shared ? null : el('div', { class: 'rp-sync', hidden: true },
+  const syncBox = shared || competition ? null : el('div', { class: 'rp-sync', hidden: true },
     el('p', { text: t('Clock ahead of your hands? Pause on the frame where your hand stops the timer (← and → step a frame) and press Stopped here. It is remembered for this camera.') }),
     el('div', { class: 'rp-sync-row' },
       el('button', { class: 'btn primary', text: t('Stopped here'), onclick: () => setAdj(shown * 1000 - m.stop) }),
@@ -224,11 +234,12 @@ function show({ id, m, blob, sv, timeMs, pen, camName, adj, shared = null }) {
   // Making a video: progress, then Share / Save.
   const exportBox = el('div', { class: 'rp-export', hidden: true });
 
-  const pinChip = shared ? null : el('span', { class: 'rp-pin', hidden: !pinned, text: m.pb ? t('PB · kept') : t('kept') });
+  const pinChip = shared || competition ? null : el('span', { class: 'rp-pin', hidden: !pinned, text: m.pb ? t('PB · kept') : t('kept') });
   const head = el('div', { class: 'rp-head' },
     el('div', { class: 'rp-title' },
       el('b', { text: final + (pen === '+2' ? ' +2' : pen === 'DNF' ? ' DNF' : '') }),
       pinChip,
+      competition && m.status !== 'ready' ? el('span', { class: 'rp-who', text: t('Interrupted footage') }) : null,
       shared ? el('span', { class: 'rp-who', text: shared.name || 'Cuber' }) : null,
       el('span', { text: [fmtDate(m.at), camName && cameraName(camName)].filter(Boolean).join(' · ') })),
     btn('close', t('Close  (Esc)'), () => d.close(), 'rp-close'),
@@ -264,24 +275,32 @@ function show({ id, m, blob, sv, timeMs, pen, camName, adj, shared = null }) {
   const render = (sec) => {
     sec = snap(sec);
     shown = sec;
-    const k = clockAt(m, sec * 1000 - adj, { timeMs, pen, prec });
+    const k = competition ? competitionClockAt(competition.set, competition.solves, sec * 1000) : clockAt(m, sec * 1000 - adj, { timeMs, pen, prec });
     const key = `${k.phase}|${k.text}|${k.kind}|${k.pen}`;
     if (key !== last) {
       last = key;
       phaseEl.textContent = k.phase;
       timeEl.textContent = k.text;
-      penEl.textContent = k.pen;
+      penEl.textContent = k.pen || '';
       clock.className = `rp-clock ${k.kind === 'late' ? 'insp late' : k.kind}`;
     }
     if (!dragging) seek.value = String(sec);
   };
 
   const dur = () => (Number.isFinite(video.duration) && video.duration > 0 ? video.duration
-    : frames ? frames.at(-1) + 1 / fps : (m.stop + TAIL_MS) / 1000);
+    : frames ? frames.at(-1) + 1 / fps : competition ? m.durationMs / 1000 : (m.stop + TAIL_MS) / 1000);
 
   const paintMarks = () => {
     const D = dur() * 1000;
     const pct = (ms) => `${clamp((ms + adj) / D * 100, 0, 100)}%`;
+    if (competition) {
+      marks.replaceChildren(...competition.solves.filter(s => s?.competitionTiming).flatMap(s => {
+        const k = s.competitionTiming;
+        return [el('i', { class: 'rp-solve', style: { left: pct(k.start), width: `calc(${pct(k.stop)} - ${pct(k.start)})` } }),
+          ...(k.inspection != null ? [el('i', { class: 'rp-mark insp', style: { left: pct(k.inspection) } })] : [])];
+      }));
+      return;
+    }
     // Filtered: replaceChildren() would print a null as the word "null".
     marks.replaceChildren(...[
       el('i', { class: 'rp-solve', style: { left: pct(m.start), width: `calc(${pct(m.stop)} - ${pct(m.start)})` } }),
@@ -559,10 +578,10 @@ function show({ id, m, blob, sv, timeMs, pen, camName, adj, shared = null }) {
     try {
       const mod = await import('./replay-media.js');
       const out = await mod.exportVideo({
-        blob, meta: m, solve: sv, layout, crop, adj, prec, signal: job.signal,
+        blob, meta: m, solve: sv, layout, crop, adj, prec, signal: job.signal, competition,
         onProgress: (p) => { pct.textContent = `${Math.round(p * 100)}%`; fill.style.width = `${p * 100}%`; },
       });
-      const name = fileName(final, m, sv, layout, out.ext);
+      const name = competition ? `tagda-Ao${competition.set.size}-set-${competition.set.sequence}${m.status === 'ready' ? '' : '-interrupted'}-${SUFFIX[layout]}.${out.ext}` : fileName(final, m, sv, layout, out.ext);
       const file = new File([out.blob], name, { type: out.mime });
       const mb = (out.blob.size / 1048576).toFixed(1);
       // A phone shares straight into Instagram or a chat; that needs a fresh tap.
@@ -646,7 +665,7 @@ function show({ id, m, blob, sv, timeMs, pen, camName, adj, shared = null }) {
 
   document.body.append(d);
   d.showModal();
-  if (!shared) paintDelay();
+  if (!shared && !competition) paintDelay();
   fit();
   setMuted(!(m.sound && S.webcamUnmute), false);
   // Unmuted, a browser may refuse to start without a fresh click: then muted, as the first time.

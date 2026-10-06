@@ -751,7 +751,7 @@ function rest() {
 function armIdle() {
   clearTimeout(idleTimer);
   // A one-off grant may prompt again when the camera is reopened: keep it instead.
-  if (perm === 'granted') idleTimer = setTimeout(() => { if (!rec) release(); }, IDLE_MS);
+  if (perm === 'granted') idleTimer = setTimeout(() => { if (!rec && !active) release(); }, IDLE_MS);
 }
 
 /* How far behind real time the camera's frames are. Chrome says, per frame;
@@ -847,7 +847,7 @@ function blocked() {
 const stopRecorder = (r) => { if (r.mr && r.mr.state !== 'inactive') r.mr.stop(); };
 
 function begin() {
-  if (rec || !enabled) return;
+  if (rec || !enabled || (app?.competitionRecordingMode && app.competitionRecordingMode !== 'per-solve')) return;
   pauseFinish();
   if (cam && cam.track.readyState === 'ended') lost(cam);
   const r = rec = { mr: null, t0: 0, insp: null, start: null, stop: null, res: null, cam: null, over: false, dropped: false };
@@ -1221,3 +1221,27 @@ export function clockAt(m, x, { timeMs, pen = 'none', prec = 2 }) {
 }
 
 export { TAIL_MS };
+
+
+// A continuous Competition capture owns the same camera as ordinary replay.
+// Holding active prevents preview/idle code from releasing it between attempts.
+export async function acquireSetCamera() {
+  if (!(await enableReplay())) throw new Error(t('Camera unavailable. You can start without replay.'));
+  const c = await camera();
+  await c.micWait;
+  clearTimeout(idleTimer);
+  const resumeFinish = holdFinish();
+  active++;
+  emit({ type: 'state' });
+  const audio = c.mic?.track?.readyState === 'live' ? c.mic.track : null;
+  let released = false;
+  return {
+    stream: new MediaStream([c.track, ...(audio ? [audio] : [])]),
+    mime: audio ? MIME_AV : MIME, bps: bitrate(c),
+    w: c.w, h: c.h, fps: c.fps, sound: !!audio,
+    release() {
+      if (released) return; released = true;
+      active = Math.max(0, active - 1); resumeFinish(); emit({ type: 'state' }); rest();
+    },
+  };
+}

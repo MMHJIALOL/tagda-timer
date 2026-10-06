@@ -212,6 +212,23 @@ section('partitionDeleted');
     Sync.partitionDeleted([], { b: 1 }).live.length === 0);
 }
 
+/* ---------------- splitCompetition (unpublished rules) ---------------- */
+section('splitCompetition');
+{
+  const updates = {
+    'users/u/solves/a': { id: 'a', timeMs: 1 },
+    'users/u/solves/b': { id: 'b', timeMs: 2, competitionSetId: 's' },
+    'users/u/solves/gone': null,
+    'users/u/competitionSets/s': { id: 's', status: 'active' },
+    'users/u/settings': { theme: 'x' },
+  };
+  const competition = Sync.splitCompetition(updates, 'users/u/competitionSets');
+  check('a set and its attempts go up in their own batch',
+    Object.keys(competition).sort().join() === 'users/u/competitionSets/s,users/u/solves/b');
+  check('ordinary solves, deletions and settings stay in the main batch',
+    Object.keys(updates).sort().join() === 'users/u/settings,users/u/solves/a,users/u/solves/gone');
+}
+
 /* ---------------- tombstones ---------------- */
 section('db.js tombstones (the resurrection fix)');
 {

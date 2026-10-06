@@ -33,6 +33,7 @@ import { faceletsFor, drawNet, cubeSizeFor } from './cubenet.js';
 import { themeColors } from './theme.js';
 import { eventOf } from './events.js';
 import { fmtDate } from './util.js';
+import { competitionClockAt } from './competition-stats.js';
 import { clockAt } from './replay.js';
 
 const even = (n) => Math.max(2, Math.round(n / 2) * 2);
@@ -727,7 +728,7 @@ async function viaRecorder({ blob, L, crop, clockFor, onProgress, signal, sound 
  * { blob, ext, mime, live, silent } (silent: the clip had sound and the file
  * does not); rejects with AbortError when `signal` fires.
  */
-export async function exportVideo({ blob, meta, solve, layout = 'reel', crop = null, adj = 0, prec = 2, onProgress, signal }) {
+export async function exportVideo({ blob, meta, solve, layout = 'reel', crop = null, adj = 0, prec = 2, onProgress, signal, competition = null }) {
   await fontsReady();
   const c = themeColors();
   const logo = await logoImage();
@@ -738,11 +739,11 @@ export async function exportVideo({ blob, meta, solve, layout = 'reel', crop = n
   } catch { /* the live route reads the size from the video itself */ }
   const timeMs = solve?.timeMs ?? meta.timeMs;
   const pen = solve?.penalty || 'none';
-  const ev = solve?.event ? eventOf(solve.event) : null;
+  const ev = (solve?.event || competition?.set.event) ? eventOf(solve?.event || competition.set.event) : null;
   const scramble = (solve?.scramble || '').replace(/\s+/g, ' ').trim();
   const when = [fmtDate(meta.at), meta.pb ? t('personal best') : ''].filter(Boolean).join('  ·  ');
   const info = {
-    kicker: ev?.short || t('REPLAY'),
+    kicker: competition ? `Ao${competition.set.size} · ${t('Set {n}', { n: competition.set.sequence })}` : ev?.short || t('REPLAY'),
     event: ev?.name || '',
     when,
     line: [ev?.name, when].filter(Boolean).join('  ·  '),
@@ -751,7 +752,8 @@ export async function exportVideo({ blob, meta, solve, layout = 'reel', crop = n
     n: scramble && !solve?.relay?.length ? cubeSizeFor(solve?.event || '333') : 0,
   };
   const L = (layout === 'wide' ? wideLayout : layout === 'clean' ? cleanLayout : reelLayout)(vw, vh, info, c, logo);
-  const clockFor = (ms) => clockAt(meta, ms - adj, { timeMs, pen, prec });
+  const clockFor = competition ? ms => competitionClockAt(competition.set, competition.solves, ms)
+    : ms => clockAt(meta, ms - adj, { timeMs, pen, prec });
   const job = { blob, L, crop, clockFor, onProgress, signal, sound: !!meta.sound };
 
   /* Firefox's encoder can fall over now and then, under load; a second go a
