@@ -178,7 +178,7 @@ body:has(.sheet) #toasts {
    =========================================================== */
 
 :root {
-  --ph-dock-h: 66px;
+  --ph-dock-h: 58px;
   --ph-dock-b: calc(12px + env(safe-area-inset-bottom));
   /* What the dock covers, plus a breath: the foot of every tab stops here. */
   --ph-dock-room: calc(var(--ph-dock-h) + var(--ph-dock-b) + 12px);
@@ -207,7 +207,7 @@ body.ph #last-actions [data-act="delete"] { display: none !important; }
 /* ---------------- top row: context pill · camera · Daily ---------------- */
 body.ph #topbar {
   flex: none; display: flex; flex-wrap: nowrap; align-items: center; gap: 8px;
-  min-height: 44px; padding: 0 var(--phone-gutter);
+  min-height: 40px; padding: 0 var(--phone-gutter);
 }
 body.ph .topbar-right, body.ph .topbar-right:not(.open) {
   display: flex; flex-direction: row; align-items: center; gap: 8px;
@@ -220,27 +220,27 @@ body.ph .topbar-right > #btn-camera, body.ph .topbar-right > #btn-daily { displa
 .ph-ctx {
   flex: 0 1 auto; min-width: 0;
   display: flex; align-items: center; gap: 8px;
-  height: 42px; padding: 0 12px; border-radius: 21px;
+  height: 38px; padding: 0 12px; border-radius: 19px;
   background: var(--surface); border: 1px solid var(--border); color: var(--text);
   font-family: var(--font-ui);
 }
 .ph-ctx-ico { flex: none; color: var(--accent-text); display: grid; }
 .ph-ctx-ico svg, .ph-ctx-chev svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
-.ph-ctx-ico svg { width: 19px; height: 19px; }
+.ph-ctx-ico svg { width: 17px; height: 17px; }
 .ph-ctx-chev { flex: none; color: var(--text-faint); display: grid; }
 .ph-ctx-chev svg { width: 16px; height: 16px; }
-.ph-ctx-ev { flex: none; font-size: 15px; font-weight: 600; }
+.ph-ctx-ev { flex: none; font-size: 14px; font-weight: 600; }
 .ph-dot { flex: none; width: 3px; height: 3px; border-radius: 2px; background: var(--text-faint); }
 .ph-ctx-ses {
-  min-width: 0; font-size: 14.5px; color: var(--text-dim);
+  min-width: 0; font-size: 13.5px; color: var(--text-dim);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
 body.ph #btn-camera {
-  width: 42px; height: 42px; border-radius: 21px; justify-content: center;
+  width: 38px; height: 38px; border-radius: 19px; justify-content: center;
   background: var(--surface); border: 1px solid var(--border); color: var(--text-dim);
 }
-body.ph #btn-camera svg { width: 20px; height: 20px; }
+body.ph #btn-camera svg { width: 18px; height: 18px; }
 body.ph #btn-camera.on {
   color: var(--accent-text); background: var(--accent-tint);
   border-color: color-mix(in srgb, var(--accent) 45%, transparent);
@@ -248,48 +248,55 @@ body.ph #btn-camera.on {
 body.ph #btn-camera .rec-dot { top: 6px; right: 6px; }
 
 body.ph #btn-daily {
-  height: 42px; padding: 0 15px 0 12px; gap: 7px; border-radius: 21px;
+  height: 38px; padding: 0 13px 0 11px; gap: 6px; border-radius: 19px;
   color: var(--gold);
   background: color-mix(in srgb, var(--gold) 10%, transparent);
   border-color: color-mix(in srgb, var(--gold) 24%, transparent);
 }
-body.ph #btn-daily .sotd-glyph, body.ph #btn-daily .sotd-glyph svg { width: 18px; height: 18px; }
+body.ph #btn-daily .sotd-glyph, body.ph #btn-daily .sotd-glyph svg { width: 16px; height: 16px; }
 body.ph #btn-daily .sotd-label { display: none; }
 /* Gold as text, pulled towards the theme's own text colour so it still reads
    on a light theme. */
-.ph-daily-lbl { font-size: 14px; font-weight: 600; color: color-mix(in oklab, var(--gold) 72%, var(--text)); }
+.ph-daily-lbl { font-size: 13px; font-weight: 600; color: color-mix(in oklab, var(--gold) 72%, var(--text)); }
 /* Done for today: the quiet outline main.js has always given it, a circle here. */
 body.ph #btn-daily.done {
-  width: 42px; padding: 0; justify-content: center;
+  width: 38px; padding: 0; justify-content: center;
   color: var(--text-faint); background: var(--surface); border-color: var(--border);
 }
 body.ph #btn-daily.done .ph-daily-lbl { display: none; }
 
-/* ---------------- the scramble card ---------------- */
+/* ---------------- the scramble ----------------
+   Floating on the background, as it was before the shell: no card, just the
+   notation, small enough that a 3x3 scramble is two lines, with the tools and
+   the net in one short row under it. The shadow is the theme's own background
+   colour, so the letters keep an edge over a busy wallpaper on dark and light
+   themes alike. */
 body.ph #scramble-zone {
-  flex: none; align-items: stretch; gap: 10px;
-  margin: 14px var(--phone-gutter) 0; padding: 18px 16px 12px;
-  background: var(--surface); border: 1px solid var(--border); border-radius: 24px;
+  flex: none; align-items: stretch; gap: 6px;
+  margin: 8px var(--phone-gutter) 0; padding: 0;
+  background: none; border: 0; border-radius: 0;
 }
 body.ph #scramble-wrap {
   width: auto; padding: 0;
   display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center;
-  column-gap: 8px; row-gap: 12px;
+  column-gap: 8px; row-gap: 4px;
 }
 body.ph #scramble-text {
   grid-column: 1 / -1;
-  padding: 0; border: 0; border-radius: 0; background: none;
-  font-size: calc(19px * var(--scramble-scale));
-  font-weight: 500; line-height: 1.55; word-spacing: .16em; letter-spacing: 0;
+  padding: 0 2px; border: 0; border-radius: 0; background: none;
+  font-size: calc(15.5px * var(--scramble-scale));
+  font-weight: 600; line-height: 1.5; word-spacing: .08em; letter-spacing: 0;
   text-align: center; text-wrap: balance; white-space: pre-wrap;
+  text-shadow: 0 1px 3px color-mix(in srgb, var(--bg) 85%, transparent), 0 0 10px color-mix(in srgb, var(--bg) 55%, transparent);
 }
-body.ph #scramble-text.long { font-size: calc(15px * var(--scramble-scale)); }
-body.ph #scramble-text.multiline { font-size: calc(13px * var(--scramble-scale)); line-height: 1.45; text-align: left; text-wrap: initial; }
-body.ph #scramble-text.race-hold { font-family: var(--font-ui); font-size: 15px; color: var(--text-dim); }
+body.ph #scramble-text:hover { background: none; }
+body.ph #scramble-text.long { font-size: calc(13px * var(--scramble-scale)); }
+body.ph #scramble-text.multiline { font-size: calc(12px * var(--scramble-scale)); line-height: 1.4; text-align: left; text-wrap: initial; }
+body.ph #scramble-text.race-hold { font-family: var(--font-ui); font-size: 14px; color: var(--text-dim); }
 body.ph #scramble-tools {
   grid-column: 1; justify-self: start;
   position: static; transform: none; opacity: 1;
-  display: flex; gap: 2px; margin: 0; color: var(--text-dim);
+  display: flex; gap: 0; margin: 0 0 0 -6px; color: var(--text-dim);
 }
 /* Previous, next, copy, your own: the order the card reads them in. */
 body.ph #btn-prev-scramble { order: 1; }
@@ -297,18 +304,18 @@ body.ph #btn-next-scramble { order: 2; }
 body.ph #btn-copy-scramble { order: 3; }
 body.ph #btn-custom-scramble { order: 4; }
 body.ph #scramble-tools .ghost-btn {
-  width: 44px; height: 44px; padding: 0; border: 0; border-radius: 22px; background: none;
+  width: 40px; height: 40px; padding: 0; border: 0; border-radius: 20px; background: none;
   display: grid; place-items: center; color: var(--text-dim);
 }
-body.ph #scramble-tools .ghost-btn svg { width: 22px; height: 22px; stroke-width: 1.7; }
+body.ph #scramble-tools .ghost-btn svg { width: 19px; height: 19px; stroke-width: 1.7; }
 body.ph #scramble-tools .ghost-btn:active { background: color-mix(in srgb, var(--text) 8%, transparent); }
 
 .ph-net {
   grid-column: 2; justify-self: end;
-  padding: 6px; border-radius: 12px;
-  background: var(--bg); border: 1px solid var(--border);
+  padding: 4px; border-radius: 10px;
+  background: color-mix(in srgb, var(--bg) 70%, transparent); border: 1px solid var(--border);
 }
-.ph-net-host { width: 84px; height: 63px; pointer-events: none; }
+.ph-net-host { width: 60px; height: 45px; pointer-events: none; }
 .ph-net-host twisty-player { width: 100%; height: 100%; }
 body.no-cube .ph-net { display: none; }
 body.sotd .ph-net { grid-column: 1 / -1; justify-self: center; }
@@ -324,10 +331,13 @@ body.ph #stage {
   display: flex; flex-direction: column; gap: 0;
   padding: 0 var(--phone-gutter);
 }
-/* `safe`: a block too tall for the space (a Fewest Moves attempt, a long
-   multiphase readout) starts at the top of it rather than spilling upwards
-   into the scramble. */
-body.ph #timer-zone { flex: 1 1 auto; min-height: 0; justify-content: safe center; }
+/* Centred by two spacers that shrink to nothing, not by `justify-content:
+   safe center`: iOS Safari ignored the `safe` and centred anyway, so a block
+   too tall for the space (the clock on an iPhone 8, a Fewest Moves attempt, a
+   long multiphase readout) spilled upwards over the scramble. Spacers can
+   only ever push it down from the top of its box. */
+body.ph #timer-zone { flex: 1 1 auto; min-height: 0; justify-content: flex-start; }
+body.ph #timer-zone::before, body.ph #timer-zone::after { content: ''; flex: 1 1 0; min-height: 0; }
 body.ph #sidebar { display: none; }
 /* The right rail holds the race panel while a room is open (it docks itself
    across the foot of the screen); the figures are the Times tab's. */
@@ -347,28 +357,28 @@ body.ph #timer-core {
 body.ph #timer-display {
   order: 1;
   font-family: var(--font-mono);
-  /* 100px on a 390px phone, and never wider than the screen however many
-     characters the time has. */
-  font-size: min(calc(var(--timer-size) * 1.71), calc((100vw - 2 * var(--phone-gutter)) / (var(--ph-chars, 5) * .58)));
+  /* 85px on a 390px phone, never more than an eighth of the screen's height,
+     and never wider than the screen however many characters the time has. */
+  font-size: min(calc(var(--timer-size) * 1.45), calc((100vw - 2 * var(--phone-gutter)) / (var(--ph-chars, 5) * .58)), 12.5vh);
   letter-spacing: -.055em; line-height: 1;
 }
 body.ph #timer-avgs {
   order: 2;
   position: static; transform: none; width: auto;
-  display: flex; align-items: stretch; column-gap: 20px; row-gap: 8px; margin-top: 16px;
+  display: flex; align-items: stretch; column-gap: 18px; row-gap: 4px; margin-top: 10px;
 }
 body.ph #timer-avgs[hidden] { display: none; }
-body.ph #timer-avgs > span:not(.sep) { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+body.ph #timer-avgs > span:not(.sep) { display: flex; flex-direction: column; align-items: center; gap: 1px; }
 body.ph #timer-avgs b {
   display: flex; align-items: center; gap: 6px;
-  font-family: var(--font-ui); font-size: 12px; font-weight: 600; letter-spacing: 0; text-transform: none;
-  color: var(--text-dim); line-height: 19px;
+  font-family: var(--font-ui); font-size: 11.5px; font-weight: 600; letter-spacing: 0; text-transform: none;
+  color: var(--text-dim); line-height: 17px;
 }
 body.ph #timer-avgs > span > i {
-  font-size: 21px; font-weight: 600; letter-spacing: -.01em; line-height: 1.15;
+  font-size: 18px; font-weight: 600; letter-spacing: -.01em; line-height: 1.15;
 }
 body.ph #timer-avgs.no-avg > span, body.ph #timer-avgs.solo > :is(.a12, .sep) { display: none; }
-body.ph #timer-avgs #timer-bpa i { font-size: 14px; }
+body.ph #timer-avgs #timer-bpa i { font-size: 13px; }
 body.ph #timer-bpa b { display: inline; color: var(--text-faint); }
 body.ph #timer-avgs i.ph-is-best { color: var(--accent-2); }
 body.ph #timer-avgs .sep { width: 1px; height: auto; align-self: stretch; background: var(--border); }
@@ -378,30 +388,30 @@ body.ph #timer-avgs .sep { width: 1px; height: auto; align-self: stretch; backgr
   color: var(--accent-2); background: color-mix(in srgb, var(--accent-2) 14%, transparent);
 }
 .ph-best[hidden] { display: none; }
-body.ph #timer-bpa { grid-column: auto; margin-top: 4px; }
+body.ph #timer-bpa { grid-column: auto; margin-top: 2px; }
 
 /* How it compared with the last one: above the digits, in a band kept for it
    whether or not it is showing, so the clock does not move when it lands. */
-body.ph #timer-core { padding-top: 36px; }
+body.ph #timer-core { padding-top: 26px; }
 body.ph #last-row {
-  position: absolute; left: 0; right: 0; top: 0; height: 26px;
+  position: absolute; left: 0; right: 0; top: 0; height: 22px;
   display: flex; justify-content: center; align-items: center; pointer-events: none;
 }
 body.ph #last-delta { font-size: 13px; }
 
 body.ph #last-actions {
   order: 3;
-  display: flex; flex-wrap: wrap; justify-content: center; gap: 8px;
-  max-width: none; margin-top: 24px;
+  display: flex; flex-wrap: wrap; justify-content: center; gap: 6px;
+  max-width: none; margin-top: 14px;
 }
 body.ph #last-actions .ph-pill, body.ph #last-actions .ghost-btn.ph-pill {
   display: inline-flex; align-items: center; gap: 6px;
-  height: 38px; padding: 0 14px; border-radius: 19px;
+  height: 32px; padding: 0 12px; border-radius: 16px;
   background: var(--surface); border: 1px solid var(--border);
-  font-family: var(--font-ui); font-size: 14px; font-weight: 600; color: var(--text);
+  font-family: var(--font-ui); font-size: 13px; font-weight: 600; color: var(--text);
 }
 body.ph #last-actions .ph-pill[hidden] { display: none; }
-body.ph #last-actions .ph-pill svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+body.ph #last-actions .ph-pill svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 body.ph #last-actions .ph-pill svg .fill, body.ph .ph-tab-ico .fill, .ph-sheet-ico .fill { fill: currentColor; stroke: none; }
 body.ph #last-actions [aria-pressed="true"] {
   color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, transparent);
@@ -409,8 +419,8 @@ body.ph #last-actions [aria-pressed="true"] {
 }
 
 body.ph #timer-hint {
-  order: 4; margin-top: 22px; height: auto; max-width: none;
-  font-size: 13.5px; letter-spacing: 0; color: var(--text-faint);
+  order: 4; margin-top: 12px; height: auto; max-width: none;
+  font-size: 12.5px; letter-spacing: 0; color: var(--text-faint);
 }
 body.ph #phase-readout, body.ph #phase-live, body.ph #relay-now,
 body.ph #pace-ghost, body.ph #hold-bar, body.ph #manual-entry, body.ph #stackmat-bar { order: 5; margin-top: 14px; }
@@ -422,41 +432,41 @@ body.ph.fmc-attempting #app { padding-bottom: max(12px, env(safe-area-inset-bott
 body.ph #manual-entry input { font-size: 16px; }
 
 /* ---------------- the recent strip ---------------- */
-.ph-recent { flex: none; padding: 10px 0 0 var(--phone-gutter); }
+.ph-recent { flex: none; padding: 6px 0 0 var(--phone-gutter); }
 .ph-recent-head {
   display: flex; justify-content: space-between; align-items: center;
-  padding-right: 20px; margin-bottom: 4px; min-height: 22px;
+  padding-right: 20px; margin-bottom: 2px; min-height: 20px;
 }
-.ph-lbl { font-size: 13px; font-weight: 600; color: var(--text-dim); }
+.ph-lbl { font-size: 12.5px; font-weight: 600; color: var(--text-dim); }
 .ph-all {
   margin: -11px -8px; padding: 11px 8px; min-height: 44px;
-  font-size: 13px; font-weight: 600; color: var(--accent-text);
+  font-size: 12.5px; font-weight: 600; color: var(--accent-text);
 }
 .ph-all[hidden] { display: none; }
 .ph-chips {
   display: flex; gap: 8px; overflow-x: auto; overscroll-behavior-x: contain;
-  padding: 6px var(--phone-gutter) 2px 0; scrollbar-width: none;
+  padding: 4px var(--phone-gutter) 2px 0; scrollbar-width: none;
   touch-action: pan-x;
 }
 .ph-chips::-webkit-scrollbar { display: none; }
 .ph-chip {
   flex: none; display: flex; align-items: center;
-  height: 46px; padding: 0 15px; border-radius: 15px;
+  height: 38px; padding: 0 12px; border-radius: 12px;
   background: var(--surface); border: 1px solid var(--border);
-  font-family: var(--font-mono); font-size: 15.5px; font-weight: 600; color: var(--text);
+  font-family: var(--font-mono); font-size: 14px; font-weight: 600; color: var(--text);
   font-variant-numeric: tabular-nums;
 }
 .ph-chip.latest { border-color: var(--accent); }
 .ph-chip.best { color: var(--accent-2); }
 .ph-chip.dnf { color: var(--danger); }
 .ph-chip:active { background: var(--surface-2); }
-.ph-chips-empty { display: flex; align-items: center; height: 46px; font-size: 13.5px; color: var(--text-faint); }
+.ph-chips-empty { display: flex; align-items: center; height: 38px; font-size: 13.5px; color: var(--text-faint); }
 
 /* ---------------- the dock ---------------- */
 .ph-dock {
   position: fixed; z-index: 40;
   left: var(--phone-gutter); right: var(--phone-gutter); bottom: var(--ph-dock-b);
-  height: var(--ph-dock-h); padding: 6px; border-radius: 24px;
+  height: var(--ph-dock-h); padding: 5px; border-radius: 22px;
   display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px;
   background: var(--surface); border: 1px solid var(--border);
   box-shadow: 0 18px 40px -10px rgba(0, 0, 0, .7);
@@ -465,14 +475,14 @@ body.ph #manual-entry input { font-size: 16px; }
 }
 .ph-tab {
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
-  min-width: 0; border-radius: 18px; color: var(--text-dim);
+  min-width: 0; border-radius: 17px; color: var(--text-dim);
   -webkit-tap-highlight-color: transparent;
 }
 .ph-tab.on { background: var(--accent-tint); color: var(--accent-text); }
 .ph-tab-ico { display: grid; }
-.ph-tab-ico svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.ph-tab-ico svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 .ph-tab.on .ph-tab-ico svg { stroke-width: 1.9; }
-.ph-tab-lbl { font-size: 11px; font-weight: 600; letter-spacing: .01em; }
+.ph-tab-lbl { font-size: 10.5px; font-weight: 600; letter-spacing: .01em; }
 .ph-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 
 /* An attempt is nothing but the clock: from the press, through inspection and
@@ -841,19 +851,22 @@ body.ph .hist-end { padding: 14px 0 8px; font-size: 12px; }
   body.ph #topbar, body.ph .topbar-right { gap: 6px; }
   .ph-ctx { gap: 6px; padding: 0 10px; }
   body.ph #btn-daily { padding: 0 12px 0 10px; gap: 6px; }
-  body.ph #scramble-text { font-size: calc(17.5px * var(--scramble-scale)); }
-  body.ph #last-actions { gap: 6px; }
-  body.ph #last-actions .ph-pill, body.ph #last-actions .ghost-btn.ph-pill { padding: 0 12px; font-size: 13.5px; }
+  body.ph #scramble-text { font-size: calc(14.5px * var(--scramble-scale)); }
+  body.ph #last-actions .ph-pill, body.ph #last-actions .ghost-btn.ph-pill { padding: 0 11px; font-size: 12.5px; }
   body.ph #last-actions .ph-pill svg { display: none; }
 }
 @media (max-height: 780px) {
-  body.ph #scramble-zone { margin-top: 10px; padding: 14px 14px 8px; gap: 8px; }
-  body.ph #scramble-wrap { row-gap: 8px; }
-  .ph-net-host { width: 72px; height: 54px; }
-  body.ph #timer-display { font-size: min(calc(var(--timer-size) * 1.71), calc((100vw - 2 * var(--phone-gutter)) / (var(--ph-chars, 5) * .58)), 12.5vh); }
-  body.ph #timer-avgs { margin-top: 12px; }
-  body.ph #last-actions { margin-top: 16px; }
-  body.ph #timer-hint { margin-top: 14px; }
+  body.ph #timer-avgs { margin-top: 8px; }
+  body.ph #last-actions { margin-top: 12px; }
+  body.ph #timer-hint { margin-top: 10px; }
+}
+/* An iPhone 8 or SE in a Safari tab has about 550px: once there are averages
+   to show, the hint makes room for them (a few solves in, the screen being
+   the button is known), and the digits and the net give up a little more. */
+@media (max-height: 620px) {
+  body.ph #timer-core:has(#timer-avgs:not([hidden], .no-avg)) #timer-hint { display: none; }
+  body.ph #timer-display { font-size: min(calc(var(--timer-size) * 1.45), calc((100vw - 2 * var(--phone-gutter)) / (var(--ph-chars, 5) * .58)), 11vh); }
+  .ph-net-host { width: 52px; height: 39px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
