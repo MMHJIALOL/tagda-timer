@@ -63,7 +63,7 @@ const hardTimeoutMs = () => getConfig('race', 'hardTimeoutSec') * 1000;
 import { EMULATED } from './sync-auth.js';
 import {
   FIREBASE_CONFIG, FIREBASE_VERSION,
-  CHAT_MAX_LEN, CHAT_HISTORY,
+  CHAT_MAX_LEN, CHAT_HISTORY, MATCH_LOBBY,
 } from './raceapp.js';
 
 /* ---------------------------------------------------------
@@ -198,7 +198,46 @@ class FirebaseTransport extends EventTarget {
       if (up && wasUp === false) this._ensureSeat();
     }, () => {}));
 
+    /* The server's clock, for the 1v1 seat's freshness: two players' own
+       clocks can disagree by minutes, the server's is the one both read. */
+    this._offset = 0;
+    this._unsubs.push(dbMod.onValue(dbMod.ref(db, '.info/serverTimeOffset'), (s) => {
+      this._offset = Number(s.val()) || 0;
+    }, () => {}));
+
     return { uid: cred.user.uid };
+  }
+
+  /* ---- random 1v1: the one waiting seat (RACE.md §8) ---- */
+
+  serverNow() { return Date.now() + (this._offset || 0); }
+
+  get _matchRef() { return this._ref(`rooms/${MATCH_LOBBY}/meta/waiting`); }
+
+  /**
+   * Change the seat atomically. `fn(cur)` returns the new seat, or undefined
+   * to leave it alone; it can run more than once, against fresher values.
+   * Resolves to the seat as it stands afterwards.
+   */
+  async matchTransact(fn) {
+    const res = await this._sdk.runTransaction(this._matchRef, (cur) => fn(cur ?? null), { applyLocally: false });
+    return res.snapshot.val() ?? null;
+  }
+
+  /** Every change to the seat, until the returned function is called. */
+  watchMatch(cb) {
+    return this._sdk.onValue(this._matchRef, (s) => cb(s.val() ?? null), () => {});
+  }
+
+  /**
+   * While we sit in the seat, the server clears it if this tab goes, so
+   * nobody is matched with a closed tab. Unconditional, so it is cancelled
+   * the moment we stop waiting: if it fired later it could clear someone
+   * else's seat (which their next re-stamp would put back).
+   */
+  async armMatchDrop(on) {
+    const d = this._sdk.onDisconnect(this._matchRef);
+    await (on ? d.remove() : d.cancel()).catch(() => {});
   }
 
   _ref(path) { return this._sdk.ref(this._sdk.db, path); }
@@ -247,10 +286,14 @@ class FirebaseTransport extends EventTarget {
          need the answer to bought nothing but the wait. */
       dead.forEach(([id]) => S.remove(this._ref(`${this._base}/players/${id}`)).catch(() => {}));
       const live = Object.keys(cur.players).length - dead.length;
-      if (live >= roomMax() && !cur.players[uid]) {
+      if (live >= (cur.meta?.kind === 'duel' ? 2 : roomMax()) && !cur.players[uid]) {
         // Undo the early subscription — we are not going to be in this room.
         this._teardown();
         this.snap = { ...emptySnapshot(), uid };
+        /* Said out loud: the early subscription has already handed race.js
+           this room's snapshot, and without a fresh one it went on believing
+           it was inside a room that had just refused it. */
+        this._emit();
         throw new Error('room-full');
       }
     }
@@ -273,6 +316,7 @@ class FirebaseTransport extends EventTarget {
       if (!getConfig('race', 'enabled')) {
         this._teardown();
         this.snap = { ...emptySnapshot(), uid };
+        this._emit();
         throw new Error('race-off');
       }
     }
@@ -285,10 +329,16 @@ class FirebaseTransport extends EventTarget {
       await Promise.all([
         creating ? S.set(this._ref(`${this._base}/meta`), {
           createdAt: S.serverTimestamp(), event: player.event, mode: player.mode, round: 1,
+          ...(player.kind ? { kind: player.kind } : {}),
         }) : null,
         this._ensureSeat(),
       ]);
     } catch (err) {
+      /* Somebody created it a moment sooner: the second create is refused by
+         the rule on meta/round, and the room is there to join. A matched 1v1
+         is two people arriving at once, so this is its normal case. */
+      const made = creating && await S.get(this._ref(`${this._base}/meta`)).then(s => s.exists(), () => false);
+      if (made) { this._startHeartbeat(); return; }
       // Refused: switched off since the copy of the settings this tab has.
       if (creating && /permission/i.test(String(err?.code || err?.message || err))) {
         await loadConfig({ maxAge: 0 });
@@ -584,6 +634,37 @@ class LocalTransport extends EventTarget {
 
   get _key() { return `tdt-race-room-${this.snap.roomId}`; }
 
+  /* ---- random 1v1: the one waiting seat, between this browser's tabs ---- */
+
+  serverNow() { return Date.now(); }
+
+  /** Read, change, write: no transaction to be had, same as the rooms. */
+  async matchTransact(fn) {
+    const key = 'tdt-race-match';
+    let cur = null;
+    try { cur = JSON.parse(localStorage.getItem(key) || 'null'); } catch {}
+    const next = fn(cur);
+    if (next === undefined) return cur;
+    if (next === null) localStorage.removeItem(key); else localStorage.setItem(key, JSON.stringify(next));
+    const chan = new BroadcastChannel('tdt-race-match');
+    chan.postMessage('changed');
+    chan.close();
+    return next;
+  }
+
+  watchMatch(cb) {
+    const read = () => { try { cb(JSON.parse(localStorage.getItem('tdt-race-match') || 'null')); } catch {} };
+    const chan = new BroadcastChannel('tdt-race-match');
+    chan.onmessage = read;
+    const onStorage = (e) => { if (e.key === 'tdt-race-match') read(); };
+    addEventListener('storage', onStorage);
+    read();
+    return () => { chan.close(); removeEventListener('storage', onStorage); };
+  }
+
+  /** A closed tab's seat just goes stale here; nothing to arm. */
+  async armMatchDrop() {}
+
   _read() {
     try { return JSON.parse(localStorage.getItem(this._key) || 'null'); }
     catch { return null; }
@@ -640,10 +721,13 @@ class LocalTransport extends EventTarget {
       for (const [id, p] of Object.entries(room.players || {})) {
         if (now - (p.lastSeen || 0) > staleRoomMs()) delete room.players[id];
       }
-      if (Object.keys(room.players || {}).length >= roomMax() && !room.players[uid]) {
+      if (Object.keys(room.players || {}).length >= (room.meta?.kind === 'duel' ? 2 : roomMax()) && !room.players[uid]) {
         throw new Error('room-full');
       }
-      room.meta ||= { createdAt: now, event: player.event, mode: player.mode, round: 1 };
+      room.meta ||= {
+        createdAt: now, event: player.event, mode: player.mode, round: 1,
+        ...(player.kind ? { kind: player.kind } : {}),
+      };
       room.players[uid] = { name: player.name, color: player.color, joinedAt: now, lastSeen: now };
     });
 

@@ -26,9 +26,10 @@ import {
   CODE_ALPHABET, CODE_LENGTH,
   CLOCK_SLACK_MS, CLOCK_SLACK_RATIO,
   CHAT_MAX_LEN, CHAT_COOLDOWN_MS, RACE_EMOJI,
+  MATCH_EVENT, MATCH_SEARCH_MS, MATCH_REFRESH_MS, MATCH_STALE_MS, MATCH_SHOWUP_MS, DUEL_GONE_MS,
 } from './raceapp.js';
 import { isOwnerName, openOwnerCard } from './ownercard.js';
-import { getConfig } from './config.js';
+import { getConfig, loadConfig } from './config.js';
 
 /* Tuning from the admin console (config/race); the defaults are raceapp.js's. */
 const tune = (k) => getConfig('race', k);
@@ -198,6 +199,12 @@ export class Race extends EventTarget {
        have to open is a chat nobody uses. */
     /** Last send, for the client-side cooldown. */
     this._chatSentAt = 0;
+
+    /* ---- random 1v1 (RACE.md §8) ----
+       `match` is the search: idle | searching | joining | none (a minute
+       went by with nobody). `_duel` is the 1v1 once you are in its room. */
+    this.match = { state: 'idle' };
+    this._duel = null;
   }
 
   /** Folded by default below the tile breakpoint; the user's choice wins. */
@@ -263,7 +270,7 @@ export class Race extends EventTarget {
       .catch((err) => console.warn('[race] warm-up failed', err?.code || err));
   }
 
-  async join(code, { name } = {}) {
+  async join(code, { name, kind } = {}) {
     const roomId = normaliseCode(code);
     if (roomId.length < 3) throw new Error('bad-code');
     await this.connect(this.app.settings.racePrefer || 'auto');
@@ -299,6 +306,7 @@ export class Race extends EventTarget {
       color: hueOf(nick),
       event: this.app.settings.event,
       mode: this.app.settings.mode,
+      kind,
     });
 
     /* A race is timed on the app's own clock or it is not a race. Switching
@@ -323,7 +331,8 @@ export class Race extends EventTarget {
     this._syncPanel();
     this.dispatchEvent(new CustomEvent('change'));
 
-    await this.app.enterRaceSession?.(roomId);
+    // Every random 1v1 shares one session, rather than one per stranger.
+    await this.app.enterRaceSession?.(roomId, kind === 'duel' ? t('1v1 · 3x3') : undefined);
     return roomId;
   }
 
@@ -343,6 +352,7 @@ export class Race extends EventTarget {
     this._preopened = 0;
     this._prevRound = undefined;
     this._prevPhase = undefined;
+    this._duel = null;
     this._resetChat();
     this._syncPanel();
     // Back to the session you were in, and to the app's own scrambles. The
@@ -417,6 +427,7 @@ export class Race extends EventTarget {
     this._maybeOpenRound();
     this._evaluateRound();
     this._serveScramble();
+    this._duelWatch();
     this._syncPanel();
     this.dispatchEvent(new CustomEvent('change'));
   }
@@ -455,6 +466,7 @@ export class Race extends EventTarget {
     if (!this._roundSeenAt.has(r.no)) this._roundSeenAt.set(r.no, Date.now());
     const orphaned = Date.now() - this._roundSeenAt.get(r.no) > ORPHAN_ROUND_MS;
     if (!this.isHost && !orphaned) return;
+    if (!this._canPublish()) return;
 
     if (this._openingRound === r.no) return;   // one attempt in flight at a time
     this._openingRound = r.no;
@@ -475,6 +487,15 @@ export class Race extends EventTarget {
   }
 
   /**
+   * A 1v1 is 3x3, and the scramble comes from the publisher's own generator:
+   * somebody who switched event mid-match leaves it to the other side (the
+   * orphan takeover above), rather than handing both of them a 4x4.
+   */
+  _canPublish() {
+    return !this.isDuel || this.app.settings.event === MATCH_EVENT;
+  }
+
+  /**
    * Write the NEXT round's scramble while this one is still being raced.
    *
    * This is most of the pause people were complaining about. The old order was
@@ -492,7 +513,7 @@ export class Race extends EventTarget {
    * only remaining cost is the listener that was going to be attached anyway.
    */
   async _preopenNextRound(n) {
-    if (!this.isHost || this.phase !== 'racing') return;
+    if (!this.isHost || this.phase !== 'racing' || !this._canPublish()) return;
     if (this._preopened === n + 1 || this._preopening) return;
     this._preopening = true;
     try {
@@ -719,6 +740,7 @@ export class Race extends EventTarget {
     this._maybeOpenRound();
     this._evaluateRound();
     this._serveScramble();
+    this._duelWatch();
     this._syncPanel();
   }
 
@@ -748,7 +770,18 @@ export class Race extends EventTarget {
 
     const graceUp = this.graceAt && Date.now() >= this.graceAt;
 
-    if ((everyone || graceUp) && this.settledRound !== r.no) {
+    /* Everyone done is not everyone's time in. The last to finish learns that
+       it was the last from its own 'done', a round trip before the others'
+       results reach it, and settling then scored the round with nobody's time
+       in it: no winner on that side, and a 1v1 score that disagreed with the
+       other side's. Wait for the times, but not forever — a result the rules
+       refused never arrives. */
+    const missing = this.revealed && done.some(([id]) => !r.results?.[id]);
+    if (!everyone || !missing) this._timesWait = null;
+    else if (this._timesWait?.n !== r.no) this._timesWait = { n: r.no, until: Date.now() + 3000 };
+    const ready = everyone && (!missing || Date.now() >= this._timesWait.until);
+
+    if ((ready || graceUp) && this.settledRound !== r.no) {
       this.settledRound = r.no;
       this.settleAt = Date.now() + SETTLE_MS;
       this.settleFrom = r.no;
@@ -803,6 +836,227 @@ export class Race extends EventTarget {
     this.graceAt = 0;
     clearTimeout(this._settleTimer);
     this._settleTimer = 0;
+  }
+
+  /* ---------------- random 1v1 (RACE.md §8) ----------------
+
+     One waiting seat, rooms/_1v1_333/meta/waiting = { uid, code, at }, changed
+     only by transaction. Looking for an opponent is one decision, made
+     atomically against whatever is in the seat:
+
+       somebody else is waiting (fresh)  → take it: { ...their seat, takenBy: me }
+       our own code, already taken       → leave it; the watcher has seen it
+       anything else (empty, stale, done) → sit in it with our own code
+
+     Two people pressing at once therefore cannot both take the same seat or
+     both sit in it: the transaction retries the loser against the winner's
+     write. Nobody is in a room while waiting — the room is created by
+     whichever of the two arrives first once the seat says they are matched. */
+
+  get isDuel() { return this.snap?.meta?.kind === 'duel'; }
+
+  /** The other person in this 1v1, as last seen: { uid, name }, or null. */
+  get opponent() { return this._duel?.opp || null; }
+
+  /** Rounds won in this 1v1, yours and theirs. */
+  duelScore() {
+    const opp = this.opponent;
+    return {
+      me: this.standings.get(this.uid)?.wins || 0,
+      them: opp ? this.standings.get(opp.uid)?.wins || 0 : 0,
+    };
+  }
+
+  _matchChanged() {
+    this.dispatchEvent(new CustomEvent('match', { detail: this.match }));
+  }
+
+  /** Look for a random 3x3 opponent for a minute. */
+  async findMatch() {
+    if (this.inRoom || ['connecting', 'searching', 'joining'].includes(this.match.state)) return;
+    if (this.app.settings.event !== MATCH_EVENT) throw new Error('not-333');
+
+    /* Searching from the click, not from the end of the handshake: signing in
+       and reading the settings is a second or so, and a button that does
+       nothing for that long gets pressed again. The minute starts now too. */
+    const m = { state: 'connecting', code: randomCode(), endsAt: Date.now() + MATCH_SEARCH_MS };
+    this.match = m;
+    this._matchChanged();
+    try {
+      await this.connect(this.app.settings.racePrefer || 'auto');
+      await loadConfig();
+      if (!getConfig('race', 'enabled')) throw new Error('race-off');
+    } catch (err) {
+      if (this.match === m) { this.match = { state: 'idle' }; this._matchChanged(); }
+      throw err;
+    }
+    // Cancelled while connecting.
+    if (this.match !== m || this.inRoom) return;
+    m.state = 'searching';
+    m.unwatch = this.net.watchMatch((seat) => {
+      if (this._takenFromMe(seat, m)) this._matched(m, m.code);
+    });
+    // Re-stamped while waiting, so the seat never looks abandoned while we are here.
+    m.refresh = setInterval(() => this._matchTick(m), MATCH_REFRESH_MS);
+    // The countdown the drawer shows, and the end of the minute.
+    m.clock = setInterval(() => {
+      if (Date.now() >= m.endsAt) this._giveUp(m); else this._matchChanged();
+    }, 1000);
+    this._matchChanged();
+    await this._matchTick(m);
+  }
+
+  _takenFromMe(seat, m) {
+    return !!seat && seat.code === m.code && !!seat.takenBy && seat.takenBy !== this.uid;
+  }
+
+  async _matchTick(m) {
+    if (this.match !== m || m.state !== 'searching' || m.busy) return;
+    m.busy = true;
+    const me = this.uid;
+    try {
+      const now = this.net.serverNow();
+      const seat = await this.net.matchTransact((cur) => {
+        if (cur?.code === m.code && cur.takenBy) return undefined;
+        const waiting = cur && !cur.takenBy && cur.uid !== me && now - (cur.at || 0) < MATCH_STALE_MS;
+        if (waiting) return { uid: cur.uid, code: cur.code, at: cur.at, takenBy: me, takenAt: now };
+        return { uid: me, code: m.code, at: now };
+      });
+      if (seat?.takenBy === me && seat.code !== m.code) { this._matched(m, seat.code); return; }
+      if (this._takenFromMe(seat, m)) { this._matched(m, m.code); return; }
+      if (seat?.uid === me && seat.code === m.code && !m.armed && this.match === m) {
+        m.armed = true;
+        this.net.armMatchDrop(true);
+      }
+    } catch (err) {
+      // Refused (switched off since, or a dropped socket): the next tick tries again.
+      console.warn('[race] 1v1 seat refused', err?.code || err);
+    } finally {
+      m.busy = false;
+    }
+  }
+
+  _stopSearch(m) {
+    m.unwatch?.();
+    m.unwatch = null;
+    clearInterval(m.refresh);
+    clearInterval(m.clock);
+    if (m.armed) { m.armed = false; this.net.armMatchDrop(false); }
+  }
+
+  /** Out of the seat, unless somebody has just taken it. Resolves to the seat after. */
+  _clearSeat(m) {
+    const me = this.uid;
+    return this.net.matchTransact((cur) =>
+      (cur?.uid === me && cur.code === m.code && !cur.takenBy ? null : undefined));
+  }
+
+  async _matched(m, code) {
+    if (this.match !== m || m.state !== 'searching') return;
+    this._stopSearch(m);
+    m.state = 'joining';
+    this._matchChanged();
+    try {
+      await this.join(code, { kind: 'duel' });
+      toast(this.opponent ? t('Matched with {name}', { name: this.opponent.name }) : t('Opponent found'), { kind: 'good' });
+    } catch (err) {
+      console.error('[race] 1v1 join failed:', err);
+      toast(this.matchErrorText(err), { kind: 'bad' });
+    }
+    if (this.match === m) this.match = { state: 'idle' };
+    this._matchChanged();
+  }
+
+  /** A minute with nobody: say so, and offer the next minute. */
+  async _giveUp(m) {
+    if (this.match !== m || m.state !== 'searching') return;
+    this._stopSearch(m);
+    m.state = 'ending';
+    const seat = await this._clearSeat(m).catch(() => null);
+    if (this.match !== m) return;
+    // Taken in the last instant: that is a match, not a miss.
+    if (this._takenFromMe(seat, m)) { m.state = 'searching'; this._matched(m, m.code); return; }
+    this.match = { state: 'none' };
+    this._matchChanged();
+    toast(t('Couldn’t find anyone in the last minute.'), {
+      action: t('Try again'), long: true,
+      onAction: () => this.findMatch().catch(err => toast(this.matchErrorText(err), { kind: 'bad' })),
+    });
+  }
+
+  async cancelMatch() {
+    const m = this.match;
+    if (m.state === 'connecting') { this.match = { state: 'idle' }; this._matchChanged(); return; }
+    if (m.state === 'searching') {
+      this._stopSearch(m);
+      this.match = { state: 'idle' };
+      this._matchChanged();
+      await this._clearSeat(m).catch(() => {});
+      return;
+    }
+    if (m.state === 'none') { this.match = { state: 'idle' }; this._matchChanged(); }
+  }
+
+  matchErrorText(err) {
+    const why = err?.message;
+    return why === 'not-333' ? t('Random 1v1 is 3x3 only — switch to 3x3 first')
+      : why === 'race-off' ? (getConfig('race', 'message') || t('New race rooms are switched off for now'))
+      : why === 'no-config' ? t('Real rooms are not configured — see RACE.md')
+      : why === 'room-full' ? t('That 1v1 already has two people in it')
+      : t('Could not look for an opponent');
+  }
+
+  /**
+   * The 1v1's own rules, on top of an ordinary room: it starts by itself the
+   * moment both of you are in, and it is over the moment one of you is gone.
+   * Called on every snapshot and every tick.
+   */
+  _duelWatch() {
+    if (!this.inRoom || !this.isDuel) return;
+    const d = (this._duel ||= { since: Date.now(), opp: null, goneAt: 0, started: false, over: false });
+    if (d.over) return;
+    const live = this.livePlayers();
+    const opp = live.find(([id]) => id !== this.uid);
+
+    if (opp) {
+      d.opp = { uid: opp[0], name: opp[1].name || 'Cuber' };
+      d.goneAt = 0;
+      // Both sides write it; the same value twice is harmless.
+      if (this.phase === 'lobby' && !d.started) {
+        d.started = true;
+        this._start().catch(() => { d.started = false; });
+      }
+      return;
+    }
+
+    /* Gone: their row was removed (Quit, or the tab closed) or went silent.
+       A short wait first, because a phone changing network drops the row
+       for a few seconds and then writes it back. */
+    if (d.opp) {
+      d.goneAt ||= Date.now();
+      if (Date.now() - d.goneAt >= DUEL_GONE_MS) this._duelOver('left');
+    } else if (Date.now() - d.since >= MATCH_SHOWUP_MS) {
+      this._duelOver('noshow');
+    }
+  }
+
+  async _duelOver(why) {
+    const d = this._duel;
+    if (!d || d.over) return;
+    d.over = true;
+    const { me, them } = this.duelScore();
+    const name = d.opp?.name || 'Cuber';
+    await this.leave();
+    const again = () => this.findMatch().catch(err => toast(this.matchErrorText(err), { kind: 'bad' }));
+    if (why === 'noshow') {
+      // Matched with a tab that closed in the same instant: just keep looking.
+      toast(t('Your opponent never showed up — looking again'), { long: true });
+      again();
+      return;
+    }
+    toast(t('{name} left the 1v1. Final score: you {me} – {them} {name}', { name, me, them }), {
+      action: t('Find another'), onAction: again, long: true,
+    });
   }
 
   /* ---------------- standings, kept across reloads ---------------- */
@@ -1076,7 +1330,7 @@ export class Race extends EventTarget {
   _sig(rows) {
     return [
       this.snap.roomId, this.phase, this.round?.no, this.revealed, this._expanded, this.collapsed,
-      this.isHost,
+      this.isHost, this.isDuel, this.opponent?.name,
       ...rows.map(x => `${x.uid}:${x.status}:${x.eff ?? ''}:${x.standing?.wins ?? 0}:${x.clockOff ? 1 : 0}`),
     ].join('|');
   }
@@ -1093,7 +1347,8 @@ export class Race extends EventTarget {
     this._lastSig = sig;
     if (same) { this._foot(node.querySelector('.race-foot'), { rows, done, live }); return; }
 
-    node.querySelector('.race-code').textContent = this.snap.roomId || '';
+    // A 1v1's code means nothing to anybody: it is never shared, and nobody else can join.
+    node.querySelector('.race-code').textContent = this.isDuel ? t('1v1') : this.snap.roomId || '';
 
     /* The meter is the pressure. It says how much of the room is already
        finished and nothing whatsoever about how fast any of them were — which
@@ -1106,10 +1361,20 @@ export class Race extends EventTarget {
     /* ---- status line ---- */
     const status = node.querySelector('.race-status');
     status.innerHTML = '';
-    if (this.phase === 'lobby') {
+    if (this.isDuel && this.opponent) {
+      // The score, where a room shows how many are done: in a 1v1 the rows already say that.
+      const { me, them } = this.duelScore();
+      status.append(
+        el('span', { class: 'race-round', text: this.phase === 'lobby' ? t('1v1') : t('Round {n}', { n: r?.no ?? 1 }) }),
+        el('span', { class: 'race-count race-score' },
+          el('span', { text: t('you') + ' ' }),
+          el('b', { text: `${me} – ${them}` }),
+          el('span', { text: ' ' + this.opponent.name })),
+      );
+    } else if (this.phase === 'lobby') {
       status.append(
         el('span', { class: 'race-round', text: t('Lobby') }),
-        el('span', { class: 'race-count', text: t('{n} / {max} here', { n: live, max: tune('roomMax') }) }),
+        el('span', { class: 'race-count', text: t('{n} / {max} here', { n: live, max: this.isDuel ? 2 : tune('roomMax') }) }),
       );
     } else {
       status.append(
@@ -1153,6 +1418,22 @@ export class Race extends EventTarget {
   _actions(host) {
     if (!host) return;
     host.innerHTML = '';
+
+    /* A 1v1 has no lobby to go back to — it starts itself and ends when one
+       of you goes — so End race would only strand both of you in it. */
+    if (this.isDuel) {
+      host.append(el('button', {
+        class: 'btn danger', text: t('Quit 1v1'),
+        title: t('End this 1v1 and go back to your own session'),
+        onclick: async () => {
+          if (!await confirmToast(t('Quit this 1v1?'), t('quit'))) return;
+          const { me, them } = this.duelScore();
+          await this.leave();
+          toast(t('Left the 1v1 — you {me} – {them}', { me, them }));
+        },
+      }));
+      return;
+    }
 
     if (this.phase === 'racing' && this.isHost) {
       host.append(el('button', {
@@ -1599,11 +1880,17 @@ export class Race extends EventTarget {
       : this.graceAt ? Math.ceil((this.graceAt - Date.now()) / 1000)
       : null;
     const sig = [this.phase, this.revealed, done, live, secs,
-      !!this.round?.info?.scramble, this.isHost, this.kind].join('|');
+      !!this.round?.info?.scramble, this.isHost, this.kind, this.isDuel].join('|');
     if (sig === this._lastFootSig) return;
     this._lastFootSig = sig;
 
     foot.innerHTML = '';
+
+    if (this.phase === 'lobby' && this.isDuel) {
+      foot.append(el('div', { class: 'race-wait', text: live >= 2
+        ? t('Opponent found — starting…') : t('Waiting for your opponent to connect…') }));
+      return;
+    }
 
     if (this.phase === 'lobby') {
       const ready = live >= 2;

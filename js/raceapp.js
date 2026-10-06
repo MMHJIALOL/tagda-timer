@@ -115,6 +115,39 @@ export const HEARTBEAT_MS = 15000;
 export const STALE_ROOM_MS = 10 * 60 * 1000;
 
 /* ---------------------------------------------------------
+   Random 1v1 (RACE.md §8)
+   --------------------------------------------------------- */
+
+/** The only event a random opponent is found for, so everyone shares one queue. */
+export const MATCH_EVENT = '333';
+
+/**
+ * Where the one waiting seat lives: rooms/<this>/meta/waiting.
+ *
+ * Under rooms/ because rooms/<id>/meta is already readable and writable by any
+ * racer on the published rules, so finding an opponent needed no rules change
+ * to go live. The underscores keep it out of reach of the room-code box
+ * (normaliseCode strips them), and it has no meta/createdAt, so the admin
+ * console's "rooms made in the last day" never lists it.
+ */
+export const MATCH_LOBBY = '_1v1_333';
+
+/** How long one search lasts before it says nobody is around. */
+export const MATCH_SEARCH_MS = 60000;
+
+/** How often a waiting player re-stamps the seat. */
+export const MATCH_REFRESH_MS = 10000;
+
+/** A seat not re-stamped for this long belongs to a tab that has gone. */
+export const MATCH_STALE_MS = 25000;
+
+/** Matched, but the other person never arrived in the room: search again. */
+export const MATCH_SHOWUP_MS = 15000;
+
+/** The opponent out of the room this long ends the 1v1 (a wifi blip is shorter). */
+export const DUEL_GONE_MS = 10000;
+
+/* ---------------------------------------------------------
    Anti-cheat tuning
    --------------------------------------------------------- */
 

@@ -18,6 +18,7 @@ import { setFor } from './scramble.js';
 import { toast, confirmToast } from './toast.js';
 import { canSpeak } from './fx.js';
 import { getConfig } from './config.js';
+import { MATCH_EVENT, MATCH_SEARCH_MS } from './raceapp.js';
 import { Assets, Solves, LetterPairs } from './db.js';
 import { Gear, GearLog, LOG_KINDS, newGear, newLogEntry, gearLabel,
          loadSeeds, filterByCube, markersFor, activeGearId, setActiveGearId } from './gear.js';
@@ -2837,6 +2838,16 @@ export function buildSessions(app) {
    The lobby: who you are, which room, and the two facts about race mode that
    are worth knowing before you join rather than after.
    ========================================================= */
+/* The top bar's checkered flag; its paint is index.html's .svg-defs. */
+const RACE_FLAG_SVG = `<svg class="race-flag-art" viewBox="0 0 24 24" aria-hidden="true">
+  <path class="rf-pole" d="M5.6 21.4V3.4"/>
+  <circle class="rf-knob" cx="5.6" cy="2.4" r="1.5"/>
+  <g class="rf-cloth" clip-path="url(#rf-clip)">
+    <rect class="rf-fill" x="5" y="1.5" width="15.5" height="13"/>
+    <path class="rf-check" d="M5.6 1.5h4.67v6.8H5.6zM14.93 1.5h4.67v6.8h-4.67zM10.27 8.3h4.67v6.4h-4.67z"/>
+  </g></svg>`;
+const BOLT_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2.5 4.5 13.5H11l-1 8 8.5-11H12z" fill="currentColor"/></svg>';
+
 export function buildRace(app) {
   return (body) => {
     const S = app.settings;
@@ -2861,9 +2872,11 @@ export function buildRace(app) {
       /* ---- where you are ---- */
       body.append(group(t('Race'),
         el('div', { class: `race-hero ${inRoom ? 'on' : ''}` },
-          el('div', { class: 'race-hero-dot' }),
+          el('div', { class: 'race-hero-badge', html: RACE_FLAG_SVG }),
           el('div', {},
-            el('div', { class: 'race-hero-title', text: inRoom ? t('Room {id}', { id: ctl.snap.roomId }) : t('Not in a room') }),
+            el('div', { class: 'race-hero-title', text: !inRoom ? t('Not in a room')
+              : ctl.isDuel ? t('1v1 vs {name}', { name: ctl.opponent?.name || '…' })
+              : t('Room {id}', { id: ctl.snap.roomId }) }),
             el('div', { class: 'race-hero-sub', text: inRoom
               ? t('Everyone here races the same scramble. Nobody’s time appears until you have finished it too.')
               : t('Same scramble for everyone in the room. You see their times only once you have solved it yourself — and they see yours on the same terms.') }),
@@ -2880,12 +2893,93 @@ export function buildRace(app) {
         ),
       ));
 
+      /* ---- random 1v1 (RACE.md §8) ----
+         Built once per state, not per second: only the countdown moves while
+         searching, so the radar keeps pinging instead of restarting every tick,
+         and the drawer itself is never re-rendered under the name field. */
+      let redrawMatch = null;
+      if (!inRoom) {
+        const box = el('div');
+        let drawn = '';
+        let secsNode = null, barNode = null;
+        const leftOf = (m) => Math.max(0, Math.ceil((m.endsAt - Date.now()) / 1000));
+        const fracOf = (m) => Math.max(0, Math.min(1, (m.endsAt - Date.now()) / MATCH_SEARCH_MS));
+        const drawMatch = () => {
+          const m = ctl.match;
+          const is333 = S.event === MATCH_EVENT;
+          const state = m.state === 'ending' ? 'joining' : m.state === 'connecting' ? 'searching' : !is333 && (m.state === 'idle' || m.state === 'none') ? 'other' : m.state;
+          const me = ctl.nickname();
+          const key = `${state}|${me}`;
+          if (key === drawn) {
+            if (secsNode) secsNode.textContent = `${leftOf(m)}s`;
+            if (barNode) barNode.style.transform = `scaleX(${fracOf(m)})`;
+            return;
+          }
+          drawn = key;
+          secsNode = barNode = null;
+
+          const find = (label) => el('button', {
+            class: 'btn primary',
+            onclick: () => ctl.findMatch().catch(err => toast(ctl.matchErrorText(err), { kind: 'bad' })),
+          }, el('span', { class: 'duel-bolt', html: BOLT_SVG }), el('span', { text: label }));
+          const meAv = el('span', { class: 'duel-av me', text: race.initialsOf(me), title: me });
+          meAv.style.setProperty('--av-h', String(race.hueOf(me)));
+          const them = el('span', { class: 'duel-av them', text: state === 'joining' ? '✓' : '?' });
+
+          const copy = {
+            idle:      [t('Race a stranger'), t('3x3 · one scramble at a time · head to head until one of you quits')],
+            searching: [t('Looking for an opponent…'), null],
+            joining:   [t('Opponent found!'), t('Joining the match…')],
+            none:      [t('Nobody around right now'), t('Couldn’t find anyone in the last minute. Try again?')],
+            other:     [t('Race a stranger'), t('Random 1v1 is 3x3 only.')],
+          }[state];
+          const sub = el('div', { class: 'duel-sub', role: 'status' });
+          if (state === 'searching') {
+            secsNode = el('span', { class: 'duel-secs', text: `${leftOf(m)}s` });
+            sub.append(t('Each search lasts a minute') + ' · ', secsNode, ' ' + t('left'));
+          } else {
+            sub.textContent = copy[1];
+          }
+
+          let action = null;
+          if (state === 'searching') {
+            barNode = el('i');
+            barNode.style.transform = `scaleX(${fracOf(m)})`;
+            action = [el('div', { class: 'duel-bar' }, barNode),
+              el('button', { class: 'btn', text: t('Cancel'), onclick: () => ctl.cancelMatch() })];
+          } else if (state === 'other') {
+            action = [el('button', { class: 'btn primary', text: t('Switch to 3x3'),
+              onclick: async () => { await app.setEvent(MATCH_EVENT); render(); } })];
+          } else if (state !== 'joining') {
+            action = [find(state === 'none' ? t('Try again') : t('Find an opponent'))];
+          }
+
+          box.replaceChildren(group(t('Random 1v1'),
+            el('div', { class: 'duel-card', dataset: { state } },
+              el('div', { class: 'duel-vs' }, meAv, el('span', { class: 'duel-x', text: 'VS' }), them),
+              el('div', { class: 'duel-copy' }, el('div', { class: 'duel-title', text: copy[0] }), sub),
+              ...(action || []),
+              el('div', { class: 'duel-fine', text: t('Chat goes only to your opponent.') }),
+            ),
+          ));
+        };
+        const onMatch = () => {
+          if (!box.isConnected) { ctl.removeEventListener('match', onMatch); return; }
+          if (ctl.inRoom) { ctl.removeEventListener('match', onMatch); render(); return; }
+          drawMatch();
+        };
+        ctl.addEventListener('match', onMatch);
+        drawMatch();
+        redrawMatch = drawMatch;
+        body.append(box);
+      }
+
       /* ---- identity ---- */
       const nameInput = el('input', {
         class: 'inp', type: 'text', maxlength: 18, placeholder: ctl.nickname(),
         value: S.raceName || '',
       });
-      nameInput.addEventListener('change', () => set('raceName', nameInput.value.trim().slice(0, 18)));
+      nameInput.addEventListener('change', () => { set('raceName', nameInput.value.trim().slice(0, 18)); redrawMatch?.(); });
       body.append(group(t('You'),
         row(t('Display name'), nameInput, t('what the room calls you, on the leaderboard and everywhere else — editable here or from the account icon in the top bar, and synced along with everything else once signed in')),
       ));
@@ -2929,7 +3023,7 @@ export function buildRace(app) {
           getConfig('race', 'enabled') ? null : el('div', { class: 'sc-blocked', role: 'status', text:
             (getConfig('race', 'message') || t('New race rooms are switched off for now')) + ' ' + t('Rooms already open still work.') }),
         ));
-      } else {
+      } else if (!ctl.isDuel) {
         const link = `${location.origin}${location.pathname}?race=${ctl.snap.roomId}`;
         body.append(group(t('Invite'),
           row(t('Room code'), el('div', { class: 'race-code-big', text: ctl.snap.roomId })),

@@ -238,3 +238,55 @@ The panel registers as a dockable tile, so it drags and docks like the times lis
 panel. Below 860px — where the tile system switches off — it becomes a sheet across the foot of
 the screen, folded to a header that still answers the only two questions a phone has room for:
 which room, and how much of it is already done.
+
+---
+
+## 8. Random 1v1
+
+**Find an opponent** in the Race drawer pairs you with whoever else is looking, on 3x3 only.
+There's no code and no invite. Once matched it is an ordinary race room capped at two
+(`meta/kind: 'duel'`). It starts by itself as soon as both of you are in, then runs
+one scramble per round, head to head, with the same hidden-until-you-finish reveal, until
+one of you quits. The chat is the room's chat, so it only goes to your opponent. Every
+1v1 lands in one session, `1v1 · 3x3`, rather than one per stranger.
+
+**One waiting seat.** `rooms/_1v1_333/meta/waiting = { uid, code, at }`, changed only by
+transaction. Searching is one atomic decision against whatever is in the seat:
+
+| In the seat | You |
+|---|---|
+| somebody else, fresh, not taken | take it: `takenBy: you`, then join their `code` |
+| your own code, `takenBy` somebody | leave it; you are matched, join your `code` |
+| empty, stale (no re-stamp for 25 s) or someone else's finished match | sit in it with a fresh code |
+
+Two people pressing at once can't both take the same seat or both sit in it, because the
+transaction retries whoever lost against the winner's write. Nobody is in a room while
+waiting. The room is created by whichever of the two arrives first, and the second
+create is refused by the rule on `meta/round` and simply joins.
+
+- A waiting tab re-stamps the seat every 10 s and arms an `onDisconnect` that clears it,
+  so a closed tab stops being matched straight away. The `onDisconnect` is cancelled as
+  soon as you stop waiting, because it is unconditional.
+- **A search lasts a minute.** After that the seat is cleared and the drawer says nobody
+  could be found, with **Try again**. A toast with the same button covers a closed drawer.
+- **Matched, but the other side never arrives** within 15 s: the room is left and the
+  search starts again.
+- **The opponent gone** (their row removed, or silent past the room's hard timeout) for
+  10 s ends the 1v1 with the score. The wait covers a phone changing network, which drops
+  the row and writes it back a few seconds later.
+- Somebody who switches event mid-match stops publishing scrambles; the other side takes
+  over after the usual six seconds, so a 1v1 never gets a 4x4 scramble.
+
+**No rules change.** The seat sits under `rooms/`, whose `meta` is already readable and
+writable by any racer, so this works on the rules already published. The underscores
+keep it out of the room-code box (`normaliseCode` strips them). It has no `createdAt`, so
+the admin console's list of recent rooms never shows it. When the admin console switches
+race rooms off, the search refuses to start, and a pair matched just before that is
+refused its room.
+
+**What it does not do.** There is no skill matching: a rating every client reports about
+itself is a rating anybody can fake. There is also no count of how many people are
+looking, because the seat holds at most one. With few people online, most searches
+will end in "couldn't find anyone"; that is the honest answer, not a bug.
+
+Tuning is in `js/raceapp.js` (`MATCH_*`, `DUEL_GONE_MS`).
