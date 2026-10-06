@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="nebula">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Admin — Tagda Timer</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="preload" href="/assets/fonts/inter-latin.woff2" as="font" type="font/woff2" crossorigin>
+<!-- No ?v= here: sw.js never answers this page or anything it loads from its
+     cache (ADMIN.md), so every visit gets the deployed files. -->
+<link rel="stylesheet" href="/css/fonts.css">
+<link rel="stylesheet" href="/css/tokens.css">
+<link rel="stylesheet" href="/css/admin.css">
+<link rel="stylesheet" href="/css/announce.css">
+<link rel="icon" type="image/png" href="/assets/admin-192.png">
+<link rel="apple-touch-icon" href="/assets/admin-180.png">
+<link rel="manifest" href="/admin.webmanifest">
+<meta name="theme-color" content="#07070c" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f3f1ec" media="(prefers-color-scheme: light)">
+<meta name="apple-mobile-web-app-title" content="Tagda Admin">
+<script>
+  /* Light or dark goes by the phone's own setting: Paper and Nebula, the
+     timer's light and dark themes. Before first paint, so nothing flashes. */
+  (function () {
+    var q = matchMedia('(prefers-color-scheme: light)');
+    var set = function () { document.documentElement.dataset.theme = q.matches ? 'paper' : 'nebula'; };
+    set();
+    q.addEventListener('change', set);
+  })();
+</script>
+</head>
+<body>
+
+<header id="ad-top">
+  <a class="ad-brand" href="/" title="Open the timer">
+    <img src="/assets/admin-192.png" alt="" width="28" height="28">
+    <span>Tagda <b>admin</b></span>
+  </a>
+  <div id="ad-account"></div>
+</header>
+
+<nav id="ad-tabs" aria-label="Sections" hidden></nav>
+
+<main id="ad-main" aria-live="polite">
+  <p class="ad-note">Loading…</p>
+</main>
+
+<div id="ad-savebar" hidden></div>
+<div id="ad-sheet" hidden></div>
+<div id="toasts"></div>
+
+<script type="module" src="/js/admin.js"></script>
+</body>
+</html>

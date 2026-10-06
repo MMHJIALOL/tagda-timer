@@ -91,7 +91,13 @@ export const CODE_LENGTH = 5;
 
 /* ---------------------------------------------------------
    Timing
-   --------------------------------------------------------- */
+   ---------------------------------------------------------
+
+   ROOM_MAX, ROWS_BEFORE_FOLD and the four below, and SUSPECT_RATIO, are the
+   defaults of the admin console's config/race settings (ADMIN.md), which the
+   app reads in their place; ROOM_MAX is also the most a room can be set to,
+   and HEARTBEAT_MS the most often a racer can be made to write. The clock
+   slack is not a setting: the database rules hold the same numbers. */
 
 /** How long the round waits for stragglers once everyone else is done. */
 export const GRACE_MS = 45000;

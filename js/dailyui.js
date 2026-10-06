@@ -48,15 +48,16 @@ import { t } from './i18n.js';
 
 import { el, fmt } from './util.js';
 import { signIn } from './sync-auth.js';
-import { toast, confirmToast } from './toast.js';
+import { toast, confirmToast, choiceToast } from './toast.js';
 import { formatCountdown, safePhotoUrl, shiftDayId, cleanNote, NOTE_MAX_LEN, dayStartMs } from './daily-net.js';
 import { RACE_EMOJI } from './raceapp.js';
 import { isOwnerName, openOwnerCard } from './ownercard.js';
 // Policy lives with the controller — see the comment on it there.
-import { SHOW_COUNT_BOARD } from './daily.js';
-import { canPlay, playButton, replayKept, shareBox, bindReplays, dropClip } from './sotd-replays.js';
+import { showCountBoard } from './daily.js';
+import { canPlay, playButton, replayKept, keepDays, shareBox, bindReplays, dropClip, replaysForMe } from './sotd-replays.js';
 import { mountChat } from './sotd-chat.js';
 import { knownFace, lookupFace } from './faces.js';
+import { EVENTS } from './events.js';
 
 /* ---------------------------------------------------------
    A face, or the next best thing
@@ -162,7 +163,7 @@ export function timeBoard(rows, revealed, replays = null, { remove = null, locke
 export function replaysBoard(rows, revealed, replays, { past = false, remove = null, locked = null } = {}) {
   if (!revealed) return lockedBoard(locked);
   if (!replayKept(replays.dayKey)) {
-    return el('div', { class: 'db-empty', text: t('Replays are kept for 7 days.') });
+    return el('div', { class: 'db-empty', text: t('Replays are kept for {n} days.', { n: keepDays() }) });
   }
   const shared = rows.map((r, i) => [r, i]).filter(([r]) => canPlay(replays.dayKey, replays.event, r.uid, r.result));
   if (!shared.length) {
@@ -201,7 +202,13 @@ export function adminRemover(ctl, { dayKey, past = false, onDone = null } = {}) 
                   : t('Remove {name}’s {time}? It was their backup, so that’s it for them today.', vars))
         : (r.isMe ? t('Remove your {time}? You get the backup scramble as a final attempt.', vars)
                   : t('Remove {name}’s {time}? They get the backup scramble as a final attempt.', vars));
-    if (!(await confirmToast(msg, t('Remove'), { timeout: 10000 }))) return;
+    /* Somebody else's time may also be a ban (bans/, ADMIN.md): never the
+       default, and never offered for your own row. */
+    const how = r.isMe
+      ? ((await confirmToast(msg, t('Remove'), { timeout: 10000 })) ? 'remove' : null)
+      : await choiceToast(msg, [{ label: t('Remove'), value: 'remove' }, { label: t('Remove and ban'), value: 'ban' }],
+        { timeout: 10000 });
+    if (!how) return;
     try {
       await ctl.removeResult(r, dayKey, event);
     } catch (err) {
@@ -215,6 +222,46 @@ export function adminRemover(ctl, { dayKey, past = false, onDone = null } = {}) 
     if (res.replay === true) dropClip({ dayKey, event, uid: r.uid });
     toast(r.isMe ? t('Removed your time') : t('Removed {name}’s time', vars));
     onDone?.(r);
+    if (how !== 'ban') return;
+    try {
+      await ctl.banUser({ uid: r.uid, name: res.name || '', reason: `Scramble of the Day time ${timeText(res)} (${event}, ${new Date(Number(dayKey) + 19800000).toISOString().slice(0, 10)})` });
+      toast(t('{name} is banned from the boards, chats and replays', vars), { long: true });
+    } catch (err) {
+      console.warn('[daily] ban refused', err?.code || err);
+      toast(t('The database refused the ban — firebase.rules.json needs publishing first'), { kind: 'bad', long: true });
+    }
+  };
+}
+
+/** The admin's "remove and ban" for a shared replay's player, or null for everybody else (bans/, ADMIN.md). */
+function replayBan(ctl, event) {
+  if (!ctl.admin) return null;
+  return async ({ uid, name }) => {
+    try {
+      await ctl.banUser({ uid, name, reason: `Shared replay (${event})` });
+      toast(t('{name} is banned from the boards, chats and replays', { name: name || 'Cuber' }), { long: true });
+      return true;
+    } catch (err) {
+      console.warn('[daily] ban refused', err?.code || err);
+      toast(t('The database refused the ban — firebase.rules.json needs publishing first'), { kind: 'bad', long: true });
+      return false;
+    }
+  };
+}
+
+/** Report somebody's shared replay to the admins, for everybody but an admin (reports/, ADMIN.md §6). */
+function replayReport(ctl, dayKey, event) {
+  if (ctl.admin || !dayKey) return null;
+  return async ({ uid, name }) => {
+    try {
+      const out = await ctl.reportReplay({ dayKey, event, uid, name });
+      if (out) toast(out === 'already' ? t('You have already reported that') : t('Reported. An admin will look at it.'));
+      return !!out;
+    } catch (err) {
+      console.warn('[daily] report refused', err?.code || err);
+      toast(t('Couldn’t send the report'), { kind: 'bad' });
+      return false;
+    }
   };
 }
 
@@ -259,7 +306,7 @@ function timeRow(r, i, replays = null, remove = null) {
       /* Inside the time's cell rather than a column of its own: the grid's
          other optional cell (the ⚑) would shift a sixth column about. */
       replays && canPlay(replays.dayKey, replays.event, r.uid, res)
-        ? playButton({ dayKey: replays.dayKey, event: replays.event, uid: r.uid, result: res, onGone: replays.onGone })
+        ? playButton({ dayKey: replays.dayKey, event: replays.event, uid: r.uid, result: res, onGone: replays.onGone, onBan: replays.onBan, onReport: replays.onReport })
         : null),
   );
 }
@@ -346,6 +393,9 @@ function noteComposer(ctl) {
      replaced mid-sentence loses what you typed and the caret with it. The
      server's copy is only adopted while the field is not being used. */
   box.refresh = () => {
+    // Banned (bans/, ADMIN.md): the rules refuse the note, so the field says so rather than taking one.
+    input.disabled = ctl.banned;
+    input.placeholder = ctl.banned ? t('Notes are off for this account') : t('Say one line about it…');
     const live = ctl.myNote;
     if (live === current) return;
     current = live;
@@ -416,7 +466,7 @@ export function dayHistory(ctl, redraw) {
         if (cur) cur.rows = cur.rows.filter(x => x.uid !== r.uid);
         redraw();
       } });
-      return pastView(cur, mode, { dayKey, event: eventId, onGone: redraw }, remove);
+      return pastView(cur, mode, { dayKey, event: eventId, onGone: redraw, onBan: replayBan(ctl, eventId), onReport: replayReport(ctl, dayKey, eventId) }, remove);
     },
 
     /** The ‹ · › control itself. `today` is the live day id, or null before it loads. */
@@ -637,11 +687,14 @@ export function openSotd(app, ctl, { onExit, solving = () => false } = {}) {
     const past = history.day;
     const rows = past ? [] : ctl.ranked();
     const dayKey = past ? String(dayStartMs(past)) : ctl.net?.target?.().dayKey;
-    const replays = dayKey ? { dayKey, event: ctl.eventId, onGone: () => { renderBoard(); placeBoard(); } } : null;
+    // No replays for this account at all (their audience, ADMIN.md §9): no tab, no ▶.
+    const replays = dayKey && replaysForMe() ? { dayKey, event: ctl.eventId, onGone: () => { renderBoard(); placeBoard(); }, onBan: replayBan(ctl, ctl.eventId), onReport: replayReport(ctl, dayKey, ctl.eventId) } : null;
+    if (!replays && mode === 'replays') mode = 'times';
     // Today's rows only: a past day's picker builds its own (it has to drop the row itself).
     const opts = { remove: past ? null : adminRemover(ctl, { dayKey }), locked: lockText(ctl) };
     const sharedN = replays ? rows.filter(r => r.result?.replay === true).length : 0;
     board.append(el('div', { class: 'sotd-board-card' },
+      past ? null : featuredLine(),
       /* The heading and the picker share a row: the column is narrow and
          parked under the scramble, so a control on a line of its own costs
          the board a row of names to buy nothing. */
@@ -650,7 +703,7 @@ export function openSotd(app, ctl, { onExit, solving = () => false } = {}) {
            does not repeat it — it says only what kind of board this is. */
         el('div', { class: 'sotd-tabs', role: 'tablist', 'aria-label': t('Board') },
           tab('times', past ? t('Times') : t('Today’s times')),
-          tab('replays', sharedN ? t('Replays · {n}', { n: sharedN }) : t('Replays')),
+          replays ? tab('replays', sharedN ? t('Replays · {n}', { n: sharedN }) : t('Replays')) : null,
           /* Narrow screens only (the stylesheet hides it elsewhere, where the
              chat has a column of its own): swaps the board for the chat. */
           ctl.chatOpen ? el('button', {
@@ -673,12 +726,31 @@ export function openSotd(app, ctl, { onExit, solving = () => false } = {}) {
       (!past && ctl.revealed) ? note() : null,
       (!past && ctl.revealed) ? share() : null,
       ctl.snap?.signedIn ? null : signInPrompt(),
-      SHOW_COUNT_BOARD ? [
+      showCountBoard() ? [
         el('h3', { class: 'sotd-h3-second' }, t('Most solves today'),
           el('span', { class: 'sotd-h3-note', text: t('any event · resets at midnight IST') })),
         countBoard(ctl.countBoard()),
       ] : null,
     ));
+  };
+
+  /**
+   * Today's featured event (an admin's pick, DAILY.md §3), over the board:
+   * a mark when this is it, a way across when it is not. Moving events moves
+   * the timer too, the way the panel's Open does, and never mid-attempt.
+   */
+  const featuredLine = () => {
+    const f = ctl.featured;
+    if (!f) return null;
+    const name = EVENTS[f]?.short || f;
+    if (f === ctl.eventId) return el('div', { class: 'sotd-featured on', text: t('★ Today’s featured event') });
+    return el('div', { class: 'sotd-featured' },
+      el('span', { text: t('★ Today’s featured event is {event}', { event: name }) }),
+      el('button', {
+        class: 'ghost-btn sm', type: 'button', text: t('Go to it'),
+        onclick: () => { if (!solving()) app.setEvent(f); },
+        onkeydown: (e) => e.stopPropagation(),
+      }));
   };
 
   /* Declared after renderBoard because it calls it, and before onChange ever

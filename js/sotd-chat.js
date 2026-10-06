@@ -21,15 +21,15 @@ import { t } from './i18n.js';
    =========================================================== */
 
 import { el } from './util.js';
-import { toast, confirmToast } from './toast.js';
+import { toast, confirmToast, choiceToast } from './toast.js';
 import { RACE_EMOJI, CHAT_MAX_LEN } from './raceapp.js';
 import { cleanChat } from './race-net.js';
-import { openOwnerCard } from './ownercard.js';
+import { openOwnerCard, OWNER_UID } from './ownercard.js';
 import { eventOf } from './events.js';
-import { ADMIN_UIDS } from './daily-net.js';
 
 const EMOJI_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9 10h.01M15 10h.01M8.5 14.5a4.5 4.5 0 0 0 7 0"/></svg>';
 const SEND_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h13M12 5l7 7-7 7"/></svg>';
+const FLAG_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 21V4m0 0h10l-2 4 2 4H6"/></svg>';
 const DEL_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7L7 17"/></svg>';
 
 /** Same hash as race.js's, so a name is the same colour in both rooms. */
@@ -82,9 +82,12 @@ export function mountChat(ctl, { avatar, onBack } = {}) {
     onclick: () => onBack?.(),
     onkeydown: (e) => e.stopPropagation(),
   });
+  /* In place of the box when this account cannot post: banned, or the chat
+     switched off from the admin console (ADMIN.md). Reading carries on. */
+  const blocked = el('div', { class: 'sc-blocked', role: 'status', hidden: true });
   const node = el('div', { class: 'sotd-chat-card' },
     el('div', { class: 'sc-head' }, back, el('h3', { class: 'sc-title', text: t('Chat') }), sub),
-    log, tray, form);
+    log, tray, form, blocked);
 
   const setTray = (open) => {
     tray.hidden = !open;
@@ -107,7 +110,7 @@ export function mountChat(ctl, { avatar, onBack } = {}) {
       const out = await ctl.sendChat(body);
       if (out === 'slow') {
         input.value = body;
-        toast(t('Slow down a little: one message every 2 seconds'));
+        toast(t('Slow down a little: one message every {s} seconds', { s: Math.round(ctl.chatGapMs / 100) / 10 }));
       } else if (out === 'closed') {
         input.value = body;
       }
@@ -137,16 +140,48 @@ export function mountChat(ctl, { avatar, onBack } = {}) {
 
   const remove = async (m) => {
     const mine = m.uid === ctl.snap?.uid;
-    const ok = await confirmToast(mine ? t('Delete your message?') : t('Delete {name}’s message?', { name: m.name || 'Cuber' }),
-      t('Delete'));
-    if (!ok) return;
+    const name = m.name || 'Cuber';
+    // An admin on somebody else's message may also ban them (bans/, ADMIN.md); never the default.
+    const how = mine || !ctl.admin
+      ? ((await confirmToast(mine ? t('Delete your message?') : t('Delete {name}’s message?', { name }), t('Delete'))) ? 'delete' : null)
+      : await choiceToast(t('Delete {name}’s message?', { name }),
+        [{ label: t('Delete'), value: 'delete' }, { label: t('Delete and ban'), value: 'ban' }]);
+    if (!how) return;
     try {
       await ctl.deleteChat(m.id);
       toast(t('Message deleted'));
     } catch (err) {
       console.warn('[daily] chat delete refused', err?.code || err);
       toast(t('Could not delete that message'), { kind: 'bad' });
+      return;
     }
+    if (how !== 'ban') return;
+    try {
+      await ctl.banUser({ uid: m.uid, name, reason: `Chat message: "${String(m.text || '').slice(0, 120)}"` });
+      toast(t('{name} is banned from the boards, chats and replays', { name }), { long: true });
+    } catch (err) {
+      console.warn('[daily] ban refused', err?.code || err);
+      toast(t('The database refused the ban — firebase.rules.json needs publishing first'), { kind: 'bad', long: true });
+    }
+  };
+
+  const report = async (m) => {
+    if (!(await confirmToast(t('Report {name}’s message to the admins?', { name: m.name || 'Cuber' }), t('Report')))) return;
+    try {
+      const out = await ctl.reportChat(m);
+      if (out) toast(out === 'already' ? t('You have already reported that') : t('Reported. An admin will look at it.'));
+    } catch (err) {
+      console.warn('[daily] report refused', err?.code || err);
+      toast(t('Couldn’t send the report'), { kind: 'bad' });
+    }
+  };
+
+  /** The box, or why there is no box. */
+  const posting = () => {
+    const why = ctl.chatBlocked;
+    form.hidden = !!why;
+    blocked.hidden = !why;
+    if (why) { blocked.textContent = why; setTray(false); }
   };
 
   let sig = null;
@@ -173,7 +208,7 @@ export function mountChat(ctl, { avatar, onBack } = {}) {
            pin a message's uid to the account that sent it, and in a room
            anyone can type into, a name anyone can take is not good enough
            for the owner's badge. */
-        const owner = ADMIN_UIDS.includes(m.uid);
+        const owner = m.uid === OWNER_UID;
         // textContent, not el()'s `text`: that one runs labels through the
         // translator, and a stranger's message is not a label.
         const text = el('span', { class: 'race-chat-text' });
@@ -191,6 +226,8 @@ export function mountChat(ctl, { avatar, onBack } = {}) {
           }
         }
         const canDelete = !!me && (m.uid === me || admin);
+        // Somebody else's message, for everybody but an admin (who deletes): reports/, ADMIN.md §6.
+        const canReport = !!me && m.uid !== me && !admin;
         const row = el('div', {
           class: `race-chat-msg sc-msg${runOn ? ' run-on' : ''}`,
           dataset: { me: String(m.uid === me) },
@@ -198,6 +235,11 @@ export function mountChat(ctl, { avatar, onBack } = {}) {
         },
           runOn ? el('span', { class: 'sc-face-gap' }) : (avatar ? avatar(m.name, m.photo, { uid: m.uid, me: m.uid === me }) : el('span', { class: 'sc-face-gap' })),
           el('div', { class: 'sc-body' }, who, text),
+          canReport ? el('button', {
+            class: 'sc-del sc-report', type: 'button', html: FLAG_SVG,
+            title: t('Report this message'), 'aria-label': t('Report this message'),
+            onclick: () => report(m),
+          }) : null,
           canDelete ? el('button', {
             class: 'sc-del', type: 'button', html: DEL_SVG,
             title: m.uid === me ? t('Delete your message') : t('Delete this message (admin)'),
@@ -217,16 +259,21 @@ export function mountChat(ctl, { avatar, onBack } = {}) {
     sub.textContent = t('{event} · today · clears at the reset', { event: eventOf(ctl.eventId).short });
   };
 
-  const onChat = () => { head(); draw(); };
+  const onChat = () => { head(); draw(); posting(); };
   ctl.addEventListener('chat', onChat);
+  // A ban arrives with the board's snapshot, a switch with the settings.
+  ctl.addEventListener('change', posting);
+  addEventListener('tdt-config', posting);
   onChat();
 
   return {
     node,
     /** Called by the window on its own redraws: the event can change under it. */
-    refresh: () => { head(); draw(); },
+    refresh: () => { head(); draw(); posting(); },
     dispose() {
       ctl.removeEventListener('chat', onChat);
+      ctl.removeEventListener('change', posting);
+      removeEventListener('tdt-config', posting);
       document.removeEventListener('click', onDocClick);
     },
   };

@@ -23,12 +23,23 @@ import { shockwave, confetti, flash, chime } from './fx.js';
 import { themeColors } from './theme.js';
 import { createTransport, cloudAvailable, scrambleHash, isStale, cleanChat } from './race-net.js';
 import {
-  ROOM_MAX, ROWS_BEFORE_FOLD, CODE_ALPHABET, CODE_LENGTH,
-  GRACE_MS, SOFT_TIMEOUT_MS, SUSPECT_RATIO,
+  CODE_ALPHABET, CODE_LENGTH,
   CLOCK_SLACK_MS, CLOCK_SLACK_RATIO,
   CHAT_MAX_LEN, CHAT_COOLDOWN_MS, RACE_EMOJI,
 } from './raceapp.js';
 import { isOwnerName, openOwnerCard } from './ownercard.js';
+import { getConfig } from './config.js';
+
+/* Tuning from the admin console (config/race); the defaults are raceapp.js's. */
+const tune = (k) => getConfig('race', k);
+import { banActive, banLine } from './admins.js';
+import { hasPersistedSession } from './sync-auth.js';
+
+const FLAG_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 21V4m0 0h10l-2 4 2 4H6"/></svg>';
+
+/** Why nobody can post in a room right now (config/raceChat, ADMIN.md), or null. */
+const chatOff = () => (getConfig('raceChat', 'enabled') ? null
+  : getConfig('raceChat', 'message') || t('Room chat is switched off for now'));
 
 /**
  * How long a settled leaderboard stays up before the next scramble.
@@ -680,7 +691,7 @@ export class Race extends EventTarget {
   _looksSuspect(solve) {
     const avg = bestAvg(this.app.solves || [], 12).value;
     if (!avg || !isFinite(avg)) return false;
-    return solve.timeMs < avg * SUSPECT_RATIO;
+    return solve.timeMs < avg * (tune('suspectPct') / 100);
   }
 
   /* ---------------- round settling ---------------- */
@@ -732,7 +743,7 @@ export class Race extends EventTarget {
 
     // The grace clock starts the moment the first person finishes, and only
     // matters if somebody never does.
-    if (someone && !everyone && !this.graceAt) this.graceAt = Date.now() + GRACE_MS;
+    if (someone && !everyone && !this.graceAt) this.graceAt = Date.now() + tune('graceSec') * 1000;
     if (everyone) this.graceAt = 0;
 
     const graceUp = this.graceAt && Date.now() >= this.graceAt;
@@ -954,10 +965,16 @@ export class Race extends EventTarget {
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h13M12 5l7 7-7 7"/></svg>
             </button>
           </form>
+          <div class="sc-blocked race-chat-off" role="status" hidden></div>
         </div>
         <div class="race-actions"></div>
       </div>`;
     host.append(node);
+    if (!this._configBound) {
+      this._configBound = true;
+      // A switch flipped from the admin console shows up without a reload.
+      addEventListener('tdt-config', () => this._syncChatOff());
+    }
     this._node = node;
 
     node.querySelector('.race-head').addEventListener('click', (e) => {
@@ -1092,7 +1109,7 @@ export class Race extends EventTarget {
     if (this.phase === 'lobby') {
       status.append(
         el('span', { class: 'race-round', text: t('Lobby') }),
-        el('span', { class: 'race-count', text: t('{n} / {max} here', { n: live, max: ROOM_MAX }) }),
+        el('span', { class: 'race-count', text: t('{n} / {max} here', { n: live, max: tune('roomMax') }) }),
       );
     } else {
       status.append(
@@ -1105,7 +1122,7 @@ export class Race extends EventTarget {
     const host = node.querySelector('.race-rows');
     host.innerHTML = '';
     const shown = this.collapsed && innerWidth <= 860 ? [] : rows;
-    const fold = this._expanded ? shown.length : Math.min(shown.length, ROWS_BEFORE_FOLD);
+    const fold = this._expanded ? shown.length : Math.min(shown.length, tune('rowsBeforeFold'));
     shown.slice(0, fold).forEach((row, i) => host.append(this._row(row, i)));
 
     const more = node.querySelector('.race-more');
@@ -1257,7 +1274,9 @@ export class Race extends EventTarget {
     /* A cooldown rather than a queue. Holding Enter down is the only way
        anybody hits this, and the honest answer to that is to drop the extra
        presses on the floor, not to send them a moment later. */
-    if (Date.now() - this._chatSentAt < CHAT_COOLDOWN_MS) return;
+    // The rules' gap (config/raceChat/gapMs) and a little more, or the old 0.7 s if that is longer.
+    if (Date.now() - this._chatSentAt < Math.max(CHAT_COOLDOWN_MS, getConfig('raceChat', 'gapMs') + 500)) return;
+    if (chatOff()) { toast(chatOff()); return; }
     this._chatSentAt = Date.now();
 
     /* Cleared before the write, not after.
@@ -1274,6 +1293,10 @@ export class Race extends EventTarget {
       input.value = body;
       const code = err?.code || String(err || '');
       console.warn('[race] chat refused', code);
+      // Banned (this racer's own bans/<uid>), or switched off since the settings were read.
+      const ban = String(code).includes('PERMISSION_DENIED') ? await this.net.banOf?.() : null;
+      if (banActive(ban)) { toast(banLine(ban), { kind: 'bad', long: true }); return; }
+      if (chatOff()) { toast(chatOff(), { long: true }); this._syncChatOff(); return; }
       /* PERMISSION_DENIED here means one specific thing almost every time:
          the database is running rules that predate chat, so the write falls
          through to the root's ".write": false. Saying so is the difference
@@ -1294,10 +1317,36 @@ export class Race extends EventTarget {
    * replaced between two keystrokes loses what you typed and the caret with
    * it.
    */
+  /** Report somebody's message to the admins, as the Google account signed in on this browser. */
+  async _report(m) {
+    if (!(await confirmToast(t('Report {name}’s message to the admins?', { name: m.name || 'Cuber' }), t('Report')))) return;
+    try {
+      const [{ getDatabaseHandle }, { sendReport }] = await Promise.all([import('./sync-auth.js'), import('./moderation.js')]);
+      const sdk = await getDatabaseHandle();
+      const out = await sendReport(sdk, { kind: 'raceChat', path: `rooms/${this.snap.roomId}/chat/${m.id}`, text: m.text });
+      toast(out === 'already' ? t('You have already reported that') : t('Reported. An admin will look at it.'));
+    } catch (err) {
+      console.warn('[race] report refused', err?.code || err);
+      toast(t('Couldn’t send the report'), { kind: 'bad' });
+    }
+  }
+
+  /** The box, or why there is no box (config/raceChat/enabled). */
+  _syncChatOff() {
+    const wrap = this._node?.querySelector('.race-chat');
+    if (!wrap) return;
+    const why = chatOff();
+    wrap.querySelector('.race-chat-form').hidden = !!why;
+    const note = wrap.querySelector('.race-chat-off');
+    note.hidden = !why;
+    if (why) note.textContent = why;
+  }
+
   _syncChat() {
     const node = this._node;
     const wrap = node?.querySelector('.race-chat');
     if (!wrap) return;
+    this._syncChatOff();
 
     const log = this.chatLog;
 
@@ -1328,6 +1377,13 @@ export class Race extends EventTarget {
         },
           runOn ? null : el('b', { class: 'race-chat-who', text: m.name || 'Cuber' }),
           el('span', { class: 'race-chat-text', text: m.text || '' }),
+          /* Reports need a Google account (reports/, ADMIN.md §6), and a race
+             identity is anonymous: so only with the timer's own sign-in. */
+          m.uid !== this.uid && hasPersistedSession() ? el('button', {
+            class: 'race-chat-report', type: 'button', html: FLAG_SVG,
+            title: t('Report this message'), 'aria-label': t('Report this message'),
+            onclick: () => this._report(m),
+          }) : null,
         );
         // setProperty, not the style object: Object.assign skips custom
         // properties, which is why every name would have come out the same hue.
@@ -1627,4 +1683,6 @@ export function getRace(app) {
    transport and the tuning constants stay an implementation detail. */
 export { cloudAvailable } from './race-net.js';
 export { ROOM_MAX } from './raceapp.js';
+/** The room size now: config/race/roomMax, at most ROOM_MAX. */
+export const roomMax = () => getConfig('race', 'roomMax');
 export { hueOf, initialsOf };

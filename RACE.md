@@ -68,6 +68,10 @@ No camera. No microphone. No screen recording. Ever. What there is:
 | `hash` must equal the round's `info/hash` | Claiming a time against a different, easier scramble |
 | `timeMs` checked against the server‑stamped solve window | Pausing the app and typing in a fabricated number afterwards |
 | `chat` writable only while `meta/phase` is not `'racing'` | Announcing your time to people who are still solving |
+| a message needs `chatLast/<uid>` at the server's `now` in the same update, and that some time after the last one | Flooding the room: 0.5 s apart by default, longer from the admin console |
+| no new room's `meta` while `config/race/enabled` is false | New rooms while race mode is switched off for maintenance; open rooms carry on |
+| no message from an account in `bans/` | An admin's ban, on a throwaway race account for as long as that tab keeps it |
+| an admin (Google, `admins/`) may delete any message or result, and read every room | Spam and fake times staying up: the admin console's Moderate tab ([ADMIN.md](ADMIN.md) §6) |
 
 The timing check compares your submitted time against the gap between the `startedAt` and
 `finishedAt` stamps written with `ServerValue.TIMESTAMP` — a clock the client cannot move.
@@ -138,6 +142,28 @@ player per round — no media — against an allowance of 100 simultaneous conne
 of transfer a month. Set a budget alert if you move to the paid tier. Check the current limits
 in the console rather than trusting these numbers indefinitely.
 
+The rest of the app is careful with that 100. The admin console ([ADMIN.md](ADMIN.md)) holds one
+connection per admin with it open. The app reads the settings it changes with a plain REST
+request, never a listener, so they cost no connection at all (ADMIN.md §3).
+
+### The admin console's switches and tuning
+
+The admin console ([ADMIN.md](ADMIN.md) §4) can switch off new rooms (`race.enabled`, with a
+message shown in this panel), switch off room chat (`raceChat.enabled`), and make the chat's rate
+limit slower (`raceChat.gapMs`, 500 ms at least) or its messages shorter (`raceChat.maxLen`, 200 at
+most). The rules read them. The room's tuning in `js/raceapp.js` (room size, the stragglers'
+grace, the timeouts, the presence heartbeat, reaping, the fold, and the ⚑ threshold) is the default
+of `config/race/*`, which the app reads instead; the room size can only go down from 24 and the
+heartbeat only slow from 15 s. The clock slack is not a setting: the rules hold the same numbers.
+Race rooms have no audience (ADMIN.md §9): race accounts are anonymous, so the server could not
+tell a tester from anybody. Race chat had no limit on the server before, only the client's 0.7 s
+cooldown; the rule is new, and a client on rules from before it sends the message the old way.
+
+A message from somebody else has a ⚑ to report it, when the browser is also signed in to the timer
+with Google: reports need a Google account, and a race identity is anonymous. The admin console
+lists every race room made in the last day, with its chat and its flagged times, and can take any
+of them down.
+
 ### Developing against the emulator
 
 To iterate on rules without touching a real project or burning quota:
@@ -146,7 +172,9 @@ To iterate on rules without touching a real project or burning quota:
 firebase emulators:start --only database,auth
 ```
 
-...then point `databaseURL` in `FIREBASE_CONFIG` at the emulator it prints.
+...then point `databaseURL` in `FIREBASE_CONFIG` at the emulator it prints. Or use
+`node tools/sotd-replay-dev.mjs` and `?emu=1` on localhost, which points race rooms at the
+emulators along with everything else (it used to leave them on the real project).
 
 ---
 
