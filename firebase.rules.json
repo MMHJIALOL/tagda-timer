@@ -118,6 +118,39 @@
           }
         },
 
+        "rtc": {
+          ".read": "auth != null && root.child('rooms/' + $roomId + '/players/' + auth.uid).exists()",
+          "$uid": {
+            ".write": "auth != null && auth.uid === $uid && (!newData.exists() || (root.child('rooms/' + $roomId + '/players/' + auth.uid).exists() && root.child('rooms/' + $roomId + '/meta/kind').val() === 'duel'))",
+            "media": {
+              "cam": { ".validate": "newData.isBoolean()" },
+              "mic": { ".validate": "newData.isBoolean()" },
+              "$other": { ".validate": false }
+            },
+            "desc": {
+              ".validate": "newData.hasChildren(['sid', 'type', 'sdp'])",
+              "sid":  { ".validate": "newData.isString() && newData.val().length <= 32" },
+              "type": { ".validate": "newData.isString() && newData.val().matches(/^(offer|answer)$/)" },
+              "sdp":  { ".validate": "newData.isString() && newData.val().length <= 20000" },
+              "$other": { ".validate": false }
+            },
+            "ice": {
+              "$sid": {
+                ".validate": "$sid.length <= 32",
+                "$c": {
+                  ".validate": "newData.hasChildren(['candidate'])",
+                  "candidate": { ".validate": "newData.isString() && newData.val().length <= 1000" },
+                  "sdpMid": { ".validate": "newData.isString() && newData.val().length <= 32" },
+                  "sdpMLineIndex": { ".validate": "newData.isNumber()" },
+                  "usernameFragment": { ".validate": "newData.isString() && newData.val().length <= 64" },
+                  "$other": { ".validate": false }
+                }
+              }
+            },
+            "$other": { ".validate": false }
+          }
+        },
+
         "players": {
           ".read": "auth != null",
           "$uid": {

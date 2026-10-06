@@ -3291,6 +3291,261 @@ body.focus #dock-bottom, body.focus #tile-float-layer { opacity: 0; pointer-even
   font-size: .7rem; border-radius: 8px;
 }
 
+/* ---------------- a 1v1's own view ----------------
+   One head-to-head card where a room has its status line, rows and
+   standings: you on the left, them on the right, the score between, and the
+   last round's result under it for the whole of the next round. */
+#panel-race .race-status[hidden],
+#panel-race .race-meter[hidden],
+#panel-race .race-board[hidden] { display: none; }
+
+.duel-board {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center; gap: 6px;
+  padding: 9px 8px 8px; border-radius: 12px;
+  background:
+    radial-gradient(90% 120% at 0% 50%, color-mix(in srgb, var(--accent) 16%, transparent), transparent 70%),
+    radial-gradient(90% 120% at 100% 50%, color-mix(in srgb, var(--accent-2) 12%, transparent), transparent 70%),
+    color-mix(in srgb, var(--text) 3%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--border));
+}
+.duel-board-side {
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  min-width: 0; text-align: center;
+}
+.duel-board-av {
+  width: 28px; height: 28px; border-radius: 50%;
+  display: grid; place-items: center;
+  font-size: .64rem; font-weight: 750; color: #fff;
+  background: hsl(var(--av-h, 260) 58% 42%);
+  box-shadow: inset 0 0 0 1.5px hsl(var(--av-h, 260) 58% 64% / .55);
+  transition: box-shadow .3s;
+}
+.duel-board-side[data-lead="true"] .duel-board-av {
+  box-shadow: inset 0 0 0 1.5px hsl(var(--av-h, 260) 58% 64% / .55), 0 0 0 2px var(--gold);
+}
+.duel-board-name {
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: .72rem; font-weight: 650; color: var(--text);
+}
+.duel-board-val {
+  font-size: .64rem; color: var(--text-faint); letter-spacing: .02em;
+  padding: 1px 7px; border-radius: 99px;
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+  font-variant-numeric: tabular-nums;
+}
+.duel-board-side[data-state="inspecting"] .duel-board-val { color: var(--warn); }
+.duel-board-side[data-state="solving"] .duel-board-val {
+  color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.duel-board-side[data-state="locked"] .duel-board-val {
+  color: var(--ok); background: color-mix(in srgb, var(--ok) 14%, transparent);
+}
+.duel-board-side[data-state="time"] .duel-board-val {
+  font-size: .86rem; font-weight: 750; color: var(--text); background: none; padding: 0;
+}
+.duel-board-side[data-state="dnf"] .duel-board-val { color: var(--danger); font-weight: 700; background: none; }
+.duel-board-mid { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 0 4px; }
+.duel-board-score {
+  display: flex; align-items: baseline; gap: 6px;
+  font-variant-numeric: tabular-nums; line-height: 1;
+}
+.duel-board-score b { font-size: 1.4rem; font-weight: 800; color: var(--text-dim); }
+.duel-board-score b[data-lead="true"] {
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.duel-board-score i { font-style: normal; font-size: 1rem; color: var(--text-faint); }
+.duel-board-round { font-size: .6rem; letter-spacing: .1em; text-transform: uppercase; color: var(--text-faint); }
+
+.duel-last {
+  display: flex; align-items: baseline; gap: 7px;
+  margin-top: 5px; padding: 5px 9px; border-radius: 9px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--text) 3%, transparent);
+  animation: duel-last-in .35s var(--ease) both;
+}
+.duel-last[data-winner="me"] {
+  border-color: color-mix(in srgb, var(--ok) 40%, var(--border));
+  background: color-mix(in srgb, var(--ok) 8%, transparent);
+}
+.duel-last[data-winner="them"] {
+  border-color: color-mix(in srgb, var(--danger) 35%, var(--border));
+  background: color-mix(in srgb, var(--danger) 7%, transparent);
+}
+.duel-last-k { flex: none; font-size: .6rem; font-weight: 700; letter-spacing: .06em; color: var(--text-faint); }
+.duel-last-h {
+  flex: 1 1 auto; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: .72rem; font-weight: 700; color: var(--text);
+}
+.duel-last[data-winner="me"] .duel-last-h { color: var(--ok); }
+.duel-last[data-winner="them"] .duel-last-h { color: var(--danger); }
+.duel-last-times {
+  flex: none; display: inline-flex; align-items: baseline; gap: 4px;
+  font-family: var(--font-mono); font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.duel-last-times span { font-size: .72rem; font-weight: 600; color: var(--text-faint); }
+.duel-last-times span[data-win="true"] { color: var(--text); font-weight: 800; }
+.duel-last-times i { font-style: normal; font-size: .62rem; color: var(--text-faint); }
+@keyframes duel-last-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .duel-last { animation: none; } }
+[data-motion="off"] .duel-last { animation: none; }
+
+/* A 1v1 is two people talking, not a room: the panel takes whatever the
+   rail has left, and the chat log is what grows into it — and, on a short
+   rail, the first thing to give it back, so the controls never leave the
+   screen. */
+#panel-race[data-duel="true"] { flex: 1 1 auto; }
+#panel-race[data-duel="true"] .race-body { flex: 1 1 auto; }
+#panel-race[data-duel="true"] .race-chat { flex: 1 1 auto; min-height: 104px; }
+#panel-race[data-duel="true"] .race-chat-log { flex: 1 1 auto; min-height: 48px; max-height: none; font-size: .8rem; gap: 4px; }
+/* The last resort, for a rail too short even with the log at its floor: the
+   panel's body scrolls, so Quit 1v1 can always be reached. */
+#panel-race[data-duel="true"] .race-body { overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+#panel-race[data-duel="true"] .race-chat-msg { padding: 4px 9px; border-radius: 10px; }
+#panel-race[data-duel="true"] .race-chat-msg[data-me="true"] { align-self: flex-end; max-width: 88%; }
+#panel-race[data-duel="true"] .race-chat-msg:not([data-me="true"]) {
+  align-self: flex-start; max-width: 88%;
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+}
+#panel-race[data-duel="true"] .race-chat-input { padding: 7px 10px; font-size: .8rem; }
+#panel-race[data-duel="true"] .race-chat-emoji,
+#panel-race[data-duel="true"] .race-chat-send { width: 32px; height: 32px; }
+
+/* ---- you vs them, in the stats panel ---- */
+.stats-duel {
+  margin: 8px 0 4px; padding: 10px; border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--border));
+  background:
+    radial-gradient(100% 90% at 0% 0%, color-mix(in srgb, var(--accent) 12%, transparent), transparent 65%),
+    color-mix(in srgb, var(--text) 2%, transparent);
+}
+.stats-duel-head {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+  font-size: .62rem; letter-spacing: .1em; text-transform: uppercase; color: var(--text-faint);
+  margin-bottom: 6px;
+}
+.stats-duel-head .sd-vs { text-transform: none; letter-spacing: 0; font-size: .72rem; color: var(--text-dim); font-weight: 600; }
+/* Folded, the panel's six-figure peek gives way to this table in a 1v1: its
+   "You" row is the same figures for this match, and the height goes to the
+   race panel's chat. Opening the panel still shows everything. */
+body.duel-on #panel-stats[data-collapsed="true"] .stats-peek { display: none; }
+body.duel-on #panel-stats > .stats-duel { margin-top: 10px; }
+
+/* It is the part of the stats panel that gives way: a short rail scrolls this
+   box rather than clipping its last line off. */
+#panel-stats > .stats-duel { flex: 0 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.stats-duel-grid {
+  display: grid; grid-template-columns: minmax(0, 1.25fr) repeat(5, minmax(0, 1fr));
+  column-gap: 6px; row-gap: 3px; align-items: baseline;
+  font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+}
+.sd-h {
+  font-family: var(--font-ui, inherit);
+  font-size: .56rem; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--text-faint); text-align: right;
+}
+.sd-who {
+  font-family: var(--font-ui, inherit);
+  font-size: .68rem; font-weight: 700; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.sd-who[data-who="them"] { color: var(--text-dim); }
+.sd-v { font-size: .7rem; font-weight: 600; color: var(--text-dim); text-align: right; white-space: nowrap; }
+.sd-v[data-ahead="true"] { color: var(--ok); font-weight: 750; }
+.stats-duel-list {
+  margin-top: 8px; padding-top: 7px; border-top: 1px solid var(--border);
+  display: flex; gap: 4px;
+  overflow-x: auto; overscroll-behavior: contain; scrollbar-width: thin;
+}
+.sd-round {
+  flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 1px;
+  min-width: 46px; padding: 4px 6px; border-radius: 8px;
+  font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+  background: color-mix(in srgb, var(--text) 4%, transparent);
+  border: 1px solid transparent;
+}
+.sd-round[data-winner="me"] { border-color: color-mix(in srgb, var(--ok) 35%, transparent); }
+.sd-round[data-winner="them"] { border-color: color-mix(in srgb, var(--danger) 30%, transparent); }
+.sd-no { align-self: flex-start; font-size: .56rem; color: var(--text-faint); }
+.sd-t { font-size: .7rem; color: var(--text-faint); }
+.sd-t[data-win="true"] { color: var(--text); font-weight: 750; }
+.sd-round[data-winner="me"] .sd-t[data-win="true"] { color: var(--ok); }
+.sd-empty { font-size: .66rem; color: var(--text-faint); padding: 2px 0; }
+
+/* ---------------- 1v1 cam and mic (race-cam.js) ----------------
+   Their camera large, yours small in the corner, two switches under it. The
+   stage only takes room once somebody is sending; until then it is the two
+   switches and a line saying both are off. */
+.race-cam { margin-top: 4px; display: flex; flex-direction: column; gap: 8px; }
+.race-cam[hidden] { display: none; }
+.cam-stage {
+  position: relative; aspect-ratio: 16 / 9; width: 100%;
+  border-radius: 10px; overflow: hidden;
+  background:
+    radial-gradient(120% 100% at 0% 0%, color-mix(in srgb, var(--accent) 18%, transparent), transparent 60%),
+    #07070d;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text) 10%, transparent);
+}
+.cam-stage[hidden] { display: none; }
+.cam-remote {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  object-fit: cover; visibility: hidden;
+}
+/* Shown only once you have said yes to it, and only while they send a picture. */
+.race-cam[data-revealed="true"][data-remote-cam="true"] .cam-remote { visibility: visible; }
+.cam-cover {
+  position: absolute; inset: 0; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 8px;
+  padding: 10px; text-align: center;
+}
+.cam-cover[hidden] { display: none; }
+.cam-cover-text {
+  font-size: .72rem; line-height: 1.4; color: var(--text-dim);
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.cam-cover-text.dim { color: var(--text-faint); }
+.cam-cover-text svg { width: 14px; height: 14px; }
+.cam-show { height: 26px; padding: 0 14px; font-size: .72rem; border-radius: 8px; }
+.cam-self {
+  position: absolute; right: 6px; bottom: 6px; width: 30%;
+  aspect-ratio: 16 / 9; object-fit: cover; border-radius: 6px;
+  transform: scaleX(-1);   /* a mirror, which is what people expect of themselves */
+  box-shadow: 0 0 0 1.5px color-mix(in srgb, #fff 55%, transparent), 0 4px 14px rgb(0 0 0 / .45);
+}
+.cam-self[hidden] { display: none; }
+.cam-status {
+  position: absolute; left: 6px; top: 6px; max-width: calc(100% - 44px);
+  font-size: .62rem; line-height: 1.35; color: #fff;
+  padding: 3px 7px; border-radius: 6px; background: rgb(0 0 0 / .55);
+}
+.cam-status[hidden] { display: none; }
+.cam-retry { color: var(--accent-2); font-weight: 650; text-decoration: underline; }
+.cam-hide {
+  position: absolute; right: 6px; top: 6px;
+  width: 26px; height: 26px; border-radius: 50%;
+  display: grid; place-items: center; color: #fff; background: rgb(0 0 0 / .5);
+}
+.cam-hide[hidden] { display: none; }
+.cam-hide svg { width: 14px; height: 14px; }
+.cam-bar { display: flex; gap: 6px; }
+.cam-btn {
+  flex: 1; min-width: 0; height: 30px; border-radius: 8px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  font-size: .7rem; font-weight: 600; color: var(--text-dim);
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--text) 4%, transparent);
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+}
+.cam-btn svg { width: 15px; height: 15px; flex: none; }
+.cam-btn:hover { color: var(--text); border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); }
+.cam-btn[data-on="true"] {
+  color: #fff; border-color: transparent;
+  background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 55%, var(--accent-2)));
+}
+.cam-btn:disabled { opacity: .6; cursor: progress; }
+
 /* ---------------- the drawer ---------------- */
 .race-hero {
   display: flex; align-items: flex-start; gap: 12px;

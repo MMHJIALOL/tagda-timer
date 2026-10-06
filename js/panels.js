@@ -3023,7 +3023,7 @@ export function buildRace(app) {
               el('div', { class: 'duel-vs' }, meAv, el('span', { class: 'duel-x', text: 'VS' }), them),
               el('div', { class: 'duel-copy' }, el('div', { class: 'duel-title', text: copy[0] }), sub),
               ...(action || []),
-              el('div', { class: 'duel-fine', text: t('Chat goes only to your opponent.') }),
+              el('div', { class: 'duel-fine', text: t('Chat goes only to your opponent. Cam and mic are optional and off until you turn them on.') }),
             ),
           ));
         };
@@ -3115,7 +3115,7 @@ export function buildRace(app) {
         ], S.racePrefer, v => set('racePrefer', v)),
           t('“This browser” races other tabs on this machine — useful for testing')) : null,
         el('div', { class: 'hint-note', text:
-          t('Race mode never asks for a camera or a microphone. What it does check: the time you submit is bound to the exact scramble it was solved on, it can only be written once, and it is compared against the window the server itself timed it in.') }),
+          t('Rooms never ask for a camera or a microphone, and a random 1v1 only uses yours if you turn it on. What race mode does check: the time you submit is bound to the exact scramble it was solved on, it can only be written once, and it is compared against the window the server itself timed it in.') }),
       ));
     };
 

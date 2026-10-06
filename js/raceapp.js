@@ -148,6 +148,32 @@ export const MATCH_SHOWUP_MS = 15000;
 export const DUEL_GONE_MS = 10000;
 
 /* ---------------------------------------------------------
+   1v1 cam and mic (RACE.md §9)
+   --------------------------------------------------------- */
+
+/**
+ * How two browsers find a way to each other. STUN only, and free: it is
+ * enough for most home and office networks, and the video then goes straight
+ * between the two players and costs nothing to anybody. Roughly one pair in
+ * five sits behind networks that will not let that happen (strict NATs, some
+ * mobile carriers); those need a TURN relay, which carries the whole stream
+ * and is billed by the gigabyte, so none is configured. Add one here —
+ * { urls: 'turn:…', username, credential } — and those pairs connect too.
+ */
+export const RTC_ICE_SERVERS = [
+  { urls: ['stun:stun.l.google.com:19302', 'stun:stun.cloudflare.com:3478'] },
+];
+
+/** What a camera is asked for: small, because it is a tile in a side panel. */
+export const CAM_VIDEO = { width: { ideal: 640 }, height: { ideal: 360 }, frameRate: { ideal: 24 } };
+
+/** Ceiling on the video sent, so a 1v1 never competes with the timer for the uplink. */
+export const CAM_MAX_BITRATE = 600_000;
+
+/** Times the connection is retried from scratch before the tile says it could not connect. */
+export const CAM_RETRIES = 3;
+
+/* ---------------------------------------------------------
    Anti-cheat tuning
    --------------------------------------------------------- */
 
