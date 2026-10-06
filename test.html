@@ -3137,6 +3137,11 @@ if (typeof VideoEncoder !== 'function' || typeof VideoDecoder !== 'function') {
   }
 }
 
+
+try {
+  const { runDataHealthChecks } = await import('./js/data-health.test.js');
+  await runDataHealthChecks(check);
+} catch (error) { check('Data Health checks', false, error.message); }
 document.getElementById('summary').textContent =
   fail === 0 ? `All ${pass} checks passed.` : `${pass} passed, ${fail} FAILED.`;
 document.getElementById('summary').style.color = fail === 0 ? '#3ddc84' : '#ff4d6d';

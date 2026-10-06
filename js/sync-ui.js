@@ -10,8 +10,9 @@ import { t } from './i18n.js';
 import { el } from './util.js';
 import { toast } from './toast.js';
 import { popover } from './popover.js';
-import { onAuthChange, signIn, signOutUser } from './sync-auth.js';
-import { initSync, syncNow } from './sync.js';
+import { onAuthChange, signIn, signOutUser, currentUser } from './sync-auth.js';
+import { initSync, syncNow, getSyncStatus, onSyncStatus } from './sync.js';
+import { cloudCopy } from './data-health.js';
 import { KV, onWrite } from './db.js';
 import { safeAvatar } from './faces.js';
 
@@ -42,7 +43,7 @@ onWrite('kv', ({ key, value }) => {
   _username = (value?.raceName || '').trim();
   _avatar = safeAvatar(value?.avatar);
 });
-refreshUsername();
+refreshUsername().catch(() => {});
 
 function displayNameOf(user) {
   return _username || user?.displayName || user?.email || t('Signed in');
@@ -80,7 +81,7 @@ export function showMergeDialog({ localCount, cloudCount, totalCount, email, con
       }
       scrim.remove();
       card.remove();
-      toast(`Merged — ${totalCount} solves synced`, { kind: 'good' });
+      toast(t('Merged — {n} solves on this device', { n: totalCount }));
       resolve();
     });
     document.body.append(scrim, card);
@@ -110,12 +111,20 @@ export function autoStart() {
  * keeps that from accumulating a listener per open for the life of the page.
  */
 let _activeUnsub = null;
+let _accountRowGeneration = 0;
+export function disposeAccountRow() {
+  _accountRowGeneration++;
+  _activeUnsub?.(); _activeUnsub = null;
+}
+
+
 
 /** The "Account" row for the settings drawer. Rebuilds itself on auth changes. */
 export function buildAccountRow() {
   const wrap = el('div', { class: 'row' });
 
-  if (_activeUnsub) { _activeUnsub(); _activeUnsub = null; }
+  disposeAccountRow();
+  const generation = _accountRowGeneration;
   const myUnsubPromise = onAuthChange((user) => {
     if (!wrap.isConnected) return; // this row's drawer has since been rebuilt/closed
     wrap.innerHTML = '';
@@ -149,7 +158,9 @@ export function buildAccountRow() {
     }
   });
 
-  myUnsubPromise.then((unsub) => { _activeUnsub = unsub; });
+  myUnsubPromise.then(unsub => {
+    if (generation !== _accountRowGeneration) unsub(); else _activeUnsub = unsub;
+  }).catch(() => {});
   autoStart();
   return wrap;
 }
@@ -182,9 +193,9 @@ async function syncNowAndSay(btn) {
   btn.disabled = true;
   btn.textContent = t('syncing…');
   try {
-    const pending = await syncNow();
-    if (pending) toast(t('Synced — {n} changes still waiting to upload', { n: pending }));
-    else toast(t('Synced'), { kind: 'good' });
+    await syncNow();
+    const status = getSyncStatus();
+    toast(cloudCopy(status), { kind: status.state === 'up-to-date' ? 'good' : '' });
   } catch (err) {
     console.warn('[sync] manual sync failed', err?.code || err);
     toast(t('Could not sync — check your connection and try again'), { kind: 'bad' });
@@ -222,6 +233,12 @@ function renderAccountButton(btn, user) {
     btn.title = t('Sign in to sync your solves');
     btn.append(el('span', { class: 'account-glyph', html: ACCOUNT_ICON }));
   }
+  const status = getSyncStatus();
+  const attention = !!user && status.needsAttention;
+  if (attention) btn.append(el('span', { class: 'account-status-dot', 'aria-hidden': 'true' }));
+  const label = attention ? t('Account; {status}', { status: cloudCopy(status) }) : t('Account');
+  btn.setAttribute('aria-label', label);
+  if (attention) btn.title = label;
 }
 
 /**
@@ -319,13 +336,28 @@ function changeAvatar(btn, setSetting) {
  * up separately (faces.js): their rows carry only the Google photo, since
  * their rules accept googleusercontent URLs and nothing else.
  */
-export function wireAccountButton(btn, { setSetting } = {}) {
+export function wireAccountButton(btn, { setSetting, viewDataHealth } = {}) {
   if (btn.dataset.wired) { autoStart(); return; }
   btn.dataset.wired = '1';
   _accountBtn = btn;
   _accountSet = setSetting;
+  _viewDataHealth = viewDataHealth;
 
-  onAuthChange(async (user) => { await refreshUsername(); renderAccountButton(btn, user); });
+  onAuthChange(async user => {
+    const generation = ++_buttonAuthGeneration;
+    renderAccountButton(btn, user);
+    await refreshUsername().catch(() => {});
+    if (generation === _buttonAuthGeneration) renderAccountButton(btn, user);
+  }).catch(() => {});
+  let warned = false;
+  onSyncStatus(status => {
+    renderAccountButton(btn, currentUser());
+    if (status.state === 'error' || (status.state === 'retrying' && navigator.onLine !== false)) {
+      if (!warned) toast('Cloud sync needs attention — view Data Health', { kind: 'warn', action: 'View details', onAction: viewDataHealth });
+      warned = true;
+    } else if (['up-to-date', 'signed-out'].includes(status.state)) warned = false;
+  });
+
   onWrite('kv', ({ key }) => { if (key === 'settings' && _topBarUser) renderAccountButton(btn, _topBarUser); });
 
   btn.addEventListener('click', () => {
@@ -337,6 +369,8 @@ export function wireAccountButton(btn, { setSetting } = {}) {
   autoStart();
 }
 
+let _buttonAuthGeneration = 0;
+let _viewDataHealth = null;
 let _accountBtn = null;
 let _accountSet = null;
 
@@ -352,6 +386,7 @@ export function accountMenu() {
     name: displayNameOf(_topBarUser),
     email: _topBarUser.email || '',
     items: [
+      ...(getSyncStatus().needsAttention ? [{ label: t('View Data Health'), onSelect: _viewDataHealth }] : []),
       { label: t('Edit username'), onSelect: () => editUsername(btn, setSetting) },
       { label: t('Change profile picture'), onSelect: () => changeAvatar(btn, setSetting) },
       ..._avatar ? [{ label: t('Remove profile picture'), onSelect: () => saveAvatar(btn, setSetting, '') }] : [],

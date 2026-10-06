@@ -32,15 +32,15 @@
      import hint in Settings over a main.js that has never heard of CubeDesk.
      vercel.json also serves /css/ as `max-age=31536000, immutable`, so a
      stylesheet there will not even be asked about for a year without it. -->
-<link rel="modulepreload" href="js/main.js?v=98">
-<link rel="stylesheet" href="css/fonts.css?v=98">
-<link rel="stylesheet" href="css/tokens.css?v=98">
-<link rel="stylesheet" href="css/base.css?v=98">
-<link rel="stylesheet" href="css/components.css?v=98">
-<link rel="stylesheet" href="css/announce.css?v=98">
+<link rel="modulepreload" href="js/main.js?v=99">
+<link rel="stylesheet" href="css/fonts.css?v=99">
+<link rel="stylesheet" href="css/tokens.css?v=99">
+<link rel="stylesheet" href="css/base.css?v=99">
+<link rel="stylesheet" href="css/components.css?v=99">
+<link rel="stylesheet" href="css/announce.css?v=99">
 <!-- Phones only: the same query as js/phone.js. A desktop or tablet never
      applies a rule from it, and does not wait on it to paint. -->
-<link rel="stylesheet" href="css/phone.css?v=98" media="(max-width: 640px)">
+<link rel="stylesheet" href="css/phone.css?v=99" media="(max-width: 640px)">
 <link rel="icon" href="assets/favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="assets/logo-192.png">
 <link rel="apple-touch-icon" href="assets/logo-180.png">
@@ -759,6 +759,10 @@
   </div>
 </div>
 
+<div id="local-save-warning" class="local-save-warning" role="status" hidden>
+  <span>Could not save on this device — retry or export before leaving.</span>
+  <button id="local-save-details" class="ghost-btn">View Data Health</button>
+</div>
 <!-- toasts -->
 <div id="toasts"></div>
 
@@ -785,7 +789,7 @@
   </div>
 </div>
 
-<script type="module" src="js/main.js?v=98"></script>
+<script type="module" src="js/main.js?v=99"></script>
 <script>
 (function () {
   var isFile = location.protocol === 'file:';

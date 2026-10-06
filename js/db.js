@@ -10,6 +10,81 @@ const DB_NAME = 'tagdatimer';
 const DB_VER  = 4;
 let _db = null;
 
+// Health follows transaction completion, never an IDBRequest's success event.
+const completions = new WeakMap();
+const localListeners = new Set();
+const localErrors = new Map();
+const storageFailures = new WeakSet();
+let localPending = 0, lastWrite = null;
+const RECOVERY_KEY = 'tagda:unsaved';
+const recovery = new Map();
+try {
+  lastWrite = Number(localStorage.getItem('tagda:lastLocalWrite')) || null;
+  for (const entry of JSON.parse(localStorage.getItem(RECOVERY_KEY) || '[]')) {
+    if (['solves', 'sessions'].includes(entry.store) && entry.id) recovery.set(`${entry.store}:${entry.id}`, entry);
+  }
+} catch { /* Storage may be unavailable; the page still retains unsaved rows. */ }
+
+export function getLocalStatus() {
+  return Object.freeze({
+    state: localErrors.size || recovery.size ? 'error' : localPending ? 'saving' : lastWrite ? 'saved' : 'unknown',
+    lastWrite, pending: localPending, unsaved: recovery.size,
+    quotaError: [...localErrors.values()].some(e => e?.name === 'QuotaExceededError'),
+  });
+}
+export function onLocalStatus(fn) {
+  localListeners.add(fn); fn(getLocalStatus());
+  return () => localListeners.delete(fn);
+}
+function notifyLocal() { for (const fn of localListeners) { try { fn(getLocalStatus()); } catch (e) { console.warn('[db] health listener', e); } } }
+function saveRecovery() {
+  try {
+    if (recovery.size) localStorage.setItem(RECOVERY_KEY, JSON.stringify([...recovery.values()]));
+    else localStorage.removeItem(RECOVERY_KEY);
+  } catch { /* beforeunload warns if this emergency journal cannot be saved. */ }
+  notifyLocal();
+}
+function overlay(store, rows) {
+  const byId = new Map(rows.map(r => [r.id, r]));
+  for (const r of recovery.values()) if (r.store === store) {
+    if (r.value === null) byId.delete(r.id); else byId.set(r.id, r.value);
+  }
+  return [...byId.values()];
+}
+export function exportRecovery() {
+  // Without the complete set snapshot, competition copies must be ordinary
+  // practice records with new IDs so recovery cannot corrupt set membership.
+  const solves = overlay('solves', []).map(solve => {
+    if (!solve.competitionSetId) return solve;
+    const copy = { ...solve, id: `recovered-${solve.id}`, recoverySourceId: solve.id };
+    delete copy.competitionSetId; delete copy.competitionAttempt; delete copy.competitionTiming;
+    return copy;
+  });
+  const sessions = new Map(overlay('sessions', []).map(s => [s.id, s]));
+  // A recovery-only export must remain importable even if the database can't
+  // be read. Otherwise its solves would reference a missing session.
+  for (const solve of solves) if (!sessions.has(solve.sessionId)) {
+    sessions.set(solve.sessionId, { id: solve.sessionId, name: t('Recovered session'),
+      event: solve.event || '333', createdAt: solve.createdAt || Date.now() });
+  }
+  return { app: 'tagdatimer', version: 1, exportedAt: Date.now(),
+    sessions: [...sessions.values()], solves,
+    recoveryOnly: true };
+}
+export const hasUnsavedLocalChange = (store, id) => recovery.has(`${store}:${id}`);
+export async function retryLocalWrites() {
+  for (const r of [...recovery.values()]) {
+    const store = r.store === 'solves' ? Solves : Sessions;
+    await (r.value === null ? store.del(r.id) : store.put(r.value));
+  }
+}
+if (typeof window !== 'undefined') window.addEventListener('beforeunload', e => {
+  if (!recovery.size && !localErrors.size) return;
+  e.preventDefault(); e.returnValue = '';
+});
+
+
+
 function openDB() {
   if (_db) return Promise.resolve(_db);
   return new Promise((resolve, reject) => {
@@ -69,12 +144,44 @@ function openDB() {
 /* Exported so a store can live in its own module without opening a second
    connection to the same database — gear.js owns the gear stores, this file
    still owns the schema, because the version number is one number. */
-export function tx(store, mode = 'readonly') {
-  return openDB().then(db => db.transaction(store, mode).objectStore(store));
+export function tx(store, mode = 'readonly', { health = true } = {}) {
+  const tracked = mode === 'readwrite' && health;
+  if (tracked) { localPending++; notifyLocal(); }
+  return openDB().then(db => {
+    const transaction = db.transaction(store, mode);
+    const done = new Promise((resolve, reject) => {
+      transaction.addEventListener('complete', () => {
+        if (tracked) {
+          localPending--; lastWrite = Date.now();
+          if (![...recovery.values()].some(r => r.store === store)) localErrors.delete(store);
+          try { localStorage.setItem('tagda:lastLocalWrite', String(lastWrite)); } catch {}
+          notifyLocal();
+        }
+        resolve();
+      });
+      transaction.addEventListener('abort', () => {
+        const error = transaction.error || new Error('Local transaction aborted');
+        storageFailures.add(error);
+        if (tracked) { localPending--; localErrors.set(store, error); notifyLocal(); }
+        reject(error);
+      });
+    });
+    done.catch(() => {}); // Some callers don't wrap a request (e.g. a clear).
+    completions.set(transaction, done);
+    return transaction.objectStore(store);
+  }).catch(error => {
+    storageFailures.add(error);
+    if (tracked) { localPending--; localErrors.set(store, error); notifyLocal(); }
+    throw error;
+  });
 }
 
 export const wrap = (req) => new Promise((res, rej) => {
-  req.onsuccess = () => res(req.result);
+  req.onsuccess = () => {
+    const transaction = req.transaction || req.source?.transaction || req.source?.objectStore?.transaction;
+    const done = transaction?.mode === 'readwrite' ? completions.get(transaction) : null;
+    if (done) done.then(() => res(req.result), rej); else res(req.result);
+  };
   req.onerror = () => rej(req.error);
 });
 
@@ -125,6 +232,7 @@ const TOMBSTONE_TTL_MS = 90 * 24 * 60 * 60 * 1000;
    first attach after a sign-in replays the entire history at once. */
 let _tomb = null;
 let _tombPromise = null;
+let _tombRevision = 0, _tombSavedRevision = 0;
 
 function loadTombstones() {
   if (_tomb) return Promise.resolve(_tomb);
@@ -132,7 +240,7 @@ function loadTombstones() {
     const raw = (await wrap((await tx('kv')).get(TOMBSTONE_KEY))) || {};
     _tomb = { ...raw, solves: raw.solves || {}, sessions: raw.sessions || {} };
     return _tomb;
-  })();
+  })().catch(error => { _tombPromise = null; throw error; });
   return _tombPromise;
 }
 
@@ -141,14 +249,17 @@ function loadTombstones() {
    write hook. Concurrent callers all mutate the one in-memory object
    synchronously before awaiting, so the last write out carries every
    change rather than clobbering a sibling's. */
-function saveTombstones() {
-  return tx('kv', 'readwrite').then(store => wrap(store.put(_tomb, TOMBSTONE_KEY)));
+async function saveTombstones() {
+  const store = await tx('kv', 'readwrite', { health: false });
+  const revision = _tombRevision;
+  await wrap(store.put(_tomb, TOMBSTONE_KEY));
+  _tombSavedRevision = Math.max(_tombSavedRevision, revision);
 }
 
 export const Tombstones = {
   async refresh() { _tomb = null; _tombPromise = null; return loadTombstones(); },
   async all() { return loadTombstones(); },
-  async has(store, id) { return !!(await loadTombstones())[store]?.[id]; },
+  async has(store, id) { return recovery.get(`${store}:${id}`)?.value === null || !!(await loadTombstones())[store]?.[id]; },
 
   async record(store, ids) {
     const t = await loadTombstones();
@@ -156,7 +267,8 @@ export const Tombstones = {
     const now = Date.now();
     let changed = false;
     for (const id of ids) if (!t[store][id]) { t[store][id] = now; changed = true; }
-    if (changed) await saveTombstones();
+    if (changed) _tombRevision++;
+    if (_tombRevision !== _tombSavedRevision) await saveTombstones();
   },
 
   /* A row written back is a row that is wanted again — undo, a re-import, a
@@ -166,7 +278,8 @@ export const Tombstones = {
     const t = await loadTombstones();
     let changed = false;
     for (const id of ids) if (t[store]?.[id]) { delete t[store][id]; changed = true; }
-    if (changed) await saveTombstones();
+    if (changed) _tombRevision++;
+    if (_tombRevision !== _tombSavedRevision) await saveTombstones();
   },
 
   /* Notes old enough that every device has long since seen the removal are
@@ -181,7 +294,8 @@ export const Tombstones = {
         if (now - at > TOMBSTONE_TTL_MS) { delete t[store][id]; changed = true; }
       }
     }
-    if (changed) await saveTombstones();
+    if (changed) _tombRevision++;
+    if (_tombRevision !== _tombSavedRevision) await saveTombstones();
   },
 };
 
@@ -239,11 +353,11 @@ export const Solves = {
   async bySession(sessionId) {
     const store = await tx('solves');
     const list = await wrap(store.index('bySession').getAll(sessionId));
-    return list.sort((a, b) => a.createdAt - b.createdAt);
+    return overlay('solves', list).filter(s => s.sessionId === sessionId).sort((a, b) => a.createdAt - b.createdAt);
   },
   async all() {
     const list = await wrap((await tx('solves')).getAll());
-    return list.sort((a, b) => a.createdAt - b.createdAt);
+    return overlay('solves', list).sort((a, b) => a.createdAt - b.createdAt);
   },
   async clearSession(sessionId) {
     for (const set of (await CompetitionSets.all()).filter(s => s.sessionId === sessionId)) await CompetitionSets.delete(set.id);
@@ -271,7 +385,64 @@ export const Sessions = {
   },
   async all()   {
     const list = await wrap((await tx('sessions')).getAll());
-    return list.sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.createdAt - b.createdAt);
+    return overlay('sessions', list).sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.createdAt - b.createdAt);
+  },
+};
+
+// Keep failed solve/session mutations available to the list and full export.
+// The emergency journal survives refresh when localStorage is still writable.
+const mutationVersions = new Map();
+for (const [name, api] of [['solves', Solves], ['sessions', Sessions]]) {
+  for (const method of ['put', 'putMany', 'del', 'delMany']) {
+    if (!api[method]) continue;
+    const original = api[method];
+    api[method] = async function (arg) {
+      const values = method.endsWith('Many') ? arg : [arg];
+      const entries = values.map(value => {
+        const id = method.startsWith('put') ? value.id : value;
+        const key = `${name}:${id}`;
+        const version = (mutationVersions.get(key) || 0) + 1;
+        mutationVersions.set(key, version);
+        return { key, version, entry: { store: name, id, value: method.startsWith('put') ? structuredClone(value) : null } };
+      });
+      try {
+        const result = await original.call(this, arg);
+        for (const { key, version } of entries) if (mutationVersions.get(key) === version) recovery.delete(key);
+        if (![...recovery.values()].some(r => r.store === name)) localErrors.delete(name);
+        if (entries.length) saveRecovery();
+        return result;
+      } catch (error) {
+        if (!storageFailures.has(error) && !(error instanceof DOMException)) throw error;
+        localErrors.set(name, error);
+        for (const { key, version, entry } of entries) if (mutationVersions.get(key) === version) recovery.set(key, entry);
+        saveRecovery();
+        throw error;
+      }
+    };
+  }
+  const originalGet = api.get;
+  api.get = async id => recovery.has(`${name}:${id}`) ? recovery.get(`${name}:${id}`).value : originalGet.call(api, id);
+}
+
+// Bookkeeping is deliberately outside KV's write hook and normal health writes.
+export const LocalMetadata = {
+  get: (key, fallback = null) => KV.get(key, fallback),
+  async set(key, value) {
+    return wrap((await tx('kv', 'readwrite', { health: false })).put(value, key));
+  },
+  async updateQueue(change) {
+    // One readwrite transaction also serializes queue mutations across tabs.
+    const store = await tx('kv', 'readwrite', { health: false });
+    return new Promise((resolve, reject) => {
+      const request = store.get('_syncQueue');
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => {
+        try {
+          const entries = change(request.result || []);
+          wrap(store.put(entries, '_syncQueue')).then(() => resolve(entries), reject);
+        } catch (error) { reject(error); }
+      };
+    });
   },
 };
 
@@ -352,8 +523,8 @@ export async function exportAll() {
     app: 'tagdatimer',
     version: 2,
     exportedAt: Date.now(),
-    sessions: sessions.sort((a,b)=>(a.order??0)-(b.order??0)||a.createdAt-b.createdAt),
-    solves: solves.sort((a,b)=>a.createdAt-b.createdAt),
+    sessions: overlay('sessions', sessions).sort((a,b)=>(a.order??0)-(b.order??0)||a.createdAt-b.createdAt),
+    solves: overlay('solves', solves).sort((a,b)=>a.createdAt-b.createdAt),
     competitionSets: sets.map(normalizeCompetition).sort((a,b)=>b.createdAt-a.createdAt),
     settings: await KV.get('settings', {}),
     letterPairs: await LetterPairs.all(),
@@ -463,13 +634,38 @@ export async function importAll(data, { merge = true } = {}) {
 /* Transactions resolve only after commit, not after the last request. Any
    guard failure aborts the entire operation, including writes already queued. */
 async function atomic(stores, fn) {
-  const tr = (await openDB()).transaction(stores, 'readwrite');
+  localPending++; notifyLocal();
+  let tr, finished = false;
+  const finish = error => {
+    if (finished) return;
+    finished = true; localPending--;
+    if (error) {
+      storageFailures.add(error);
+      for (const store of stores) localErrors.set(store, error);
+    }
+    else {
+      lastWrite = Date.now();
+      for (const store of stores) if (![...recovery.values()].some(r => r.store === store)) localErrors.delete(store);
+      try { localStorage.setItem('tagda:lastLocalWrite', String(lastWrite)); } catch {}
+    }
+    notifyLocal();
+  };
+  try { tr = (await openDB()).transaction(stores, 'readwrite'); }
+  catch (error) { finish(error); throw error; }
   const done = new Promise((resolve, reject) => {
     tr.oncomplete = resolve;
-    tr.onabort = tr.onerror = () => reject(tr.error || new Error('Transaction aborted'));
+    tr.onabort = tr.onerror = () => reject(tr.error || new DOMException('Transaction aborted', 'AbortError'));
   });
-  try { const value = await fn(tr); await done; return value; }
-  catch (err) { try { tr.abort(); } catch {} await done.catch(() => {}); throw err; }
+  done.catch(() => {});
+  try { const value = await fn(tr); await done; finish(); return value; }
+  catch (error) {
+    try { tr.abort(); } catch {}
+    await done.catch(() => {});
+    // Validation errors abort intentionally; they are not a storage failure.
+    if (error instanceof DOMException || tr.error) finish(error);
+    else { finished = true; localPending--; notifyLocal(); }
+    throw error;
+  }
 }
 
 export function normalizeCompetition(c) {
@@ -559,6 +755,13 @@ export const CompetitionSets = {
     });
     if (result) {
       _tomb = tomb;
+      for (const sid of result.ids) {
+        const key = `solves:${sid}`;
+        mutationVersions.set(key, (mutationVersions.get(key) || 0) + 1);
+        recovery.delete(key);
+      }
+      if (![...recovery.values()].some(r => r.store === 'solves')) localErrors.delete('solves');
+      saveRecovery();
       emit('competition', { deleted: result });
     }
     return result;
