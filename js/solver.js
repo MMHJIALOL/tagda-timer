@@ -134,6 +134,49 @@ function pairTable(corner, edge) {
   return dist;
 }
 
+const setCache = new Map();
+
+/**
+ * Distance for a set of corners, or a set of edges, ignoring everything else.
+ * Four of them is 24^4 = 331,776 entries, built once per set.
+ *
+ * The pair tables are each a fair bound on their own, and the largest of them
+ * is still a poor bound on a last slot. With the pair in its slot the wrong
+ * way round, every pair alone is a few moves from home, but keeping all four
+ * in at once takes nine. Asked of the four corners together and the four
+ * edges together, the search walks a fifteenth of the tree it did, which is
+ * the difference between finding those nine moves and running out of budget.
+ */
+function setTable(corners, pieces) {
+  const key = (corners ? 'c' : 'e') + pieces;
+  if (setCache.has(key)) return setCache.get(key);
+  const n = corners ? 8 : 12, t = corners ? 3 : 2;
+  const TO = corners ? CORNER_TO : EDGE_TO, TURN = corners ? CORNER_TWIST : EDGE_FLIP;
+  const k = pieces.length;
+  const dist = new Uint8Array((n * t) ** k).fill(255);
+  let start = 0;
+  for (const p of pieces) start = (start * n + p) * t;
+  dist[start] = 0;
+  const at = new Uint8Array(k), ori = new Uint8Array(k);
+  let frontier = [start];
+  for (let d = 0; frontier.length; d++) {
+    const next = [];
+    for (const idx of frontier) {
+      let x = idx;
+      for (let i = k - 1; i >= 0; i--) { ori[i] = x % t; x = (x / t) | 0; at[i] = x % n; x = (x / n) | 0; }
+      for (let m = 0; m < 18; m++) {
+        const to = TO[m], turn = TURN[m];
+        let ni = 0;
+        for (let i = 0; i < k; i++) ni = (ni * n + to[at[i]]) * t + (ori[i] + turn[at[i]]) % t;
+        if (dist[ni] === 255) { dist[ni] = d + 1; next.push(ni); }
+      }
+    }
+    frontier = next;
+  }
+  setCache.set(key, dist);
+  return dist;
+}
+
 /* =========================================================
    Depth-first enumeration
    ========================================================= */
@@ -585,6 +628,12 @@ export function suggest(state, frame, analysis, { limit = 20, timeMs = 1500, cro
     if (performance.now() - started > timeMs) { out.partial = true; break; }
     const pd = pairTable(slot.corner, slot.edge);
     const pairs = [{ corner: slot.corner, edge: slot.edge, pd }, ...keep];
+    /* Once a pair is in, also every corner that has to end up home, together,
+       and every edge. See setTable for why the pairs alone are not enough. */
+    const cs = pairs.map(q => q.corner).sort((a, b) => a - b);
+    const es = pairs.map(q => q.edge).sort((a, b) => a - b);
+    const ct = keep.length ? setTable(true, cs) : null;
+    const et = keep.length ? setTable(false, es) : null;
     const h = (s) => {
       for (let i = 0; i < 8; i++) cAt[s[i]] = i;
       let n = 0;
@@ -600,6 +649,13 @@ export function suggest(state, frame, analysis, { limit = 20, timeMs = 1500, cro
         const cp = cAt[q.corner], ep = eAt[q.edge];
         const d = q.pd[((cp * 3 + s[8 + cp]) * 12 + ep) * 2 + s[28 + ep]];
         if (d > n) n = d;
+      }
+      if (ct) {
+        let c = 0, e = 0;
+        for (const p of cs) { const at = cAt[p]; c = (c * 8 + at) * 3 + s[8 + at]; }
+        for (const p of es) { const at = eAt[p]; e = (e * 12 + at) * 2 + s[28 + at]; }
+        if (ct[c] > n) n = ct[c];
+        if (et[e] > n) n = et[e];
       }
       return n;
     };
@@ -627,10 +683,13 @@ export function suggest(state, frame, analysis, { limit = 20, timeMs = 1500, cro
   }
   /* If nothing keeps everything intact inside the depth limit, look again
      without insisting the finished pairs survive. Breaking one is a real thing
-     people do, and a suggestion that says so beats an empty list. */
+     people do, and a suggestion that says so beats an empty list. It gets a
+     budget of its own: the search above running out is the likeliest reason
+     to be here at all, and left with what it spent this never ran. */
   if (!all.length && done.length) {
+    const spare = { left: NODE_BUDGET };
     for (const slot of todo) {
-      if (budget.left <= 0) break;
+      if (spare.left <= 0) break;
       const pd = pairTable(slot.corner, slot.edge);
       const h = (s) => {
         for (let i = 0; i < 8; i++) cAt[s[i]] = i;
@@ -647,7 +706,7 @@ export function suggest(state, frame, analysis, { limit = 20, timeMs = 1500, cro
         return d > n ? d : n;
       };
       const { best: b, solutions } = solveGoal(
-        state, pairGoal(homes, [], slot), h, { want: 12, slack: 1, maxDepth: 9, budget, lead },
+        state, pairGoal(homes, [], slot), h, { want: 12, slack: 1, maxDepth: 9, budget: spare, lead },
       );
       if (b >= 0 && (best < 0 || b < best)) best = b;
       for (const p of solutions) {
