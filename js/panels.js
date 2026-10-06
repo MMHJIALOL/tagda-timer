@@ -26,6 +26,7 @@ import { DEFAULT_SPEFFZ_MAP, DEFAULT_BLD, CORNER_STICKER_KEYS, EDGE_STICKER_KEYS
          frontsFor, faceLabel, pieceAtFacelet, faceletsOfPiece,
          pieceName, samePiece, diagnose } from './bldtrace.js';
 import { FACES } from './cube3.js';
+import { mountSettingsSearch } from './settings-search.js';
 import { enableReplay, enableSound, requestCamera, attachPreview, onCamerasChanged, listCameras, listMics, cameraName,
          replayUsage, clearReplays, hasReplay, openReplay, keepCount, replaySupported, fullHdSupport } from './replay.js';
 
@@ -63,7 +64,7 @@ const group = (title, ...kids) => el('div', { class: 'group' }, el('h3', { text:
 
 function row(label, control, sub) {
   const lbl = el('div', { class: 'lbl' }, el('span', { text: label }), sub ? el('span', { class: 'sub', text: sub }) : null);
-  return el('div', { class: 'row' }, lbl, control);
+  return el('div', { class: 'row', dataset: { searchLabel: label } }, lbl, control);
 }
 
 function toggle(value, onChange) {
@@ -294,7 +295,7 @@ export function webcamControls(app, { onWatch = null, compact = false } = {}) {
 /* =========================================================
    APPEARANCE
    ========================================================= */
-export function buildAppearance(app) {
+export function buildAppearance(app, searchQuery = '') {
   return (body) => {
     const S = app.settings;
     const set = (k, v) => app.setSetting(k, v);
@@ -581,6 +582,7 @@ export function buildAppearance(app) {
           )),
       ),
     );
+    mountSettingsSearch(body, { query: searchQuery });
   };
 }
 
@@ -887,7 +889,7 @@ function step(n, title, ...detail) {
 /* =========================================================
    SETTINGS
    ========================================================= */
-export function buildSettings(app) {
+export function buildSettings(app, searchQuery = '') {
   return (body) => {
     const S = app.settings;
     const set = (k, v) => app.setSetting(k, v);
@@ -928,7 +930,7 @@ export function buildSettings(app) {
         ], S.inputMode || 'timer', (v) => {
           set('inputMode', v);
           // The note under this row is different for every mode, so redraw.
-          openDrawer('Settings', buildSettings(app));
+          openDrawer('Settings', buildSettings(app, searchQuery));
         }),
           t('the spacebar, a time you type in, a Stackmat, or a cube you turn with the keyboard')),
         S.inputMode === 'virtual'
@@ -1031,7 +1033,7 @@ export function buildSettings(app) {
             el('span', { class: 'sub', text: t('and the memo/execution split') })),
           el('button', {
             class: 'ghost-btn', text: 'open',
-            onclick: () => openDrawer('Blindsolving', buildBlindsolving(app)),
+            onclick: () => openDrawer('Blindsolving', buildBlindsolving(app, searchQuery)),
           })),
         el('div', { class: 'row' },
           el('div', { class: 'lbl' },
@@ -1041,6 +1043,13 @@ export function buildSettings(app) {
             class: 'ghost-btn', text: 'open',
             onclick: () => openDrawer(t('Letter pairs'), buildLetterPairs(app), { wide: true }),
           })),
+      ),
+
+      group(t('Appearance'),
+        row(t('Theme, background and layout'), el('button', {
+          class: 'ghost-btn', text: 'open',
+          onclick: () => openDrawer('Appearance', buildAppearance(app, searchQuery)),
+        }), t('colours, fonts, sizes and panels')),
       ),
 
       group(t('Data'),
@@ -1144,6 +1153,7 @@ export function buildSettings(app) {
           el('a', { class: 'ghost-btn', href: 'https://instagram.com/cubingngagng', target: '_blank', rel: 'noopener', text: t('@cubingngagng') })),
       ),
     );
+    mountSettingsSearch(body, { query: searchQuery, onQuery: value => { searchQuery = value; } });
   };
 }
 
@@ -1705,7 +1715,7 @@ export function buildStats(app) {
 const CORNER_STICKERS = CORNER_STICKER_KEYS;
 const EDGE_STICKERS   = EDGE_STICKER_KEYS;
 
-export function buildBlindsolving(app) {
+export function buildBlindsolving(app, searchQuery = '') {
   return (body) => {
     const bld = () => app.settings.bld;
     /* One object, written whole. The tracer reads several of these keys
@@ -1714,7 +1724,7 @@ export function buildBlindsolving(app) {
       app.setSetting('bld', { ...bld(), ...patch });
       app.bldChanged?.();
     };
-    const redraw = () => openDrawer('Blindsolving', buildBlindsolving(app));
+    const redraw = () => openDrawer('Blindsolving', buildBlindsolving(app, searchQuery));
 
     const lettersOf = () => ({ ...DEFAULT_SPEFFZ_MAP, ...(bld().letters || {}) });
 
@@ -1832,6 +1842,7 @@ export function buildBlindsolving(app) {
       el('div', { class: 'hint-note', html:
         t('<b>Commutators are yours, not the app’s.</b> An &ldquo;optimal&rdquo; comm for a pair depends on your buffer, your scheme and your fingers, so nothing here invents one. Save your own against a pair in the dictionary and it shows up whenever that pair does.') }),
     );
+    mountSettingsSearch(body, { query: searchQuery, onQuery: value => { searchQuery = value; } });
   };
 }
 

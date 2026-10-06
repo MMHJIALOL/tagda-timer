@@ -4,6 +4,9 @@
 .git
 .wrangler
 node_modules
+node_modules/**
+package.json
+package-lock.json
 wrangler.jsonc
 worker.js
 # Same reason as .vercelignore: it writes to whoever's synced data is signed in.
