@@ -10,8 +10,9 @@ import { t } from './i18n.js';
 import { el, download, fmtResult } from './util.js';
 import { eff, isMoveResult } from './stats.js';
 import { toast } from './toast.js';
+import { competitionResult } from './competition-stats.js';
 import {
-  drawCompetitionCard, drawSolveCard, drawAverageCard, drawReconCard, canvasBlob, shareText, socialLinks,
+  drawSolveCard, drawAverageCard, drawReconCard, canvasBlob, shareText, socialLinks,
   SITE, SITE_URL, INSTA, INSTA_URL,
 } from './sharecard.js';
 
@@ -200,11 +201,19 @@ export async function shareAverage(solves, { label, value, trimmed } = {}) {
 
 
 export async function shareCompetitionCard(set, solves, page = 0) {
-  const canvas = await drawCompetitionCard(set, solves, { page });
+  const result = competitionResult(set, solves);
+  if (!result.complete) { toast(t('Complete the set before sharing its score sheet')); return; }
+  // The same card as any other average, twelve attempts to a page.
+  const pages = Math.ceil(set.size / 12);
+  page = Math.max(0, Math.min(pages - 1, page));
+  const start = page * 12, rows = solves.slice(start, start + 12);
+  const trimmed = new Set([...result.trimmed].filter(i => i >= start && i < start + 12).map(i => i - start));
+  const label = t('Competition Ao{n}', { n: set.size }), value = fmtResult(result.value);
+  const canvas = await drawAverageCard(rows, { label, value, trimmed, first: start + 1,
+    sub: pages > 1 ? `${t('Set {n}', { n: set.sequence })}  ·  ${page + 1}/${pages}` : t('Set {n}', { n: set.sequence }) });
   present(canvas, { title: t('Competition score sheet'),
     filename: `tagda-Ao${set.size}-${stamp(set.createdAt)}-${page+1}.png`,
-    text: `Tagda Timer · ${t('Competition practice')} · Ao${set.size} · tagdatimer.me` });
-  const pages=Math.ceil(set.size/12);
+    text: shareText(label, value) });
   if(pages>1){
     const nav=el('div',{class:'competition-chips'},
       el('button',{class:'ghost-btn',text:t('Previous'),disabled:page===0,onclick:()=>shareCompetitionCard(set,solves,page-1)}),
