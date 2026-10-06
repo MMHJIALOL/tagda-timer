@@ -72,6 +72,24 @@ export const isSyncedKv = (key) =>
 export const encKey = (key) => encodeURIComponent(key).replace(/\./g, '%2E');
 export const decKey = (k) => decodeURIComponent(k);
 
+/* A copy the database will take: keys it cannot store are left out, and so
+   are undefined and non-finite numbers. Without this, one such key — a webcam
+   called "USB2.0 FHD UVC WebCam" naming its entry in webcamCrop — failed the
+   whole settings write, and the queue behind it never moved. */
+const BAD_KEY = /[.#$/[\]]/;
+export function cloudSafe(value) {
+  if (Array.isArray(value)) return value.map(v => cloudSafe(v) ?? null);
+  if (typeof value === 'number') return Number.isFinite(value) ? value : undefined;
+  if (!value || typeof value !== 'object') return value;
+  const out = {};
+  for (const [k, v] of Object.entries(value)) {
+    if (!k || BAD_KEY.test(k)) continue;
+    const safe = cloudSafe(v);
+    if (safe !== undefined) out[k] = safe;
+  }
+  return out;
+}
+
 /* Settings that say where this browser is right now rather than how it is set
    up. Pushed like the rest, never adopted from another device — switching
    event on the laptop must not switch it on the phone mid-solve. */
@@ -815,9 +833,18 @@ function handleUser(user, force = false) {
       await outbound.activate(user.uid, async entry => {
         if (gen !== _generation || !_sdk) throw new Error('Account changed');
         const sdk = _sdk;
-        if (entry.kind === 'update') await sdk.update(sdk.ref(sdk.db), entry.updates);
-        else if (entry.kind === 'remove') await sdk.remove(sdk.ref(sdk.db, entry.path));
-        else await sdk.set(sdk.ref(sdk.db, entry.path), entry.value);
+        let write;
+        // The SDK checks paths and values before sending and throws on the
+        // spot. Sending the same entry again cannot change that answer.
+        try {
+          if (entry.kind === 'update') {
+            const updates = {};
+            for (const [path, v] of Object.entries(entry.updates)) updates[path] = cloudSafe(v) ?? null;
+            write = sdk.update(sdk.ref(sdk.db), updates);
+          } else if (entry.kind === 'remove') write = sdk.remove(sdk.ref(sdk.db, entry.path));
+          else write = sdk.set(sdk.ref(sdk.db, entry.path), cloudSafe(entry.value) ?? null);
+        } catch (err) { err.permanent = true; throw err; }
+        await write;
       });
       if (gen !== _generation) return;
       const sdk = await getDatabaseHandle();
