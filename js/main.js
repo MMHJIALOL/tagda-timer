@@ -3994,9 +3994,8 @@ app.saveSession = async (s) => { await Sessions.put(s); updateLabels(); };
  * meaning anything. The times are still saved, still browsable, still yours —
  * just filed under the room they happened in.
  */
-app.enterRaceSession = async (roomId) => {
+app.enterRaceSession = async (roomId, name = `Race · ${roomId}`) => {
   if (!app.settings.raceOwnSession || !roomId) return;
-  const name = `Race · ${roomId}`;
   let s = app.sessions.find(x => x.name === name && x.event === app.settings.event);
   if (!s) {
     s = { id: uid(), name, event: app.settings.event, createdAt: Date.now(), order: app.sessions.length, race: true };

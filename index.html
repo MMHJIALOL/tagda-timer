@@ -32,15 +32,15 @@
      import hint in Settings over a main.js that has never heard of CubeDesk.
      vercel.json also serves /css/ as `max-age=31536000, immutable`, so a
      stylesheet there will not even be asked about for a year without it. -->
-<link rel="modulepreload" href="js/main.js?v=102">
-<link rel="stylesheet" href="css/fonts.css?v=102">
-<link rel="stylesheet" href="css/tokens.css?v=102">
-<link rel="stylesheet" href="css/base.css?v=102">
-<link rel="stylesheet" href="css/components.css?v=102">
-<link rel="stylesheet" href="css/announce.css?v=102">
+<link rel="modulepreload" href="js/main.js?v=103">
+<link rel="stylesheet" href="css/fonts.css?v=103">
+<link rel="stylesheet" href="css/tokens.css?v=103">
+<link rel="stylesheet" href="css/base.css?v=103">
+<link rel="stylesheet" href="css/components.css?v=103">
+<link rel="stylesheet" href="css/announce.css?v=103">
 <!-- Phones only: the same query as js/phone.js. A desktop or tablet never
      applies a rule from it, and does not wait on it to paint. -->
-<link rel="stylesheet" href="css/phone.css?v=102" media="(max-width: 640px)">
+<link rel="stylesheet" href="css/phone.css?v=103" media="(max-width: 640px)">
 <link rel="icon" href="assets/favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="assets/logo-192.png">
 <link rel="apple-touch-icon" href="assets/logo-180.png">
@@ -81,6 +81,20 @@
 </style>
 </head>
 <body>
+
+<!-- The race flag's paint, shared by every copy of it (top bar, Race drawer,
+     race panel): the theme's accent into its second colour, and the cells of
+     the checker. Sized to nothing rather than display:none, which stops
+     gradients from painting at all. -->
+<svg class="svg-defs" width="0" height="0" aria-hidden="true" focusable="false">
+  <defs>
+    <linearGradient id="rf-grad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" style="stop-color: var(--accent)"/>
+      <stop offset="1" style="stop-color: var(--accent-2)"/>
+    </linearGradient>
+    <clipPath id="rf-clip"><path d="M5.6 3.6C8.6 2.1 10.6 5.1 13.6 3.6S18 2.5 19.6 3.6V13.2C18 12.1 16.6 11.7 13.6 13.2S8.6 11.7 5.6 13.2Z"/></clipPath>
+  </defs>
+</svg>
 
 <!-- ============ BACKGROUND LAYERS ============ -->
 <div id="bg-root" aria-hidden="true">
@@ -220,10 +234,13 @@
            the only chrome that says a race is running once the panel is
            docked out of the way or folded on a phone. -->
       <button class="icon-btn" id="btn-race" title="Race someone">
-        <svg viewBox="0 0 24 24">
-          <path d="M5.2 21V3.4"/>
-          <path d="M5.2 4.1h13l-2.5 3.9 2.5 3.9h-13z"/>
-          <path d="M5.2 8h6.5M11.7 4.1v7.8"/>
+        <svg class="race-flag-art" viewBox="0 0 24 24">
+          <path class="rf-pole" d="M5.6 21.4V3.4"/>
+          <circle class="rf-knob" cx="5.6" cy="2.4" r="1.5"/>
+          <g class="rf-cloth" clip-path="url(#rf-clip)">
+            <rect class="rf-fill" x="5" y="1.5" width="15.5" height="13"/>
+            <path class="rf-check" d="M5.6 1.5h4.67v6.8H5.6zM14.93 1.5h4.67v6.8h-4.67zM10.27 8.3h4.67v6.4h-4.67z"/>
+          </g>
         </svg>
       </button>
       <!-- A trophy for the Scramble of the Day — the same scramble for
@@ -789,7 +806,7 @@
   </div>
 </div>
 
-<script type="module" src="js/main.js?v=102"></script>
+<script type="module" src="js/main.js?v=103"></script>
 <script>
 (function () {
   var isFile = location.protocol === 'file:';
