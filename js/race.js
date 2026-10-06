@@ -31,6 +31,9 @@ import {
 import { isOwnerName, openOwnerCard } from './ownercard.js';
 import { getConfig } from './config.js';
 import { banActive, banLine } from './admins.js';
+import { hasPersistedSession } from './sync-auth.js';
+
+const FLAG_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 21V4m0 0h10l-2 4 2 4H6"/></svg>';
 
 /** Why nobody can post in a room right now (config/raceChat, ADMIN.md), or null. */
 const chatOff = () => (getConfig('raceChat', 'enabled') ? null
@@ -1312,6 +1315,20 @@ export class Race extends EventTarget {
    * replaced between two keystrokes loses what you typed and the caret with
    * it.
    */
+  /** Report somebody's message to the admins, as the Google account signed in on this browser. */
+  async _report(m) {
+    if (!(await confirmToast(t('Report {name}’s message to the admins?', { name: m.name || 'Cuber' }), t('Report')))) return;
+    try {
+      const [{ getDatabaseHandle }, { sendReport }] = await Promise.all([import('./sync-auth.js'), import('./moderation.js')]);
+      const sdk = await getDatabaseHandle();
+      const out = await sendReport(sdk, { kind: 'raceChat', path: `rooms/${this.snap.roomId}/chat/${m.id}`, text: m.text });
+      toast(out === 'already' ? t('You have already reported that') : t('Reported. An admin will look at it.'));
+    } catch (err) {
+      console.warn('[race] report refused', err?.code || err);
+      toast(t('Couldn’t send the report'), { kind: 'bad' });
+    }
+  }
+
   /** The box, or why there is no box (config/raceChat/enabled). */
   _syncChatOff() {
     const wrap = this._node?.querySelector('.race-chat');
@@ -1358,6 +1375,13 @@ export class Race extends EventTarget {
         },
           runOn ? null : el('b', { class: 'race-chat-who', text: m.name || 'Cuber' }),
           el('span', { class: 'race-chat-text', text: m.text || '' }),
+          /* Reports need a Google account (reports/, ADMIN.md §6), and a race
+             identity is anonymous: so only with the timer's own sign-in. */
+          m.uid !== this.uid && hasPersistedSession() ? el('button', {
+            class: 'race-chat-report', type: 'button', html: FLAG_SVG,
+            title: t('Report this message'), 'aria-label': t('Report this message'),
+            onclick: () => this._report(m),
+          }) : null,
         );
         // setProperty, not the style object: Object.assign skips custom
         // properties, which is why every name would have come out the same hue.

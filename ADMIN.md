@@ -7,7 +7,9 @@ the sign-in, and the database refuses everybody else's writes whatever the page 
 
 It is built in phases. Phase 1 laid the ground: who is an admin, the settings node and its rules,
 the change log and the page. Phase 2 put real switches on it: shared replays, both chats, race
-rooms, bans, and a way to make every open tab reload onto a new deploy (§4, §5).
+rooms, bans, and a way to make every open tab reload onto a new deploy (§4, §5). Phase 3 added
+moderation: a report button, and one place to read every chat, flagged time and shared replay
+of the day and take any of it down (§6).
 
 ![The admin console on a phone: the sections, a form with unsaved edits, the review before saving, and the change log](docs/screenshots/admin-phone.webp)
 
@@ -71,8 +73,8 @@ Where it is checked:
 
 | Where | What an admin may do |
 |---|---|
-| `firebase.rules.json` | delete anybody's SOTD chat message; remove a SOTD time (`results`, `removed`, `progress/<uid>/submitted`, `replayClaim`, all in one write, DAILY.md §10); write `config`, `configMeta`, `configLog`, `bans`; read `configMeta`, `configLog`, `bans` and the `admins` list |
-| `worker.js` | delete anybody's shared replay; get `x-replay-admin` when watching one, so the player offers **Remove** and **Remove and ban** |
+| `firebase.rules.json` | read every day's SOTD board and chat without having solved; read every race room; delete anybody's SOTD or race chat message; remove a SOTD time (`results`, `removed`, `progress/<uid>/submitted`, `replayClaim`, all in one write, DAILY.md §10) or a race time; clear a replay's flag; write `config`, `configMeta`, `configLog`, `bans`; read and dismiss `reports`; read `configMeta`, `configLog`, `bans` and the `admins` list |
+| `worker.js` | delete anybody's shared replay; watch any (the board's read rule lets an admin through); get `x-replay-admin` when watching one, so the player offers **Remove** and **Remove and ban** |
 | `js/admins.js` | nothing: it only decides who is *shown* the buttons (`js/daily-net.js`) and who gets past the admin page's front door |
 
 **Before the new rules are published** nothing changes. The old rules hard-code the owner's uid;
@@ -90,7 +92,7 @@ The gold badge on the owner's chat messages goes by the owner's uid (`OWNER_UID`
 
 ```
 config/<section>/<key>   public read; written only by an admin, only together with its
-                         log entry (§6), and only with a value of its type, inside its range
+                         log entry (§7), and only with a value of its type, inside its range
 ```
 
 `js/config-table.js` is the one list of settings: `CONFIG`, a section per feature, each key with
@@ -286,7 +288,52 @@ tab's account, so it is little use against somebody determined. The rules apply 
 
 ---
 
-## 6. The change log
+## 6. Moderation
+
+![The Moderate tab: reports, every chat of the day, flagged times, and a shared replay being watched](docs/screenshots/admin-moderation.webp)
+
+The **Moderate** tab is four views over today, read live on the admin page's one connection.
+An admin reads all of it without having done the scramble: the read rules on a day's `results`
+and `chat` let an admin through, and `rooms` is readable by admins as a whole.
+
+| View | What is in it | What you can do |
+|---|---|---|
+| **Reports** | open reports, one card per item, however many people reported it | **Dismiss** (the reports go, the item stays), **Delete** it (the reports go too), **Ban** its author |
+| **Chats** | the newest 25 messages of every event's SOTD room today, and of every race room made in the last day, newest first | **Delete**, **Ban** |
+| **Suspect** | today's SOTD times and recent race times flagged ⚑ when they were sent | **Remove time**, **Ban** |
+| **Replays** | today's shared replays | **Watch** (through the Worker, like anybody), **Remove**, **Ban** |
+
+**Delete** asks first, saying what will happen, and offers *…and ban* beside it. Removing a SOTD
+time is the same removal as the × on the board (DAILY.md §10): the person gets the backup
+scramble, or is done for the day if it was the backup, and the clip goes too. Removing a replay
+deletes the clip through the Worker and clears the row's flag, so the ▶ goes for everybody.
+Removing a race time takes it off that round's board; the racer could submit for the round
+again, which is fine for rooms that are not a competition. Race rooms are found by
+`meta/createdAt` (indexed in the rules) from the last day; **Look again for race rooms** asks
+again, since rooms are never cleared out of the database and are not watched as a whole.
+
+### Reporting
+
+```
+reports/<pushId>              { by, at, kind: 'chat' | 'raceChat' | 'replay' | 'result', path, text? }
+reportOnce/<uid>/<kind|path>  the report's id: one per account per item, readable by its owner
+```
+
+A **⚑** sits beside somebody else's message in the day's chat (hover, or always faintly on a
+touch screen), and beside a race chat message when this browser is signed in with Google. A
+shared replay has **Report this replay** under the player's **⋯**. Each asks first, then says
+*Reported. An admin will look at it.*, or *You have already reported that*.
+
+The rules ask that the reporter is a Google account and not banned (race mode's anonymous
+accounts cannot report, which is why the race ⚑ needs the timer's own sign-in), that `path` has
+the shape its `kind` says and exists (a replay report needs the row's `replay` flag), that `by`
+and `at` are the reporter and the server's clock, and that the matching `reportOnce` entry is in
+the same update. That entry is write-once and never deleted, so a dismissed report cannot be
+filed again by the same person. Reports are readable and deletable by admins only. `result` is
+accepted by the rules for a board row, but nothing in the app offers it yet: a flagged time is
+already in **Suspect**.
+
+## 7. The change log
 
 ```
 configLog/<pushId>         { uid, at, path, from?, to?, undo? }   admins only; written once, never edited
@@ -321,12 +368,14 @@ including a future change to that default. Setting the same number by hand would
 
 ---
 
-## 7. The page
+## 8. The page
 
 | File | What it is |
 |---|---|
 | `admin.html` | The page, served at `/admin` (`html_handling: auto-trailing-slash` in `wrangler.jsonc`) |
 | `js/admin.js` | Sign-in, the front door, the forms, review, save, bans, the log, Undo |
+| `js/admin-mod.js` | The Moderate tab (§6) |
+| `js/moderation.js` | Reports and the SOTD removal, shared by the app and the page |
 | `css/admin.css` | Its look: only the theme tokens from `css/tokens.css`, nothing from the timer's own CSS |
 | `admin.webmanifest`, `assets/admin-*.png` | Home-screen install: start URL `/admin`, its own name and icon |
 | `js/config-table.js` | The settings table, pure enough for the Worker to bundle |
@@ -336,8 +385,9 @@ including a future change to that default. Setting the same number by hand would
 | `js/version.js` | `APP_VERSION`, for `app.minVersion` |
 | `tools/verify-admin-rules.mjs` | `node` check of admins, config and the log against the database emulator |
 | `tools/verify-safety-rules.mjs` | `node` check of the switches, bans and the replay count |
+| `tools/verify-moderation-rules.mjs` | `node` check of reports and of an admin reading and taking down |
 
-Phone first: three tabs (Settings, Bans, Change log); a list of sections, each opening a form;
+Phone first: four tabs (Settings, Moderate, Bans, Change log); a list of sections, each opening a form;
 edits collect in a bar at the foot (*3 unsaved changes · Discard · Review*); **Review** lists each
 change as *from → to* before anything is written. A value outside its range is marked on its row
 and Review stays off. Light or dark follows the phone (the timer's Paper and Nebula themes).
@@ -351,12 +401,13 @@ loads (it checks the requesting page) from its cache, and stores none of it, so 
 always the deployed one. It needs a connection anyway. A link out of it to the timer is still
 served offline as usual.
 
-**Connections.** The page uses live listeners (on `config`, `configMeta`, `bans` and the log):
-one connection per admin with it open. Nobody else gets that far.
+**Connections.** The page uses live listeners (on `config`, `configMeta`, `bans`, the log,
+`reports`, and today's boards and chats): one connection per admin with it open. Nobody else
+gets that far.
 
 ---
 
-## 8. Until firebase.rules.json is republished
+## 9. Until firebase.rules.json is republished
 
 Everything keeps working as it did, on the defaults:
 
@@ -371,12 +422,13 @@ Everything keeps working as it did, on the defaults:
   and no reload.
 - **The admin page**: the owner sees *Publish the rules first*, everybody else the admins-only line.
 
-On phase 1's rules (the console's, without its switches) the same holds for the switches, and the
-admin page works except its **Bans** tab, which asks for the newer rules.
+On older rules than the page's, the parts that need newer ones say so and the rest works:
+**Bans** and **Reports** ask for the newer rules, **Chats** lists only what the admin could
+already read, and the app's ⚑ is refused with *Couldn't send the report*.
 
 ---
 
-## 9. Testing it
+## 10. Testing it
 
 - `node tools/verify-admin-rules.mjs`: 82 checks against the database emulator, in a namespace
   of its own. Every write four ways (an admin; a signed-in Google account that is not one; an
@@ -389,6 +441,11 @@ admin page works except its **Bans** tab, which asks for the newer rules.
   then with each switch, gap and length; bans on every write they stop, with and without an end
   date, and who may read and write them; race rooms switched off; race chat's new `chatLast`; the
   replay count entries and their sweep.
+- `node tools/verify-moderation-rules.mjs`: 52 checks. An admin reading the day's chat and board
+  and listing recent rooms, and nobody else; who may delete a race message, a race time or a
+  replay flag; every way a report can be wrong (anonymous, banned, the wrong shape for its kind, a
+  path that does not exist, no `reportOnce`, one naming another report, somebody else's name, a
+  client clock), one per account per item even after a dismissal, and who reads and deletes them.
 - `node tools/verify-sotd-chat-rules.mjs` and `node tools/verify-sotd-remove-rules.mjs` seed
   `admins/` the way the console would, and still pass.
 - `node tools/config-rules.mjs --check`, and `test.html`'s *admin console* section (the rules

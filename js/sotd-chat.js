@@ -29,6 +29,7 @@ import { eventOf } from './events.js';
 
 const EMOJI_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9 10h.01M15 10h.01M8.5 14.5a4.5 4.5 0 0 0 7 0"/></svg>';
 const SEND_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h13M12 5l7 7-7 7"/></svg>';
+const FLAG_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 21V4m0 0h10l-2 4 2 4H6"/></svg>';
 const DEL_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7L7 17"/></svg>';
 
 /** Same hash as race.js's, so a name is the same colour in both rooms. */
@@ -164,6 +165,17 @@ export function mountChat(ctl, { avatar, onBack } = {}) {
     }
   };
 
+  const report = async (m) => {
+    if (!(await confirmToast(t('Report {name}’s message to the admins?', { name: m.name || 'Cuber' }), t('Report')))) return;
+    try {
+      const out = await ctl.reportChat(m);
+      if (out) toast(out === 'already' ? t('You have already reported that') : t('Reported. An admin will look at it.'));
+    } catch (err) {
+      console.warn('[daily] report refused', err?.code || err);
+      toast(t('Couldn’t send the report'), { kind: 'bad' });
+    }
+  };
+
   /** The box, or why there is no box. */
   const posting = () => {
     const why = ctl.chatBlocked;
@@ -214,6 +226,8 @@ export function mountChat(ctl, { avatar, onBack } = {}) {
           }
         }
         const canDelete = !!me && (m.uid === me || admin);
+        // Somebody else's message, for everybody but an admin (who deletes): reports/, ADMIN.md §6.
+        const canReport = !!me && m.uid !== me && !admin;
         const row = el('div', {
           class: `race-chat-msg sc-msg${runOn ? ' run-on' : ''}`,
           dataset: { me: String(m.uid === me) },
@@ -221,6 +235,11 @@ export function mountChat(ctl, { avatar, onBack } = {}) {
         },
           runOn ? el('span', { class: 'sc-face-gap' }) : (avatar ? avatar(m.name, m.photo, { uid: m.uid, me: m.uid === me }) : el('span', { class: 'sc-face-gap' })),
           el('div', { class: 'sc-body' }, who, text),
+          canReport ? el('button', {
+            class: 'sc-del sc-report', type: 'button', html: FLAG_SVG,
+            title: t('Report this message'), 'aria-label': t('Report this message'),
+            onclick: () => report(m),
+          }) : null,
           canDelete ? el('button', {
             class: 'sc-del', type: 'button', html: DEL_SVG,
             title: m.uid === me ? t('Delete your message') : t('Delete this message (admin)'),

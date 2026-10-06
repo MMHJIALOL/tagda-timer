@@ -6,8 +6,9 @@ import { t, translateDOM } from './i18n.js';
    use it is admins/<uid> in the database (js/admins.js); what the settings
    are is js/config.js; ADMIN.md has the rest.
 
-   Three tabs: Settings, Bans (bans/, who may not post, share or submit) and
-   the Change log.
+   Four tabs: Settings, Moderate (js/admin-mod.js: reports, every chat,
+   flagged times, shared replays), Bans (bans/, who may not post, share or
+   submit) and the Change log.
 
    Every Save is one multi-path update: the value, its configMeta pointer and
    a configLog entry saying who changed what from what to what. The rules
@@ -26,6 +27,7 @@ import { onAuthChange, signIn, signOutUser, getDatabaseHandle, preloadAuth, take
 import { adminStatus, banAccount, unbanAccount, banActive } from './admins.js';
 import { CONFIG, spec, clean, valid } from './config.js';
 import { APP_VERSION } from './version.js';
+import { createModeration } from './admin-mod.js';
 
 /** How many log entries the page keeps live. Older ones stay in the database. */
 const LOG_SHOWN = 200;
@@ -134,6 +136,8 @@ function route() {
   const h = location.hash.replace(/^#/, '');
   if (h === 'log') return { view: 'log' };
   if (h === 'bans') return { view: 'bans' };
+  const mod = /^mod(?:\/(reports|chats|suspect|replays))?$/.exec(h);
+  if (mod) return { view: 'mod', sub: mod[1] || 'reports' };
   const m = /^settings\/([a-zA-Z]+)$/.exec(h);
   if (m && CONFIG[m[1]]) return { view: 'section', section: m[1] };
   return { view: 'sections' };
@@ -169,6 +173,7 @@ function view() {
       const r = route();
       if (r.view === 'log') return viewLog();
       if (r.view === 'bans') return viewBans();
+      if (r.view === 'mod') return moderation.view(r.sub);
       if (r.view === 'section') return viewSection(r.section);
       return viewSections();
     }
@@ -197,8 +202,10 @@ function renderTabs() {
   const r = route().view;
   const tab = (href, label, on) => el('a', { class: `ad-tab${on ? ' on' : ''}`, href, 'aria-current': on ? 'page' : null, text: label });
   const banned = Object.values(S.bans).filter(b => banActive(b)).length;
+  const open = moderation.counts().reports;
   $tabs.replaceChildren(
     tab('#settings', 'Settings', r === 'sections' || r === 'section'),
+    tab('#mod', open ? t('Moderate · {n}', { n: open }) : t('Moderate'), r === 'mod'),
     tab('#bans', banned ? t('Bans · {n}', { n: banned }) : t('Bans'), r === 'bans'),
     tab('#log', 'Change log', r === 'log'));
 }
@@ -536,7 +543,7 @@ function viewBans() {
     if (!UID_RE.test(id)) { toast(t('That is not an account id: letters and digits only'), { kind: 'bad', long: true }); return; }
     if (id === S.user?.uid) { toast(t('That is your own account'), { kind: 'bad', long: true }); return; }
     const pick = banFor()[Number(len.value)] || banFor()[0];
-    askBan({ uid: id, name: name.value.trim(), reason: reason.value.trim(), ms: pick.ms, label: pick.label });
+    askBan({ uid: id, name: name.value.trim(), reason: reason.value.trim(), ms: pick.ms });
   });
   if (S.bansRefused) {
     return [...head, gate('Publish the rules first', 'Bans need the firebase.rules.json from this version of the page. Publish it in the Firebase console and reload.')];
@@ -563,25 +570,39 @@ function banRow(id, b) {
     el('button', { class: 'ad-btn small', text: live ? t('Unban') : t('Clear'), onclick: () => askUnban(id, b) }));
 }
 
-function askBan({ uid, name, reason, ms, label }) {
+/**
+ * Ban `uid`, after a sheet where the reason (which they are shown) and the
+ * length can still be changed. `then` runs after it lands (the Moderate tab
+ * resolves the reports about it).
+ */
+function askBan({ uid, name = '', reason = '', ms = 0, then = null }) {
+  if (uid === S.user?.uid) { toast(t('That is your own account'), { kind: 'bad', long: true }); return; }
+  const why = el('input', { class: 'ad-inp', autocomplete: 'off', maxlength: 200 });
+  why.value = String(reason).slice(0, 200);
+  const choices = banFor();
+  const len = el('select', { class: 'ad-inp' }, ...choices.map((b, i) => raw('option', { value: String(i) }, b.label)));
+  len.value = String(Math.max(0, choices.findIndex(b => b.ms === ms)));
   const go = el('button', { class: 'ad-btn primary', text: 'Ban' });
   go.addEventListener('click', async () => {
     go.disabled = true;
+    const pick = choices[Number(len.value)] || choices[0];
     try {
-      await banAccount(S.sdk, { uid, name, reason, until: ms ? Date.now() + ms : null });
+      await banAccount(S.sdk, { uid, name, reason: why.value.trim(), until: pick.ms ? Date.now() + pick.ms : null });
       closeSheet();
       toast(t('Banned. They can still use the timer.'), { kind: 'good', long: true });
+      await then?.();
     } catch (err) {
       console.warn('[admin] ban refused', err?.code || err);
       toast(t('The database refused that ban'), { kind: 'bad', hold: true });
       go.disabled = false;
     }
   });
+  const field = (label, input) => el('label', { class: 'ad-field' }, el('span', { class: 'ad-label', text: label }), input);
   openSheet(
     el('h2', { class: 'ad-h2', text: t('Ban {who}?', { who: name || uid }) }),
-    el('ul', { class: 'ad-diffs' },
-      el('li', { class: 'ad-diff' }, raw('b', {}, uid), raw('span', { class: 'ad-reason' }, reason || '—'),
-        el('span', { class: 'ad-entry-meta', text: label }))),
+    raw('span', { class: 'ad-uid' }, uid),
+    field(t('Reason, which they are shown'), why),
+    field(t('For'), len),
     el('p', { class: 'ad-sub', text: 'Until it ends or you unban them: no chat messages, no shared replays, nothing on the Scramble of the Day board. A race account is a throwaway, so a ban on one lasts only as long as that tab’s account.' }),
     el('div', { class: 'ad-sheet-actions' },
       el('button', { class: 'ad-btn', text: 'Back', onclick: closeSheet }),
@@ -627,6 +648,7 @@ async function doSignOut() {
 }
 
 function teardown() {
+  moderation.stop();
   for (const off of S.unsubs.splice(0)) off();
   S.config = {}; S.meta = {}; S.log = []; S.bans = {};
   S.loaded = { config: false, log: false, bans: false };
@@ -680,8 +702,10 @@ async function onUser(user) {
     S.status = 'error';
   }
   render();
-  if (S.status === 'admin') listen();
+  if (S.status === 'admin') { listen(); moderation.start(); }
 }
+
+const moderation = createModeration({ S, scheduleRender, raw, ago, who, openSheet, closeSheet, askBan, gate });
 
 window.addEventListener('hashchange', () => { closeSheet(); render(); window.scrollTo(0, 0); });
 window.addEventListener('beforeunload', (e) => { if (S.edits.size) e.preventDefault(); });

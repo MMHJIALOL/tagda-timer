@@ -248,6 +248,22 @@ function replayBan(ctl, event) {
   };
 }
 
+/** Report somebody's shared replay to the admins, for everybody but an admin (reports/, ADMIN.md §6). */
+function replayReport(ctl, dayKey, event) {
+  if (ctl.admin || !dayKey) return null;
+  return async ({ uid, name }) => {
+    try {
+      const out = await ctl.reportReplay({ dayKey, event, uid, name });
+      if (out) toast(out === 'already' ? t('You have already reported that') : t('Reported. An admin will look at it.'));
+      return !!out;
+    } catch (err) {
+      console.warn('[daily] report refused', err?.code || err);
+      toast(t('Couldn’t send the report'), { kind: 'bad' });
+      return false;
+    }
+  };
+}
+
 function timeRow(r, i, replays = null, remove = null) {
   const res = r.result || {};
   const shown = timeText(res);
@@ -289,7 +305,7 @@ function timeRow(r, i, replays = null, remove = null) {
       /* Inside the time's cell rather than a column of its own: the grid's
          other optional cell (the ⚑) would shift a sixth column about. */
       replays && canPlay(replays.dayKey, replays.event, r.uid, res)
-        ? playButton({ dayKey: replays.dayKey, event: replays.event, uid: r.uid, result: res, onGone: replays.onGone, onBan: replays.onBan })
+        ? playButton({ dayKey: replays.dayKey, event: replays.event, uid: r.uid, result: res, onGone: replays.onGone, onBan: replays.onBan, onReport: replays.onReport })
         : null),
   );
 }
@@ -449,7 +465,7 @@ export function dayHistory(ctl, redraw) {
         if (cur) cur.rows = cur.rows.filter(x => x.uid !== r.uid);
         redraw();
       } });
-      return pastView(cur, mode, { dayKey, event: eventId, onGone: redraw, onBan: replayBan(ctl, eventId) }, remove);
+      return pastView(cur, mode, { dayKey, event: eventId, onGone: redraw, onBan: replayBan(ctl, eventId), onReport: replayReport(ctl, dayKey, eventId) }, remove);
     },
 
     /** The ‹ · › control itself. `today` is the live day id, or null before it loads. */
@@ -670,7 +686,7 @@ export function openSotd(app, ctl, { onExit, solving = () => false } = {}) {
     const past = history.day;
     const rows = past ? [] : ctl.ranked();
     const dayKey = past ? String(dayStartMs(past)) : ctl.net?.target?.().dayKey;
-    const replays = dayKey ? { dayKey, event: ctl.eventId, onGone: () => { renderBoard(); placeBoard(); }, onBan: replayBan(ctl, ctl.eventId) } : null;
+    const replays = dayKey ? { dayKey, event: ctl.eventId, onGone: () => { renderBoard(); placeBoard(); }, onBan: replayBan(ctl, ctl.eventId), onReport: replayReport(ctl, dayKey, ctl.eventId) } : null;
     // Today's rows only: a past day's picker builds its own (it has to drop the row itself).
     const opts = { remove: past ? null : adminRemover(ctl, { dayKey }), locked: lockText(ctl) };
     const sharedN = replays ? rows.filter(r => r.result?.replay === true).length : 0;
