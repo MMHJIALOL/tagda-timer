@@ -185,3 +185,19 @@ test('a denied account lock leaves the operation queued without an unhandled rej
   assert.equal(queue.snapshot().state, 'error');
   assert.equal(queue.snapshot().pending, 1);
 });
+
+test('a write the database refuses outright is dropped instead of blocking the rest', async () => {
+  const f = fixture(), sent = [];
+  await f.queue.activate('a', async e => {
+    if (e.value === 'bad') throw Object.assign(new Error('set failed: invalid key'), { permanent: true });
+    sent.push(e.value);
+  });
+  await f.queue.enqueue(entry('one', 'bad'));
+  await f.queue.enqueue(entry('two', 2));
+  await f.queue.enqueue(entry('three', 3));
+  assert.equal(await f.queue.ready(), true);
+  assert.deepEqual(sent, [2, 3]);
+  assert.equal(f.data.get('_syncQueue').length, 0);
+  assert.equal(f.queue.snapshot().state, 'up-to-date');
+  assert.equal(f.queue.snapshot().needsAttention, false);
+});

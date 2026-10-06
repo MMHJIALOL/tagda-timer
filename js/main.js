@@ -71,9 +71,11 @@ const app = {
   custom: { list: [], pos: 0 },
 };
 window.tagdatimer = app;   // handy in the console
+// Through loadPanels, not a bare import: closeDrawer() only reaches a drawer
+// whose module it was handed, so the × and Esc did nothing here.
 app.viewDataHealth = async () => {
-  const { openDataHealth } = await import('./panels.js');
-  openDataHealth(app);
+  await loadPanels();
+  _panels.openDataHealth(app);
 };
 let localFailureWarned = false;
 onLocalStatus(status => {
