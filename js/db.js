@@ -453,6 +453,24 @@ export const KV = {
     return v === undefined ? fallback : v;
   },
   async set(key, value) { const r = await wrap((await tx('kv', 'readwrite')).put(value, key)); emit('kv', { key, value }); return r; },
+  // Read and merge in one transaction, so two tabs cannot both read an old
+  // settings snapshot and then overwrite one another's newer inspection choice.
+  async update(key, update, fallback = {}) {
+    const store = await tx('kv', 'readwrite');
+    return new Promise((resolve, reject) => {
+      const request = store.get(key);
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => {
+        try {
+          const value = update(request.result === undefined ? fallback : request.result);
+          wrap(store.put(value, key)).then(() => {
+            emit('kv', { key, value });
+            resolve(value);
+          }, reject);
+        } catch (error) { store.transaction.abort(); reject(error); }
+      };
+    });
+  },
   async del(key)        { const r = await wrap((await tx('kv', 'readwrite')).delete(key)); emit('kv', { key, value: null }); return r; },
   /**
    * Every entry whose key starts with `prefix`, as a Map, in one transaction.

@@ -107,6 +107,15 @@ section('mergeSettings');
   check('where this browser is stays local', merged.event === '222' && merged.sessionId === 's-here');
   check('a local-only key the local copy lacks is not adopted', !('raceLastRoom' in merged));
   check('bld is merged a level deep', merged.bld.a === 1 && merged.bld.b === 2);
+  const inspectionOff = { inspection: false, inspectionUpdatedAt: 200 };
+  check('stale cloud inspection cannot replace a newer disabled choice',
+    Sync.mergeSettings(inspectionOff, { inspection: true, inspectionUpdatedAt: 100 }).inspection === false);
+  check('an old client without an inspection revision cannot undo a choice',
+    Sync.mergeSettings(inspectionOff, { inspection: true }).inspection === false);
+  check('a newer explicit cloud inspection choice still syncs',
+    Sync.mergeSettings(inspectionOff, { inspection: true, inspectionUpdatedAt: 300 }).inspection === true);
+  check('inspection protection does not stop other cloud preferences merging',
+    Sync.mergeSettings({ ...inspectionOff, theme: 'light' }, { inspection: true, theme: 'dark' }).theme === 'dark');
   check('kv keys round-trip through the path encoding',
     ['alglib:order:T.perm', 'xp1History'].every(k => Sync.decKey(Sync.encKey(k)) === k)
     && !/[.#$\[\]\/]/.test(Sync.encKey('alglib:order:a.b/c')));

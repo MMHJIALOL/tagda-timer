@@ -10,6 +10,7 @@ import { KV, Assets } from './db.js';
 import { DEFAULT_BLD } from './bldtrace.js';
 import { applyContrast, hexLuma } from './contrast.js';
 import { afterLayout } from './util.js';
+import { mergeInspection, pendingInspection, inspectionCommitted } from './inspection-setting.js';
 
 export const PRESETS = {
   nebula:    { name: 'Nebula',    dots: ['#7c5cff', '#35e6c5', '#12102a'] },
@@ -288,7 +289,12 @@ export const DEFAULTS = {
 };
 
 export async function loadSettings() {
-  const saved = await KV.get('settings', {});
+  let saved = await KV.get('settings', {});
+  const pending = pendingInspection();
+  if (pending) {
+    saved = await KV.update('settings', current => mergeInspection(current, pending));
+    inspectionCommitted(saved);
+  }
   const s = { ...DEFAULTS, ...saved };
   // The spread above is shallow, so a profile saved with an older `bld`
   // block would be missing any key added since. Fill the gaps rather than
@@ -300,15 +306,27 @@ export async function loadSettings() {
   if (from < SETTINGS_VERSION) {
     for (let v = from + 1; v <= SETTINGS_VERSION; v++) MIGRATIONS[v]?.(s);
     s.settingsVersion = SETTINGS_VERSION;
-    KV.set('settings', s);
+    Object.assign(s, await KV.update('settings', current => mergeInspection(current, s)));
   }
   return s;
 }
 
 let saveTimer = null;
-export function saveSettings(s) {
+export function saveSettings(s, { immediate = false, replace = false } = {}) {
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => KV.set('settings', s).catch(error => console.warn('[db] settings save failed', error)), 220);
+  const save = async () => {
+    try {
+      const snapshot = structuredClone(s);
+      const saved = await KV.update('settings', current => {
+        const merged = mergeInspection(mergeInspection(current, pendingInspection() || {}), snapshot);
+        return replace ? { ...snapshot, inspection: merged.inspection,
+          inspectionUpdatedAt: merged.inspectionUpdatedAt } : merged;
+      });
+      inspectionCommitted(saved);
+    } catch (error) { console.warn('[db] settings save failed', error); }
+  };
+  if (immediate) return save();
+  saveTimer = setTimeout(save, 220);
 }
 
 /* ---------------------------------------------------------

@@ -4409,8 +4409,10 @@ body.duel-on #panel-stats > .stats-duel { margin-top: 10px; }
    Nearly everything here is already a .group of .row, so this only adds the
    bits that have no equivalent: the card stack, and the log tucked under a
    cube so it reads as belonging to it rather than as a sibling section. */
-.chart-filter { display: flex; align-items: center; gap: 10px; }
-.chart-filter select { max-width: 220px; }
+.chart-filter { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.chart-filter select { max-width: 220px; min-width: 0; }
+.stats-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; margin-bottom: 10px; }
+.stats-filters > [role="status"]:empty { display: none; }
 .gear-list { display: flex; flex-direction: column; gap: 10px; }
 .gear-card { gap: 6px; }
 .gear-log {

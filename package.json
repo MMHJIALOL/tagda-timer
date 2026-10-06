@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test:settings-search": "node --test js/settings-search.check.mjs"
+    "test:settings-search": "node --test js/settings-search.check.mjs",
+    "test:stats-session": "node --test js/stats-session.check.mjs"
   },
   "devDependencies": {
     "jsdom": "26.1.0"

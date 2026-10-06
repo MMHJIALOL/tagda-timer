@@ -1384,332 +1384,396 @@ export function buildGear(app) {
 
 export function buildStats(app) {
   return (body) => {
-    const solves = app.solves;
-    const st = summarize(solves);
-    const cases = byCase(solves);
+    let disposed = false, revision = 0, cubeId = '';
+    let scopedSolves = app.solves;
+    let scopeName = app.session.name;
+    let selectedSession = app.session.id;
+    const sessionPick = el('select', { class: 'inp', 'aria-label': t('Statistics session') },
+      ...app.sessions.map(s => el('option', { value: s.id, text: s.name })),
+      el('option', { value: '', text: t('All sessions') }));
+    sessionPick.value = selectedSession;
+    const resultPick = el('select', { class: 'inp', 'aria-label': t('Result type') },
+      el('option', { value: 'time', text: t('Timed solves') }),
+      el('option', { value: 'moves', text: t('Fewest moves') }));
+    resultPick.value = app.solves.some(isMoveResult) ? 'moves' : 'time';
+    const resultRow = el('label', { class: 'chart-filter', hidden: true },
+      el('span', { class: 'bs-sub', text: t('Results') }), resultPick);
+    const sessionRow = el('label', { class: 'chart-filter' },
+      el('span', { class: 'bs-sub', text: t('Session') }), sessionPick);
+    const status = el('div', { class: 'bs-sub', role: 'status' });
+    const filters = el('div', { class: 'stats-filters' }, sessionRow, resultRow, status);
 
-    const cell = (k, v, sub) => el('div', { class: 'bs' },
-      el('span', { class: 'bs-k', text: k }),
-      el('span', { class: 'bs-v', text: v }),
-      sub ? el('span', { class: 'bs-sub', text: sub }) : null);
-
-    const moves = solves.some(isMoveResult);
-    const f = v => fmtResult(v, moves);
-
-    body.append(
-      group(t('Session'),
-        el('div', { class: 'big-stats' },
-          cell('solves', String(st.count), `${st.dnfCount} DNF · ${st.plus2Count} +2`),
-          cell('best', f(st.best)),
-          cell('worst', f(st.worst)),
-          cell('mean', f(st.mean)),
-          cell('median', f(st.median)),
-          cell(t('std dev'), f(st.stdev)),
-          cell('mo3', f(st.mo3)),
-          cell('ao5', f(st.ao5), st.bestAo5 ? t('best ') + f(st.bestAo5) : ''),
-          ...(() => {
-            const bw = app.settings.showBpa !== false && bpaWpa(solves);
-            return bw ? [cell('bpa / wpa', `${f(bw.bpa)} / ${f(bw.wpa)}`, t('next ao5 if the 5th is perfect / a DNF'))] : [];
-          })(),
-          cell('ao12', f(st.ao12), st.bestAo12 ? t('best ') + f(st.bestAo12) : ''),
-          cell('ao50', f(st.ao50)),
-          cell('ao100', f(st.ao100)),
-          cell('ao1000', f(solves.length >= 1000 ? bestAvg(solves, 1000).value : null)),
-        ),
-        solves.length ? el('div', { class: 'sd-actions' },
-          el('button', { class: 'btn primary', text: t('Copy current session stats'),
-            onclick: () => app.copyToast(sessionReport(solves), 'Session stats') }),
-          el('button', { class: 'btn', text: t('Download current session (.txt)'),
-            onclick: () => download(`${app.session.name.replace(/\W+/g, '-')}-stats.txt`, sessionReport(solves), 'text/plain') }),
-        ) : null),
-    );
-
-    /* The consistency tile's figure, worked through with this session's own
-       numbers, and how it moved solve by solve. */
-    const pct = (v, d = 0) => (v * 100).toFixed(d) + '%';
-    const consHost = el('div');
-    const calc = st.consistency === null
-      ? [t('Needs 2 or more finished solves.')]
-      : [
-        t('spread = std dev ÷ mean = {sd} ÷ {mean} = {spread}', { sd: f(st.stdev), mean: f(st.mean), spread: pct(st.stdev / st.mean, 1) }),
-        t('consistency = 1 − spread ÷ {cap} = 1 − {spread} ÷ {cap} = {cons}', { cap: pct(CONS_SPREAD), spread: pct(st.stdev / st.mean, 1), cons: pct(st.consistency) }),
-      ];
-    body.append(el('div', { class: 'chart-card', id: 'cons-card' },
-      el('h4', { text: t('Consistency — {v}', { v: st.consistency === null ? '—' : pct(st.consistency) }) }),
-      ...calc.map(line => el('div', { text: line, style: { fontSize: '.84rem', color: 'var(--text-dim)', fontVariantNumeric: 'tabular-nums' } })),
-      consHost,
-      el('div', { class: 'bs-sub', text: t('Every finished solve this session counts, +2s at their penalised time; DNFs are left out. No spread reads 100%, a spread of {cap} or more reads 0%.', { cap: pct(CONS_SPREAD) }) })));
-    renderConsistency(consHost, consistencySeries(solves, 12), 12);
-
-    // Where each solve sits in the session, for "solve #" labels on any subset.
-    const at = new Map(solves.map((s, i) => [s, i]));
-
-    const hoverInfo = el('div', { class: 'bs-sub', style: { minHeight: '1.2em' } });
-    const trendHost = el('div');
-    /* What a click or a drag on the trend picked out: one pinned solve with
-       what you can do with it, or a range and what it adds up to. */
-    const pickHost = el('div', { class: 'sd-list', hidden: true });
-    /* The cube filter starts as "all cubes" and stays that way if you own
-       none — the row appears only once there is something to choose between,
-       so a session that has never touched the gear log looks exactly as it
-       did before. */
-    const cubePick = el('select', { class: 'inp' }, el('option', { value: '', text: t('all cubes') }));
-    const cubeRow = el('div', { class: 'chart-filter', hidden: true },
-      el('span', { class: 'bs-sub', text: t('Cube') }), cubePick);
-
-    let shown = solves, chart = null, pinned = -1;
-
-    const repeat = (s) => { closeDrawer(); app.repeatScramble(s); };
-
-    const showPin = (i) => {
-      pinned = i;
-      const s = shown[i], gi = at.get(s);
-      pickHost.hidden = false;
-      pickHost.replaceChildren(
-        solveRow(app, s, gi + 1, gi, { pinned: true }),
-        el('div', { class: 'sd-actions' },
-          el('button', { class: 'btn primary', text: t('Repeat this scramble'), onclick: () => repeat(s) }),
-          // The workbench is a 3x3 one; a relay's legs are reconstructed one by one from the solve menu.
-          s.relay?.length ? null : el('button', { class: 'ghost-btn', text: t('Reconstruct'), onclick: () => app.reconstructSolve(s) }),
-          el('button', { class: 'ghost-btn', text: t('Copy scramble'), onclick: () => app.copyToast(s.scramble || '', 'Scramble') }),
-          el('span', { class: 'bs-sub', text: t('← → neighbouring solve · Enter repeats') })));
-    };
-
-    const showRange = (a, b) => {
-      pinned = -1;
-      const range = shown.slice(a, b + 1);
-      const g = groupStats(range);
-      // A relay is several scrambles to one attempt, and the queue deals single ones.
-      const scrambles = range.filter(s => !s.relay?.length).map(s => s.scramble).filter(Boolean);
-      pickHost.hidden = false;
-      pickHost.replaceChildren(
-        el('div', { class: 'big-stats' },
-          cell('solves', String(g.count), `#${at.get(shown[a]) + 1}–#${at.get(shown[b]) + 1}`),
-          cell('mean', f(g.mean), g.dnf ? t('{n} DNF left out', { n: g.dnf }) : ''),
-          cell('best', f(g.best))),
-        scrambles.length ? el('div', { class: 'sd-actions' },
-          el('button', {
-            class: 'btn primary', text: t('Practise these scrambles again'),
-            title: t('Loads these {n} as your own scrambles, in order', { n: scrambles.length }),
-            onclick: () => app.setCustomScrambles(scrambles),
-          })) : null);
-    };
-
-    const drawTrend = (list, markers) => {
-      shown = list;
-      pinned = -1;
-      pickHost.hidden = true;
-      pickHost.replaceChildren();
-      const focus = () => trendCard.focus({ preventScroll: true });
-      chart = renderTrend(trendHost, list, (s, i) => {
-        hoverInfo.textContent = s ? `#${i + 1}  ${fmtResult(eff(s), isMoveResult(s))}  ·  ${s.scramble.slice(0, 60)}` : '';
-      }, {
-        markers,
-        // Focus follows the click so the arrow keys and Enter land here.
-        onPin: (i) => { showPin(i); focus(); },
-        onBrush: (a, b) => { showRange(a, b); focus(); },
-      });
-    };
-
-    const trendCard = el('div', {
-      class: 'chart-card', tabindex: 0,
-      'aria-label': t('Trend. Click a solve to pin it or drag across a range; arrow keys step the pinned solve, Enter repeats it.'),
-    }, el('h4', { text: t('Trend — solves, ao5, ao12, PB') }), cubeRow, trendHost, hoverInfo, pickHost);
-    trendCard.addEventListener('keydown', (e) => {
-      if (!chart || e.target.closest('select')) return;
-      const step = e.key === 'ArrowLeft' ? -1 : e.key === 'ArrowRight' ? 1 : 0;
-      if (step) {
-        e.preventDefault();
-        const i = pinned < 0 ? shown.length - 1 : Math.max(0, Math.min(shown.length - 1, pinned + step));
-        chart.pin(i);
-        showPin(i);
-      } else if (e.key === 'Enter' && pinned >= 0 && !e.target.closest('button')) {
-        e.preventDefault();
-        repeat(shown[pinned]);
+    sessionPick.addEventListener('change', async () => {
+      const request = ++revision;
+      const id = sessionPick.value;
+      status.textContent = t('Loading statistics…');
+      try {
+        const list = id === app.session.id ? app.solves
+          : id ? await Solves.bySession(id) : await app.allSolves();
+        if (disposed || request !== revision) return;
+        scopedSolves = list;
+        selectedSession = id;
+        scopeName = id ? app.sessions.find(s => s.id === id)?.name || t('Session') : t('All sessions');
+        status.textContent = '';
+        render();
+        sessionPick.focus({ preventScroll: true });
+      } catch (err) {
+        if (disposed || request !== revision) return;
+        sessionPick.value = selectedSession;
+        status.textContent = t('Could not load statistics. Please try again.');
+        console.warn('[stats] session unavailable', err);
       }
     });
-    body.append(trendCard);
-    drawTrend(solves, []);
+    resultPick.addEventListener('change', () => {
+      render();
+      resultPick.focus({ preventScroll: true });
+    });
 
-    (async () => {
-      let owned = [];
-      try { owned = await Gear.all(); } catch (err) { console.warn('[gear] chart filter unavailable', err); return; }
-      if (!owned.length) return;
-      for (const g of owned) cubePick.append(el('option', { value: g.id, text: gearLabel(g) }));
-      cubeRow.hidden = false;
-      cubePick.addEventListener('change', async () => {
-        const id = cubePick.value;
-        const list = filterByCube(solves, id);
-        /* Only the selected cube's events are drawn. Every cube's log on one
-           line would be a picket fence you cannot read a change out of. */
-        let markers = [];
-        if (id) {
-          try {
-            const log = await GearLog.byGear(id);
-            markers = markersFor(list, log).map(m => ({ ...m, label: LOG_KINDS[m.kind] || m.kind }));
-          } catch (err) { console.warn('[gear] log unavailable', err); }
-        }
-        hoverInfo.textContent = '';
-        drawTrend(list, markers);
-      });
-    })();
+    const render = () => {
+      const scrollTop = body.scrollTop;
+      const hasMoves = scopedSolves.some(isMoveResult);
+      const hasTimes = scopedSolves.some(s => !isMoveResult(s));
+      resultRow.hidden = !(hasMoves && hasTimes);
+      // A time in milliseconds and a move count cannot share an average or axis.
+      const solves = [...scopedSolves].filter(s => resultRow.hidden ||
+        isMoveResult(s) === (resultPick.value === 'moves')).sort((a, b) => a.createdAt - b.createdAt);
+      body.replaceChildren();
+      const st = summarize(solves);
+      const cases = byCase(solves);
 
-    const histHost = el('div');
-    body.append(el('div', { class: 'chart-card' }, el('h4', { text: t('Distribution') }), histHost));
-    renderHistogram(histHost, solves);
+      const cell = (k, v, sub) => el('div', { class: 'bs' },
+        el('span', { class: 'bs-k', text: k }),
+        el('span', { class: 'bs-v', text: v }),
+        sub ? el('span', { class: 'bs-sub', text: sub }) : null);
 
-    /* ---- when in the day, and how deep into a sitting ----
-       Means leave DNFs out and count them beside the mean. A group short of
-       MIN_GROUP finished solves is still drawn, but never named as a finding. */
-    const hourName = (h) => `${h % 12 || 12} ${t(h < 12 ? 'am' : 'pm')}`;
-    const plural = (n) => t(n === 1 ? '{n} solve' : '{n} solves', { n });
-    const groupText = (g, showMean, note) => [
-      showMean && g.mean !== null ? f(g.mean) : '',
-      plural(g.count) + (g.dnf ? ` (${g.dnf} DNF)` : ''),
-      note,
-    ].filter(Boolean).join(' · ');
+      const moves = solves.some(isMoveResult);
+      const f = v => fmtResult(v, moves);
 
-    const groupCard = (title, summary, rows, note) => {
-      const host = el('div');
-      const listHost = el('div', { class: 'sd-list', hidden: true });
-      body.append(el('div', { class: 'chart-card' },
-        el('h4', { text: title }),
-        el('div', { text: summary, style: { fontSize: '.84rem', color: 'var(--text-dim)' } }),
-        host,
-        el('div', { class: 'bs-sub', text: note }),
-        listHost));
-      renderGroupBars(host, rows, (row) => {
-        listHost.hidden = !row;
-        listHost.replaceChildren(...(row ? row.list.map((s, i) => solveRow(app, s, i + 1, at.get(s))) : []));
-      });
-    };
+      body.append(
+        group(scopeName,
+          el('div', { class: 'big-stats' },
+            cell('solves', String(st.count), `${st.dnfCount} DNF · ${st.plus2Count} +2`),
+            cell('best', f(st.best)),
+            cell('worst', f(st.worst)),
+            cell('mean', f(st.mean)),
+            cell('median', f(st.median)),
+            cell(t('std dev'), f(st.stdev)),
+            cell('mo3', f(st.mo3)),
+            cell('ao5', f(st.ao5), st.bestAo5 ? t('best ') + f(st.bestAo5) : ''),
+            ...(() => {
+              const bw = app.settings.showBpa !== false && bpaWpa(solves);
+              return bw ? [cell('bpa / wpa', `${f(bw.bpa)} / ${f(bw.wpa)}`, t('next ao5 if the 5th is perfect / a DNF'))] : [];
+            })(),
+            cell('ao12', f(st.ao12), st.bestAo12 ? t('best ') + f(st.bestAo12) : ''),
+            cell('ao50', f(st.ao50)),
+            cell('ao100', f(st.ao100)),
+            cell('ao1000', f(solves.length >= 1000 ? bestAvg(solves, 1000).value : null)),
+          ),
+          solves.length ? el('div', { class: 'sd-actions' },
+            el('button', { class: 'btn primary', text: t('Copy selected stats'),
+              onclick: () => app.copyToast(sessionReport(solves), 'Session stats') }),
+            el('button', { class: 'btn', text: t('Download selected stats (.txt)'),
+              onclick: () => download(`${scopeName.replace(/\W+/g, '-')}-stats.txt`, sessionReport(solves), 'text/plain') }),
+          ) : null),
+      );
 
-    const hb = byHourOfDay(solves);
-    groupCard(t('When you’re fastest'),
-      hb.best
-        ? t('Fastest around {hour} (mean {mean} over {count})', { hour: hourName(hb.best.hour), mean: f(hb.best.mean), count: plural(hb.best.valid) })
-        : t('No hour has {n} finished solves yet, so there is no fastest hour to name.', { n: MIN_GROUP }),
-      hb.hours.filter(h => h.count).map(h => {
-        const few = h.valid < MIN_GROUP;
-        return {
-          label: hourName(h.hour), value: h.mean, faint: few, list: h.list,
-          text: groupText(h, true, h === hb.best ? t('fastest') : few ? t('too few to count') : ''),
-        };
-      }),
-      t('local time · faded hours have under {n} finished solves · click a bar for its solves', { n: MIN_GROUP }));
+      /* The consistency tile's figure, worked through with this session's own
+         numbers, and how it moved solve by solve. */
+      const pct = (v, d = 0) => (v * 100).toFixed(d) + '%';
+      const consHost = el('div');
+      const calc = st.consistency === null
+        ? [t('Needs 2 or more finished solves.')]
+        : [
+          t('spread = std dev ÷ mean = {sd} ÷ {mean} = {spread}', { sd: f(st.stdev), mean: f(st.mean), spread: pct(st.stdev / st.mean, 1) }),
+          t('consistency = 1 − spread ÷ {cap} = 1 − {spread} ÷ {cap} = {cons}', { cap: pct(CONS_SPREAD), spread: pct(st.stdev / st.mean, 1), cons: pct(st.consistency) }),
+        ];
+      body.append(el('div', { class: 'chart-card', id: 'cons-card' },
+        el('h4', { text: t('Consistency — {v}', { v: st.consistency === null ? '—' : pct(st.consistency) }) }),
+        ...calc.map(line => el('div', { text: line, style: { fontSize: '.84rem', color: 'var(--text-dim)', fontVariantNumeric: 'tabular-nums' } })),
+        consHost,
+        el('div', { class: 'bs-sub', text: t('Every finished solve in the selection counts, +2s at their penalised time; DNFs are left out. No spread reads 100%, a spread of {cap} or more reads 0%.', { cap: pct(CONS_SPREAD) }) })));
+      renderConsistency(consHost, consistencySeries(solves, 12), 12);
 
-    const sp = bySittingPosition(solves);
-    const stretch = (b) => b.hi === Infinity ? t('solves {a}+', { a: b.lo }) : t('solves {a}–{b}', { a: b.lo, b: b.hi });
-    let slowdown = t('Not enough to compare yet — two stretches of a sitting need {n} finished solves each.', { n: MIN_GROUP });
-    if (sp.last) {
-      const d = sp.delta;
-      const word = t(moves ? (d < 0 ? 'shorter' : 'longer') : (d < 0 ? 'faster' : 'slower'));
-      slowdown = d === 0
-        ? t('Later solves are no different — {a} and {b} both average {mean}.', { a: stretch(sp.last), b: stretch(sp.first), mean: f(sp.first.mean) })
-        : t('Later solves are {word}: {a} average {meanA}, {d}{unit} {word} than {b} ({meanB}).', {
-          word, a: stretch(sp.last), meanA: f(sp.last.mean), d: f(Math.abs(d)),
-          unit: moves ? t(' moves') : '', b: stretch(sp.first), meanB: f(sp.first.mean),
+      // Where each solve sits in the session, for "solve #" labels on any subset.
+      const at = new Map(solves.map((s, i) => [s, i]));
+
+      const hoverInfo = el('div', { class: 'bs-sub', style: { minHeight: '1.2em' } });
+      const trendHost = el('div');
+      /* What a click or a drag on the trend picked out: one pinned solve with
+         what you can do with it, or a range and what it adds up to. */
+      const pickHost = el('div', { class: 'sd-list', hidden: true });
+      /* The cube filter starts as "all cubes" and stays that way if you own
+         none — the row appears only once there is something to choose between,
+         so a session that has never touched the gear log looks exactly as it
+         did before. */
+      const cubePick = el('select', { class: 'inp', 'aria-label': t('Cube') }, el('option', { value: '', text: t('all cubes') }));
+      const cubeRow = el('label', { class: 'chart-filter', hidden: true },
+        el('span', { class: 'bs-sub', text: t('Cube') }), cubePick);
+
+      let shown = solves, chart = null, pinned = -1;
+
+      const repeat = (s) => { closeDrawer(); app.repeatScramble(s); };
+
+      const showPin = (i) => {
+        pinned = i;
+        const s = shown[i], gi = at.get(s);
+        pickHost.hidden = false;
+        pickHost.replaceChildren(
+          solveRow(app, s, gi + 1, gi, { pinned: true }),
+          el('div', { class: 'sd-actions' },
+            el('button', { class: 'btn primary', text: t('Repeat this scramble'), onclick: () => repeat(s) }),
+            // The workbench is a 3x3 one; a relay's legs are reconstructed one by one from the solve menu.
+            s.relay?.length ? null : el('button', { class: 'ghost-btn', text: t('Reconstruct'), onclick: () => app.reconstructSolve(s) }),
+            el('button', { class: 'ghost-btn', text: t('Copy scramble'), onclick: () => app.copyToast(s.scramble || '', 'Scramble') }),
+            el('span', { class: 'bs-sub', text: t('← → neighbouring solve · Enter repeats') })));
+      };
+
+      const showRange = (a, b) => {
+        pinned = -1;
+        const range = shown.slice(a, b + 1);
+        const g = groupStats(range);
+        // A relay is several scrambles to one attempt, and the queue deals single ones.
+        const scrambles = range.filter(s => !s.relay?.length).map(s => s.scramble).filter(Boolean);
+        pickHost.hidden = false;
+        pickHost.replaceChildren(
+          el('div', { class: 'big-stats' },
+            cell('solves', String(g.count), `#${at.get(shown[a]) + 1}–#${at.get(shown[b]) + 1}`),
+            cell('mean', f(g.mean), g.dnf ? t('{n} DNF left out', { n: g.dnf }) : ''),
+            cell('best', f(g.best))),
+          scrambles.length ? el('div', { class: 'sd-actions' },
+            el('button', {
+              class: 'btn primary', text: t('Practise these scrambles again'),
+              title: t('Loads these {n} as your own scrambles, in order', { n: scrambles.length }),
+              onclick: () => app.setCustomScrambles(scrambles),
+            })) : null);
+      };
+
+      const drawTrend = (list, markers) => {
+        shown = list;
+        pinned = -1;
+        pickHost.hidden = true;
+        pickHost.replaceChildren();
+        const focus = () => trendCard.focus({ preventScroll: true });
+        chart = renderTrend(trendHost, list, (s, i) => {
+          hoverInfo.textContent = s ? `#${i + 1}  ${fmtResult(eff(s), isMoveResult(s))}  ·  ${(s.scramble || '').slice(0, 60)}` : '';
+        }, {
+          markers,
+          // Focus follows the click so the arrow keys and Enter land here.
+          onPin: (i) => { showPin(i); focus(); },
+          onBrush: (a, b) => { showRange(a, b); focus(); },
         });
-    }
-    groupCard(t('Do you slow down?'), slowdown,
-      solves.length ? sp.buckets.map(b => {
-        // Too few to trust: no bar and no mean, rather than a guess drawn to scale.
-        const few = b.valid < MIN_GROUP;
-        return {
-          label: stretch(b), value: few ? null : b.mean, faint: few, list: b.list,
-          text: groupText(b, !few, few ? t('too few to say') : ''),
+      };
+
+      const trendCard = el('div', {
+        class: 'chart-card', tabindex: 0,
+        'aria-label': t('Trend. Click a solve to pin it or drag across a range; arrow keys step the pinned solve, Enter repeats it.'),
+      }, el('h4', { text: t('Trend — solves, ao5, ao12, PB') }), filters, cubeRow, trendHost, hoverInfo, pickHost);
+      trendCard.addEventListener('keydown', (e) => {
+        if (!chart || !shown.length || e.target.closest('select')) return;
+        const step = e.key === 'ArrowLeft' ? -1 : e.key === 'ArrowRight' ? 1 : 0;
+        if (step) {
+          e.preventDefault();
+          const i = pinned < 0 ? shown.length - 1 : Math.max(0, Math.min(shown.length - 1, pinned + step));
+          chart.pin(i);
+          showPin(i);
+        } else if (e.key === 'Enter' && pinned >= 0 && !e.target.closest('button')) {
+          e.preventDefault();
+          repeat(shown[pinned]);
+        }
+      });
+      body.append(trendCard);
+      drawTrend(filterByCube(solves, cubeId), []);
+
+      (async () => {
+        let owned = [];
+        try { owned = await Gear.all(); } catch (err) { console.warn('[gear] chart filter unavailable', err); return; }
+        if (!owned.length) return;
+        for (const g of owned) cubePick.append(el('option', { value: g.id, text: gearLabel(g) }));
+        cubePick.value = owned.some(g => g.id === cubeId) ? cubeId : '';
+        cubeRow.hidden = false;
+        let cubeRevision = 0;
+        const updateCube = async () => {
+          const request = ++cubeRevision;
+          const id = cubePick.value;
+          cubeId = id;
+          const list = filterByCube(solves, id);
+          /* Only the selected cube's events are drawn. Every cube's log on one
+             line would be a picket fence you cannot read a change out of. */
+          let markers = [];
+          if (id) {
+            try {
+              const log = await GearLog.byGear(id);
+              markers = markersFor(list, log).map(m => ({ ...m, label: LOG_KINDS[m.kind] || m.kind }));
+            } catch (err) { console.warn('[gear] log unavailable', err); }
+          }
+          if (disposed || request !== cubeRevision || !body.contains(trendCard)) return;
+          hoverInfo.textContent = '';
+          drawTrend(list, markers);
         };
-      }) : [],
-      t('a sitting ends at a break of {n} minutes or more · click a bar for its solves', { n: SITTING_GAP_MS / 60000 }));
+        cubePick.addEventListener('change', updateCube);
+        if (!disposed && body.contains(trendCard)) updateCube();
+      })();
 
-    /* The heatmap reads the whole store rather than this session, so it is the
-       one chart that can go stale while the panel is open: deleting solves
-       elsewhere in the drawer left the old grid on screen. Re-read on demand,
-       and hang the reloader off the host so anything that changes solves can
-       call it. */
-    const heatHost = el('div', { class: 'heat-host' });
-    body.append(el('div', { class: 'chart-card' },
-      el('h4', { text: t('Practice heatmap — all events, last 12 months') }), heatHost));
-    const drawHeat = () => app.allSolves().then(all => renderHeatmap(heatHost, all));
-    heatHost.refresh = drawHeat;
-    drawHeat();
+      const histHost = el('div');
+      body.append(el('div', { class: 'chart-card' }, el('h4', { text: t('Distribution') }), histHost));
+      renderHistogram(histHost, solves);
 
-    const bs = bldSummary(solves);
-    if (bs) {
-      const pct = (v) => Math.round(v * 100);
-      /* The headline share is worked out from the very means printed beside
-         it, not from bs.ratio: a mean of per-solve shares is the better
-         statistic but it does not divide the two figures on screen, and a
-         "memo 4.10 · exec 4.19 · 59% memo" card reads as a bug. bs.ratio
-         still drives the drift and the trend, where the direction is the
-         point and one long solve should not own the answer. */
-      const share = bs.memo / Math.max(1, bs.memo + bs.exec);
-      const drift = bs.drift === null ? null : pct(bs.drift);
-      /* A bar rather than a chart: it is one number, and the only comparison
-         that matters is memo against exec inside the same solve. */
-      const bar = el('div', { class: 'me-bar' },
-        el('span', { class: 'me-memo', style: { width: pct(share) + '%' } }),
-        el('span', { class: 'me-exec', style: { width: (100 - pct(share)) + '%' } }));
+      /* ---- when in the day, and how deep into a sitting ----
+         Means leave DNFs out and count them beside the mean. A group short of
+         MIN_GROUP finished solves is still drawn, but never named as a finding. */
+      const hourName = (h) => `${h % 12 || 12} ${t(h < 12 ? 'am' : 'pm')}`;
+      const plural = (n) => t(n === 1 ? '{n} solve' : '{n} solves', { n });
+      const groupText = (g, showMean, note) => [
+        showMean && g.mean !== null ? f(g.mean) : '',
+        plural(g.count) + (g.dnf ? ` (${g.dnf} DNF)` : ''),
+        note,
+      ].filter(Boolean).join(' · ');
 
-      const trend = el('div', { class: 'me-trend' });
-      for (const r of bs.ratios.slice(-40)) {
-        trend.append(el('i', { style: { height: Math.max(4, Math.round(r * 100)) + '%' } }));
+      const groupCard = (title, summary, rows, note) => {
+        const host = el('div');
+        const listHost = el('div', { class: 'sd-list', hidden: true });
+        body.append(el('div', { class: 'chart-card' },
+          el('h4', { text: title }),
+          el('div', { text: summary, style: { fontSize: '.84rem', color: 'var(--text-dim)' } }),
+          host,
+          el('div', { class: 'bs-sub', text: note }),
+          listHost));
+        renderGroupBars(host, rows, (row) => {
+          listHost.hidden = !row;
+          listHost.replaceChildren(...(row ? row.list.map((s, i) => solveRow(app, s, i + 1, at.get(s))) : []));
+        });
+      };
+
+      const hb = byHourOfDay(solves);
+      groupCard(t('When you’re fastest'),
+        hb.best
+          ? t('Fastest around {hour} (mean {mean} over {count})', { hour: hourName(hb.best.hour), mean: f(hb.best.mean), count: plural(hb.best.valid) })
+          : t('No hour has {n} finished solves yet, so there is no fastest hour to name.', { n: MIN_GROUP }),
+        hb.hours.filter(h => h.count).map(h => {
+          const few = h.valid < MIN_GROUP;
+          return {
+            label: hourName(h.hour), value: h.mean, faint: few, list: h.list,
+            text: groupText(h, true, h === hb.best ? t('fastest') : few ? t('too few to count') : ''),
+          };
+        }),
+        t('local time · faded hours have under {n} finished solves · click a bar for its solves', { n: MIN_GROUP }));
+
+      const sp = bySittingPosition(solves);
+      const stretch = (b) => b.hi === Infinity ? t('solves {a}+', { a: b.lo }) : t('solves {a}–{b}', { a: b.lo, b: b.hi });
+      let slowdown = t('Not enough to compare yet — two stretches of a sitting need {n} finished solves each.', { n: MIN_GROUP });
+      if (sp.last) {
+        const d = sp.delta;
+        const word = t(moves ? (d < 0 ? 'shorter' : 'longer') : (d < 0 ? 'faster' : 'slower'));
+        slowdown = d === 0
+          ? t('Later solves are no different — {a} and {b} both average {mean}.', { a: stretch(sp.last), b: stretch(sp.first), mean: f(sp.first.mean) })
+          : t('Later solves are {word}: {a} average {meanA}, {d}{unit} {word} than {b} ({meanB}).', {
+            word, a: stretch(sp.last), meanA: f(sp.last.mean), d: f(Math.abs(d)),
+            unit: moves ? t(' moves') : '', b: stretch(sp.first), meanB: f(sp.first.mean),
+          });
+      }
+      groupCard(t('Do you slow down?'), slowdown,
+        solves.length ? sp.buckets.map(b => {
+          // Too few to trust: no bar and no mean, rather than a guess drawn to scale.
+          const few = b.valid < MIN_GROUP;
+          return {
+            label: stretch(b), value: few ? null : b.mean, faint: few, list: b.list,
+            text: groupText(b, !few, few ? t('too few to say') : ''),
+          };
+        }) : [],
+        t('a sitting ends at a break of {n} minutes or more · click a bar for its solves', { n: SITTING_GAP_MS / 60000 }));
+
+      /* The heatmap reads the whole store rather than this session, so it is the
+         one chart that can go stale while the panel is open: deleting solves
+         elsewhere in the drawer left the old grid on screen. Re-read on demand,
+         and hang the reloader off the host so anything that changes solves can
+         call it. */
+      const heatHost = el('div', { class: 'heat-host' });
+      body.append(el('div', { class: 'chart-card' },
+        el('h4', { text: t('Practice heatmap — all events, last 12 months') }), heatHost));
+      const drawHeat = () => app.allSolves().then(all => renderHeatmap(heatHost, all));
+      heatHost.refresh = drawHeat;
+      drawHeat();
+
+      const bs = bldSummary(solves);
+      if (bs) {
+        const pct = (v) => Math.round(v * 100);
+        /* The headline share is worked out from the very means printed beside
+           it, not from bs.ratio: a mean of per-solve shares is the better
+           statistic but it does not divide the two figures on screen, and a
+           "memo 4.10 · exec 4.19 · 59% memo" card reads as a bug. bs.ratio
+           still drives the drift and the trend, where the direction is the
+           point and one long solve should not own the answer. */
+        const share = bs.memo / Math.max(1, bs.memo + bs.exec);
+        const drift = bs.drift === null ? null : pct(bs.drift);
+        /* A bar rather than a chart: it is one number, and the only comparison
+           that matters is memo against exec inside the same solve. */
+        const bar = el('div', { class: 'me-bar' },
+          el('span', { class: 'me-memo', style: { width: pct(share) + '%' } }),
+          el('span', { class: 'me-exec', style: { width: (100 - pct(share)) + '%' } }));
+
+        const trend = el('div', { class: 'me-trend' });
+        for (const r of bs.ratios.slice(-40)) {
+          trend.append(el('i', { style: { height: Math.max(4, Math.round(r * 100)) + '%' } }));
+        }
+
+        const verdict = drift === null
+          ? t('Not enough blind solves yet to say which way it is drifting.')
+          : Math.abs(drift) < 3
+            ? t('Your split is holding steady across the session.')
+            : drift > 0
+              ? t('Your memo is taking proportionally longer than it was earlier in the session — ') +
+                (bs.count >= 6 ? t('up {d} points over the last {n} solves.', { d: drift, n: bs.window }) : '')
+              : t('Execution is taking proportionally longer than it was earlier — down {d} points over the last {n} solves, so your turning rather than your memo is the slower half tonight.', { d: Math.abs(drift), n: bs.window });
+
+        body.append(el('div', { class: 'chart-card' },
+          el('h4', { text: t('Memo and execution — {n} blind solves', { n: bs.count }) }),
+          el('div', { class: 'big-stats' },
+            cell('memo', fmt(bs.memo), pct(share) + t('% of the solve')),
+            cell('exec', fmt(bs.exec), (100 - pct(share)) + t('% of the solve')),
+            cell('split', pct(share) + '/' + (100 - pct(share)),
+              drift === null ? t('no trend yet') : (drift > 0 ? '+' : '') + drift + t(' pts recently'))),
+          bar,
+          el('div', { class: 'bs-sub', text: t('memo share, one bar per solve (last 40)') }),
+          trend,
+          el('div', { class: 'hint-note', text: verdict + t(' Elite blind solvers often sit near 30/70, but that is a reference point, not a target — the number worth watching is your own drift.') })));
       }
 
-      const verdict = drift === null
-        ? t('Not enough blind solves yet to say which way it is drifting.')
-        : Math.abs(drift) < 3
-          ? t('Your split is holding steady across the session.')
-          : drift > 0
-            ? t('Your memo is taking proportionally longer than it was earlier in the session — ') +
-              (bs.count >= 6 ? t('up {d} points over the last {n} solves.', { d: drift, n: bs.window }) : '')
-            : t('Execution is taking proportionally longer than it was earlier — down {d} points over the last {n} solves, so your turning rather than your memo is the slower half tonight.', { d: Math.abs(drift), n: bs.window });
+      /* Per-puzzle breakdown for a relay session. The main figures above are the
+         totals, as they are for every other event — this is the layer underneath
+         them: where the time actually went, and which puzzle is worth an hour of
+         practice. By position rather than by event, because a relay can hold the
+         same puzzle twice and the second one is not the first. */
+      const rs = relaySummary(solves);
+      if (rs) {
+        const pct = (v) => Math.round(v * 100);
+        const bar = el('div', { class: 'relay-bar' }, ...rs.legs.map(l =>
+          el('span', {
+            class: 'relay-bar-seg',
+            style: { width: pct(l.share) + '%' },
+            title: t('{event} · {p}% of the relay', { event: eventOf(l.event).short, p: pct(l.share) }),
+          })));
 
-      body.append(el('div', { class: 'chart-card' },
-        el('h4', { text: t('Memo and execution — {n} blind solves', { n: bs.count }) }),
-        el('div', { class: 'big-stats' },
-          cell('memo', fmt(bs.memo), pct(share) + t('% of the solve')),
-          cell('exec', fmt(bs.exec), (100 - pct(share)) + t('% of the solve')),
-          cell('split', pct(share) + '/' + (100 - pct(share)),
-            drift === null ? t('no trend yet') : (drift > 0 ? '+' : '') + drift + t(' pts recently'))),
-        bar,
-        el('div', { class: 'bs-sub', text: t('memo share, one bar per solve (last 40)') }),
-        trend,
-        el('div', { class: 'hint-note', text: verdict + t(' Elite blind solvers often sit near 30/70, but that is a reference point, not a target — the number worth watching is your own drift.') })));
-    }
+        body.append(el('div', { class: 'chart-card' },
+          el('h4', { text: t(rs.count === 1 ? 'Per puzzle — {n} relay' : 'Per puzzle — {n} relays', { n: rs.count }) }),
+          el('div', { class: 'big-stats' }, ...rs.legs.map((l, i) =>
+            cell(`${i + 1}. ${eventOf(l.event).short}`, fmt(l.mean),
+              t('best {time} · {p}%', { time: fmt(l.best), p: pct(l.share) })))),
+          bar,
+          el('div', { class: 'bs-sub', text: t('share of the total, in solving order') }),
+          el('div', { class: 'hint-note', text:
+            t('Averages and personal bests above are the totals, exactly as they are for any other event. These are the splits underneath them — the puzzle taking the biggest share is where a relay is usually won or lost.') })));
+      }
 
-    /* Per-puzzle breakdown for a relay session. The main figures above are the
-       totals, as they are for every other event — this is the layer underneath
-       them: where the time actually went, and which puzzle is worth an hour of
-       practice. By position rather than by event, because a relay can hold the
-       same puzzle twice and the second one is not the first. */
-    const rs = relaySummary(solves);
-    if (rs) {
-      const pct = (v) => Math.round(v * 100);
-      const bar = el('div', { class: 'relay-bar' }, ...rs.legs.map(l =>
-        el('span', {
-          class: 'relay-bar-seg',
-          style: { width: pct(l.share) + '%' },
-          title: t('{event} · {p}% of the relay', { event: eventOf(l.event).short, p: pct(l.share) }),
-        })));
-
-      body.append(el('div', { class: 'chart-card' },
-        el('h4', { text: t(rs.count === 1 ? 'Per puzzle — {n} relay' : 'Per puzzle — {n} relays', { n: rs.count }) }),
-        el('div', { class: 'big-stats' }, ...rs.legs.map((l, i) =>
-          cell(`${i + 1}. ${eventOf(l.event).short}`, fmt(l.mean),
-            t('best {time} · {p}%', { time: fmt(l.best), p: pct(l.share) })))),
-        bar,
-        el('div', { class: 'bs-sub', text: t('share of the total, in solving order') }),
-        el('div', { class: 'hint-note', text:
-          t('Averages and personal bests above are the totals, exactly as they are for any other event. These are the splits underneath them — the puzzle taking the biggest share is where a relay is usually won or lost.') })));
-    }
-
-    if (cases.length) {
-      const caseHost = el('div');
-      body.append(el('div', { class: 'chart-card' },
-        el('h4', { text: t('Slowest cases in this session') }), caseHost));
-      renderCaseBars(caseHost, cases);
-    }
+      if (cases.length) {
+        const caseHost = el('div');
+        body.append(el('div', { class: 'chart-card' },
+          el('h4', { text: t('Slowest cases in the selection') }), caseHost));
+        renderCaseBars(caseHost, cases);
+      }
+      body.scrollTop = scrollTop;
+    };
+    render();
+    return () => { disposed = true; revision++; };
   };
 }
 
