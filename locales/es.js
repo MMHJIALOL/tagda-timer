@@ -2853,5 +2853,15 @@ export const es = {
   "Syncing 1 change…": "Sincronizando 1 cambio…",
   "1 change waiting to sync": "1 cambio pendiente de sincronizar",
   "Recovered session": "Sesión recuperada",
-  "Account status could not be checked. Check your connection and try signing in again.": "No se pudo comprobar el estado de la cuenta. Comprueba tu conexión y vuelve a intentar iniciar sesión."
+  "Account status could not be checked. Check your connection and try signing in again.": "No se pudo comprobar el estado de la cuenta. Comprueba tu conexión y vuelve a intentar iniciar sesión.",
+  "Statistics session": "Sesión de estadísticas",
+  "All sessions": "Todas las sesiones",
+  "Result type": "Tipo de resultado",
+  "Timed solves": "Resoluciones cronometradas",
+  "Loading statistics…": "Cargando estadísticas…",
+  "Could not load statistics. Please try again.": "No se pudieron cargar las estadísticas. Inténtalo de nuevo.",
+  "Copy selected stats": "Copiar estadísticas seleccionadas",
+  "Download selected stats (.txt)": "Descargar estadísticas seleccionadas (.txt)",
+  "Every finished solve in the selection counts, +2s at their penalised time; DNFs are left out. No spread reads 100%, a spread of {cap} or more reads 0%.": "Cuenta cada resolución completada de la selección, con las penalizaciones +2 incluidas; se excluyen los DNF. Sin dispersión indica 100%; una dispersión de {cap} o más indica 0%.",
+  "Slowest cases in the selection": "Casos más lentos de la selección",
 };
