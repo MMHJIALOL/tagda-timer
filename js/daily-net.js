@@ -54,6 +54,7 @@ import { t } from './i18n.js';
 
 import { getDatabaseHandle } from './sync-auth.js';
 import { adminStatus } from './admins.js';
+import { getConfig } from './config.js';
 import { CLOCK_SLACK_MS, CLOCK_SLACK_RATIO, CHAT_HISTORY } from './raceapp.js';
 import { cleanChat } from './race-net.js';
 
@@ -135,6 +136,11 @@ const emptySnapshot = (event) => ({
      message and take anybody's time off a board. Only draws the buttons; the
      rules decide, by admins/<uid>. */
   admin: false,
+  /* bans/<uid> for the signed-in account: { at, reason, until? } while an
+     admin has banned it, else null (js/admins.js banActive says whether it is
+     still in force). Watched, like `removed`. Only explains things: the rules
+     refuse a banned account's writes regardless. */
+  ban: null,
   /* Whether the scramble node has actually reported yet.
      `scramble: null` alone cannot answer "has anybody published today's?" —
      it is also what a listener that has not yet delivered its first value
@@ -179,6 +185,8 @@ export class DailyTransport extends EventTarget {
     this._removedUnsub = null;
     this._removedKey = null;
     this._adminUid = null;
+    this._banUnsub = null;
+    this._banUid = undefined;
   }
 
   async init() {
@@ -190,6 +198,7 @@ export class DailyTransport extends EventTarget {
     this.snap.displayName = auth.currentUser?.displayName || auth.currentUser?.email || null;
     this.snap.photoURL = auth.currentUser?.photoURL || null;
     this._checkAdmin(auth.currentUser);
+    this._watchBan();
 
     // Auth-state changes reach this transport through setUser(), called by the
     // controller from sync-auth.js's onAuthChange — the db handle above only
@@ -208,8 +217,29 @@ export class DailyTransport extends EventTarget {
     this.snap.displayName = user?.displayName || user?.email || null;
     this.snap.photoURL = user?.photoURL || null;
     this._checkAdmin(user);
+    this._watchBan();
     this._watchRemoved();
     this._emit();
+  }
+
+  /**
+   * Follow bans/<uid> for the signed-in account. Readable by its owner, and
+   * on the connection this transport already has; refused is the rules from
+   * before bans, where nobody is banned, and is left at null.
+   */
+  _watchBan() {
+    const uid = this.snap.uid;
+    if (!this._sdk || uid === this._banUid) return;
+    this._banUnsub?.();
+    this._banUnsub = null;
+    this._banUid = uid;
+    this.snap.ban = null;
+    if (!uid) return;
+    this._banUnsub = this._sdk.onValue(this._ref(`bans/${uid}`), (s) => {
+      if (this._banUid !== uid) return;
+      this.snap.ban = s.val() || null;
+      this._emit();
+    }, () => {});
   }
 
   /** Ask admins/<uid> once per account; until it answers, not an admin. */
@@ -244,7 +274,7 @@ export class DailyTransport extends EventTarget {
     this._teardownEvent();
 
     this.snap = { ...emptySnapshot(eventId), uid: this.snap.uid, signedIn: this.snap.signedIn,
-      displayName: this.snap.displayName, photoURL: this.snap.photoURL, admin: this.snap.admin,
+      displayName: this.snap.displayName, photoURL: this.snap.photoURL, admin: this.snap.admin, ban: this.snap.ban,
       // The count board is not per-event, so switching events must not blank it.
       counts: this.snap.counts || {}, serverNow: now };
     this.snap.dayId = dayId;
@@ -747,10 +777,24 @@ export class DailyTransport extends EventTarget {
     const base = `daily/${dayKey}/${event}/chat`;
     // push() with no value only makes the id: time-ordered, so the query's order.
     const id = S.push(this._ref(`${base}/m`)).key;
-    const msg = { uid, name: String(name || 'Cuber').slice(0, 32), text: body, at: S.serverTimestamp() };
+    // The admin console can shorten it (config/sotdChat/maxLen); the rules hold the same line.
+    const msg = { uid, name: String(name || 'Cuber').slice(0, 32), text: body.slice(0, getConfig('sotdChat', 'maxLen')), at: S.serverTimestamp() };
     if (photo) msg.photo = photo;
     await S.update(this._ref(base), { [`m/${id}`]: msg, [`last/${uid}`]: S.serverTimestamp() });
     return id;
+  }
+
+  /**
+   * How many replays have been shared on `dayKey`, all events together: one
+   * entry per claim under replayDay/ (the Worker writes it, ADMIN.md). Asked
+   * before uploading, so a full day is found out before the one share for the
+   * event is spent on it. null when it cannot be read (rules from before it).
+   */
+  async replaysShared(dayKey) {
+    try {
+      const v = (await this._sdk.get(this._ref(`replayDay/${dayKey}`))).val() || {};
+      return Object.values(v).reduce((n, ev) => n + Object.keys(ev || {}).length, 0);
+    } catch { return null; }
   }
 
   /** Take a message down: your own, or anybody's for an admin. The rules decide which. */
@@ -781,11 +825,20 @@ export class DailyTransport extends EventTarget {
       return false;
     }
     await Promise.allSettled(rest.map(k => S.update(this._ref(`daily/${k}`), paths)));
+    /* The replay counts of the same days, bar yesterday's, whose replays can
+       still be shared. One blind update; refused on rules from before them. */
+    if (rest.length) {
+      // The root: ref(db, '') is refused as an empty path.
+      S.update(S.ref(S.db), Object.fromEntries(rest.map(k => [`replayDay/${k}`, null])))
+        .catch(err => console.warn('[daily] replay count sweep refused', err?.code || err));
+    }
     return true;
   }
 
   destroy() {
     clearTimeout(this._chatRetry);
+    this._banUnsub?.();
+    this._banUnsub = null;
     this._offsetUnsub?.();
     this._countUnsub?.();
     this._countUnsub = null;

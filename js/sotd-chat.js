@@ -21,7 +21,7 @@ import { t } from './i18n.js';
    =========================================================== */
 
 import { el } from './util.js';
-import { toast, confirmToast } from './toast.js';
+import { toast, confirmToast, choiceToast } from './toast.js';
 import { RACE_EMOJI, CHAT_MAX_LEN } from './raceapp.js';
 import { cleanChat } from './race-net.js';
 import { openOwnerCard, OWNER_UID } from './ownercard.js';
@@ -81,9 +81,12 @@ export function mountChat(ctl, { avatar, onBack } = {}) {
     onclick: () => onBack?.(),
     onkeydown: (e) => e.stopPropagation(),
   });
+  /* In place of the box when this account cannot post: banned, or the chat
+     switched off from the admin console (ADMIN.md). Reading carries on. */
+  const blocked = el('div', { class: 'sc-blocked', role: 'status', hidden: true });
   const node = el('div', { class: 'sotd-chat-card' },
     el('div', { class: 'sc-head' }, back, el('h3', { class: 'sc-title', text: t('Chat') }), sub),
-    log, tray, form);
+    log, tray, form, blocked);
 
   const setTray = (open) => {
     tray.hidden = !open;
@@ -106,7 +109,7 @@ export function mountChat(ctl, { avatar, onBack } = {}) {
       const out = await ctl.sendChat(body);
       if (out === 'slow') {
         input.value = body;
-        toast(t('Slow down a little: one message every 2 seconds'));
+        toast(t('Slow down a little: one message every {s} seconds', { s: Math.round(ctl.chatGapMs / 100) / 10 }));
       } else if (out === 'closed') {
         input.value = body;
       }
@@ -136,16 +139,37 @@ export function mountChat(ctl, { avatar, onBack } = {}) {
 
   const remove = async (m) => {
     const mine = m.uid === ctl.snap?.uid;
-    const ok = await confirmToast(mine ? t('Delete your message?') : t('Delete {name}’s message?', { name: m.name || 'Cuber' }),
-      t('Delete'));
-    if (!ok) return;
+    const name = m.name || 'Cuber';
+    // An admin on somebody else's message may also ban them (bans/, ADMIN.md); never the default.
+    const how = mine || !ctl.admin
+      ? ((await confirmToast(mine ? t('Delete your message?') : t('Delete {name}’s message?', { name }), t('Delete'))) ? 'delete' : null)
+      : await choiceToast(t('Delete {name}’s message?', { name }),
+        [{ label: t('Delete'), value: 'delete' }, { label: t('Delete and ban'), value: 'ban' }]);
+    if (!how) return;
     try {
       await ctl.deleteChat(m.id);
       toast(t('Message deleted'));
     } catch (err) {
       console.warn('[daily] chat delete refused', err?.code || err);
       toast(t('Could not delete that message'), { kind: 'bad' });
+      return;
     }
+    if (how !== 'ban') return;
+    try {
+      await ctl.banUser({ uid: m.uid, name, reason: `Chat message: "${String(m.text || '').slice(0, 120)}"` });
+      toast(t('{name} is banned from the boards, chats and replays', { name }), { long: true });
+    } catch (err) {
+      console.warn('[daily] ban refused', err?.code || err);
+      toast(t('The database refused the ban — firebase.rules.json needs publishing first'), { kind: 'bad', long: true });
+    }
+  };
+
+  /** The box, or why there is no box. */
+  const posting = () => {
+    const why = ctl.chatBlocked;
+    form.hidden = !!why;
+    blocked.hidden = !why;
+    if (why) { blocked.textContent = why; setTray(false); }
   };
 
   let sig = null;
@@ -216,16 +240,21 @@ export function mountChat(ctl, { avatar, onBack } = {}) {
     sub.textContent = t('{event} · today · clears at the reset', { event: eventOf(ctl.eventId).short });
   };
 
-  const onChat = () => { head(); draw(); };
+  const onChat = () => { head(); draw(); posting(); };
   ctl.addEventListener('chat', onChat);
+  // A ban arrives with the board's snapshot, a switch with the settings.
+  ctl.addEventListener('change', posting);
+  addEventListener('tdt-config', posting);
   onChat();
 
   return {
     node,
     /** Called by the window on its own redraws: the event can change under it. */
-    refresh: () => { head(); draw(); },
+    refresh: () => { head(); draw(); posting(); },
     dispose() {
       ctl.removeEventListener('chat', onChat);
+      ctl.removeEventListener('change', posting);
+      removeEventListener('tdt-config', posting);
       document.removeEventListener('click', onDocClick);
     },
   };

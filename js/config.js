@@ -1,85 +1,25 @@
 /* ===========================================================
-   Tagda Timer — settings the admin console can change
+   Tagda Timer — settings the admin console can change, as the app reads them
 
-   CONFIG below is the whole list: every setting, its default, and the
-   range it may take. Four things are built from it and nothing else:
-     - getConfig(), what the app reads;
-     - the admin page's forms (js/admin.js);
-     - the `config` block of firebase.rules.json, written by
-       `node tools/config-rules.mjs` (and checked by test.html, so the two
-       cannot drift);
-     - the tables in ADMIN.md.
-
-   The default is today's hard-coded value, and it is what the app runs on
-   whenever the database has nothing, has junk, or cannot be reached. A
-   number's `max` is a ceiling: getConfig() clips to it, the rules refuse
-   anything above it, and where it guards money it is the same number the
-   code used before there was a setting (ADMIN.md, "Ceilings").
+   The table itself (every setting, its default, its range) is
+   js/config-table.js, kept free of anything browser-only so worker.js can
+   bundle it too. This file adds the live copy: getConfig(), what the app
+   reads, and loadConfig(), which fetches it.
 
    Reading it costs one plain REST fetch of /config.json, kept in
    localStorage for CACHE_MS. Never a live listener: the Firebase project is
    on the Spark plan, 100 connections at once (RACE.md, "Cost"), and a
-   setting that changes a few times a week is not worth one.
+   setting that changes a few times a week is not worth one. If the fetch
+   fails, the last copy or the defaults stay in use and nothing breaks.
    =========================================================== */
 
-/**
- * One entry per section, one per key inside it.
- *   type   'bool' | 'int' | 'text'
- *   def    the built-in default
- *   min, max   ints: the range; `max` is the ceiling. text: `max` characters.
- *   where  where it takes effect: 'rules', 'worker' or 'app' (ADMIN.md)
- */
-export const CONFIG = {
-  sandbox: {
-    title: 'Sandbox',
-    about: 'Nothing reads these. They are here to try the page with: change one, find it in the log, undo it.',
-    keys: {
-      on:   { type: 'bool', def: false, label: 'A switch', where: 'nowhere' },
-      n:    { type: 'int', def: 5, min: 0, max: 10, label: 'A number', where: 'nowhere' },
-      text: { type: 'text', def: '', max: 80, label: 'A line of text', where: 'nowhere' },
-    },
-  },
-};
+import { CONFIG, NAME, spec, allSettings, clean, valid, sectionOf } from './config-table.js';
+
+export { CONFIG, NAME, spec, allSettings, clean, valid, sectionOf };
 
 /** How long a fetched copy is trusted before the next page load asks again. */
 export const CACHE_MS = 5 * 60_000;
 const CACHE_KEY = 'tdt-config';
-/** A section or key name, as the rules and the log's `path` allow it. */
-export const NAME = /^[a-zA-Z]{1,24}$/;
-
-export function spec(section, key) {
-  return CONFIG[section]?.keys?.[key] || null;
-}
-
-/** Every setting as [section, key, spec], in table order. */
-export function allSettings() {
-  return Object.entries(CONFIG).flatMap(([s, sec]) => Object.entries(sec.keys).map(([k, sp]) => [s, k, sp]));
-}
-
-/**
- * A stored value made safe to use, or undefined when it is not one. A number
- * past the range is clipped to it rather than thrown away: the ceiling is
- * min(setting, max), whatever reached the database.
- */
-export function clean(sp, v) {
-  if (!sp) return undefined;
-  if (sp.type === 'bool') return typeof v === 'boolean' ? v : undefined;
-  if (sp.type === 'int') {
-    if (typeof v !== 'number' || !Number.isFinite(v)) return undefined;
-    return Math.min(sp.max, Math.max(sp.min, Math.round(v)));
-  }
-  if (sp.type === 'text') return typeof v === 'string' ? v.slice(0, sp.max) : undefined;
-  return undefined;
-}
-
-/** Whether `v` may be written as it is: what the rules accept, checked before sending. */
-export function valid(sp, v) {
-  if (!sp) return false;
-  if (sp.type === 'bool') return typeof v === 'boolean';
-  if (sp.type === 'int') return Number.isInteger(v) && v >= sp.min && v <= sp.max;
-  if (sp.type === 'text') return typeof v === 'string' && v.length <= sp.max;
-  return false;
-}
 
 /* ---------------- the live copy ---------------- */
 

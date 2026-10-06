@@ -17,6 +17,7 @@ import { MODES, EVENTS, EVENT_ORDER, eventOf, virtualSize, relayLegEvents, relay
 import { setFor } from './scramble.js';
 import { toast, confirmToast } from './toast.js';
 import { canSpeak } from './fx.js';
+import { getConfig } from './config.js';
 import { exportAll, Assets, Solves, LetterPairs } from './db.js';
 import { Gear, GearLog, LOG_KINDS, newGear, newLogEntry, gearLabel,
          loadSeeds, filterByCube, markersFor, activeGearId, setActiveGearId } from './gear.js';
@@ -212,8 +213,8 @@ export function webcamControls(app, { onWatch = null, compact = false } = {}) {
        asked, the same choice as the tick beside Share replay. */
     const shareRow = row(t('Always share my SOTD replay'),
       toggle(S.sotdShareAuto, v => set('sotdShareAuto', v)),
-      compact ? t('after you submit, for others who did it. Kept 7 days')
-        : t('after you submit the Scramble of the Day, a copy of its clip goes up for everyone else who did it to watch, for 7 days. Off, there is a Share replay button under the board instead'));
+      compact ? t('after you submit, for others who did it. Kept {n} days', { n: getConfig('replays', 'keepDays') })
+        : t('after you submit the Scramble of the Day, a copy of its clip goes up for everyone else who did it to watch, for {n} days. Off, there is a Share replay button under the board instead', { n: getConfig('replays', 'keepDays') }));
     const shareSoundRow = row(t('Include sound in shared replays'), toggle(S.sotdShareSound, v => set('sotdShareSound', v)),
       note(t('off, the copy that goes up is silent')));
     shareSoundRow.hidden = !S.webcamSound;
@@ -2880,6 +2881,7 @@ export function buildRace(app) {
             console.error('[race] join failed:', err);
             const why = err?.message === 'room-full' ? t('That room is full ({n} max)', { n: race.ROOM_MAX })
               : err?.message === 'bad-code' ? t('A room code is at least 3 characters')
+              : err?.message === 'race-off' ? (getConfig('race', 'message') || t('New race rooms are switched off for now'))
               : err?.message === 'no-config' ? t('Real rooms are not configured — see RACE.md')
               : t('Could not join that room');
             toast(why, { kind: 'bad' });
@@ -2894,6 +2896,9 @@ export function buildRace(app) {
           ),
           el('div', { class: 'hint-note', text:
             t('A room code is all anybody needs to get in — there is no sign-in and no account. Anyone with the code can join, so treat it like the door key it is.') }),
+          // Switched off from the admin console: rooms already open still work.
+          getConfig('race', 'enabled') ? null : el('div', { class: 'sc-blocked', role: 'status', text:
+            (getConfig('race', 'message') || t('New race rooms are switched off for now')) + ' ' + t('Rooms already open still work.') }),
         ));
       } else {
         const link = `${location.origin}${location.pathname}?race=${ctl.snap.roomId}`;

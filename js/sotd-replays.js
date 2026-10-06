@@ -18,19 +18,35 @@ import { t } from './i18n.js';
      being read. R2 is never listed from here.
    Every refusal is a toast and nothing else: the solve, the time and the
    board are never touched by any of it.
+
+   The admin console's config/replays (ADMIN.md) can switch it all off,
+   shrink a clip or the day, end it early, or keep clips fewer days. worker.js
+   enforces every one of those; this side reads the same settings so that it
+   says so before doing any work, and asks the day's count (replayDay/)
+   before uploading, because a share refused for a full day has spent the
+   account's one share for that event.
    =========================================================== */
 
 import { el } from './util.js';
 import { toast, confirmToast } from './toast.js';
 import { idToken } from './sync-auth.js';
+import { getConfig, loadConfig } from './config.js';
+import { banLine } from './admins.js';
 import { hasReplay, loadClip, clipMeta, clipReady, holdFinish, openReplay, replaySettings,
          setReplaySetting } from './replay.js';
 
-/** worker.js's CLIP_MAX, mirrored: the copy is sized to fit under it. */
+/** worker.js's CLIP_MAX, mirrored: the copy is sized to fit under it, or under the setting if that is smaller. */
 export const CLIP_MAX = 10 * 1024 * 1024;
 const DAY_MS = 86_400_000;
-/** The Worker's rule exactly: gone once the day is more than 7 days over. */
-export const replayKept = (dayKey, now = Date.now()) => now <= Number(dayKey) + 8 * DAY_MS;
+const clipMax = () => Math.min(CLIP_MAX, getConfig('replays', 'maxClipBytes'));
+/** How many days after its day a clip is kept: 7, or fewer from the admin console. */
+export const keepDays = () => getConfig('replays', 'keepDays');
+/** The Worker's rule exactly: gone once the day is more than keepDays() over. */
+export const replayKept = (dayKey, now = Date.now()) => now <= Number(dayKey) + (keepDays() + 1) * DAY_MS;
+/** Sharing and watching switched on (config/replays/enabled). */
+export const replaysOn = () => getConfig('replays', 'enabled');
+const offText = () => getConfig('replays', 'message') || t('Replays are switched off for now');
+const FULL = () => t('Today’s replay slots are full');
 
 const PLAY = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l10.5-6.5z" fill="currentColor" stroke="none"/></svg>';
 const keyOf = ({ dayKey, event, uid }) => `${dayKey}|${event}|${uid}`;
@@ -74,18 +90,20 @@ const VIEW_ERRORS = {
   401: () => t('Sign in to watch replays'),
   403: () => t('Submit your own attempt to watch the replays'),
   404: () => t('That replay was removed'),
-  410: () => t('Replays are kept for 7 days'),
+  410: () => t('Replays are kept for {n} days', { n: keepDays() }),
+  503: offText,
 };
 
 /** Whether a board row's ▶ should be drawn. */
 export const canPlay = (dayKey, event, uid, result) =>
-  result?.replay === true && replayKept(dayKey) && !gone.has(keyOf({ dayKey, event, uid }));
+  result?.replay === true && replaysOn() && replayKept(dayKey) && !gone.has(keyOf({ dayKey, event, uid }));
 
 /** Fetch (once) and play somebody's shared clip. `button` shows it loading. */
-export async function playShared({ dayKey, event, uid, name, timeMs, penalty, button = null, onGone = null }) {
+export async function playShared({ dayKey, event, uid, name, timeMs, penalty, button = null, onGone = null, onBan = null }) {
   const at = { dayKey, event, uid };
   const key = keyOf(at);
-  if (!replayKept(dayKey)) { toast(t('Replays are kept for 7 days')); return; }
+  if (!replaysOn()) { toast(offText()); return; }
+  if (!replayKept(dayKey)) { toast(t('Replays are kept for {n} days', { n: keepDays() })); return; }
   if (button) { button.disabled = true; button.classList.add('loading'); }
   try {
     let p = clips.get(key);
@@ -100,6 +118,7 @@ export async function playShared({ dayKey, event, uid, name, timeMs, penalty, bu
       blob: got.blob, meta: got.meta, timeMs: timeMs ?? got.meta.timeMs, penalty, name,
       // The player asks first: a toast's buttons cannot be pressed under a modal.
       onRemove: got.admin ? () => removeShared(at, { asked: true }).then((ok) => { if (ok) onGone?.(); return ok; }) : null,
+      onBan: got.admin && onBan ? () => onBan({ uid, name }) : null,
     });
   } catch (err) {
     if (err instanceof ReplayError) {
@@ -115,7 +134,7 @@ export async function playShared({ dayKey, event, uid, name, timeMs, penalty, bu
 }
 
 /** The ▶ on a board row. */
-export function playButton({ dayKey, event, uid, result, onGone }) {
+export function playButton({ dayKey, event, uid, result, onGone, onBan = null }) {
   const name = result?.name || 'Cuber';
   const b = el('button', {
     class: 'db-play', type: 'button', html: PLAY,
@@ -123,7 +142,7 @@ export function playButton({ dayKey, event, uid, result, onGone }) {
   });
   b.addEventListener('click', (e) => {
     e.stopPropagation();
-    playShared({ dayKey, event, uid, name, timeMs: result?.timeMs, penalty: result?.penalty || 'none', button: b, onGone });
+    playShared({ dayKey, event, uid, name, timeMs: result?.timeMs, penalty: result?.penalty || 'none', button: b, onGone, onBan });
   });
   // The keys belong to the timer behind the board: space on a focused ▶ must not start a solve.
   b.addEventListener('keydown', (e) => e.stopPropagation());
@@ -135,6 +154,8 @@ export function playButton({ dayKey, event, uid, result, onGone }) {
 const jobs = new Map();      // key -> { phase: 'preparing' | 'uploading', pct }
 const spent = new Map();     // key -> whether today's one share for it is used (shared, or shared and removed)
 const off = new Set();       // keys whose board runs rules from before replays: nothing can be shared yet
+const full = new Set();      // day keys whose replay slots are all taken (replays.maxPerDay)
+const counted = new Set();   // day keys whose count has been read once for the box
 const asked = new Set();     // keys whose claim has been read once
 const boxes = new Set();     // share boxes on screen, repainted as a job moves
 const repaint = () => boxes.forEach(b => b.refresh());
@@ -160,6 +181,7 @@ function xhrPut(url, token, blob, type, metaJson, onProgress) {
 const SHARE_ERRORS = {
   401: () => t('Sign in again to share your replay'),
   409: () => t('You have already shared a replay for this today'),
+  429: FULL,
   413: () => t('That replay is too big to share'),
   415: () => t('That clip can’t be shared'),
   503: () => t('Sharing replays isn’t switched on yet'),
@@ -183,11 +205,24 @@ export async function shareReplay(ctl, at, solveId, { quiet = false } = {}) {
   jobs.set(key, job);
   repaint();
   try {
+    // The admin console's switches first: off, or banned, and nothing else is worth doing.
+    await loadConfig();
+    if (!replaysOn()) { if (!quiet) toast(offText(), { long: true }); return false; }
+    if (ctl.banned) { if (!quiet) toast(banLine(ctl.snap?.ban), { kind: 'bad', long: true }); return false; }
     /* One read before any work: rules not published yet, or today's share
        already used, is known without encoding or uploading anything. */
     const claimed = await ctl.net?.hasReplayClaim?.(at);
     if (claimed === 'off') { off.add(key); toast(SHARE_ERRORS[503](), { kind: 'bad', long: true }); return false; }
     if (claimed === true) { spent.set(key, true); if (!quiet) toast(SHARE_ERRORS[409](), { kind: 'bad' }); return false; }
+    /* …and whether the day still has room. The Worker counts again before
+       its put, but by then the claim, this account's one share for the event
+       today, is spent; asking here first means that rarely happens. */
+    const shared = await ctl.net?.replaysShared?.(at.dayKey);
+    if (shared != null && shared >= getConfig('replays', 'maxPerDay')) {
+      full.add(at.dayKey);
+      if (!quiet) toast(FULL(), { long: true });
+      return false;
+    }
     await clipReady(solveId);
     const got = await loadClip(solveId);
     if (!got) { if (!quiet) toast(t('That replay is gone')); return false; }
@@ -199,7 +234,7 @@ export async function shareReplay(ctl, at, solveId, { quiet = false } = {}) {
     try {
       const media = await import('./replay-media.js');
       copy = await media.shareCopy(got.blob, {
-        sound: !!(m.sound && S.sotdShareSound), maxBytes: CLIP_MAX,
+        sound: !!(m.sound && S.sotdShareSound), maxBytes: clipMax(),
         onProgress: (p) => { job.pct = p; repaint(); },
       });
     } catch (err) {
@@ -235,10 +270,19 @@ export async function shareReplay(ctl, at, solveId, { quiet = false } = {}) {
       toast(t('Replay shared'));
       return true;
     }
-    if (res.status === 409 || res.status === 507) spent.set(key, true);
+    if (res.status === 409 || res.status === 507 || res.status === 429) spent.set(key, true);
+    if (res.status === 429) full.add(at.dayKey);
+    // 503 is either the switch (`off`, with the admin's message) or rules from before replays.
+    if (res.status === 503 && res.body?.error === 'off') {
+      if (!quiet) toast(res.body.message || offText(), { long: true });
+      loadConfig({ maxAge: 0 }).then(repaint);
+      return false;
+    }
     if (res.status === 503) off.add(key);
     const msg = res.status === 403
-      ? (res.body?.error === 'not-google' ? t('Only Google accounts can share replays') : t('Submit today’s attempt first'))
+      ? (res.body?.error === 'not-google' ? t('Only Google accounts can share replays')
+        : res.body?.error === 'banned' ? (ctl.snap?.ban ? banLine(ctl.snap.ban) : t('This account can’t share replays'))
+          : t('Submit today’s attempt first'))
       : (SHARE_ERRORS[res.status] || (() => t('Couldn’t share the replay, try later')))();
     toast(msg, { kind: 'bad', long: true });
     return false;
@@ -294,6 +338,8 @@ export function bindReplays(ctl) {
     if (!at?.dayKey) return;
     const key = keyOf(at);
     for (const s of [clips, gone, spent, off, asked]) s.delete(key);
+    counted.delete(at.dayKey);
+    full.delete(at.dayKey);
     repaint();
   });
   ctl.addEventListener('submitted', (e) => {
@@ -327,6 +373,14 @@ export function shareBox(ctl) {
         repaint();
       });
     }
+    /* Whether the day is already full, once, while there is still a share
+       to make: the box says so rather than offering a button that will fail. */
+    if (local && !counted.has(at.dayKey) && ctl.net?.replaysShared && row?.replay !== true && replaysOn()) {
+      counted.add(at.dayKey);
+      ctl.net.replaysShared(at.dayKey).then((n) => {
+        if (n != null && n >= getConfig('replays', 'maxPerDay')) { full.add(at.dayKey); repaint(); }
+      });
+    }
     if (local && !metaCache.has(solveId)) {
       metaCache.set(solveId, null);
       clipMeta(solveId).then((m) => { metaCache.set(solveId, !!m?.sound); box.refresh(); }, () => {});
@@ -342,16 +396,22 @@ export function shareBox(ctl) {
       ];
     } else if (row?.replay === true) {
       kids = [el('div', { class: 'db-share-row' },
-        el('span', { class: 'db-share-done', text: t('Replay shared · kept 7 days') }),
+        el('span', { class: 'db-share-done', text: t('Replay shared · kept {n} days', { n: keepDays() }) }),
         el('button', { class: 'ghost-btn sm', type: 'button', text: t('Watch'), onclick: () => {
           // Yours is on this device: watching it costs nothing.
           if (local) openReplay(ctl.app?.solves?.find(s => s.id === solveId) || solveId);
           else playShared({ ...at, name: row.name, timeMs: row.timeMs, penalty: row.penalty });
         } }),
         el('button', { class: 'ghost-btn sm danger', type: 'button', text: t('Remove'), onclick: () => removeShared(at) }))];
+    } else if (!replaysOn() && local) {
+      kids = [el('div', { class: 'db-share-row' }, el('span', { class: 'db-share-note', text: offText() }))];
+    } else if (ctl.banned && local) {
+      kids = [el('div', { class: 'db-share-row' }, el('span', { class: 'db-share-note', text: banLine(ctl.snap?.ban) }))];
     } else if (off.has(key)) {
       kids = [el('div', { class: 'db-share-row' },
         el('span', { class: 'db-share-note', text: t('Sharing replays isn’t switched on yet') }))];
+    } else if (full.has(at.dayKey) && local && !spent.get(key)) {
+      kids = [el('div', { class: 'db-share-row' }, el('span', { class: 'db-share-note', text: FULL() }))];
     } else if (spent.get(key)) {
       kids = [el('div', { class: 'db-share-row' },
         el('span', { class: 'db-share-note', text: t('Your replay isn’t shared. One share per event a day.') }))];
@@ -365,7 +425,7 @@ export function shareBox(ctl) {
           el('button', { class: 'btn primary sm', type: 'button', html: `${PLAY}<span>${t('Share replay')}</span>`,
             onclick: () => shareReplay(ctl, at, solveId) }),
           sound ? el('label', { class: 'db-share-sound' }, tick, el('span', { text: t('Include sound') })) : null),
-        el('div', { class: 'db-share-note', text: t('Everyone who has done today’s scramble can watch it, for 7 days. Your copy stays on this device.') }),
+        el('div', { class: 'db-share-note', text: t('Everyone who has done today’s scramble can watch it, for {n} days. Your copy stays on this device.', { n: keepDays() }) }),
       ];
     } else { box.hidden = true; return; }
     box.hidden = false;
@@ -373,8 +433,10 @@ export function shareBox(ctl) {
     // Space on a focused button here is not the timer's.
     for (const b of box.querySelectorAll('button, input')) b.addEventListener('keydown', (e) => e.stopPropagation());
   };
-  box.dispose = () => boxes.delete(box);
+  box.dispose = () => { boxes.delete(box); removeEventListener('tdt-config', box.refresh); };
   boxes.add(box);
+  // A switch flipped from the admin console redraws it.
+  addEventListener('tdt-config', box.refresh);
   box.refresh();
   return box;
 }

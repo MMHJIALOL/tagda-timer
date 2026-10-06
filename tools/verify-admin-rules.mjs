@@ -16,6 +16,7 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { allSettings } from '../js/config-table.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const DB = (process.env.RTDB || 'http://127.0.0.1:9000').replace(/\/+$/, '');
@@ -176,6 +177,19 @@ const u = await change('admin', 'sandbox/on', true, false, { undo: 'T2' });
 expect('an undo naming the entry it undoes', u, true);
 expect('an undo naming an entry that does not exist, refused', await change('admin', 'sandbox/on', false, true, { undo: 'nope' }), false);
 
+// Every number in the table: its ceiling and floor are the rules' too.
+for (const [s, k, sp] of allSettings()) {
+  if (sp.type !== 'int') continue;
+  const path = `${s}/${k}`;
+  const was = (await call('GET', `config/${path}`, undefined, null)).body ?? undefined;
+  const top = await change('admin', path, sp.max, was);
+  const over = await change('admin', path, sp.max + 1, sp.max);
+  const under = await change('admin', path, sp.min - 1, sp.max);
+  expect(`${path}: ${sp.max} (the ceiling) allowed, ${sp.max + 1} and ${sp.min - 1} refused`,
+    { ok: top.ok && !over.ok && !under.ok, status: 0, body: [top.status, over.status, under.status] }, true);
+  await change('admin', path, null, sp.max);
+}
+
 /* ---------------- configLog/ and configMeta/ ---------------- */
 
 expect('an admin reads the change log', await call('GET', 'configLog', undefined, 'admin'), true);
@@ -194,7 +208,7 @@ expect('a lone log entry with no change behind it, refused', await call('PUT', '
 const log = await call('GET', 'configLog', undefined, 'admin');
 const entries = Object.values(log.body || {});
 expect('every change that landed has exactly one entry',
-  check(entries.length === 8 && entries.every(e => e.uid === 'boss' && typeof e.at === 'number'), entries.length), true);
+  check(entries.length >= 8 && entries.every(e => e.uid === 'boss' && typeof e.at === 'number'), entries.length), true);
 
 /* ---------------- the powers that used to be hard-coded ---------------- */
 

@@ -78,3 +78,29 @@ export function confirmToast(message, confirmLabel = 'Confirm', { timeout = 9000
   answer.dismiss = dismiss;
   return answer;
 }
+
+/**
+ * confirmToast with more than one way to say yes: resolves the chosen
+ * choice's `value`, or null for cancel, the timeout, or dismiss(). Used where
+ * an admin's "delete" has a sharper sibling ("delete and ban") that should
+ * never be the default.
+ */
+export function choiceToast(message, choices, { timeout = 9000, cancelLabel = 'cancel' } = {}) {
+  let dismiss;
+  const answer = new Promise((resolve) => {
+    const node = el('div', { class: 'toast bad' }, el('span', { text: message }));
+    const done = (v) => {
+      if (!node.isConnected || node.classList.contains('out')) return;
+      node.classList.add('out'); setTimeout(() => node.remove(), 220); resolve(v);
+    };
+    dismiss = () => done(null);
+    node.append(
+      ...choices.map(c => el('button', { class: 't-act', text: c.label, onclick: () => done(c.value) })),
+      el('button', { class: 't-act', style: { color: 'var(--text-faint)' }, text: cancelLabel, onclick: () => done(null) }),
+    );
+    $('#toasts').append(node);
+    setTimeout(() => done(null), timeout);
+  });
+  answer.dismiss = dismiss;
+  return answer;
+}

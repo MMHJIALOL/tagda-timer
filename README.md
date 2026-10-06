@@ -808,7 +808,11 @@ phone, with every change logged and undoable. An admin is a Google account liste
 `admins/` in the database, added by hand in the Firebase console; everybody else who opens the
 page is told it is for the site's admins, and the database rules refuse their writes anyway. It
 installs to the home screen as its own app, and the service worker never serves it from cache.
-How to turn it on, what each setting does and where it is enforced: [ADMIN.md](ADMIN.md).
+From it you can switch shared replays, either chat or new race rooms off with a message for
+people while they are off, tighten their limits (never past the free-tier ceilings in the code),
+ban an account from posting, sharing and submitting, and make every open tab reload onto a new
+deploy once its timer is idle. How to turn it on, what each setting does and where it is
+enforced: [ADMIN.md](ADMIN.md).
 
 ---
 

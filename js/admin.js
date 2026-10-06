@@ -6,6 +6,9 @@ import { t, translateDOM } from './i18n.js';
    use it is admins/<uid> in the database (js/admins.js); what the settings
    are is js/config.js; ADMIN.md has the rest.
 
+   Three tabs: Settings, Bans (bans/, who may not post, share or submit) and
+   the Change log.
+
    Every Save is one multi-path update: the value, its configMeta pointer and
    a configLog entry saying who changed what from what to what. The rules
    refuse a value that arrives without both, so the log cannot miss a change
@@ -20,8 +23,9 @@ import { t, translateDOM } from './i18n.js';
 import { el } from './util.js';
 import { toast } from './toast.js';
 import { onAuthChange, signIn, signOutUser, getDatabaseHandle, preloadAuth, takeRedirectError } from './sync-auth.js';
-import { adminStatus } from './admins.js';
+import { adminStatus, banAccount, unbanAccount, banActive } from './admins.js';
 import { CONFIG, spec, clean, valid } from './config.js';
+import { APP_VERSION } from './version.js';
 
 /** How many log entries the page keeps live. Older ones stay in the database. */
 const LOG_SHOWN = 200;
@@ -49,7 +53,8 @@ const S = {
   config: {},
   meta: {},
   log: [],
-  loaded: { config: false, log: false },
+  bans: {},
+  loaded: { config: false, log: false, bans: false },
   /** 'section/key' -> the value Save will write, or DEFAULT. */
   edits: new Map(),
   unsubs: [],
@@ -65,6 +70,13 @@ function raw(tag, props, text) {
   return n;
 }
 
+/** What the page shows a number in: MB for bytes, say (the table's `factor`). */
+const fac = (sp) => sp?.factor || 1;
+/** The highest value allowed here. `deployed`: no higher than this deploy's own version. */
+const maxHere = (sp) => (sp?.deployed ? Math.min(sp.max, APP_VERSION) : sp?.max);
+/** valid(), and for minVersion not past this deploy: no tab could ever satisfy it. */
+const validHere = (sp, v) => valid(sp, v) && !(sp?.deployed && v > APP_VERSION);
+
 const stored = (path) => {
   const [s, k] = path.split('/');
   const v = S.config?.[s]?.[k];
@@ -79,7 +91,8 @@ function show(sp, v) {
   }
   if (sp?.type === 'bool' || typeof v === 'boolean') return v ? t('On') : t('Off');
   if (typeof v === 'string') return v === '' ? t('(empty)') : `“${v}”`;
-  return sp?.unit ? `${v} ${t(sp.unit)}` : String(v);
+  const n = typeof v === 'number' ? v / fac(sp) : v;
+  return sp?.unit ? `${n} ${t(sp.unit)}` : String(n);
 }
 
 function ago(ms) {
@@ -120,6 +133,7 @@ function scheduleRender() {
 function route() {
   const h = location.hash.replace(/^#/, '');
   if (h === 'log') return { view: 'log' };
+  if (h === 'bans') return { view: 'bans' };
   const m = /^settings\/([a-zA-Z]+)$/.exec(h);
   if (m && CONFIG[m[1]]) return { view: 'section', section: m[1] };
   return { view: 'sections' };
@@ -154,6 +168,7 @@ function view() {
     default: {
       const r = route();
       if (r.view === 'log') return viewLog();
+      if (r.view === 'bans') return viewBans();
       if (r.view === 'section') return viewSection(r.section);
       return viewSections();
     }
@@ -181,8 +196,10 @@ function renderAccount() {
 function renderTabs() {
   const r = route().view;
   const tab = (href, label, on) => el('a', { class: `ad-tab${on ? ' on' : ''}`, href, 'aria-current': on ? 'page' : null, text: label });
+  const banned = Object.values(S.bans).filter(b => banActive(b)).length;
   $tabs.replaceChildren(
-    tab('#settings', 'Settings', r !== 'log'),
+    tab('#settings', 'Settings', r === 'sections' || r === 'section'),
+    tab('#bans', banned ? t('Bans · {n}', { n: banned }) : t('Bans'), r === 'bans'),
     tab('#log', 'Change log', r === 'log'));
 }
 
@@ -242,7 +259,7 @@ function settingRow(s, k, sp) {
   const refresh = () => {
     const has = S.edits.has(path);
     const e = S.edits.get(path);
-    const bad = has && e !== DEFAULT && !valid(sp, e);
+    const bad = has && e !== DEFAULT && !validHere(sp, e);
     row.classList.toggle('pending', has);
     row.classList.toggle('bad', bad);
     const was = stored(path);
@@ -269,17 +286,19 @@ function settingRow(s, k, sp) {
     input.addEventListener('change', () => { setEdit(path, sp, input.checked); refresh(); });
     control = el('label', { class: 'switch' }, input, el('span', { class: 'track' }), el('span', { class: 'thumb' }));
   } else if (sp.type === 'int') {
+    // In the table's unit (MB for bytes): what is typed is multiplied back before it is stored.
+    const f = fac(sp);
     const input = el('input', { type: 'text', id, inputmode: 'numeric', autocomplete: 'off', class: 'ad-inp ad-num-inp' });
-    input.value = String(shownValue(path, sp));
+    input.value = String(shownValue(path, sp) / f);
     const read = () => {
       const txt = input.value.trim();
-      setEdit(path, sp, /^-?\d+$/.test(txt) ? Number(txt) : txt);
+      setEdit(path, sp, /^-?\d+$/.test(txt) ? Number(txt) * f : txt);
       refresh();
     };
     input.addEventListener('input', read);
     const step = (d) => {
       const n = Number(input.value);
-      const next = Number.isInteger(n) ? Math.min(sp.max, Math.max(sp.min, n + d)) : sp.def;
+      const next = Number.isInteger(n) ? Math.min(maxHere(sp) / f, Math.max(sp.min / f, n + d)) : sp.def / f;
       input.value = String(next);
       read();
     };
@@ -310,7 +329,8 @@ function settingRow(s, k, sp) {
     sp.help ? el('p', { class: 'ad-help', text: sp.help }) : null,
     sp.type === 'bool' ? null : control,
     el('div', { class: 'ad-facts' },
-      sp.type === 'int' ? raw('span', { class: 'ad-range' }, t('{min} to {max}', { min: sp.min, max: sp.max }) + (sp.unit ? ` ${t(sp.unit)}` : '')) : null,
+      sp.type === 'int' ? raw('span', { class: 'ad-range' }, t('{min} to {max}', { min: sp.min / fac(sp), max: maxHere(sp) / fac(sp) }) + (sp.unit ? ` ${t(sp.unit)}` : '')) : null,
+      sp.deployed ? raw('span', { class: 'ad-range' }, t('this deploy is version {v}', { v: APP_VERSION })) : null,
       el('span', { class: 'ad-where', text: WHERE[sp.where] || sp.where })),
     status].filter(Boolean));
   refresh();
@@ -318,7 +338,8 @@ function settingRow(s, k, sp) {
 }
 
 function rangeText(sp) {
-  if (sp.type === 'int') return t('A whole number from {min} to {max}', { min: sp.min, max: sp.max });
+  if (sp.deployed) return t('A whole number from {min} to {max}: no deploy is newer than this one yet', { min: sp.min, max: maxHere(sp) });
+  if (sp.type === 'int') return t('A whole number from {min} to {max}', { min: sp.min / fac(sp), max: sp.max / fac(sp) });
   if (sp.type === 'text') return t('At most {max} characters', { max: sp.max });
   return t('On or off');
 }
@@ -329,13 +350,13 @@ function pendingChanges() {
   return [...S.edits].map(([path, to]) => {
     const [s, k] = path.split('/');
     const sp = spec(s, k);
-    return { path, sp, from: stored(path), to, ok: to === DEFAULT || valid(sp, to) };
+    return { path, sp, from: stored(path), to, ok: to === DEFAULT || validHere(sp, to) };
   });
 }
 
 function renderSavebar() {
   const list = pendingChanges();
-  const show = S.status === 'admin' && list.length > 0 && route().view !== 'log';
+  const show = S.status === 'admin' && list.length > 0 && ['sections', 'section'].includes(route().view);
   $savebar.hidden = !show;
   document.body.classList.toggle('has-savebar', show);
   if (!show) return;
@@ -441,7 +462,7 @@ function logRow(e, byId) {
   const sp = spec(s, k);
   const now = stored(e.path);
   const undone = byId.get(e.undo);
-  const can = !!sp && (e.from === undefined || valid(sp, e.from)) && now !== e.from;
+  const can = !!sp && (e.from === undefined || validHere(sp, e.from)) && now !== e.from;
   return el('li', { class: 'ad-entry' },
     el('div', { class: 'ad-entry-main' },
       raw('b', {}, labelOf(e.path)),
@@ -482,6 +503,112 @@ function askUndo(e, sp) {
       go));
 }
 
+/* ---------------- bans ---------------- */
+
+const UID_RE = /^[A-Za-z0-9]{1,128}$/;
+const banFor = () => [
+  { label: t('Until unbanned'), ms: 0 },
+  { label: t('1 day'), ms: 86_400_000 },
+  { label: t('7 days'), ms: 7 * 86_400_000 },
+  { label: t('30 days'), ms: 30 * 86_400_000 },
+];
+
+function viewBans() {
+  const head = [
+    el('h1', { class: 'ad-h1', text: 'Bans' }),
+    el('p', { class: 'ad-sub', text: 'A banned account cannot post in either chat, share a replay, or put a time or a note on the Scramble of the Day board. Its timer and its own synced solves are untouched. The database rules and the Worker enforce it. In the timer, an admin can also ban from a chat message, a board row or a shared replay.' }),
+  ];
+  const field = (label, input) => el('label', { class: 'ad-field' }, el('span', { class: 'ad-label', text: label }), input);
+  const uid = el('input', { class: 'ad-inp', autocomplete: 'off', spellcheck: 'false', autocapitalize: 'off', maxlength: 128 });
+  const name = el('input', { class: 'ad-inp', autocomplete: 'off', maxlength: 32 });
+  const reason = el('input', { class: 'ad-inp', autocomplete: 'off', maxlength: 200 });
+  const len = el('select', { class: 'ad-inp' }, ...banFor().map((b, i) => raw('option', { value: String(i) }, b.label)));
+  const form = el('form', { class: 'ad-row ad-ban-form' },
+    el('b', { text: 'Ban an account' }),
+    field(t('Account id (uid)'), uid),
+    field(t('Name, for this list'), name),
+    field(t('Reason, which they are shown'), reason),
+    field(t('For'), len),
+    el('div', { class: 'ad-sheet-actions' }, el('button', { class: 'ad-btn primary', type: 'submit', text: 'Ban…' })));
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const id = uid.value.trim();
+    if (!UID_RE.test(id)) { toast(t('That is not an account id: letters and digits only'), { kind: 'bad', long: true }); return; }
+    if (id === S.user?.uid) { toast(t('That is your own account'), { kind: 'bad', long: true }); return; }
+    const pick = banFor()[Number(len.value)] || banFor()[0];
+    askBan({ uid: id, name: name.value.trim(), reason: reason.value.trim(), ms: pick.ms, label: pick.label });
+  });
+  if (S.bansRefused) {
+    return [...head, gate('Publish the rules first', 'Bans need the firebase.rules.json from this version of the page. Publish it in the Firebase console and reload.')];
+  }
+  const rows = Object.entries(S.bans).sort((a, b) => (b[1]?.at || 0) - (a[1]?.at || 0));
+  const list = !S.loaded.bans ? el('p', { class: 'ad-note', text: 'Loading…' })
+    : !rows.length ? el('p', { class: 'ad-note', text: 'Nobody is banned.' })
+      : el('ol', { class: 'ad-log' }, ...rows.map(([id, b]) => banRow(id, b)));
+  return [...head, form, el('h2', { class: 'ad-h2 ad-gap', text: 'Banned now' }), list];
+}
+
+function banRow(id, b) {
+  const live = banActive(b);
+  const until = typeof b?.until === 'number'
+    ? (live ? t('until {when}', { when: new Date(b.until).toLocaleString() }) : t('ended {when}', { when: ago(b.until) }))
+    : t('until unbanned');
+  return el('li', { class: `ad-entry${live ? '' : ' ad-ended'}` },
+    el('div', { class: 'ad-entry-main' },
+      raw('b', {}, b?.name || id),
+      raw('span', { class: 'ad-uid' }, id),
+      raw('span', { class: 'ad-reason' }, b?.reason || '—'),
+      raw('span', { class: 'ad-entry-meta', title: b?.at ? new Date(b.at).toLocaleString() : '' },
+        [ago(b?.at), b?.by ? t('by {who}', { who: who(b.by) }) : '', until].filter(Boolean).join(' · '))),
+    el('button', { class: 'ad-btn small', text: live ? t('Unban') : t('Clear'), onclick: () => askUnban(id, b) }));
+}
+
+function askBan({ uid, name, reason, ms, label }) {
+  const go = el('button', { class: 'ad-btn primary', text: 'Ban' });
+  go.addEventListener('click', async () => {
+    go.disabled = true;
+    try {
+      await banAccount(S.sdk, { uid, name, reason, until: ms ? Date.now() + ms : null });
+      closeSheet();
+      toast(t('Banned. They can still use the timer.'), { kind: 'good', long: true });
+    } catch (err) {
+      console.warn('[admin] ban refused', err?.code || err);
+      toast(t('The database refused that ban'), { kind: 'bad', hold: true });
+      go.disabled = false;
+    }
+  });
+  openSheet(
+    el('h2', { class: 'ad-h2', text: t('Ban {who}?', { who: name || uid }) }),
+    el('ul', { class: 'ad-diffs' },
+      el('li', { class: 'ad-diff' }, raw('b', {}, uid), raw('span', { class: 'ad-reason' }, reason || '—'),
+        el('span', { class: 'ad-entry-meta', text: label }))),
+    el('p', { class: 'ad-sub', text: 'Until it ends or you unban them: no chat messages, no shared replays, nothing on the Scramble of the Day board. A race account is a throwaway, so a ban on one lasts only as long as that tab’s account.' }),
+    el('div', { class: 'ad-sheet-actions' },
+      el('button', { class: 'ad-btn', text: 'Back', onclick: closeSheet }),
+      go));
+}
+
+function askUnban(id, b) {
+  const go = el('button', { class: 'ad-btn primary', text: banActive(b) ? t('Unban') : t('Clear') });
+  go.addEventListener('click', async () => {
+    go.disabled = true;
+    try {
+      await unbanAccount(S.sdk, id);
+      closeSheet();
+      toast(t('Unbanned'), { kind: 'good' });
+    } catch (err) {
+      console.warn('[admin] unban refused', err?.code || err);
+      toast(t('The database refused that'), { kind: 'bad', hold: true });
+      go.disabled = false;
+    }
+  });
+  openSheet(
+    el('h2', { class: 'ad-h2', text: banActive(b) ? t('Unban {who}?', { who: b?.name || id }) : t('Clear this ended ban?') }),
+    el('div', { class: 'ad-sheet-actions' },
+      el('button', { class: 'ad-btn', text: 'Back', onclick: closeSheet }),
+      go));
+}
+
 /* ---------------- account ---------------- */
 
 async function doSignIn() {
@@ -501,8 +628,8 @@ async function doSignOut() {
 
 function teardown() {
   for (const off of S.unsubs.splice(0)) off();
-  S.config = {}; S.meta = {}; S.log = [];
-  S.loaded = { config: false, log: false };
+  S.config = {}; S.meta = {}; S.log = []; S.bans = {};
+  S.loaded = { config: false, log: false, bans: false };
 }
 
 /** A read the rules refuse mid-session: this account was taken off admins/. */
@@ -526,6 +653,10 @@ function listen() {
       S.loaded.log = true;
       scheduleRender();
     }, lost),
+    /* Refused here is rules from before bans (phase 1's), not a lost admin:
+       the Bans tab says so, and everything else carries on. */
+    onValue(ref(db, 'bans'), (s) => { S.bans = s.val() || {}; S.loaded.bans = true; S.bansRefused = false; scheduleRender(); },
+      () => { S.bansRefused = true; S.loaded.bans = true; scheduleRender(); }),
   );
 }
 

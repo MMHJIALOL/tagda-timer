@@ -29,6 +29,12 @@ import {
   CHAT_MAX_LEN, CHAT_COOLDOWN_MS, RACE_EMOJI,
 } from './raceapp.js';
 import { isOwnerName, openOwnerCard } from './ownercard.js';
+import { getConfig } from './config.js';
+import { banActive, banLine } from './admins.js';
+
+/** Why nobody can post in a room right now (config/raceChat, ADMIN.md), or null. */
+const chatOff = () => (getConfig('raceChat', 'enabled') ? null
+  : getConfig('raceChat', 'message') || t('Room chat is switched off for now'));
 
 /**
  * How long a settled leaderboard stays up before the next scramble.
@@ -954,10 +960,16 @@ export class Race extends EventTarget {
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h13M12 5l7 7-7 7"/></svg>
             </button>
           </form>
+          <div class="sc-blocked race-chat-off" role="status" hidden></div>
         </div>
         <div class="race-actions"></div>
       </div>`;
     host.append(node);
+    if (!this._configBound) {
+      this._configBound = true;
+      // A switch flipped from the admin console shows up without a reload.
+      addEventListener('tdt-config', () => this._syncChatOff());
+    }
     this._node = node;
 
     node.querySelector('.race-head').addEventListener('click', (e) => {
@@ -1257,7 +1269,9 @@ export class Race extends EventTarget {
     /* A cooldown rather than a queue. Holding Enter down is the only way
        anybody hits this, and the honest answer to that is to drop the extra
        presses on the floor, not to send them a moment later. */
-    if (Date.now() - this._chatSentAt < CHAT_COOLDOWN_MS) return;
+    // The rules' gap (config/raceChat/gapMs) and a little more, or the old 0.7 s if that is longer.
+    if (Date.now() - this._chatSentAt < Math.max(CHAT_COOLDOWN_MS, getConfig('raceChat', 'gapMs') + 500)) return;
+    if (chatOff()) { toast(chatOff()); return; }
     this._chatSentAt = Date.now();
 
     /* Cleared before the write, not after.
@@ -1274,6 +1288,10 @@ export class Race extends EventTarget {
       input.value = body;
       const code = err?.code || String(err || '');
       console.warn('[race] chat refused', code);
+      // Banned (this racer's own bans/<uid>), or switched off since the settings were read.
+      const ban = String(code).includes('PERMISSION_DENIED') ? await this.net.banOf?.() : null;
+      if (banActive(ban)) { toast(banLine(ban), { kind: 'bad', long: true }); return; }
+      if (chatOff()) { toast(chatOff(), { long: true }); this._syncChatOff(); return; }
       /* PERMISSION_DENIED here means one specific thing almost every time:
          the database is running rules that predate chat, so the write falls
          through to the root's ".write": false. Saying so is the difference
@@ -1294,10 +1312,22 @@ export class Race extends EventTarget {
    * replaced between two keystrokes loses what you typed and the caret with
    * it.
    */
+  /** The box, or why there is no box (config/raceChat/enabled). */
+  _syncChatOff() {
+    const wrap = this._node?.querySelector('.race-chat');
+    if (!wrap) return;
+    const why = chatOff();
+    wrap.querySelector('.race-chat-form').hidden = !!why;
+    const note = wrap.querySelector('.race-chat-off');
+    note.hidden = !why;
+    if (why) note.textContent = why;
+  }
+
   _syncChat() {
     const node = this._node;
     const wrap = node?.querySelector('.race-chat');
     if (!wrap) return;
+    this._syncChatOff();
 
     const log = this.chatLog;
 

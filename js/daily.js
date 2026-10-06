@@ -30,6 +30,8 @@ import {
   CHAT_GAP_MS,
 } from './daily-net.js';
 import { SUSPECT_RATIO } from './raceapp.js';
+import { getConfig } from './config.js';
+import { banActive, banLine, banAccount } from './admins.js';
 
 /**
  * Whether the "most solves today" board is shown.
@@ -230,6 +232,9 @@ export class Daily extends EventTarget {
     const rolled = this.snap && snap.dayId && this.snap.dayId !== snap.dayId;
     if (rolled) this._resetPublishState();
     this.snap = snap;
+    /* Banned while an attempt is armed but not started: take it back, since
+       the rules would refuse the time. One already under way finishes. */
+    if (this.banned && this.attempting && !this._lastStatus) this.attempting = false;
     // A board that reset under you starts your count again from the solves
     // that belong to the new day, rather than carrying yesterday's total.
     if (rolled) this.pushCount();
@@ -536,7 +541,7 @@ export class Daily extends EventTarget {
        had submitted yet and handed out a fresh crack at today's scramble
        even when the account had already spent it. */
     return !!(this.snap?.signedIn && this.snap.scramble && this._resultChecked
-      && !this.submittedToday && !this.attempting
+      && !this.submittedToday && !this.attempting && !this.banned
       // Removed by an admin: the backup or nothing, never the main scramble again.
       && (!this.removal || (!this.removal.final && this.onBackup)));
   }
@@ -809,6 +814,8 @@ export class Daily extends EventTarget {
   holdText() {
     if (!this.snap?.signedIn) return t('Sign in to be given today’s scramble');
     if (this.submittedToday) return t('You have already done today’s scramble — come back after the reset');
+    // Banned (bans/, ADMIN.md): the rules would refuse the time, so it is not offered.
+    if (this.banned) return banLine(this.snap.ban);
     if (this.snap.readError) {
       return t('Today’s board cannot be read on this deployment — see DAILY.md, firebase.rules.json probably needs republishing.');
     }
@@ -877,6 +884,7 @@ export class Daily extends EventTarget {
   locked() {
     if (!this.engaged) return false;
     if (!this.snap?.signedIn) return true;
+    if (this.banned) return true;
     if (!this.snap.scramble) return true;
     /* The misfire question is up, the backup is being claimed, or it is still
        on its way: nothing to solve yet. Shut during the question in particular,
@@ -1098,6 +1106,7 @@ export class Daily extends EventTarget {
    */
   async setNote(text) {
     if (!this.net || !this.submittedToday) return;
+    if (this.banned) { toast(banLine(this.snap.ban), { kind: 'bad', long: true }); return false; }
     const body = cleanNote(text);
     try {
       await this._retry(() => this.net.setNote(body));
@@ -1126,6 +1135,36 @@ export class Daily extends EventTarget {
     return this.revealed && ['loading', 'live'].includes(this.chat.state);
   }
 
+  /** Whether an admin has banned this account (bans/<uid>), as of the server's clock. */
+  get banned() {
+    return banActive(this.snap?.ban, this.net?.serverNow?.() ?? Date.now());
+  }
+
+  /**
+   * Why this account cannot post in the open room right now, or null if it
+   * can: banned, or the chat switched off from the admin console. The rules
+   * refuse the message either way; this is so the box says why first.
+   */
+  get chatBlocked() {
+    if (this.banned) return banLine(this.snap.ban);
+    if (!getConfig('sotdChat', 'enabled')) return getConfig('sotdChat', 'message') || t('The chat is switched off for now');
+    return null;
+  }
+
+  /** Least time between two of this account's messages, in this client: the rule's gap and a little more. */
+  get chatGapMs() {
+    return Math.max(CHAT_GAP_MS, getConfig('sotdChat', 'gapMs') + 500);
+  }
+
+  /**
+   * An admin bans somebody from the boards, the chats and replays (bans/,
+   * ADMIN.md), with a reason they will be shown. Throws when the rules refuse.
+   */
+  async banUser({ uid, name, reason }) {
+    if (!this.admin || !this.net?._sdk || !uid) throw new Error('not-admin');
+    await banAccount(this.net._sdk, { uid, name, reason });
+  }
+
   /** Whether this account may delete other people's messages and times (admins/; the rules have the final say). */
   get admin() {
     return !!this.snap?.uid && this.snap.admin === true;
@@ -1152,9 +1191,9 @@ export class Daily extends EventTarget {
    * server refuses, so the composer can put the text back.
    */
   async sendChat(text) {
-    if (!this.net || !this.chatOpen) return 'closed';
+    if (!this.net || !this.chatOpen || this.chatBlocked) return 'closed';
     const now = Date.now();
-    if (now - (this._chatSentAt || 0) < CHAT_GAP_MS) return 'slow';
+    if (now - (this._chatSentAt || 0) < this.chatGapMs) return 'slow';
     this._chatSentAt = now;
     try {
       await this.net.sendChat(text, { name: this._name(), photo: this._photo() });
