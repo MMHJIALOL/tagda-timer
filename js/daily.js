@@ -27,7 +27,7 @@ import {
   CLOCK_SLACK_MS, CLOCK_SLACK_RATIO,
   countSolvesForDay, rankByCount, dayStartMs, safePhotoUrl, cleanNote,
   markSotdDone, clearSotdDone, sotdDoneOn, misfireAction,
-  ADMIN_UIDS, CHAT_GAP_MS,
+  CHAT_GAP_MS,
 } from './daily-net.js';
 import { SUSPECT_RATIO } from './raceapp.js';
 
@@ -1126,9 +1126,9 @@ export class Daily extends EventTarget {
     return this.revealed && ['loading', 'live'].includes(this.chat.state);
   }
 
-  /** Whether this account may delete other people's messages and times (the rules have the final say). */
+  /** Whether this account may delete other people's messages and times (admins/; the rules have the final say). */
   get admin() {
-    return !!this.snap?.uid && ADMIN_UIDS.includes(this.snap.uid);
+    return !!this.snap?.uid && this.snap.admin === true;
   }
 
   /**

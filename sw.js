@@ -5,7 +5,9 @@
    are IndexedDB, scrambles are generated locally from vendor/cubing. The only
    thing that used to fail offline was loading the page, so that is all this
    fixes. Race rooms, Scramble of the Day, sign-in and Spotify still need a
-   connection and are deliberately never cached.
+   connection and are deliberately never cached. Neither is the admin console
+   (/admin): neither the page nor anything it loads is ever answered from
+   the cache or stored in it (isAdminPage, fromAdmin).
 
    App files are served from the cache, and only the page itself goes to the
    network on each visit. Every file fetched from Vercel is a billed edge
@@ -50,6 +52,24 @@ function isCacheable(url, request) {
   if (url.origin !== self.location.origin) return false;
   return !url.pathname.startsWith('/__/auth/') && !url.pathname.startsWith('/replay/')
     && !url.pathname.startsWith('/_vercel/');
+}
+
+/**
+ * The admin console and its manifest, by URL. A settings page answered from
+ * an old cache would be showing and writing against a deploy that is gone,
+ * so nothing it asks for is ever served from the cache (ADMIN.md).
+ */
+function isAdminPage(url) {
+  return url.origin === self.location.origin
+    && (url.pathname === '/admin' || url.pathname === '/admin.html' || url.pathname.startsWith('/admin/')
+      || url.pathname === '/admin.webmanifest');
+}
+
+/** Whether a request comes from an open admin page: its modules and styles too. */
+async function fromAdmin(e) {
+  if (!e.clientId) return false;
+  const client = await self.clients.get(e.clientId);
+  return !!client && isAdminPage(new URL(client.url));
 }
 
 /* A response that arrived via a redirect cannot be replayed for a navigation
@@ -159,8 +179,15 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   if (!isCacheable(url, e.request)) return;   // straight to the network, unseen
-  e.respondWith(e.request.mode === 'navigate' ? navigate(e.request)
-    : isImmutable(url) ? cacheFirst(e.request) : appFirst(e.request));
+  if (isAdminPage(url)) return;                // the admin page itself, likewise
+  // Before the admin check: Chrome gives a link followed out of the admin page
+  // that page's clientId, and the timer it opens must still work offline.
+  if (e.request.mode === 'navigate') { e.respondWith(navigate(e.request)); return; }
+  if (isImmutable(url)) { e.respondWith(cacheFirst(e.request)); return; }
+  e.respondWith((async () => {
+    if (await fromAdmin(e)) return fetch(e.request);   // never cached, never from the cache
+    return appFirst(e.request);
+  })());
 });
 
 /**

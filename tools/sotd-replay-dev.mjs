@@ -1,11 +1,12 @@
-/* Scramble of the Day (shared replays, the day's chat), run locally with
-   nothing real touched.
+/* Scramble of the Day (shared replays, the day's chat) and the admin
+   console, run locally with nothing real touched.
        node tools/sotd-replay-dev.mjs            start everything, print the URL
        node tools/sotd-replay-dev.mjs --reset    wipe the local clips first (emulator data never outlives a restart)
        node tools/sotd-replay-dev.mjs --old-rules        start with the rules from before the chat
        node tools/sotd-replay-dev.mjs --budget 3000000   a small DAY_BUDGET (bytes), for the "full" case
        node tools/sotd-replay-dev.mjs rules old|new      swap the rules on the running emulator (old: before the chat)
        node tools/sotd-replay-dev.mjs rules pre-replays  the rules from before replays
+       node tools/sotd-replay-dev.mjs rules pre-admin    the rules from before the admin console (admins/, config/)
        node tools/sotd-replay-dev.mjs counts             R2 puts / lists / gets / deletes so far
 
    What runs: the Firebase Realtime Database and Auth emulators (firebase-tools
@@ -45,6 +46,7 @@ const PORT = Number(opt('--port', 8787));
 const BEFORE = {
   old: ['sign_in_provider', 'the chat'],
   'pre-replays': ['replayClaim', 'replays'],
+  'pre-admin': ['configLog', 'the admin console'],
 };
 function oldRules(which = 'old') {
   const [marker, what] = BEFORE[which];
@@ -56,6 +58,19 @@ function oldRules(which = 'old') {
 }
 const newRules = () => readFileSync(join(ROOT, 'firebase.rules.json'), 'utf8');
 
+/* The admin: an account with the owner's uid, as a Google account, listed
+   under admins/ (which on the real project is added by hand in the console).
+   Pick it in the fake account chooser to see the admin's delete buttons and
+   to get into /admin. The same uid is what the old rules hard-code, so it is
+   the admin under `rules old|pre-replays|pre-admin` as well. */
+const ADMIN_UID = '8lSr96LEO1cdHDVlMDv8tCCFQag1';
+async function seedAdminEntry() {
+  const r = await fetch(`${RTDB}/admins/${ADMIN_UID}.json?ns=${NS}`, {
+    method: 'PUT', headers: { Authorization: 'Bearer owner' }, body: 'true',
+  });
+  if (!r.ok) console.warn(`[dev] could not add admins/${ADMIN_UID}: ${r.status} ${await r.text()}`);
+}
+
 async function loadRules(which) {
   const text = BEFORE[which] ? oldRules(which) : newRules();
   const r = await fetch(`${RTDB}/.settings/rules.json?ns=${NS}`, {
@@ -63,6 +78,7 @@ async function loadRules(which) {
   });
   if (!r.ok) throw new Error(`loading the ${which} rules failed: ${r.status} ${await r.text()}`);
   console.log(`[dev] ${BEFORE[which] ? `OLD rules (from before ${BEFORE[which][1]})` : 'the branch\'s rules'} loaded into the emulator`);
+  await seedAdminEntry();
 }
 
 if (argv[0] === 'rules') {
@@ -70,17 +86,12 @@ if (argv[0] === 'rules') {
   process.exit(0);
 }
 
-/* The chat's admin is a uid written into the rules, so the emulator gets an
-   account with exactly that uid, as a Google account: pick it in the fake
-   account chooser to see the admin's delete buttons. Same uid as
-   CHAT_ADMIN_UIDS in js/daily-net.js. */
-const ADMIN_UID = '8lSr96LEO1cdHDVlMDv8tCCFQag1';
 async function seedAdmin() {
   const r = await fetch(`${AUTH}/identitytoolkit.googleapis.com/v1/projects/tagda-timer/accounts:batchCreate`, {
     method: 'POST', headers: { Authorization: 'Bearer owner', 'Content-Type': 'application/json' },
     body: JSON.stringify({ users: [{
-      localId: ADMIN_UID, displayName: 'Admin (chat)', email: 'admin@tagda.test', emailVerified: true,
-      providerUserInfo: [{ providerId: 'google.com', rawId: 'tagda-admin', email: 'admin@tagda.test', displayName: 'Admin (chat)' }],
+      localId: ADMIN_UID, displayName: 'Admin', email: 'admin@tagda.test', emailVerified: true,
+      providerUserInfo: [{ providerId: 'google.com', rawId: 'tagda-admin', email: 'admin@tagda.test', displayName: 'Admin' }],
     }] }),
   });
   if (!r.ok) console.warn(`[dev] could not add the admin account: ${r.status} ${await r.text()}`);
@@ -204,15 +215,18 @@ await up(`http://127.0.0.1:${PORT}/`, 'wrangler dev');
 console.log(`
   ┌──────────────────────────────────────────────────────────────
   │  Open  http://localhost:${PORT}/?emu=1
+  │  Admin http://localhost:${PORT}/admin?emu=1
   │
   │  Sign in from the SOTD window: the emulator's account chooser
   │  opens, "Add new account" makes a fake Google account.
-  │  "Admin (chat)" is the chat's admin: it can delete anybody's message.
+  │  "Admin" is listed under admins/: it can delete anybody's message,
+  │  remove times, and use /admin. Any other account is not an admin.
   │  Two people chatting: a second browser, or a private window.
   │  ${flag('--old-rules') ? 'OLD rules loaded (from before the chat: no chat column)' : 'New rules loaded.'}${budget ? `  DAY_BUDGET=${budget}` : ''}
   │
   │  node tools/sotd-replay-dev.mjs rules old|new   swap rules live
   │  node tools/verify-sotd-chat-rules.mjs          the chat rules' own checks
+  │  node tools/verify-admin-rules.mjs              the admin console's rules
   │  node tools/sotd-replay-dev.mjs counts          R2 operations so far
   │  Ctrl+C stops everything. --reset next time wipes the clips.
   └──────────────────────────────────────────────────────────────
