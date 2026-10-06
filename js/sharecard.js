@@ -12,7 +12,6 @@ import { t } from './i18n.js';
    =========================================================== */
 
 import { fmt, fmtResult, fmtDate } from './util.js';
-import { competitionResult, competitionTime } from './competition-stats.js';
 import { eff, DNF, isMoveResult } from './stats.js';
 import { faceletsFor, drawNet, cubeSizeFor } from './cubenet.js';
 import { themeColors } from './theme.js';
@@ -488,7 +487,7 @@ export async function drawReconCard({ scramble = '', title = 'Reconstruction', s
    Card 2 — an average: the counting times and their scrambles
    --------------------------------------------------------- */
 
-export async function drawAverageCard(solves, { label = t('average of 5'), value = '—', trimmed = null } = {}) {
+export async function drawAverageCard(solves, { label = t('average of 5'), value = '—', trimmed = null, first = 1, sub = null } = {}) {
   await fontsReady();
   const c = themeColors();
   const logo = await logoImage();
@@ -505,7 +504,7 @@ export async function drawAverageCard(solves, { label = t('average of 5'), value
   paintHeader(ctx, c, logo, ev.short);
 
   const y0 = paintHero(ctx, c, 250, label, value,
-    t('{n} solves', { n: solves.length }) + `  ·  ${fmtDate(solves.at(-1).createdAt)}`);
+    (sub ?? t('{n} solves', { n: solves.length })) + `  ·  ${fmtDate(solves.at(-1).createdAt)}`);
 
   // Trimmed solves are parenthesised, exactly as results are written up —
   // the number is there, it just did not count.
@@ -513,7 +512,7 @@ export async function drawAverageCard(solves, { label = t('average of 5'), value
     const v = eff(s);
     const t = v === DNF ? 'DNF' : fmtResult(v, isMoveResult(s)) + (s.penalty === '+2' ? '+' : '');
     const dim = !!trimmed?.has(i);
-    return { tag: String(i + 1).padStart(2, '0'), time: dim ? `(${t})` : t, dim, scramble: s.scramble };
+    return { tag: String(first + i).padStart(2, '0'), time: dim ? `(${t})` : t, dim, scramble: s.scramble };
   }), { rowH });
 
   paintFooter(ctx, H, c);
@@ -542,58 +541,4 @@ export function socialLinks(text) {
     { name: 'Telegram', href: `https://t.me/share/url?url=${u}&text=${encodeURIComponent(text)}` },
     { name: 'Reddit', href: `https://www.reddit.com/submit?url=${u}&title=${encodeURIComponent(text)}` },
   ];
-}
-
-
-// A score sheet with a clear round boundary and twelve readable attempts per page.
-export async function drawCompetitionCard(set, solves, { page = 0 } = {}) {
-  await fontsReady();
-  const result = competitionResult(set, solves);
-  if (!result.complete) throw new Error(t('Complete the set before sharing its score sheet'));
-  const pages = Math.ceil(set.size / 12);
-  page = Math.max(0,Math.min(pages-1,page));
-  const start = page*12, rows = solves.slice(start,start+12);
-  const canvas = document.createElement('canvas');
-  const tableY = 318, rowH = 72, tableBottom = tableY + 64 + rows.length * rowH;
-  canvas.width = 1080; canvas.height = tableBottom + 302;
-  const g=canvas.getContext('2d'),w=canvas.width,h=canvas.height;
-  g.fillStyle='#f4f2ee';g.fillRect(0,0,w,h);
-  const ink='#242331',muted='#77747f',accent='#6950cf';
-  const text=(value,x,y,size=28,color=ink,font=SANS,weight=500)=>{g.fillStyle=color;g.font=`${weight} ${size}px ${font}`;g.fillText(value,x,y);};
-  const fit=(value,x,y,max,size=28,color=ink,weight=500,font=SANS)=>{
-    const fitted=fitOrClip(g,String(value),max,font,weight,size,Math.min(size,24));
-    g.fillStyle=color;g.font=`${weight} ${fitted.size}px ${font}`;g.fillText(fitted.text,x,y);
-  };
-  const line=(y,x=76,end=w-76)=>{g.strokeStyle='#e2dfe7';g.lineWidth=1;g.beginPath();g.moveTo(x,y);g.lineTo(end,y);g.stroke();};
-  g.fillStyle=accent;rr(g,52,42,8,30,4);g.fill();
-  text('TAGDA TIMER',76,67,25,ink,SANS,800);
-  g.textAlign='right';text('tagdatimer.me',w-52,67,23,muted);g.textAlign='left';
-  fit(`Ao${set.size}`,52,160,640,76,ink,800);
-  g.textAlign='right';text(t('Set {n}',{n:set.sequence}),w-52,133,28,accent,SANS,700);
-  text(t('Competition practice'),w-52,170,22,muted);g.textAlign='left';
-  line(198,52,w-52);
-  text(t('Event'),52,235,19,muted);text(t('Competitor'),420,235,19,muted);
-  fit(eventOf(set.event).name,52,273,330,30,ink,650);
-  fit(set.competitor||t('Cubing practice'),420,273,608,30,ink,650);
-  g.fillStyle='#fff';rr(g,52,tableY,w-104,tableBottom-tableY,22);g.fill();
-  text('#',84,tableY+41,20,muted);text(t('Result'),170,tableY+41,20,muted);
-  g.textAlign='right';text(t('Penalty'),w-84,tableY+41,20,muted);g.textAlign='left';
-  line(tableY+64);
-  rows.forEach((s,i)=>{
-    const y=tableY+64+i*rowH+47,trim=result.trimmed.has(start+i),color=trim?muted:ink;
-    text(String(start+i+1).padStart(2,'0'),84,y,24,muted,MONO);
-    const raw=competitionTime(s);
-    fit(trim?`(${raw})`:raw,170,y,610,38,color,trim?500:700,MONO);
-    g.textAlign='right';text(s.penalty==='none'?'—':s.penalty,w-84,y-3,24,s.penalty==='none'?muted:accent,SANS,650);g.textAlign='left';
-    if(i<rows.length-1)line(y+25);
-  });
-  const final=tableBottom+24;
-  g.fillStyle='#282338';rr(g,52,final,w-104,180,22);g.fill();
-  text(t('FINAL RESULT'),84,final+43,21,'#b4a1f2',SANS,700);
-  fit(fmtResult(result.value),84,final+132,w-168,78,'#fff',800,MONO);
-  text(t('Parentheses mark trimmed attempts'),52,final+223,21,muted);
-  g.textAlign='right';text(new Date(set.createdAt).toLocaleDateString(undefined,{day:'2-digit',month:'short',year:'numeric'}),w-52,final+223,21,muted);g.textAlign='left';
-  text(t('Unofficial practice result · calculated by Tagda Timer'),52,h-32,20,muted);
-  if(pages>1){g.textAlign='right';text(`${page+1}/${pages}`,w-52,h-32,20,muted);g.textAlign='left';}
-  return canvas;
 }
