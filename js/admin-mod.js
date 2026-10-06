@@ -231,17 +231,17 @@ export function createModeration(ctx) {
       if (andBan && author?.uid) ctx.askBan({ uid: author.uid, name: author.name || '', reason });
     };
     ctx.openSheet(
-      el('h2', { class: 'ad-h2', text: deleteLabel(kind) + '?' }),
-      el('ul', { class: 'ad-diffs' }, el('li', { class: 'ad-diff' },
+      el('h2', { class: 'ac-h2', text: deleteLabel(kind) + '?' }),
+      el('ul', { class: 'ac-diffs' }, el('li', { class: 'ac-diff' },
         raw('b', {}, where),
-        text ? raw('span', { class: 'ad-reason' }, text) : null,
-        author ? raw('span', { class: 'ad-entry-meta' }, `${author.name || 'Cuber'} · ${author.uid || ''}`) : null)),
-      kind === 'result' ? el('p', { class: 'ad-sub', text: 'Today, they get the backup scramble as a final attempt (or, if this was the backup, that is their day). Its replay goes too.' }) : null,
-      kind === 'raceResult' ? el('p', { class: 'ad-sub', text: 'The time leaves that round’s board. They could submit for the round again; race rooms are not a competition.' }) : null,
-      el('div', { class: 'ad-sheet-actions ad-wrap' },
-        el('button', { class: 'ad-btn', text: 'Back', onclick: ctx.closeSheet }),
-        author?.uid ? el('button', { class: 'ad-btn', text: t('…and ban'), onclick: go(true) }) : null,
-        el('button', { class: 'ad-btn primary', text: deleteLabel(kind), onclick: go(false) })));
+        text ? raw('span', { class: 'ac-reason' }, text) : null,
+        author ? raw('span', { class: 'ac-entry-meta' }, `${author.name || 'Cuber'} · ${author.uid || ''}`) : null)),
+      kind === 'result' ? el('p', { class: 'ac-sub', text: 'Today, they get the backup scramble as a final attempt (or, if this was the backup, that is their day). Its replay goes too.' }) : null,
+      kind === 'raceResult' ? el('p', { class: 'ac-sub', text: 'The time leaves that round’s board. They could submit for the round again; race rooms are not a competition.' }) : null,
+      el('div', { class: 'ac-sheet-actions ac-wrap' },
+        el('button', { class: 'ac-btn', text: 'Back', onclick: ctx.closeSheet }),
+        author?.uid ? el('button', { class: 'ac-btn', text: t('…and ban'), onclick: go(true) }) : null,
+        el('button', { class: 'ac-btn primary', text: deleteLabel(kind), onclick: go(false) })));
   }
 
   /* ---------------- views ---------------- */
@@ -306,36 +306,36 @@ export function createModeration(ctx) {
   function view(sub) {
     start();
     const c = counts();
-    const nav = el('nav', { class: 'ad-subtabs', 'aria-label': t('Moderation') },
+    const nav = el('nav', { class: 'ac-subtabs', 'aria-label': t('Moderation') },
       ...SUBS().map(([id, label]) => raw('a', {
-        class: `ad-subtab${sub === id ? ' on' : ''}`, href: `#mod/${id}`, 'aria-current': sub === id ? 'page' : null,
+        class: `ac-subtab${sub === id ? ' on' : ''}`, href: `#mod/${id}`, 'aria-current': sub === id ? 'page' : null,
       }, c[id] ? `${label} · ${c[id]}` : label)));
-    const head = [el('h1', { class: 'ad-h1', text: 'Moderate' }), nav];
+    const head = [el('h1', { class: 'ac-h1', text: 'Moderate' }), nav];
     if (sub === 'chats') return [...head, viewChats()];
     if (sub === 'suspect') return [...head, viewSuspect()];
     if (sub === 'replays') return [...head, viewReplays()];
     return [...head, viewReports()];
   }
 
-  const actions = (...btns) => el('div', { class: 'ad-entry-actions' }, ...btns);
-  const small = (text, onclick, cls = '') => el('button', { class: `ad-btn small ${cls}`, text, onclick });
+  const actions = (...btns) => el('div', { class: 'ac-entry-actions' }, ...btns);
+  const small = (text, onclick, cls = '') => el('button', { class: `ac-btn small ${cls}`, text, onclick });
 
   function viewReports() {
     if (M.reportsRefused) return ctx.gate('Publish the rules first', 'Reports need the firebase.rules.json from this version of the page.');
-    if (!M.reportsLoaded) return el('p', { class: 'ad-note', text: 'Loading…' });
+    if (!M.reportsLoaded) return el('p', { class: 'ac-note', text: 'Loading…' });
     const gs = groups();
-    if (!gs.length) return el('p', { class: 'ad-note', text: 'No open reports. People report a chat message or a shared replay from the ⚑ beside it.' });
-    return el('ol', { class: 'ad-log' }, ...gs.map((g) => {
+    if (!gs.length) return el('p', { class: 'ac-note', text: 'No open reports. People report a chat message or a shared replay from the ⚑ beside it.' });
+    return el('ol', { class: 'ac-log' }, ...gs.map((g) => {
       const d = describe(g.kind, g.path);
       const newest = g.reports[0];
       const reason = g.kind === 'chat' || g.kind === 'raceChat'
         ? `${d.where}: "${String(d.text || newest.text || '').slice(0, 120)}"` : `${d.where} ${d.text || ''}`.trim();
-      return el('li', { class: `ad-entry ad-report${d.gone ? ' ad-ended' : ''}` },
-        el('div', { class: 'ad-entry-main' },
+      return el('li', { class: `ac-entry ac-report${d.gone ? ' ac-ended' : ''}` },
+        el('div', { class: 'ac-entry-main' },
           raw('b', {}, d.where),
-          raw('span', { class: 'ad-reason' }, d.gone ? t('(already gone) {text}', { text: newest.text || '' }) : (d.text || newest.text || '…')),
-          d.author ? raw('span', { class: 'ad-uid' }, `${d.author.name || 'Cuber'} · ${d.author.uid || ''}`) : null,
-          raw('span', { class: 'ad-entry-meta', title: newest.at ? new Date(newest.at).toLocaleString() : '' },
+          raw('span', { class: 'ac-reason' }, d.gone ? t('(already gone) {text}', { text: newest.text || '' }) : (d.text || newest.text || '…')),
+          d.author ? raw('span', { class: 'ac-uid' }, `${d.author.name || 'Cuber'} · ${d.author.uid || ''}`) : null,
+          raw('span', { class: 'ac-entry-meta', title: newest.at ? new Date(newest.at).toLocaleString() : '' },
             (g.reports.length > 1 ? t('{n} reports', { n: g.reports.length }) : t('1 report')) + ' · '
             + t('latest {when} by {who}', { when: ago(newest.at), who: who(newest.by) }))),
         actions(
@@ -347,20 +347,20 @@ export function createModeration(ctx) {
 
   function viewChats() {
     const list = messages();
-    const foot = el('p', { class: 'ad-note ad-small' },
+    const foot = el('p', { class: 'ac-note ac-small' },
       raw('span', {}, t('Today’s Scramble of the Day rooms, and race rooms made in the last day ({n} open).', { n: Object.keys(M.roomChat).length })),
       ' ',
-      el('button', { class: 'ad-link', text: 'Look again for race rooms', onclick: () => refreshRooms() }));
-    if (M.roomsRefused) foot.append(raw('span', { class: 'ad-err' }, ' ' + t('Race rooms need the newer rules published.')));
-    if (!list.length) return el('div', {}, el('p', { class: 'ad-note', text: M.dayKey ? 'Nothing said today yet.' : 'Loading…' }), foot);
-    return el('div', {}, el('ol', { class: 'ad-log' }, ...list.map(({ kind, path, m, where }) => {
+      el('button', { class: 'ac-link', text: 'Look again for race rooms', onclick: () => refreshRooms() }));
+    if (M.roomsRefused) foot.append(raw('span', { class: 'ac-err' }, ' ' + t('Race rooms need the newer rules published.')));
+    if (!list.length) return el('div', {}, el('p', { class: 'ac-note', text: M.dayKey ? 'Nothing said today yet.' : 'Loading…' }), foot);
+    return el('div', {}, el('ol', { class: 'ac-log' }, ...list.map(({ kind, path, m, where }) => {
       const author = { uid: m.uid, name: m.name };
       const reason = `${kind === 'raceChat' ? 'Race chat' : 'Chat'} message (${where}): "${String(m.text || '').slice(0, 120)}"`;
-      return el('li', { class: 'ad-entry' },
-        el('div', { class: 'ad-entry-main' },
-          el('span', { class: 'ad-chat-head' }, raw('b', {}, m.name || 'Cuber'), raw('span', { class: 'ad-pill' }, where)),
-          raw('span', { class: 'ad-reason' }, m.text || ''),
-          raw('span', { class: 'ad-entry-meta', title: m.at ? new Date(m.at).toLocaleString() : '' }, `${ago(m.at)} · ${m.uid || ''}`)),
+      return el('li', { class: 'ac-entry' },
+        el('div', { class: 'ac-entry-main' },
+          el('span', { class: 'ac-chat-head' }, raw('b', {}, m.name || 'Cuber'), raw('span', { class: 'ac-pill' }, where)),
+          raw('span', { class: 'ac-reason' }, m.text || ''),
+          raw('span', { class: 'ac-entry-meta', title: m.at ? new Date(m.at).toLocaleString() : '' }, `${ago(m.at)} · ${m.uid || ''}`)),
         actions(
           small(t('Delete'), () => askDelete({ kind, path, author, where, text: m.text, reason })),
           small(t('Ban'), () => ctx.askBan({ uid: m.uid, name: m.name || '', reason }), 'danger')));
@@ -369,16 +369,16 @@ export function createModeration(ctx) {
 
   function viewSuspect() {
     const list = suspects();
-    const note = el('p', { class: 'ad-note ad-small', text: 'Times flagged ⚑ when they were sent: far under that person’s own average. A personal best looks exactly like this, so look before you remove. Race rooms from the last day.' });
-    if (!list.length) return el('div', {}, el('p', { class: 'ad-note', text: M.dayKey ? 'Nothing flagged today.' : 'Loading…' }), note);
-    return el('div', {}, el('ol', { class: 'ad-log' }, ...list.map((x) => {
+    const note = el('p', { class: 'ac-note ac-small', text: 'Times flagged ⚑ when they were sent: far under that person’s own average. A personal best looks exactly like this, so look before you remove. Race rooms from the last day.' });
+    if (!list.length) return el('div', {}, el('p', { class: 'ac-note', text: M.dayKey ? 'Nothing flagged today.' : 'Loading…' }), note);
+    return el('div', {}, el('ol', { class: 'ac-log' }, ...list.map((x) => {
       const reason = `${x.kind === 'raceResult' ? 'Race' : 'Scramble of the Day'} time ${timeText(x.row)} (${x.where})`;
       const author = { uid: x.uid, name: x.name };
-      return el('li', { class: 'ad-entry' },
-        el('div', { class: 'ad-entry-main' },
-          el('span', { class: 'ad-chat-head' }, raw('b', {}, x.name || 'Cuber'), raw('span', { class: 'ad-pill' }, x.where)),
-          raw('span', { class: 'ad-time' }, timeText(x.row) + (x.row.backup ? ` · ${t('backup')}` : '')),
-          raw('span', { class: 'ad-entry-meta' }, `${ago(x.at)} · ${x.uid}`)),
+      return el('li', { class: 'ac-entry' },
+        el('div', { class: 'ac-entry-main' },
+          el('span', { class: 'ac-chat-head' }, raw('b', {}, x.name || 'Cuber'), raw('span', { class: 'ac-pill' }, x.where)),
+          raw('span', { class: 'ac-time' }, timeText(x.row) + (x.row.backup ? ` · ${t('backup')}` : '')),
+          raw('span', { class: 'ac-entry-meta' }, `${ago(x.at)} · ${x.uid}`)),
         actions(
           small(t('Remove time'), () => askDelete({ kind: x.kind, path: x.path, row: x.row, author, where: x.where, text: timeText(x.row), reason })),
           small(t('Ban'), () => ctx.askBan({ uid: x.uid, name: x.name || '', reason }), 'danger')));
@@ -387,17 +387,17 @@ export function createModeration(ctx) {
 
   function viewReplays() {
     const list = replays();
-    if (!list.length) return el('p', { class: 'ad-note', text: M.dayKey ? 'No replays shared today yet.' : 'Loading…' });
-    return el('ol', { class: 'ad-log' }, ...list.map(({ e, uid, row }) => {
+    if (!list.length) return el('p', { class: 'ac-note', text: M.dayKey ? 'No replays shared today yet.' : 'Loading…' });
+    return el('ol', { class: 'ac-log' }, ...list.map(({ e, uid, row }) => {
       const path = `daily/${M.dayKey}/${e}/results/${uid}`;
       const where = evName(e);
       const author = { uid, name: row.name };
       const reason = `Shared replay (${where})`;
-      return el('li', { class: 'ad-entry' },
-        el('div', { class: 'ad-entry-main' },
-          el('span', { class: 'ad-chat-head' }, raw('b', {}, row.name || 'Cuber'), raw('span', { class: 'ad-pill' }, where)),
-          raw('span', { class: 'ad-time' }, timeText(row)),
-          raw('span', { class: 'ad-entry-meta' }, `${ago(row.submittedAt)} · ${uid}`)),
+      return el('li', { class: 'ac-entry' },
+        el('div', { class: 'ac-entry-main' },
+          el('span', { class: 'ac-chat-head' }, raw('b', {}, row.name || 'Cuber'), raw('span', { class: 'ac-pill' }, where)),
+          raw('span', { class: 'ac-time' }, timeText(row)),
+          raw('span', { class: 'ac-entry-meta' }, `${ago(row.submittedAt)} · ${uid}`)),
         actions(
           small(t('Watch'), () => watch(e, uid, row)),
           small(t('Remove'), () => askDelete({ kind: 'replay', path, row, author, where, text: timeText(row), reason })),
@@ -407,11 +407,11 @@ export function createModeration(ctx) {
 
   /** A shared clip, fetched through the Worker like anybody's, in a plain player. */
   async function watch(e, uid, row) {
-    const box = el('div', { class: 'ad-video' }, el('p', { class: 'ad-note', text: 'Loading…' }));
+    const box = el('div', { class: 'ac-video' }, el('p', { class: 'ac-note', text: 'Loading…' }));
     ctx.openSheet(
-      el('h2', { class: 'ad-h2', text: t('{name} · {event} · {time}', { name: row.name || 'Cuber', event: evName(e), time: timeText(row) }) }),
+      el('h2', { class: 'ac-h2', text: t('{name} · {event} · {time}', { name: row.name || 'Cuber', event: evName(e), time: timeText(row) }) }),
       box,
-      el('div', { class: 'ad-sheet-actions' }, el('button', { class: 'ad-btn', text: 'Close', onclick: ctx.closeSheet })));
+      el('div', { class: 'ac-sheet-actions' }, el('button', { class: 'ac-btn', text: 'Close', onclick: ctx.closeSheet })));
     try {
       const r = await worker('GET', `/replay/${M.dayKey}/${e}/${uid}`);
       if (!r.ok) throw new Error(String(r.status));
@@ -420,7 +420,7 @@ export function createModeration(ctx) {
       v.addEventListener('emptied', () => URL.revokeObjectURL(url), { once: true });
       box.replaceChildren(v);
     } catch (err) {
-      box.replaceChildren(el('p', { class: 'ad-err', text: t('Couldn’t load the replay ({why})', { why: err?.message || err }) }));
+      box.replaceChildren(el('p', { class: 'ac-err', text: t('Couldn’t load the replay ({why})', { why: err?.message || err }) }));
     }
   }
 
