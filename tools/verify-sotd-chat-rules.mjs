@@ -56,6 +56,8 @@ const rules = await fetch(`${DB}/.settings/rules.json?ns=${NS}`, {
 });
 if (!rules.ok) { console.error('could not load the rules:', rules.status, await rules.text()); process.exit(1); }
 await call('DELETE', '', undefined, 'owner');
+// The admin is whoever admins/ says, added by hand in the console (ADMIN.md).
+await call('PUT', `admins/${ADMIN}`, true, 'owner');
 
 // The server's day, the same arithmetic the rules do. Seconds from a reset
 // would make this flaky; checked rather than guessed.

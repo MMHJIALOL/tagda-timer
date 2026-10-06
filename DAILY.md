@@ -108,7 +108,7 @@ one press at a time or a setting you turn on yourself (§8).
 | `timeMs` checked against the server-stamped solve window | Pausing the app and typing in a fabricated number afterwards |
 | `backup` readable only once your own `backupClaim` exists | Looking at the backup scramble without giving up the main attempt |
 | a claim forces `backup: true` on your result, and `backup: true` needs a claim | Peeking at the backup and then submitting as though you never did |
-| only the admin uid deletes a result, and only with a `removed/<uid>` record in the same write | A sus time staying up, and a removed one coming back as a second go at the main scramble |
+| only an admin (`admins/<uid>`, [ADMIN.md](ADMIN.md)) deletes a result, and only with a `removed/<uid>` record in the same write | A sus time staying up, and a removed one coming back as a second go at the main scramble |
 
 The two backup rows are §7; removals are §10.
 
@@ -168,6 +168,17 @@ transaction result and adopts it without waiting for the listener.
 
 ---
 
+Which events have a daily scramble at all is a setting too (`config/sotd/events`, every eligible
+event by default): an event switched off has no window, board or chat, and its data stays.
+
+**A day ahead.** Anybody signed in may publish **today's** scramble, once (with five minutes either
+side of midnight for a clock that is a little out). Only an admin may write a **later** day's, from
+the admin console's *Days ahead* ([ADMIN.md](ADMIN.md) §11), and change or clear it until that day
+starts; on the day it is the scramble everybody gets, written once like any other. Until this rule,
+anybody could plant tomorrow's scramble and practise it. An admin can also make an event the day's
+**featured event** (`sotdFeatured/<dayStart>`): it is starred in the panel's event list, and the
+window's board says so, with *Go to it* from any other event.
+
 ## 4. Files
 
 | File | What it is |
@@ -184,6 +195,7 @@ transaction result and adopts it without waiting for the listener.
 | `js/sotd-chat.js` | The day's chat: the column, the composer, deleting (§9) |
 | `tools/verify-sotd-chat-rules.mjs` | `node` check of the chat's rules against the database emulator (§9) |
 | `tools/verify-sotd-remove-rules.mjs` | `node` check of the admin removal rules against the database emulator (§10) |
+| `tools/verify-safety-rules.mjs` | `node` check of the admin console's switches and bans on the chat, the board and replays ([ADMIN.md](ADMIN.md)) |
 
 > **Republish `firebase.rules.json` before deploying this.** The previous rules end `results`
 > with `"$other": { ".validate": false }` and know nothing about `photo`, so a client that
@@ -204,6 +216,10 @@ rules published, sharing says it is not switched on yet and touches nothing.
 
 The chat (§9) needs only the rules republished. Until then the window has no chat at all.
 Admin removals (§10) are the same: until then the × is drawn, and pressing it is refused.
+
+Since the admin console ([ADMIN.md](ADMIN.md)), an admin is whoever `admins/<uid>` says in the
+database, not a uid written into the rules. Add yourself there **before** publishing them: until
+the entry exists, the rules refuse your × and your chat deletes, and the app stops drawing them.
 
 ---
 
@@ -316,10 +332,11 @@ retired all day, on a page where signing back in was the only thing it was askin
 
 ## 6. The second board: most solves today — built, then switched off
 
-**Currently off.** `SHOW_COUNT_BOARD` in [`js/daily.js`](js/daily.js) is `false`, and while it
-is, the board is not drawn in either the window or the panel and nothing writes to
-`dailyCount`. Everything below still exists and is still tested; flipping that one boolean is
-the whole of turning it back on. The rules for `dailyCount` are left in place so that turning
+**Currently off.** `config/sotd/countBoard` is off (the admin console's *Scramble of the Day*
+section, [ADMIN.md](ADMIN.md) §3; `showCountBoard()` in [`js/daily.js`](js/daily.js)), and while
+it is, the board is not drawn in either the window or the panel and nothing writes to
+`dailyCount`. Everything below still exists and is still tested; that one switch is the whole of
+turning it back on. The rules for `dailyCount` are left in place so that turning
 it on later does not need a rules deploy to go with it.
 
 It went because two boards side by side invited a comparison between them that neither
@@ -401,7 +418,9 @@ traded for a **backup** scramble, once per day per event.
 ### The thresholds
 
 Judged on the raw time **before** any penalty — a +2 does not lift a 1.5 s misfire over the
-line. `misfireAction` in [`js/dayid.js`](js/dayid.js) (re-exported by `daily.js`, checked by
+line. The two cut-offs below are the defaults: the admin console can move them
+(`config/sotd/autoDiscardMs` and `askMs`, ADMIN.md §3), and the ask line never sits below the
+discard one. `misfireAction` in [`js/dayid.js`](js/dayid.js) (re-exported by `daily.js`, checked by
 `node tools/verify-misfire.mjs`):
 
 | Time | What happens |
@@ -557,13 +576,21 @@ The Worker (`worker.js`, `/replay/*`) is the only way to the bucket:
 
 | Request | Who | Order of checks |
 |---|---|---|
-| `PUT /replay/<dayKey>/<event>` | you, your clip | path, and today's or yesterday's day → headers (meta, type, length) → the body really that size, really WebM or MP4 → Google sign-in, a result on the board → **the claim** → `list` the day, under DAY_BUDGET → `put`, then the flag |
-| `GET /replay/<dayKey>/<event>/<uid>` | anyone with a result that day | path → not past 7 days → reading `results/<uid>` with your token (allowed only once yours exists) and its flag → `get` |
-| `DELETE /replay/<dayKey>/<event>/<uid>` | the owner, or an `ADMIN_UIDS` uid | path → token → the flag (owner) → `delete` |
+| `PUT /replay/<dayKey>/<event>` | you, your clip | path, and today's or yesterday's day → switched on (`config/replays`) → headers (meta, type, length) → the body really that size, really WebM or MP4 → Google sign-in, a result on the board, not banned → **the claim** → the day's count entry → `list` the day: fewer than the day's clips, under DAY_BUDGET → `put`, then the flag |
+| `GET /replay/<dayKey>/<event>/<uid>` | anyone with a result that day | path → switched on → not past 7 days → reading `results/<uid>` with your token (allowed only once yours exists) and its flag → `get` |
+| `DELETE /replay/<dayKey>/<event>/<uid>` | the owner, or an admin (`admins/<uid>`; `ADMIN_UIDS` while the rules are older, [ADMIN.md](ADMIN.md)) | path → token → the flag (owner) → `delete` |
 
-400 bad path or day, 401 token, 403 not submitted or not a Google account, 404 removed,
+400 bad path or day, 401 token, 403 not submitted, not a Google account, or banned, 404 removed,
 409 already shared today, 410 past 7 days, 411 no length, 413 over CLIP_MAX, 415 not a video,
-503 rules not published yet, 507 the day is full. A clip is served with its stored type
+429 the day's replay slots are full, 503 switched off (`off`, with the admin's message) or rules
+not published yet (`not-enabled`), 507 the day is full.
+
+**The admin console can tighten every one of these and loosen none** ([ADMIN.md](ADMIN.md) §4):
+switch sharing and watching off, take the day's clip count below 1000, a clip below 10 MB, the
+day below 1 GB, or the days kept below 7. The Worker reads `config/replays` about once a minute
+and always uses `min(setting, the constant)`. Every step before the claim (the switch, a ban, the
+size) costs the person nothing; a day that is full is found out after it, and the app reads the
+day's count (`replayDay/`) before uploading so that rarely happens. A clip is served with its stored type
 (WebM or MP4 only), `nosniff`, `Content-Security-Policy: sandbox; default-src 'none'` and
 `Cache-Control: private, max-age=86400`: these are strangers' uploads on tagdatimer.me.
 
@@ -594,6 +621,11 @@ static assets are not metered: `run_worker_first` is `/__/auth/*` and `/replay/*
 
 An admin removal (§10) clears the person's claim, so they can share once more: one more
 `list` and `put` per removal, done by hand, one row at a time.
+
+The day's count is `replayDay/<dayKey>/<event>/<uid>`, one entry per claim, written by the Worker
+right after it with the person's own token. The rules allow an entry only for an account that has
+a claim, once, so it can never count more claims than there are; anybody signed in may read it and
+nobody may delete it, except the sweep of days older than yesterday (§9's, once a day).
 
 Two honest edges. Class A is bounded by claims, so going over would take roughly 16,000
 claims a day, every day for a month: over a thousand Google accounts each submitting every
@@ -633,7 +665,8 @@ there is no right-hand column, so it is a **Chat** tab on the board's sheet inst
 beside each name, because these are the same Google accounts every day.
 
 **Behind the board's gate, word for word.** `chat` is readable only by an account with a row
-in that day's `results`: the same rule as the times. A room you could read before your attempt
+in that day's `results`: the same rule as the times. The one exception, for both, is an admin
+([ADMIN.md](ADMIN.md) §6), who reads every room and board of the day to moderate them. A room you could read before your attempt
 would be a way round that gate. "Free x-cross on white" is help on somebody's one attempt.
 
 ```
@@ -654,14 +687,24 @@ What the rules ask of a message:
 - **1.5 s apart.** The message and `last/<uid>` go in one update, each wanting the other to
   carry the same `now`, and `last` refuses a value less than 1.5 s after the one it replaces.
   The app waits 2 s between sends, so a fast connection after a slow one is not refused.
+- **The admin console** ([ADMIN.md](ADMIN.md) §4) can switch posting off, make the gap longer
+  (`config/sotdChat/gapMs`, never shorter than 1.5 s) or messages shorter (`maxLen`, never longer
+  than 200). The rules read those directly, with the numbers above when nothing is set; the app
+  waits half a second more than the gap, and puts the admin's message where the box was.
+- **Not banned** (`bans/<uid>`, ADMIN.md §5). A banned account's box shows why instead.
+
+**Reporting.** Beside somebody else's message there is a ⚑ (next to where the × would be): it
+asks first, then files a report for the admins (`reports/`, one per account per message,
+ADMIN.md §6). A shared replay has **Report this replay** in the player's **⋯**.
 
 **Deleting.** Your own messages, from the × on hover (always showing, faintly, on a touch
-screen), after a confirm. The admin uid in the rules (the same account as `ADMIN_UIDS` in
-`wrangler.jsonc`, mirrored as `CHAT_ADMIN_UIDS` in `js/daily-net.js` for drawing the button)
-can delete anybody's, in any room, without a result of its own. The admin reads a room the same
-way as everyone else, though: after doing that event's scramble. In the chat the owner's badge
-goes by that uid, not by name as on the board: a message's uid is pinned by the rules, and a
-name is free text anyone can type.
+screen), after a confirm. An admin (a Google account with `admins/<uid>: true` in the
+database, [ADMIN.md](ADMIN.md); the app asks `admins/<uid>` once to draw the button) can delete
+anybody's, in any room, without a result of its own. An admin reads a room the same way as
+everyone else, though: after doing that event's scramble. In the chat the owner's badge goes by
+the owner's uid (`OWNER_UID` in `js/ownercard.js`), not by name as on the board: a message's uid
+is pinned by the rules, and a name is free text anyone can type. The badge is cosmetic; being an
+admin is the database's say.
 
 **At the reset.** Nothing has to happen at 00:00 IST for the room to vanish: the window reads
 the new day's path, which is empty, and every screen moves to it. The stored copy goes later.
@@ -684,14 +727,14 @@ browser, with a console warning. Nothing else changes.
 emulator (in a namespace of its own, so a running `sotd-replay-dev.mjs` is untouched).
 `node tools/sotd-replay-dev.mjs`, then two browsers (or one private window) on the printed URL,
 each signed in with "Add new account". Both solve today's scramble, then talk. The account
-chooser also has **Admin (chat)**, an account with the admin's uid, for the delete buttons on
+chooser also has **Admin**, an account listed under `admins/`, for the delete buttons on
 other people's messages.
 
 ---
 
 ## 10. Removing a time (admin)
 
-The admin (the same uid as the chat's, §9) gets a × on every row of a board, faint until the
+An admin (§9, [ADMIN.md](ADMIN.md)) gets a × on every row of a board, faint until the
 row is hovered and always faintly there on a touch screen. It is on today's board in the
 window and in the drawer, and on past days in the picker. Pressing it asks first, saying
 what will happen, then takes the time off. Nobody else gets a ×, and nobody can take their
@@ -725,7 +768,7 @@ replayClaim/<uid>         null, so a replay of the backup solve can be shared (�
 
 What the rules ask:
 
-- **Only the admin uid**, and the row's delete and the record have to arrive together: a
+- **Only an admin** (`admins/<uid>`), and the row's delete and the record have to arrive together: a
   delete without a fresh `removed/<uid>` (its `at` is the server's `now`) is refused, and so
   is a record for somebody with no row, or one that leaves the row in place. Nobody can
   delete or rewrite a record afterwards, the person included.
@@ -756,5 +799,5 @@ read as "never removed". Nothing else changes.
 `node tools/verify-sotd-remove-rules.mjs` (45 checks, its own namespace) covers every path
 above: who may remove, the record's shape, the lock, the backup after a removal, a removed
 backup being final, the admin's own time, a past day, and everybody else being untouched.
-In the app, `node tools/sotd-replay-dev.mjs` and its **Admin (chat)** account: both submit,
+In the app, `node tools/sotd-replay-dev.mjs` and its **Admin** account: both submit,
 then the admin hovers the other row.

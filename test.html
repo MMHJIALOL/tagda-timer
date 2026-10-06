@@ -2488,6 +2488,238 @@ section('scramble of the day — ranking the two boards');
 const Gear = await import('./js/gear.js');
 const Ev = await import('./js/events.js');
 
+section('admin console — settings and the rules that guard them');
+{
+  /* js/config.js is the one list of settings, and firebase.rules.json's
+     config block is written from it (node tools/config-rules.mjs). A setting
+     in one and not the other is either refused by the database or not checked
+     by it, so the committed file has to be exactly what the table makes. */
+  const C = await import('./js/config.js');
+  const R = await import('./js/config-rules.js');
+  const rulesText = await (await fetch('./firebase.rules.json', { cache: 'no-store' })).text();
+  const rules = JSON.parse(rulesText).rules;
+  check('firebase.rules.json’s generated blocks (config, configScheduled, sotdFeatured) are what js/config.js makes (node tools/config-rules.mjs)',
+    R.generatedRules(rulesText) === rulesText);
+  check('every setting’s default is inside its own range, and has a write and a validate rule',
+    C.allSettings().every(([s, k, sp]) => C.valid(sp, sp.def) && rules.config[s][k]['.write'] && rules.config[s][k]['.validate']));
+
+  // Who is an admin is admins/<uid>, never a uid written into the rules, and
+  // always a Google sign-in, so race mode's anonymous accounts can never be one.
+  const asks = (rulesText.match(/root\.child\('admins\/' \+ auth\.uid\)\.val\(\) === true/g) || []).length;
+  const google = (rulesText.match(/auth\.token\.firebase\.sign_in_provider === 'google\.com' && root\.child\('admins\/' \+ auth\.uid\)\.val\(\) === true/g) || []).length;
+  check('no uid is hard-coded as an admin: every admin check reads admins/, and wants a Google sign-in',
+    !/auth\.uid === '(?!tagda-scheduler')/.test(rulesText) && asks >= 10 && google === asks, `${asks} ${google}`);
+  // The one uid the rules name is the scheduler's, and only ever with the custom-token sign-in no browser can make.
+  const named = (rulesText.match(/auth\.uid === 'tagda-scheduler'/g) || []).length;
+  const custom = (rulesText.match(/auth\.uid === 'tagda-scheduler' && auth\.token\.firebase\.sign_in_provider === 'custom'/g) || []).length;
+  check('the scheduler is named only with its custom sign-in', named > 10 && named === custom, `${named} ${custom}`);
+  check('admins/ is writable by nobody from the client',
+    !JSON.stringify(rules.admins).includes('.write'));
+
+  /* getConfig: the default with nothing stored, the stored value clipped to
+     its range, and the default again for the wrong type. This shares
+     localStorage with the app on this origin, so the cached copy is put back. */
+  let saved = null;
+  try { saved = localStorage.getItem('tdt-config'); } catch {}
+  const n = () => C.getConfig('sandbox', 'n');
+  C.applyConfig({});
+  check('with nothing stored, a setting is its built-in default',
+    n() === 5 && C.getConfig('sandbox', 'on') === false && C.getConfig('sandbox', 'text') === '');
+  C.applyConfig({ sandbox: { n: 7, on: true, text: 'hi' } });
+  check('a stored value is what the app gets', n() === 7 && C.getConfig('sandbox', 'on') === true && C.getConfig('sandbox', 'text') === 'hi');
+  C.applyConfig({ sandbox: { n: 9999, on: 'yes', text: 5 } });
+  check('past its ceiling a number is clipped to it, and the wrong type is the default',
+    n() === 10 && C.getConfig('sandbox', 'on') === false && C.getConfig('sandbox', 'text') === '');
+  C.applyConfig({ sandbox: { n: -3 } });
+  const low = n();
+  C.applyConfig({ sandbox: { n: 2.6, text: 'x'.repeat(500) } });
+  check('below its minimum it is the minimum; a fraction rounds; long text is cut',
+    low === 0 && n() === 3 && C.getConfig('sandbox', 'text').length === 80);
+  C.applyConfig(null);
+  check('junk instead of a config is the defaults', n() === 5);
+  let threw = false;
+  try { C.getConfig('sandbox', 'nope'); } catch { threw = true; }
+  check('asking for a setting that does not exist throws rather than quietly defaulting', threw);
+  const sp = (k) => C.spec('sandbox', k);
+  check('the admin page refuses what the rules refuse, before sending',
+    C.valid(sp('n'), 10) && !C.valid(sp('n'), 11) && !C.valid(sp('n'), 2.5) && !C.valid(sp('n'), '5')
+    && C.valid(sp('text'), 'x'.repeat(80)) && !C.valid(sp('text'), 'x'.repeat(81)) && !C.valid(sp('on'), 'true'));
+  try { if (saved === null) localStorage.removeItem('tdt-config'); else localStorage.setItem('tdt-config', saved); } catch {}
+
+  /* Ad blockers hide elements by name: EasyList has #ad-top, #ad-main, .ad-card,
+     .ad-row, .ad-btn and more, and the page's names once started ad-, which left
+     only its tab bar for anybody running one. They start ac- now. */
+  const page = (await Promise.all(['admin.html', 'css/admin.css', 'js/admin.js', 'js/admin-mod.js', 'js/admin-ann.js', 'js/admin-live.js']
+    .map(f => fetch(`./${f}`, { cache: 'no-store' }).then(r => r.text())))).join('\n')
+    .replace(/\/\*[\s\S]*?\*\//g, '');   // comments may name them, as admin.css's does
+  const adNames = [...new Set(page.match(/(?<![\w-])ad-[a-z0-9]+/g) || [])];
+  check('no id or class on the admin page starts ad- (ad blockers hide those)', !adNames.length, adNames.join(' '));
+
+  // Every word the admin page shows goes through t(), and Spanish has each one.
+  const { es } = await import('./locales/es.js');
+  const src = (await Promise.all(['admin.js', 'admin-mod.js', 'admin-ann.js', 'admin-live.js'].map(f => fetch(`./js/${f}`).then(r => r.text())))).join(' ');
+  const q = String.raw`'((?:\\'|[^'])*)'`;
+  const keys = [
+    ...[...src.matchAll(new RegExp(String.raw`\bt\(\s*` + q, 'g'))].map(m => m[1]),
+    ...[...src.matchAll(new RegExp(String.raw`(?:\btext|\btitle|'aria-label'):\s*` + q, 'g'))].map(m => m[1]),
+    ...[...src.matchAll(new RegExp(String.raw`\bgate\(\s*` + q + String.raw`(?:,\s*` + q + ')?', 'g'))].flatMap(m => [m[1], m[2]]),
+    // The label maps (where a setting is enforced, an announcement's audience, style and panel, a choice's options).
+    ...[...src.matchAll(/const (?:WHERE|AUDIENCE|STYLE|PANEL|CHOICE) = \{([\s\S]*?)\};/g)].flatMap(b => [...b[1].matchAll(new RegExp(q, 'g'))].map(m => m[1])),
+    ...Object.values(C.CONFIG).flatMap(sec => [sec.title, sec.about,
+      ...Object.values(sec.keys).flatMap(k => [k.label, k.help, k.unit])]),
+  ].filter(Boolean).map(k => k.replace(/\\'/g, "'"));
+  const missing = [...new Set(keys)].filter(k => !(k in es));
+  check('every admin page string has its Spanish', keys.length > 40 && !missing.length, missing.join(' | ') || String(keys.length));
+
+  /* app.minVersion compares against APP_VERSION, which must be the deploy's
+     own number: the same ?v= index.html loads everything with. A bump of one
+     without the other would make every open tab reload for nothing, or never. */
+  const { APP_VERSION } = await import('./js/version.js');
+  const html = await (await fetch('./index.html', { cache: 'no-store' })).text();
+  const vs = [...html.matchAll(/\?v=(\d+)/g)].map(m => Number(m[1]));
+  check('js/version.js’s APP_VERSION is the ?v= that index.html loads everything with',
+    vs.length > 3 && vs.every(v => v === APP_VERSION), `${APP_VERSION} vs ${[...new Set(vs)].join(',')}`);
+
+  // The money settings never default above their ceiling, and the ceilings are the old constants.
+  const RS = (k) => C.spec('replays', k);
+  check('the replay settings’ ceilings are the constants they replace (10 MB, 1 GB, 1000 a day, 7 days)',
+    RS('maxClipBytes').max === 10 * 1024 * 1024 && RS('dayBudgetBytes').max === 1024 ** 3
+    && RS('maxPerDay').max === 1000 && RS('keepDays').max === 7
+    && ['maxClipBytes', 'dayBudgetBytes', 'maxPerDay', 'keepDays'].every(k => RS(k).def === RS(k).max));
+  check('the chats’ rate limits can only get slower than today’s rules',
+    C.spec('sotdChat', 'gapMs').min === 1500 && C.spec('raceChat', 'gapMs').min === 500);
+
+  const A = await import('./js/admins.js');
+  const at = 1_800_000_000_000;
+  check('a ban with no end date holds; one with an end date holds until then, and not after',
+    A.banActive({ at: 1, reason: 'x' }, at) && A.banActive({ at: 1, until: at + 1 }, at)
+    && !A.banActive({ at: 1, until: at }, at) && !A.banActive(null, at));
+
+  /* A report is one per account per item because reportOnce/<uid>/<key> is
+     write-once, and the rule builds <key> from the report's own kind and path
+     ("kind|path" with every / made a |). The app's key must be the same string. */
+  const Mo = await import('./js/moderation.js');
+  check('the app builds a report’s reportOnce key exactly as the rule does',
+    Mo.reportKey('chat', 'daily/1791138600000/333/chat/m/-Nx_9') === 'chat|daily|1791138600000|333|chat|m|-Nx_9'
+    && Mo.reportKey('raceChat', 'rooms/ABCDE/chat/-a') === 'raceChat|rooms|ABCDE|chat|-a'
+    && rulesText.includes(`newData.child('kind').val() + '|' + newData.child('path').val().replace('/', '|')`));
+  const rem = Mo.removalUpdate('u1', true, 5);
+  check('a SOTD removal is the four writes the rules want together',
+    Object.keys(rem).sort().join() === 'progress/u1/submitted,removed/u1,replayClaim/u1,results/u1' && rem['removed/u1'].final === true);
+
+  const SR = await import('./js/sotd-replays.js');
+  const day = 1_791_138_600_000;
+  check('a shared replay is kept the day itself and keepDays more, exactly as worker.js counts',
+    SR.replayKept(day, day + 8 * 86_400_000) && !SR.replayKept(day, day + 8 * 86_400_000 + 1));
+}
+
+section('admin console — announcements, and the settings moved into it');
+{
+  const T = await import('./js/config-table.js');
+  const Ev = await import('./js/events.js');
+  check('the table’s list of SOTD events is events.js’s, written out (the Worker cannot import events.js)',
+    T.SOTD_EVENTS.join() === Ev.EVENT_ORDER.filter(Ev.dailyEligible).join());
+
+  const D = await import('./js/dayid.js');
+  check('misfire cut-offs moved from the admin console are used, and the ask line never sits below the discard one',
+    D.misfireAction(2500, '333', { discard: 3000, ask: 6000 }) === 'discard'
+    && D.misfireAction(5500, '333', { discard: 3000, ask: 6000 }) === 'ask'
+    && D.misfireAction(2500, '333', { discard: 3000, ask: 1000 }) === 'discard'
+    && D.misfireAction(3500, '333', { discard: 3000, ask: 1000 }) === 'keep'
+    && D.misfireAction(1000, '222', { discard: 3000, ask: 6000 }) === 'keep');
+
+  const N = await import('./js/announce.js');
+  const cfg = (s, k) => ({ 'feedback.url': 'https://forms.example/x', 'feedback.endAt': 9e12 })[`${s}.${k}`];
+  const all = N.allAnnouncements({ hello: { title: 'Hi', text: 'x', style: 'popup', audience: 'everyone', startAt: 0, maxShows: 1, version: 2 } }, cfg);
+  check('the two built-in announcements are there with no database, and the feedback one takes config/feedback’s link and end',
+    all['webcam-replay']?.style === 'card' && all['webcam-replay'].audience === 'webcamOff'
+    && all.feedback?.button?.target === 'https://forms.example/x' && all.feedback.endAt === 9e12 && all.hello?.version === 2);
+  check('a record with a style, audience or link that is not allowed is refused or cut down',
+    N.normalise({ title: 'x', style: 'banner' }) === null
+    && N.normalise({ title: 'x', style: 'card', audience: 'all' }).audience === 'everyone'
+    && N.normalise({ title: 'x', style: 'card', button: { label: 'Go', action: 'link', target: 'http://x' } }).button === null
+    && N.normalise({ title: 'x', style: 'card', button: { label: 'Go', action: 'panel', target: 'nowhere' } }).button === null
+    && N.normalise({ title: 'y'.repeat(200), style: 'pill' }).title.length === 80);
+  const who = { signedIn: false, webcamOn: false, solves: 10, opened: new Set(['camera']) };
+  const card = { id: 'c', title: 'c', style: 'card', audience: 'everyone', startAt: 0, endAt: 0, maxShows: 2, version: 1 };
+  check('each audience is who it says',
+    N.inAudience({ audience: 'signedIn' }, who) === false && N.inAudience({ audience: 'webcamOff' }, who) === true
+    && N.inAudience({ audience: 'newUsers' }, who) === true && N.inAudience({ audience: 'returningUsers' }, who) === false
+    && N.inAudience({ audience: 'notOpened', button: { action: 'panel', target: 'camera' } }, who) === false
+    && N.inAudience({ audience: 'notOpened', button: { action: 'panel', target: 'race' } }, who) === true);
+  check('due: live, in the audience, not answered for this version, under maxShows',
+    N.due(card, {}, who) === 'card' && N.due(card, { c: { v: 1, answer: 'dismissed' } }, who) === null
+    && N.due(card, { c: { v: 0, answer: 'dismissed' } }, who) === 'card'
+    && N.due(card, { c: { v: 1, shows: 2 } }, who) === null
+    && N.due({ ...card, startAt: Date.now() + 1e6 }, {}, who) === null && N.due({ ...card, endAt: 1 }, {}, who) === null
+    && N.due({ ...card, style: 'popup', reminder: true }, { c: { v: 1, answer: 'later' } }, who) === 'pill');
+  const pk = N.pick({ a: { ...card, id: 'a' }, b: { ...card, id: 'b', style: 'popup' }, p: { ...card, id: 'p', style: 'pill' } }, {}, who);
+  check('one at a time, popups before cards before pills', pk?.a.id === 'b' && pk.as === 'popup');
+  const rulesText = await (await fetch('./firebase.rules.json', { cache: 'no-store' })).text();
+  check('the rules allow exactly the styles, audiences and panels announce.js knows',
+    rulesText.includes(`(${N.ANN_STYLES.join('|')})`) && rulesText.includes(`(${N.ANN_AUDIENCES.join('|')})`)
+    && rulesText.includes(`(${N.ANN_PANELS.join('|')})`));
+}
+
+section('admin console — testers, audiences, schedules and days ahead');
+{
+  const C = await import('./js/config.js');
+  const T = await import('./js/config-table.js');
+  const R = await import('./js/config-rules.js');
+  const rulesText = await (await fetch('./firebase.rules.json', { cache: 'no-store' })).text();
+  const rules = JSON.parse(rulesText).rules;
+
+  check('every setting can be scheduled, and a scheduled value is checked exactly as the setting is',
+    C.allSettings().every(([s, k, sp]) => rules.configScheduled[s]?.[k]?.$id?.to?.['.validate'] === rules.config[s][k]['.validate']
+      && rules.configScheduled[s][k].$id['.write'].includes(`configMeta/${s}/${k}/log`)));
+  check('a featured event is one of the events with a daily scramble, and nothing else',
+    rules.sotdFeatured.$dayStart['.validate'].includes(`(${T.SOTD_EVENTS.join('|')})`));
+  const scr = rules.daily.$dayStart.$event.scramble['.write'];
+  check('a day ahead’s scramble is an admin’s to set: anybody else publishes only today’s',
+    scr.includes('now + 300000') && scr.includes('now - 300000') && scr.includes("root.child('admins/' + auth.uid).val() === true) && $dayStart >"));
+
+  const aud = C.spec('replays', 'audience');
+  check('an audience is one of three, and anything else is everybody',
+    C.valid(aud, 'testers') && !C.valid(aud, 'friends') && C.clean(aud, 'admins') === 'admins' && C.clean(aud, 'x') === undefined
+    && aud.def === 'everyone' && C.spec('sotdChat', 'audience').def === 'everyone');
+
+  /* hasFeature: nothing stored is everybody; 'testers' is testers and admins,
+     'admins' only admins, and never anybody until their account has answered.
+     Shares localStorage with the app, so both kept copies are put back. */
+  const Au = await import('./js/audience.js');
+  let savedCfg = null, savedRoles = null;
+  try { savedCfg = localStorage.getItem('tdt-config'); savedRoles = localStorage.getItem('tdt-roles'); } catch {}
+  C.applyConfig({});
+  Au.setRoles(null);
+  const everybody = Au.hasFeature('replays');
+  C.applyConfig({ replays: { audience: 'testers' } });
+  const nobody = Au.hasFeature('replays');
+  Au.setRoles('u1', { tester: true });
+  const tester = Au.hasFeature('replays') && Au.hasFeature('replays', 'u1') && !Au.hasFeature('replays', 'u2');
+  C.applyConfig({ replays: { audience: 'admins' } });
+  const notAdmin = Au.hasFeature('replays');
+  Au.setRoles('u1', { admin: true });
+  const admin = Au.hasFeature('replays');
+  check('a feature for testers is on for a tester or an admin, one for admins only for an admin, and for nobody unasked',
+    everybody && !nobody && tester && !notAdmin && admin);
+  C.applyConfig(null);
+  try {
+    if (savedCfg === null) localStorage.removeItem('tdt-config'); else localStorage.setItem('tdt-config', savedCfg);
+    if (savedRoles === null) localStorage.removeItem('tdt-roles'); else localStorage.setItem('tdt-roles', savedRoles);
+  } catch {}
+
+  const N = await import('./js/announce.js');
+  check('an announcement for testers reaches testers and admins; one for admins, admins only',
+    N.inAudience({ audience: 'testers' }, { tester: true }) && N.inAudience({ audience: 'testers' }, { admin: true })
+    && !N.inAudience({ audience: 'testers' }, {}) && N.inAudience({ audience: 'admins' }, { admin: true })
+    && !N.inAudience({ audience: 'admins' }, { tester: true }));
+
+  check('testers/ is an admin’s to write, and each account reads only its own',
+    rules.testers.$uid['.write'] === R.ADMIN && rules.testers.$uid['.read'] === 'auth != null && auth.uid === $uid');
+  check('the day’s chat checks its audience as well as its switch',
+    rulesText.includes(R.audienceRule('sotdChat')));
+}
+
 section('gear — seed files');
 {
   const cubes = await (await fetch('./cubes.json')).json();

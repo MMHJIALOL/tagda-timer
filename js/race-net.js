@@ -52,9 +52,17 @@ import { t } from './i18n.js';
    times themselves are still unreadable until you have sent your own.
    =========================================================== */
 
+import { getConfig, loadConfig } from './config.js';
+
+/* The room's tuning, from the admin console (config/race); the defaults are
+   raceapp.js's constants. Read at each use, so a change reaches open rooms. */
+const roomMax = () => getConfig('race', 'roomMax');
+const heartbeatMs = () => getConfig('race', 'heartbeatSec') * 1000;
+const staleRoomMs = () => getConfig('race', 'staleRoomMin') * 60_000;
+const hardTimeoutMs = () => getConfig('race', 'hardTimeoutSec') * 1000;
+import { EMULATED } from './sync-auth.js';
 import {
-  FIREBASE_CONFIG, FIREBASE_VERSION, ROOM_MAX,
-  HEARTBEAT_MS, STALE_ROOM_MS, HARD_TIMEOUT_MS,
+  FIREBASE_CONFIG, FIREBASE_VERSION,
   CHAT_MAX_LEN, CHAT_HISTORY,
 } from './raceapp.js';
 
@@ -135,6 +143,9 @@ class FirebaseTransport extends EventTarget {
 
     const app = appMod.initializeApp(FIREBASE_CONFIG, 'tagda-race');
     const auth = authMod.getAuth(app);
+    /* ?emu=1 on localhost (sync-auth.js): the emulators, like the rest of the
+       app. Without this a local test of a race room reached the real project. */
+    if (EMULATED) authMod.connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });
 
     /* One racer per TAB, not one per browser.
      *
@@ -158,6 +169,7 @@ class FirebaseTransport extends EventTarget {
 
     const cred = await authMod.signInAnonymously(auth);
     const db = dbMod.getDatabase(app);
+    if (EMULATED) dbMod.connectDatabaseEmulator(db, '127.0.0.1', 9000);
 
     this._sdk = { ...dbMod, db };
     this.snap.uid = cred.user.uid;
@@ -229,13 +241,13 @@ class FirebaseTransport extends EventTarget {
     if (cur?.players) {
       const now = Date.now();
       const dead = Object.entries(cur.players)
-        .filter(([, p]) => now - (p.lastSeen || 0) > STALE_ROOM_MS);
+        .filter(([, p]) => now - (p.lastSeen || 0) > staleRoomMs());
       /* Not awaited. Clearing out ghosts is housekeeping for whoever reads
          this room next, and holding our own join behind a write we do not
          need the answer to bought nothing but the wait. */
       dead.forEach(([id]) => S.remove(this._ref(`${this._base}/players/${id}`)).catch(() => {}));
       const live = Object.keys(cur.players).length - dead.length;
-      if (live >= ROOM_MAX && !cur.players[uid]) {
+      if (live >= roomMax() && !cur.players[uid]) {
         // Undo the early subscription — we are not going to be in this room.
         this._teardown();
         this.snap = { ...emptySnapshot(), uid };
@@ -252,16 +264,38 @@ class FirebaseTransport extends EventTarget {
       joinedAt: cur?.players?.[uid]?.joinedAt || Date.now(),
     };
 
+    /* A new room while the admin console has them switched off (config/race,
+       ADMIN.md): the rules refuse its meta, so say so before writing anything.
+       Rooms already open are not affected. */
+    const creating = !cur?.meta;
+    if (creating) {
+      await loadConfig();
+      if (!getConfig('race', 'enabled')) {
+        this._teardown();
+        this.snap = { ...emptySnapshot(), uid };
+        throw new Error('race-off');
+      }
+    }
+
     /* Both writes at once. Creating the room and taking a seat in it are
        independent nodes with independent rules, and running them one after
        the other made creating a room measurably slower than joining one for
        no reason anybody could see. */
-    await Promise.all([
-      cur?.meta ? null : S.set(this._ref(`${this._base}/meta`), {
-        createdAt: S.serverTimestamp(), event: player.event, mode: player.mode, round: 1,
-      }),
-      this._ensureSeat(),
-    ]);
+    try {
+      await Promise.all([
+        creating ? S.set(this._ref(`${this._base}/meta`), {
+          createdAt: S.serverTimestamp(), event: player.event, mode: player.mode, round: 1,
+        }) : null,
+        this._ensureSeat(),
+      ]);
+    } catch (err) {
+      // Refused: switched off since the copy of the settings this tab has.
+      if (creating && /permission/i.test(String(err?.code || err?.message || err))) {
+        await loadConfig({ maxAge: 0 });
+        if (!getConfig('race', 'enabled')) { await this.leave(); throw new Error('race-off'); }
+      }
+      throw err;
+    }
 
     this._startHeartbeat();
   }
@@ -327,15 +361,41 @@ class FirebaseTransport extends EventTarget {
    * between "sent" and "the room would not take it".
    */
   async sendChat(text) {
-    const body = cleanChat(text);
+    // The admin console can shorten it (config/raceChat/maxLen); the rules hold the same line.
+    const body = cleanChat(text).slice(0, getConfig('raceChat', 'maxLen'));
     if (!body || !this.snap.roomId) return;
     const S = this._sdk;
-    await S.push(this._ref(`${this._base}/chat`), {
-      uid: this.snap.uid,
-      name: this._seat?.name || 'Cuber',
-      text: body,
-      at: S.serverTimestamp(),
-    });
+    const uid = this.snap.uid;
+    const id = S.push(this._ref(`${this._base}/chat`)).key;
+    const msg = { uid, name: this._seat?.name || 'Cuber', text: body, at: S.serverTimestamp() };
+    /* With chatLast/<uid> in the same update: the rules' rate limit since the
+       admin console, the same pair as the day's chat. On rules from before it
+       the pair is refused whole (chatLast has no rule there), and the message
+       alone is what works. Whichever worked last goes first; a refusal tries
+       the other once, so a tab open across the rules being published keeps
+       talking. A genuine refusal (banned, switched off) costs two writes. */
+    const pair = () => S.update(this._ref(this._base), { [`chat/${id}`]: msg, [`chatLast/${uid}`]: S.serverTimestamp() });
+    const alone = () => S.set(this._ref(`${this._base}/chat/${id}`), msg);
+    const order = this._chatShape === 'old' ? [['old', alone], ['new', pair]] : [['new', pair], ['old', alone]];
+    let refused;
+    for (const [shape, send] of order) {
+      try { await send(); this._chatShape = shape; return; }
+      catch (err) {
+        if (!/permission/i.test(String(err?.code || err?.message || err))) throw err;
+        refused = err;
+      }
+    }
+    throw refused;
+  }
+
+  /**
+   * This racer's own ban, if an admin has banned it (bans/<uid>, readable by
+   * the account itself), else null. Asked only to explain a refused message:
+   * a race account is a throwaway, so it is not watched.
+   */
+  async banOf() {
+    try { return (await this._sdk.get(this._ref(`bans/${this.snap.uid}`))).val() || null; }
+    catch { return null; }
   }
 
   /** Point the round listeners at whatever meta.round now says. */
@@ -457,7 +517,7 @@ class FirebaseTransport extends EventTarget {
       if (!this.snap.players?.[this.snap.uid]) { this._ensureSeat(); return; }
       this._sdk.update(this._ref(`${this._base}/players/${this.snap.uid}`),
         { lastSeen: this._sdk.serverTimestamp() }).catch(() => {});
-    }, HEARTBEAT_MS);
+    }, heartbeatMs());
   }
 
   async leave() {
@@ -578,9 +638,9 @@ class LocalTransport extends EventTarget {
     this._mutate((room) => {
       const now = Date.now();
       for (const [id, p] of Object.entries(room.players || {})) {
-        if (now - (p.lastSeen || 0) > STALE_ROOM_MS) delete room.players[id];
+        if (now - (p.lastSeen || 0) > staleRoomMs()) delete room.players[id];
       }
-      if (Object.keys(room.players || {}).length >= ROOM_MAX && !room.players[uid]) {
+      if (Object.keys(room.players || {}).length >= roomMax() && !room.players[uid]) {
         throw new Error('room-full');
       }
       room.meta ||= { createdAt: now, event: player.event, mode: player.mode, round: 1 };
@@ -596,7 +656,7 @@ class LocalTransport extends EventTarget {
 
     this._beat = setInterval(() => {
       this._mutate((room) => { if (room.players?.[uid]) room.players[uid].lastSeen = Date.now(); else return false; });
-    }, HEARTBEAT_MS);
+    }, heartbeatMs());
 
     /* Drop our own row, and nothing else.
      *
@@ -731,4 +791,4 @@ export function createTransport(prefer = 'auto') {
 }
 
 /** Exported so race.js and the UI agree on what counts as gone. */
-export const isStale = (p, now = Date.now()) => now - (p?.lastSeen || 0) > HARD_TIMEOUT_MS;
+export const isStale = (p, now = Date.now()) => now - (p?.lastSeen || 0) > hardTimeoutMs();

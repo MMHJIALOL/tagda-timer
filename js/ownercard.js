@@ -19,6 +19,13 @@ import { el } from './util.js';
 import { popover } from './popover.js';
 import { IG_HANDLE, IG_PROFILE_URL, GH_HANDLE, GH_PROFILE, AVATAR, OWNER_NAME, OWNER_BIO } from './panels.js';
 
+/**
+ * The owner's Google account, for the badge in the day's chat, where a
+ * message's uid is pinned by the rules and a name is not. Cosmetic like the
+ * name match: being an admin is admins/ in the database (js/admins.js).
+ */
+export const OWNER_UID = '8lSr96LEO1cdHDVlMDv8tCCFQag1';
+
 export function isOwnerName(name) {
   return String(name || '').trim().toLowerCase() === OWNER_NAME;
 }

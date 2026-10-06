@@ -164,10 +164,14 @@ export const ASK_MS = 5000;
 /** Events where real solves come in under 2 s, so these cut-offs would throw them away. */
 export const FAST_EVENTS = new Set(['222', 'pyram', 'skewb', 'clock']);
 
-/** @returns {'discard' | 'ask' | 'keep'} */
-export function misfireAction(timeMs, eventId) {
+/**
+ * @param cut  the cut-offs, when the admin console has moved them
+ *             (config/sotd, read by daily.js): { discard, ask } in ms
+ * @returns {'discard' | 'ask' | 'keep'}
+ */
+export function misfireAction(timeMs, eventId, cut = { discard: AUTO_DISCARD_MS, ask: ASK_MS }) {
   if (FAST_EVENTS.has(eventId)) return 'keep';
-  return timeMs < AUTO_DISCARD_MS ? 'discard' : timeMs < ASK_MS ? 'ask' : 'keep';
+  return timeMs < cut.discard ? 'discard' : timeMs < Math.max(cut.discard, cut.ask) ? 'ask' : 'keep';
 }
 
 /** How many of `solves` were recorded inside the IST day beginning at `dayStart`. */

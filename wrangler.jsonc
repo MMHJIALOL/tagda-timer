@@ -18,13 +18,24 @@
   // Never public: no r2.dev, no custom domain. Every read goes through the
   // Worker. Lifecycle rule: delete objects 8 days after upload.
   "r2_buckets": [{ "binding": "REPLAYS", "bucket_name": "tagda-replays" }],
+  // Once a minute: apply the admin console's scheduled changes that are due
+  // (ADMIN.md §10). Cron Triggers are part of Workers Free (five an account),
+  // and a minute of nothing due is one small database read. The scheduler
+  // signs in with the FIREBASE_SERVICE_ACCOUNT secret (wrangler secret put);
+  // without it nothing is applied and the admin page says so.
+  "triggers": { "crons": ["* * * * *"] },
   // Local values (the emulators, a small budget for tests) go in .dev.vars.
+  // ADMIN_UIDS is the fallback for rules from before the admin console: once
+  // they are published, admins/<uid> in the database decides (ADMIN.md).
+  // FIREBASE_API_KEY is the web app's public key (raceapp.js), for the
+  // scheduler's sign-in; it grants nothing by itself.
   "vars": {
     "RTDB_URL": "https://tagda-timer-default-rtdb.firebaseio.com",
     "RTDB_NS": "",
     "ADMIN_UIDS": "8lSr96LEO1cdHDVlMDv8tCCFQag1",
     "DAY_BUDGET": "1073741824",
-    "CLIP_MAX": "10485760"
+    "CLIP_MAX": "10485760",
+    "FIREBASE_API_KEY": "AIzaSyD2PUpGwlnvC244V7L11Z5yDrsMS0Xl8dU"
   },
   "observability": { "enabled": true }
 }
