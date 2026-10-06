@@ -2,7 +2,7 @@
 const assert=require('node:assert/strict');
 const{chromium}=require(process.env.TAGDA_PLAYWRIGHT_PATH || 'playwright');
 (async()=>{const b=await chromium.launch({headless:true,args:['--use-fake-device-for-media-stream','--use-fake-ui-for-media-stream']});
-async function boot(p){await p.goto('http://localhost:5184');await p.waitForFunction(()=>tagdatimer?.scramble?.scramble);}
+async function boot(p){await p.goto(process.argv[2] || 'http://localhost:5184');await p.waitForFunction(()=>tagdatimer?.scramble?.scramble);}
 async function start(p,mode='none'){await p.evaluate(()=>tagdatimer.openCompetition());await p.locator('#competition-recording').selectOption(mode);await p.getByRole('button',{name:'Start Ao5',exact:true}).click();await p.waitForFunction(()=>!document.querySelector('dialog.competition-dialog'));}
 for(const scenario of ['duration','bytes','quota','disconnect','hidden']){
  const c=await b.newContext();const p=await c.newPage();const errors=[];p.on('pageerror',e=>errors.push(e.message));await boot(p);

@@ -392,7 +392,10 @@ export async function importAll(data, { merge = true } = {}) {
   // A merge of an old backup cannot revive an intentionally deleted set.
   const sets = incomingSets.filter(c => !deleted[c.id]);
   const solves = data.solves.filter(s => !s.competitionSetId || !deleted[s.competitionSetId]);
-  if (!merge) for (const c of await CompetitionSets.all()) await CompetitionSets.delete(c.id);
+  /* A replace discards only the sets the backup does not bring back. Deleting
+     one it restores would queue its videos for cleanup and push a 'discarded'
+     record the rules never let it come back from. */
+  if (!merge) for (const c of await CompetitionSets.all()) if (!known.has(c.id)) await CompetitionSets.delete(c.id);
   await atomic(['solves', 'competitionSets', 'sessions', 'kv'], async tr => {
     if (!merge) { tr.objectStore('solves').clear(); tr.objectStore('sessions').clear(); tr.objectStore('competitionSets').clear(); }
     for (const s of (data.sessions || [])) tr.objectStore('sessions').put(s);
@@ -421,7 +424,11 @@ export async function importAll(data, { merge = true } = {}) {
   await Tombstones.clear('solves', solves.map(s => s.id));
   await Tombstones.clear('competitionSets', sets.map(c => c.id));
   for (const s of (data.sessions || [])) { await Tombstones.clear('sessions',[s.id]); emit('sessions',s); }
-  emit('competition', { sets, solves });
+  /* Ordinary solves upload in their own batch, as before. Sharing one atomic
+     update with Competition records would let unpublished rules refuse them all. */
+  const ordinary = solves.filter(s => !s.competitionSetId);
+  if (ordinary.length) emit('solvesBatch', ordinary);
+  emit('competition', { sets, solves: solves.filter(s => s.competitionSetId) });
   // Backups written before the dictionary existed simply have no key here.
   if (Array.isArray(data.letterPairs) && data.letterPairs.length) {
     await LetterPairs.putMany(data.letterPairs);

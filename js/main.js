@@ -2667,8 +2667,11 @@ async function recordSolve({ timeMs, penalty = 'none', inspectionMs = 0, splits 
     const g = app.session.goal;
     celebratePB(g.stat, goalHit, `Goal hit: sub-${goalTarget(g.value)} ${g.stat}!`);
   } else if (pb) celebratePB(...pb);
-  await nextScramble();
-  await app.competitionScrambleSaved;
+  /* Only a Competition attempt waits for the next scramble, so the set has
+     saved it before the next attempt. Anything else must not: a typed time
+     or an FMC submit would sit behind a big-cube or Square-1 scrambler. */
+  const next = nextScramble();
+  if (inCompetition) { await next; await app.competitionScrambleSaved; }
 }
 
 /**

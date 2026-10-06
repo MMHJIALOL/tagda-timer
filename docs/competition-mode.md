@@ -1,10 +1,8 @@
 # Competition Mode handover
 
-Implemented on `codex/competition-mode`, starting from `origin/main` at `b626492` in an isolated managed worktree. The original Desktop checkout and its uncommitted changes were preserved.
-
 ## Preview
 
-From this worktree, run `python serve.py 5184 --no-browser` and open <http://localhost:5184>. Select Session → Start Competition Mode. Competition history is next to that action. On phones, those actions are in the Sessions section of the event sheet.
+Run `python serve.py 5184 --no-browser` and open <http://localhost:5184>. Select Session → Start Competition Mode. Competition history is next to that action. On phones, those actions are in the Sessions section of the event sheet.
 
 ## Automated verification
 
@@ -43,7 +41,7 @@ node tools/verify-competition-ui.cjs
 node tools/verify-competition-history.cjs
 ```
 
-`TAGDA_PLAYWRIGHT_PATH` can point to a bundled Playwright package; `TAGDA_QA_OUTPUT` chooses the screenshot directory for the main check. All default to the preview server on port 5184. The main check also accepts the server URL as its first argument.
+`TAGDA_PLAYWRIGHT_PATH` can point to a bundled Playwright package; `TAGDA_QA_OUTPUT` chooses the screenshot directory for the main check. All default to the preview server on port 5184 and accept the server URL as their first argument.
 
 ## Manual release checks
 

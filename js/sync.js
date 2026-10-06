@@ -1,4 +1,3 @@
-import { CompetitionSets, normalizeCompetition } from './db.js';
 import { t } from './i18n.js';
 /* ===========================================================
    Tagda Timer — cloud sync engine
@@ -25,7 +24,7 @@ import { t } from './i18n.js';
    solve as something the other side is missing.
    =========================================================== */
 
-import { Solves, Sessions, KV, Tombstones, onWrite, tx, wrap } from './db.js';
+import { Solves, Sessions, KV, Tombstones, onWrite, tx, wrap, CompetitionSets, normalizeCompetition } from './db.js';
 import { onAuthChange, getDatabaseHandle } from './sync-auth.js';
 
 const QUEUE_KEY = '_syncQueue';
@@ -327,6 +326,23 @@ function pushCompetition({ sets = [], solves = [], deleted }) {
   pushUpdateOrQueue(updates);
 }
 
+/**
+ * Moves Competition sets, and solves that belong to one, out of a multi-path
+ * update into one of their own. An update is all-or-nothing, and until
+ * firebase.rules.json is published the rules refuse these nodes: sharing a
+ * batch, they would hold back every ordinary solve the merge has to upload.
+ */
+export function splitCompetition(updates, setsPath) {
+  const competition = {};
+  for (const [path, value] of Object.entries(updates)) {
+    if (path.startsWith(setsPath + '/') || value?.competitionSetId) {
+      competition[path] = value;
+      delete updates[path];
+    }
+  }
+  return competition;
+}
+
 function pushSolve(solve) {
   if (isEcho(`solves:${solve.id}`, solve)) return;
   pushOrQueue(userPath('solves', solve.id), solve);
@@ -505,10 +521,7 @@ async function applyRemoteRec(store, rec) {
   if (id == null) return;
   if (store === 'competitionSets' && rec.status === 'discarded') { await CompetitionSets.delete(id); await Tombstones.record(store, [id]); notifyRemote(); return; }
   if (await rejectAsDeleted(store, id)) return;
-  if (store === 'competitionSets') {
-    if (rec.status === 'discarded') { await CompetitionSets.delete(id); await Tombstones.record(store, [id]); notifyRemote(); return; }
-    rec = normalizeCompetition(rec);
-  }
+  if (store === 'competitionSets') rec = normalizeCompetition(rec);
   await wrap((await tx(store, 'readwrite')).put(rec));
   if (store === 'competitionSets') notifyRemote();
 }
@@ -721,7 +734,9 @@ async function performMerge({ localSolves, localSessions, cloudSolves, cloudSess
   // uploads the union rather than a second pass that could half-apply.
   for (const id of dead.solves) updates[userPath('solves', id)] = null;
   for (const id of dead.sessions) updates[userPath('sessions', id)] = null;
+  const competition = splitCompetition(updates, userPath('competitionSets'));
   await pushUpdateOrQueue(updates);
+  await pushUpdateOrQueue(competition);
   // Stamped here rather than by the dialog, so the silent path counts too:
   // once this browser and this account have been reconciled, every later
   // sign-in — including the one a page reload performs for you — goes
