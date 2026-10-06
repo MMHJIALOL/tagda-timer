@@ -132,13 +132,21 @@ export function createSyncQueue({ storage, online = () => navigator.onLine !== f
           if (!entry) break;
           inFlight = { session, id: entry.id }; slow = false; notify();
           const timer = setTimeout(() => { if (inFlight?.id === entry.id && active === session) { slow = true; notify(); } }, 20000);
+          let refused = false;
           try { await session.send(entry); }
           catch (e) {
-            if (active === session) {
-              error = /permission|auth|token|credential/i.test(e?.code || '') ? 'permission' : 'upload';
-              console.warn('[sync] upload failed', e?.code || e);
+            // A write the database refuses before sending fails the same way on
+            // every retry, and in a FIFO queue it would hold back everything
+            // behind it. Drop it; the change is still saved on this device.
+            if (!e?.permanent || active !== session) {
+              if (active === session) {
+                error = /permission|auth|token|credential/i.test(e?.code || '') ? 'permission' : 'upload';
+                console.warn('[sync] upload failed', e?.code || e);
+              }
+              return false;
             }
-            return false;
+            refused = true;
+            console.warn('[sync] dropped a change the database cannot store', entry.path || Object.keys(entry.updates || {})[0], e);
           } finally { clearTimeout(timer); }
           // Remove only this acknowledged operation, including during account switches.
           // If bookkeeping fails, put it back: retrying an idempotent operation is safe.
@@ -154,6 +162,12 @@ export function createSyncQueue({ storage, online = () => navigator.onLine !== f
               throw e;
             }
           });
+          if (refused) {
+            if (active?.uid === session.uid) acknowledgedRevision++;
+            if (inFlight?.session === session) inFlight = null;
+            notify();
+            continue;
+          }
           const at = Date.now();
           await storage.set(`_syncAck:${session.uid}`, { at });
           if (active?.uid === session.uid) {
