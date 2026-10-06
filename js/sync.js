@@ -26,6 +26,7 @@ import { t } from './i18n.js';
 
 import { Solves, Sessions, KV, Tombstones, onWrite, tx, wrap, CompetitionSets, normalizeCompetition, LocalMetadata, hasUnsavedLocalChange } from './db.js';
 import { createSyncQueue } from './sync-queue.js';
+import { mergeInspection, pendingInspection, inspectionCommitted } from './inspection-setting.js';
 import { onAuthChange, getDatabaseHandle, hasPersistedSession, hasPendingRedirect } from './sync-auth.js';
 
 const statusListeners = new Set();
@@ -519,13 +520,13 @@ async function applyRemoteLearn(remote) {
  * the old one on the way back down — and on the next sign-in it lost
  * anything the account had never heard of at all.
  *
- * Remote wins key by key (it is the newer of the two by the time it
- * arrives), local keys the cloud copy doesn't mention survive. `bld` is
+ * Remote wins key by key; inspection instead keeps the latest explicit
+ * choice. Local keys the cloud copy doesn't mention survive. `bld` is
  * spread a level deeper for the same reason loadSettings() does it: a
  * cloud copy written before a `bld` field existed would otherwise blank it.
  */
 export function mergeSettings(local, remote) {
-  const merged = { ...local, ...remote };
+  const merged = mergeInspection(local, remote);
   if (local.bld || remote.bld) merged.bld = { ...(local.bld || {}), ...(remote.bld || {}) };
   for (const k of LOCAL_ONLY_SETTINGS) {
     if (k in local) merged[k] = local[k]; else delete merged[k];
@@ -536,10 +537,22 @@ export function mergeSettings(local, remote) {
 async function applyRemoteSettings(remote) {
   if (isUnconfirmed('settings')) return;
   if (!remote || typeof remote !== 'object') return;
-  const local = (await KV.get('settings', {})) || {};
-  const merged = mergeSettings(local, remote);
-  _lastRemoteJSON.set('kv:settings', JSON.stringify(merged));
-  await KV.set('settings', merged);
+  const generation = _generation;
+  const merged = await KV.update('settings', current => {
+    const value = mergeSettings(mergeInspection(current || {}, pendingInspection() || {}), remote);
+    _lastRemoteJSON.set('kv:settings', JSON.stringify(value));
+    return value;
+  });
+  inspectionCommitted(merged);
+  // Correct only the stale inspection fields. Re-uploading all merged settings
+  // would bounce device-local event/session choices between signed-in tabs.
+  if (generation === _generation && merged.inspectionUpdatedAt && (merged.inspection !== remote.inspection ||
+      merged.inspectionUpdatedAt !== remote.inspectionUpdatedAt)) {
+    pushUpdateOrQueue({
+      [userPath('settings', 'inspection')]: merged.inspection,
+      [userPath('settings', 'inspectionUpdatedAt')]: merged.inspectionUpdatedAt,
+    });
+  }
 }
 
 async function attachListeners() {
