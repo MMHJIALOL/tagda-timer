@@ -829,16 +829,17 @@ function renderMore() {
   if (signedIn) {
     const pic = acct.querySelector('.account-avatar, .account-initial')?.cloneNode(true);
     const name = acct.querySelector('.account-username')?.textContent || '';
-    ui.syncSub = el('span', { class: 'ph-sync-s', text: t('Your solves sync to this account') });
+    const attention = acct.querySelector('.account-status-dot');
+    ui.syncSub = el('span', { class: 'ph-sync-s', text: attention ? acct.getAttribute('aria-label') : t('Your solves sync to this account') });
     ui.syncCard.replaceChildren(el('button', { class: 'ph-sync-in', type: 'button', onclick: openAccountSheet },
-      el('span', { class: 'ph-sync-pic' }, pic || el('span', { html: I.account })),
+      el('span', { class: 'ph-sync-pic', style: { position: 'relative' } }, pic || el('span', { html: I.account }), attention?.cloneNode(true)),
       el('span', { class: 'ph-sync-txt' }, el('span', { class: 'ph-sync-t', text: name }), ui.syncSub),
       el('span', { class: 'sheet-row-chev', html: I.chevR, 'aria-hidden': 'true' })));
     // The address the account syncs to, once sync-ui.js (already loaded for a
     // signed-in account) can say.
     import('./sync-ui.js').then((m) => {
       const menu = m.accountMenu?.();
-      if (menu?.email && ui.syncSub?.isConnected) ui.syncSub.textContent = t('syncing as {email}', { email: menu.email });
+      if (!attention && menu?.email && ui.syncSub?.isConnected) ui.syncSub.textContent = t('syncing as {email}', { email: menu.email });
     }).catch(() => {});
   } else {
     ui.syncCard.replaceChildren(

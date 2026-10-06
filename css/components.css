@@ -4330,3 +4330,34 @@ body.focus .competition-strip, body.inspecting .competition-strip { opacity: 0; 
   font-size: .82rem; font-weight: 600;
 }
 .sotd-featured.on { justify-content: flex-start; color: var(--accent); }
+
+/* Data Health stays in Settings; only a pending account gets a small dot. */
+#btn-account { position: relative; }
+.account-status-dot {
+  position: absolute; right: 3px; top: 3px; width: 8px; height: 8px;
+  border-radius: 50%; background: var(--warn, #e6aa45);
+  box-shadow: 0 0 0 2px var(--bg, #161621); pointer-events: none;
+}
+.data-health-row { gap: 12px; }
+.data-health-row .lbl { min-width: 0; }
+.data-health-row .sub { overflow-wrap: anywhere; }
+.data-health-row > button { flex-shrink: 0; }
+.health-section { overflow-wrap: anywhere; }
+.health-section .health-value { margin: 8px 0; line-height: 1.5; }
+.health-section .sub { display: block; line-height: 1.5; margin: 8px 0; }
+.health-section p:empty { display: none; }
+.health-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.health-actions button[hidden], .local-save-warning[hidden] { display: none; }
+.local-save-warning {
+  position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%);
+  width: max-content; max-width: calc(100vw - 24px); z-index: 45;
+  display: flex; align-items: center; gap: 12px; padding: 10px 14px;
+  border: 1px solid var(--warn, #e6aa45); border-radius: 12px;
+  background: var(--bg, #161621); color: var(--text, #e6e6f0);
+  font-size: 13px; box-shadow: 0 4px 24px #0004;
+}
+.local-save-warning button { flex-shrink: 0; }
+@media (max-width: 480px) {
+  .data-health-row { align-items: flex-start; }
+  .local-save-warning { flex-direction: column; align-items: flex-start; gap: 4px; }
+}

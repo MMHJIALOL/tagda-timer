@@ -5,7 +5,7 @@ import { t, translateDOM } from './i18n.js';
 
 import { $, $$, el, uid, fmt, fmtLive, fmtResult, clamp, copy, download, toCSV, debounce,
          parseTimeInput, parseScrambleList, parseGoal } from './util.js';
-import { Solves, Sessions, KV, Assets, LetterPairs, importAll, onWrite } from './db.js';
+import { Solves, Sessions, KV, Assets, LetterPairs, importAll, onWrite, onLocalStatus } from './db.js';
 import { initCompetition, competitionOpen, competitionTiming, recordCompetitionSolve, rememberCompetitionScramble, leaveCompetition } from './competition.js';
 import { competitionResult } from './competition-stats.js';
 import { activeGearId, Gear, gearLabel } from './gear.js';
@@ -71,6 +71,23 @@ const app = {
   custom: { list: [], pos: 0 },
 };
 window.tagdatimer = app;   // handy in the console
+app.viewDataHealth = async () => {
+  const { openDataHealth } = await import('./panels.js');
+  openDataHealth(app);
+};
+let localFailureWarned = false;
+onLocalStatus(status => {
+  const warning = $('#local-save-warning');
+  if (warning) warning.hidden = status.state !== 'error';
+  if (status.state === 'error' && !localFailureWarned) {
+    localFailureWarned = true;
+    toast('Could not save on this device — retry or export before leaving', {
+      kind: 'bad', action: 'View details', onAction: app.viewDataHealth,
+    });
+  } else if (status.state === 'saved') localFailureWarned = false;
+});
+$('#local-save-details')?.addEventListener('click', app.viewDataHealth);
+
 // The boot guard in index.html only exists to catch "the modules never
 // loaded". Once this file is evaluating, they did — anything that goes wrong
 // from here is a real error worth reporting, not a dead-page diagnosis.
@@ -2611,9 +2628,13 @@ async function recordSolve({ timeMs, penalty = 'none', inspectionMs = 0, splits 
     // Concurrent tabs or a changed context cannot cost the measured time.
     // Preserve it as ordinary practice and ask the user to resume the set.
     delete solve.competitionSetId; delete solve.competitionAttempt; delete solve.competitionTiming;
-    toast(err.message + t(' · Measured time saved as ordinary practice.'), { kind: 'bad', hold: true });
+    toast(err.message, { kind: 'bad', hold: true });
   }
-  if (!inCompetition) await Solves.put(solve);
+  let locallySaved = true;
+  if (!inCompetition) {
+    try { await Solves.put(solve); }
+    catch (error) { locallySaved = false; console.warn('[db] solve retained for recovery', error); }
+  }
   app.solves.push(solve);
 
   // personal bests — judged and chimed before the writes and the re-render
@@ -2637,10 +2658,10 @@ async function recordSolve({ timeMs, penalty = 'none', inspectionMs = 0, splits 
 
   /* Submitted after the local write, never before: the solve is yours whatever
      the room makes of it, and a refused upload must not cost you the time. */
-  if (racing) race.onSolveRecorded(solve).catch(err => console.warn('[race] submit failed', err));
+  if (locallySaved && racing) race.onSolveRecorded(solve).catch(err => console.warn('[race] submit failed', err));
 
   const daily = dailyCtl();
-  if (daily?.attempting) daily.onSolveRecorded(solve).catch(err => console.warn('[daily] submit failed', err));
+  if (locallySaved && daily?.attempting) daily.onSolveRecorded(solve).catch(err => console.warn('[daily] submit failed', err));
   /* Unconditional, and deliberately not inside the branch above: the second
      board counts how many solves you did today of ANYTHING, so a 4x4 solve
      with the daily panel never opened still belongs on it. A no-op unless
@@ -2650,7 +2671,7 @@ async function recordSolve({ timeMs, penalty = 'none', inspectionMs = 0, splits 
 
   /* Graded after the local write, so a case is judged on the solve as it was
      recorded -- penalties included -- and never on one that failed to save. */
-  await learn.onSolve(solve);
+  if (locallySaved) await learn.onSolve(solve);
 
   // You have just finished a solve, so you are looking at the timer, not at row
   // four thousand. Folding the times strip back to its top page keeps recording
@@ -2719,7 +2740,7 @@ async function penalizeLast(p) {
   if (!last) return toast('No solves yet');
   if (last.competitionSetId) last.penaltyUpdatedAt=Date.now();
   last.penalty = last.penalty === p ? 'none' : p;
-  await Solves.put(last);
+  await Solves.put(last).catch(error => console.warn('[db] penalty retained for recovery', error));
   renderAll();
   syncTimerDisplay();
   toast(last.penalty === 'none' ? t('Penalty cleared') : t('{p} applied', { p: last.penalty }));
@@ -3705,7 +3726,7 @@ function solveMenu(solve, anchor) {
   const setPenalty = async (p) => {
     if (solve.competitionSetId) solve.penaltyUpdatedAt=Date.now();
     solve.penalty = solve.penalty === p ? 'none' : p;
-    await Solves.put(solve);
+    await Solves.put(solve).catch(error => console.warn('[db] edit retained for recovery', error));
     renderAll();
     syncTimerDisplay();
   };
@@ -3807,7 +3828,7 @@ function commentOn(solve) {
   const text = prompt(t('Comment on this solve'), solve.comment || '');
   if (text === null) return;
   solve.comment = text;
-  Solves.put(solve).then(() => toast('Comment saved'));
+  Solves.put(solve).then(() => toast('Comment saved')).catch(error => console.warn('[db] comment retained for recovery', error));
 }
 
 /**
@@ -3831,7 +3852,7 @@ async function deleteSolve(solve) {
   if (solve.competitionSetId) { toast(t('Competition attempts belong to a set. Delete the entire average.'), { hold: true }); return; }
   const i = app.solves.indexOf(solve);
   if (i === -1) return;
-  await Solves.del(solve.id);
+  try { await Solves.del(solve.id); } catch (error) { console.warn('[db] deletion retained for retry', error); return; }
   app.solves.splice(i, 1);
   app.lastDeleted = { solves: [solve], sessionId: app.session.id, label: t('1 solve') };
   app.sessionCounts.set(app.session.id, app.solves.length);
@@ -3853,9 +3874,8 @@ async function deleteSolve(solve) {
 async function undoDelete() {
   const rec = app.lastDeleted;
   if (!rec) { toast('Nothing to undo'); return; }
+  try { await Solves.putMany(rec.solves); } catch (error) { console.warn('[db] restore retained for retry', error); return; }
   app.lastDeleted = null;
-
-  await Solves.putMany(rec.solves);
   // Restoring into a session you have since navigated away from would silently
   // do nothing on screen, so only splice it back in when it belongs here.
   if (rec.sessionId === app.session.id) {
@@ -4396,7 +4416,7 @@ async function startCloudSync() {
     return;
   }
   const { wireAccountButton } = await import('./sync-ui.js');
-  wireAccountButton($('#btn-account'), { setSetting: app.setSetting });
+  wireAccountButton($('#btn-account'), { setSetting: app.setSetting, viewDataHealth: app.viewDataHealth });
   const err = takeRedirectError();
   if (err) toast('Could not finish signing in — try again', { kind: 'bad' });
 }
@@ -4470,7 +4490,7 @@ function wireAccountButtonOnFirstClick() {
     // the real handler it attached already saw this same click.
     const alreadyWired = !!btn.dataset.wired;
     const { wireAccountButton } = await import('./sync-ui.js');
-    wireAccountButton(btn, { setSetting: app.setSetting });
+    wireAccountButton(btn, { setSetting: app.setSetting, viewDataHealth: app.viewDataHealth });
     if (!alreadyWired) btn.click(); // now caught by the real handler just attached
   }, { once: true });
 
@@ -6146,7 +6166,7 @@ function wirePhoneShell() {
   const setPenalty = async (solve, p) => {
     if (solve.competitionSetId) solve.penaltyUpdatedAt=Date.now();
     solve.penalty = p;
-    await Solves.put(solve);
+    await Solves.put(solve).catch(error => console.warn('[db] edit retained for recovery', error));
     renderAll();
     syncTimerDisplay();
   };
@@ -6162,7 +6182,7 @@ function wirePhoneShell() {
       const live = app.solves.find(s => s.id === solve.id);
       if (!live || (live.comment || '') === text) return;
       live.comment = solve.comment = text;
-      Solves.put(live).then(() => toast(t('Note saved')));
+      Solves.put(live).then(() => toast(t('Note saved'))).catch(error => console.warn('[db] note retained for recovery', error));
     },
     hasCases: () => !!setFor(app.settings.mode),
     shownSolve, timerIdle, remeasureHistory,

@@ -18,10 +18,11 @@ import { setFor } from './scramble.js';
 import { toast, confirmToast } from './toast.js';
 import { canSpeak } from './fx.js';
 import { getConfig } from './config.js';
-import { exportAll, Assets, Solves, LetterPairs } from './db.js';
+import { Assets, Solves, LetterPairs } from './db.js';
 import { Gear, GearLog, LOG_KINDS, newGear, newLogEntry, gearLabel,
          loadSeeds, filterByCube, markersFor, activeGearId, setActiveGearId } from './gear.js';
-import { buildAccountRow } from './sync-ui.js';
+import { buildAccountRow, disposeAccountRow } from './sync-ui.js';
+import { buildDataHealthRow, buildDataHealth, prepareBackup } from './data-health.js';
 import { DEFAULT_SPEFFZ_MAP, DEFAULT_BLD, CORNER_STICKER_KEYS, EDGE_STICKER_KEYS,
          frontsFor, faceLabel, pieceAtFacelet, faceletsOfPiece,
          pieceName, samePiece, diagnose } from './bldtrace.js';
@@ -33,13 +34,16 @@ import { enableReplay, enableSound, requestCamera, attachPreview, onCamerasChang
 /* ---------------- drawer shell ---------------- */
 
 let current = null;
+let disposeDrawer = null;
 
 export function openDrawer(title, buildFn, { wide = false } = {}) {
   const drawer = $('#drawer'), scrim = $('#scrim'), body = $('#drawer-body');
   $('#drawer-title').textContent = t(title);
   drawer.classList.toggle('wide', wide);
+  disposeDrawer?.(); disposeDrawer = null;
   body.innerHTML = '';
-  buildFn(body);
+  const cleanup = buildFn(body);
+  disposeDrawer = typeof cleanup === 'function' ? cleanup : null;
   drawer.hidden = false; scrim.hidden = false;
   current = title;
   body.scrollTop = 0;
@@ -47,6 +51,7 @@ export function openDrawer(title, buildFn, { wide = false } = {}) {
 
 export function closeDrawer() {
   const drawer = $('#drawer');
+  disposeDrawer?.(); disposeDrawer = null;
   // Same reason as the palette: a focused control inside a hidden drawer
   // would swallow every keyboard shortcut.
   if (drawer.contains(document.activeElement)) document.activeElement.blur();
@@ -57,6 +62,17 @@ export function closeDrawer() {
 
 export const drawerOpen = () => current !== null;
 export const drawerName = () => current;
+
+export function openDataHealth(app) {
+  const controls = () => {
+    openDrawer('Settings', buildSettings(app, 'Data'));
+    $('#drawer-body .data-health-row')?.scrollIntoView({ block: 'start' });
+  };
+  openDrawer('Data Health', buildDataHealth({ back: controls, account: () => {
+    openDrawer('Settings', buildSettings(app, 'Account'));
+  } }));
+  $('#drawer-body button')?.focus();
+}
 
 /* ---------------- small builders ---------------- */
 
@@ -891,6 +907,7 @@ function step(n, title, ...detail) {
    ========================================================= */
 export function buildSettings(app, searchQuery = '') {
   return (body) => {
+    const health = buildDataHealthRow(() => openDataHealth(app));
     const S = app.settings;
     const set = (k, v) => app.setSetting(k, v);
 
@@ -1053,15 +1070,12 @@ export function buildSettings(app, searchQuery = '') {
       ),
 
       group(t('Data'),
+        health.row,
         el('div', { class: 'row' },
           el('div', { class: 'lbl' }, el('span', { text: t('Backup') }), el('span', { class: 'sub', text: t('every session and solve as JSON') })),
           el('button', {
             class: 'ghost-btn', text: 'export',
-            onclick: async () => {
-              download(`tagdatimer-backup-${new Date().toISOString().slice(0, 10)}.json`,
-                JSON.stringify(await exportAll(), null, 2));
-              toast('Backup downloaded', { kind: 'good' });
-            },
+            onclick: prepareBackup,
           })),
         (() => {
           // One picker for both formats. csTimer writes JSON into a .txt, so an
@@ -1154,6 +1168,7 @@ export function buildSettings(app, searchQuery = '') {
       ),
     );
     mountSettingsSearch(body, { query: searchQuery, onQuery: value => { searchQuery = value; } });
+    return () => { health.dispose(); disposeAccountRow(); };
   };
 }
 

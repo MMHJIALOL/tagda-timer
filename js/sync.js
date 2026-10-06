@@ -5,7 +5,7 @@ import { t } from './i18n.js';
    Always on, never a button. Once signed in:
      - every Solves.put/putMany, Sessions.put, and the 'settings'/'learn'
        KV keys are mirrored to users/<uid>/... in the Realtime Database
-       (solves/sessions immediately, settings/learn debounced).
+       (all operations durably queued before upload).
      - a websocket listener pulls the same tree back down and applies it
        to local IndexedDB.
      - a failed or offline push is queued (in the 'kv' store, key
@@ -24,11 +24,38 @@ import { t } from './i18n.js';
    solve as something the other side is missing.
    =========================================================== */
 
-import { Solves, Sessions, KV, Tombstones, onWrite, tx, wrap, CompetitionSets, normalizeCompetition } from './db.js';
-import { onAuthChange, getDatabaseHandle } from './sync-auth.js';
+import { Solves, Sessions, KV, Tombstones, onWrite, tx, wrap, CompetitionSets, normalizeCompetition, LocalMetadata, hasUnsavedLocalChange } from './db.js';
+import { createSyncQueue } from './sync-queue.js';
+import { onAuthChange, getDatabaseHandle, hasPersistedSession, hasPendingRedirect } from './sync-auth.js';
 
-const QUEUE_KEY = '_syncQueue';
-const KV_DEBOUNCE_MS = 1500;
+const statusListeners = new Set();
+let authChecked = !hasPersistedSession() && !hasPendingRedirect(), authUnavailable = false;
+export function getSyncStatus() {
+  const status = outbound.snapshot();
+  return authChecked ? status : Object.freeze({ ...status, state: authUnavailable ? 'unknown' : 'starting' });
+}
+function publishStatus() {
+  for (const fn of statusListeners) { try { fn(getSyncStatus()); } catch (e) { console.warn('[sync] status listener', e); } }
+}
+export function onSyncStatus(fn) {
+  statusListeners.add(fn); fn(getSyncStatus());
+  return () => statusListeners.delete(fn);
+}
+const outbound = createSyncQueue({ storage: LocalMetadata,
+  withAccountLock: (uid, run) => navigator.locks?.request
+    ? navigator.locks.request(`tagda-sync:${uid}`, run) : run(),
+  changed: publishStatus });
+export async function retrySync() {
+  if (!_uid) return false;
+  if (getSyncStatus().inFlight) return false;
+  if (_user && (!_started || getSyncStatus().error === 'permission')) {
+    await handleUser(_user, true); return getSyncStatus().state === 'up-to-date';
+  }
+  return outbound.flush();
+}
+window.addEventListener('online', () => outbound.connectivityChanged());
+window.addEventListener('offline', () => outbound.connectivityChanged());
+let _started = false;
 
 /* Record stores mirrored to users/<uid>/<store>, and the field each is keyed
    by. Cubes and their log, and the 3BLD letter-pair dictionary. */
@@ -58,21 +85,6 @@ export const LOCAL_ONLY_SETTINGS = ['sessionId', 'event', 'mode', 'raceReturnSes
   'webcamSound', 'webcamMic', 'webcamMicLabel', 'webcamUnmute',
   // Uploading is a decision made on the machine with the camera, not one to arrive from another.
   'sotdShareAuto', 'sotdShareSound'];
-
-/**
- * Serializes every read-modify-write against the offline queue. KV.get/set
- * are two separate IndexedDB round-trips with nothing atomic linking them,
- * so two queueWrite() calls racing (e.g. a burst of solves recorded while
- * offline) could otherwise both read the queue before either writes it
- * back, silently dropping one entry. JS is single-threaded, so chaining
- * every queue-touching operation off one promise is a real mutex here.
- */
-let _queueLock = Promise.resolve();
-function withQueueLock(fn) {
-  const run = _queueLock.then(fn, fn);
-  _queueLock = run.then(() => {}, () => {});
-  return run;
-}
 
 /* ---------------------------------------------------------
    Pure helpers — no network, no IndexedDB. Exported for tests.
@@ -179,7 +191,7 @@ export function decideMergeAction({ localCount, cloudCount, mergedBefore }) {
 let _sdk = null;          // { db, ref, set, update, onChildAdded, onChildChanged, onValue, auth }
 let _uid = null;
 let _unsubs = [];
-const _kvTimers = new Map();      // key -> setTimeout id
+
 
 /**
  * Detects the echo of a write we ourselves just applied from a remote
@@ -220,87 +232,15 @@ function rememberMerged(uid) {
   try { localStorage.setItem(mergedKey(uid), String(Date.now())); } catch {}
 }
 
-async function queueWrite(entry) {
-  return withQueueLock(async () => {
-    const q = (await KV.get(QUEUE_KEY, [])) || [];
-    q.push(entry);
-    await KV.set(QUEUE_KEY, q);
-  });
+// Persist before sending. The engine retains both queued and in-flight entries
+// until Firebase acknowledges them, in FIFO order, including deletions.
+function pushOrQueue(path, value) { return outbound.enqueue({ kind: 'set', path, value }); }
+function removeOrQueue(path) { return outbound.enqueue({ kind: 'remove', path }); }
+function pushUpdateOrQueue(updates) {
+  return Object.keys(updates).length ? outbound.enqueue({ kind: 'update', updates }) : Promise.resolve();
 }
 
-/* Paths this device has written and the server has not yet accepted. A
-   rejected write — say rules for a new node not yet published — makes the
-   SDK roll back its optimistic copy, and that rollback arrives as an
-   ordinary child_removed. Taken at face value it deleted the local row: a
-   cube added while signed in was gone after the next reload. A removal on a
-   path listed here is that rollback, not another device's delete. */
-const _unconfirmed = new Set();
-const isUnconfirmed = (...parts) => _unconfirmed.has(userPath(...parts));
-
-async function pushOrQueue(path, value) {
-  if (value != null) _unconfirmed.add(path);
-  if (!_sdk || navigator.onLine === false) { await queueWrite({ kind: 'set', path, value }); return; }
-  try {
-    await _sdk.set(_sdk.ref(_sdk.db, path), value);
-    _unconfirmed.delete(path);
-  } catch (err) {
-    console.warn('[sync] push failed, queued for retry', path, err?.code || err);
-    await queueWrite({ kind: 'set', path, value });
-  }
-}
-
-async function removeOrQueue(path) {
-  if (!_sdk || navigator.onLine === false) { await queueWrite({ kind: 'remove', path }); return; }
-  try {
-    await _sdk.remove(_sdk.ref(_sdk.db, path));
-  } catch (err) {
-    console.warn('[sync] remove failed, queued for retry', path, err?.code || err);
-    await queueWrite({ kind: 'remove', path });
-  }
-}
-
-async function pushUpdateOrQueue(updates) {
-  if (!Object.keys(updates).length) return;
-  for (const [path, value] of Object.entries(updates)) if (value != null) _unconfirmed.add(path);
-  if (!_sdk || navigator.onLine === false) { await queueWrite({ kind: 'update', updates }); return; }
-  try {
-    await _sdk.update(_sdk.ref(_sdk.db), updates);
-    for (const path of Object.keys(updates)) _unconfirmed.delete(path);
-  } catch (err) {
-    console.warn('[sync] batch push failed, queued for retry', err?.code || err);
-    await queueWrite({ kind: 'update', updates });
-  }
-}
-
-/**
- * A queued entry's path/update-keys were built with userPath() at the time
- * it failed, which bakes in whoever was signed in *then*. If that account
- * signs out and a different one signs in on the same browser before the
- * queue drains, replaying it as the new session would either be rejected
- * by the rules (harmless, but retries forever) or — worse, if it ever
- * somehow matched — write into the wrong account. Drop anything that
- * doesn't belong to whoever is signed in now.
- */
-function ownedByCurrentUser(entry) {
-  const prefix = `users/${_uid}/`;
-  const paths = entry.kind === 'update' ? Object.keys(entry.updates) : [entry.path];
-  return paths.every(p => p.startsWith(prefix));
-}
-
-async function flushQueue() {
-  if (!_sdk) return;
-  const q = await withQueueLock(async () => {
-    const pending = (await KV.get(QUEUE_KEY, [])) || [];
-    if (pending.length) await KV.set(QUEUE_KEY, []);
-    return pending;
-  });
-  for (const entry of q) {
-    if (!ownedByCurrentUser(entry)) continue;
-    if (entry.kind === 'update') await pushUpdateOrQueue(entry.updates);
-    else if (entry.kind === 'remove') await removeOrQueue(entry.path);
-    else await pushOrQueue(entry.path, entry.value);
-  }
-}
+const isUnconfirmed = (...parts) => outbound.protects(userPath(...parts));
 
 /** True (and consumes the marker) if `value` is the echo of a remote-applied write. */
 function isEcho(key, value) {
@@ -384,8 +324,7 @@ function pushKv({ key, value }) {
     : isSyncedKv(key) ? userPath('kv', encKey(key)) : null;
   if (!path) return;
   if (isEcho(`kv:${key}`, value)) return;
-  clearTimeout(_kvTimers.get(key));
-  _kvTimers.set(key, setTimeout(() => pushOrQueue(path, value ?? null), KV_DEBOUNCE_MS));
+  pushOrQueue(path, value ?? null);
 }
 
 /* Remote records are written straight into the store, not through putRec(),
@@ -454,12 +393,14 @@ let _incomingTimer = 0;
 function queueIncoming(store, rec) {
   if (!rec || !rec.id) return;
   _incoming[store].set(rec.id, rec);
-  _incomingTimer ||= setTimeout(applyIncoming, 0);
+  _incomingTimer ||= setTimeout(() => applyIncoming().catch(error => console.warn('[sync] incoming changes failed', error)), 0);
 }
 
 async function applyIncoming() {
+  const gen = _generation;
   _incomingTimer = 0;
   await Tombstones.refresh();
+  if (gen !== _generation) return;
   let changed = false;
   for (const store of ['solves', 'sessions']) {
     const recs = [..._incoming[store].values()];
@@ -467,6 +408,8 @@ async function applyIncoming() {
     if (!recs.length) continue;
     const live = [];
     for (const r of recs) {
+      if (gen !== _generation) return;
+      if (hasUnsavedLocalChange(store, r.id) || isUnconfirmed(store, r.id)) continue;
       if (store === 'solves' && r.competitionSetId && await Tombstones.has('competitionSets', r.competitionSetId)) continue;
       if (!(await rejectAsDeleted(store, r.id))) live.push(r);
     }
@@ -495,7 +438,7 @@ const applyRemoteSession = (session) => queueIncoming('sessions', session);
  * delete that applies would push the removal a second time, forever.
  */
 async function applyRemoteSolveRemoved(id) {
-  if (!id || isUnconfirmed('solves', id)) return;
+  if (!id || hasUnsavedLocalChange('solves', id) || isUnconfirmed('solves', id)) return;
   _incoming.solves.delete(id);
   if (!(await Solves.get(id))) return; // our own delete coming back
   // Competition removal is driven by the set's durable deletion record.
@@ -506,7 +449,7 @@ async function applyRemoteSolveRemoved(id) {
 }
 
 async function applyRemoteSessionRemoved(id) {
-  if (!id || isUnconfirmed('sessions', id)) return;
+  if (!id || hasUnsavedLocalChange('sessions', id) || isUnconfirmed('sessions', id)) return;
   _incoming.sessions.delete(id);
   if (!(await Sessions.get(id))) return;
   // Session deletion is one operation with every competition it contains.
@@ -518,7 +461,7 @@ async function applyRemoteSessionRemoved(id) {
 
 async function applyRemoteRec(store, rec) {
   const id = rec?.[RECORD_STORES[store]];
-  if (id == null) return;
+  if (id == null || isUnconfirmed(store, id)) return;
   if (store === 'competitionSets' && rec.status === 'discarded') { await CompetitionSets.delete(id); await Tombstones.record(store, [id]); notifyRemote(); return; }
   if (await rejectAsDeleted(store, id)) return;
   if (store === 'competitionSets') rec = normalizeCompetition(rec);
@@ -534,12 +477,13 @@ async function applyRemoteRecRemoved(store, id) {
 
 async function applyRemoteKv(k, value) {
   const key = decKey(k);
-  if (!isSyncedKv(key)) return;
+  if (!isSyncedKv(key) || isUnconfirmed('kv', encKey(key))) return;
   _lastRemoteJSON.set(`kv:${key}`, JSON.stringify(value ?? null));
   await (value == null ? KV.del(key) : KV.set(key, value));
 }
 
 async function applyRemoteLearn(remote) {
+  if (isUnconfirmed('learn')) return;
   if (!remote || typeof remote !== 'object') return;
   const local = (await KV.get('learn', {})) || {};
   const merged = mergeLearn(local, remote);
@@ -572,6 +516,7 @@ export function mergeSettings(local, remote) {
 }
 
 async function applyRemoteSettings(remote) {
+  if (isUnconfirmed('settings')) return;
   if (!remote || typeof remote !== 'object') return;
   const local = (await KV.get('settings', {})) || {};
   const merged = mergeSettings(local, remote);
@@ -580,7 +525,14 @@ async function applyRemoteSettings(remote) {
 }
 
 async function attachListeners() {
-  const { db, ref, onChildAdded, onChildChanged, onChildRemoved, onValue } = _sdk;
+  const { db, ref } = _sdk;
+  const gen = _generation;
+  const guarded = method => (target, callback) => _sdk[method](target, snapshot => {
+    if (gen !== _generation) return;
+    Promise.resolve(callback(snapshot)).catch(e => console.warn('[sync] applying remote change failed', e));
+  }, () => { if (gen === _generation) outbound.problem('permission'); });
+  const onChildAdded = guarded('onChildAdded'), onChildChanged = guarded('onChildChanged');
+  const onChildRemoved = guarded('onChildRemoved'), onValue = guarded('onValue');
   const solvesRef = ref(db, userPath('solves'));
   const sessionsRef = ref(db, userPath('sessions'));
   const settingsRef = ref(db, userPath('settings'));
@@ -592,8 +544,8 @@ async function attachListeners() {
   _unsubs.push(onChildAdded(sessionsRef, (s) => applyRemoteSession(s.val())));
   _unsubs.push(onChildChanged(sessionsRef, (s) => applyRemoteSession(s.val())));
   _unsubs.push(onChildRemoved(sessionsRef, (s) => applyRemoteSessionRemoved(s.key)));
-  _unsubs.push(onValue(settingsRef, (s) => { if (s.exists()) applyRemoteSettings(s.val()); }));
-  _unsubs.push(onValue(learnRef, (s) => { if (s.exists()) applyRemoteLearn(s.val()); }));
+  _unsubs.push(onValue(settingsRef, (s) => { if (s.exists()) return applyRemoteSettings(s.val()); }));
+  _unsubs.push(onValue(learnRef, (s) => { if (s.exists()) return applyRemoteLearn(s.val()); }));
 
   for (const store of Object.keys(RECORD_STORES)) {
     const r = ref(db, userPath(store));
@@ -620,6 +572,7 @@ function detachListeners() {
  * user has seen it. If there's no ambiguity, merges silently and returns null.
  */
 export async function mergeOnSignIn(user) {
+  const gen = _generation;
   const { db, ref, onValue } = _sdk;
   /* Watched rather than fetched. get() downloads the tree and forgets it, so
      the listeners start() attaches right after downloaded the whole history a
@@ -638,6 +591,7 @@ export async function mergeOnSignIn(user) {
      behind. Taken here, the snapshot is whatever the device has the instant
      the account answers, which closes it to the usual millisecond. */
   const [localSolves, localSessions] = await Promise.all([Solves.all(), Sessions.all()]);
+  if (gen !== _generation) return null;
   const allCloudSolves = cloudSolvesSnap.exists() ? Object.values(cloudSolvesSnap.val()) : [];
   const allCloudSessions = cloudSessionsSnap.exists() ? Object.values(cloudSessionsSnap.val()) : [];
 
@@ -648,6 +602,7 @@ export async function mergeOnSignIn(user) {
      rows the tombstones exist to keep out — and then write them to both
      sides, making the resurrection permanent. */
   const tombs = await Tombstones.all();
+  if (gen !== _generation) return null;
   const { live: cloudSolves, dead: deadSolves } = partitionDeleted(allCloudSolves, tombs.solves);
   const { live: cloudSessions, dead: deadSessions } = partitionDeleted(allCloudSessions, tombs.sessions);
   const dead = { solves: deadSolves.map(s => s.id), sessions: deadSessions.map(s => s.id) };
@@ -670,12 +625,13 @@ export async function mergeOnSignIn(user) {
     cloudCount: cloudSolves.length,
     totalCount: mergedCount,
     email: user?.email || '',
-    confirm: () => performMerge(merge),
+    confirm: () => gen === _generation ? performMerge(merge) : Promise.resolve(),
   };
 }
 
 async function performMerge({ localSolves, localSessions, cloudSolves, cloudSessions, dead, localWins }) {
-  const node = (...path) => _sdk.get(_sdk.ref(_sdk.db, userPath(...path)));
+  const gen = _generation, sdk = _sdk, uid = _uid;
+  const node = (...path) => sdk.get(sdk.ref(sdk.db, ['users', uid, ...path].join('/')));
   const val = (snap, empty) => (snap.exists() ? snap.val() : empty);
   const stores = Object.keys(RECORD_STORES);
   // One round of reads in parallel, not a round trip per node in turn.
@@ -692,6 +648,7 @@ async function performMerge({ localSolves, localSessions, cloudSolves, cloudSess
      at a time, then uploading all of it again, was most of what made the
      merge slow — and uploading this device's stale copies was how an edit
      made on another device got undone the next time this one opened. */
+  if (gen !== _generation) return;
   const cloudSets = val(recs[2 * stores.indexOf('competitionSets') + 1], {});
   const goneSets = new Set(Object.values(cloudSets).filter(c => c.status === 'discarded').map(c => c.id));
   for (const id of goneSets) { await CompetitionSets.delete(id); await Tombstones.record('competitionSets',[id]); }
@@ -702,13 +659,23 @@ async function performMerge({ localSolves, localSessions, cloudSolves, cloudSess
   const cloudLearn = val(learnSnap, {});
   const learn = mergeLearn(localLearn, cloudLearn);
 
-  if (solves.down.length) await Solves.putMany(solves.down);
-  for (const s of sessions.down) await Sessions.put(s);
-  if (!sameRecord(learn, localLearn)) await KV.set('learn', learn);
+  const incomingSolves = solves.down.filter(s => !hasUnsavedLocalChange('solves', s.id) && !isUnconfirmed('solves', s.id));
+  if (incomingSolves.length) await Solves.putMany(incomingSolves);
+  for (const s of sessions.down) {
+    if (gen !== _generation) return;
+    if (!hasUnsavedLocalChange('sessions', s.id) && !isUnconfirmed('sessions', s.id)) await Sessions.put(s);
+  }
+  if (!isUnconfirmed('learn') && !sameRecord(learn, localLearn)) await KV.set('learn', learn);
 
   const updates = {};
-  for (const s of solves.up) updates[userPath('solves', s.id)] = s;
-  for (const s of sessions.up) updates[userPath('sessions', s.id)] = s;
+  // Reads and downloads can take time. Upload the current local record rather
+  // than a snapshot from before an edit/delete made while signing in.
+  const [currentSolves, currentSessions] = await Promise.all([Solves.all(), Sessions.all()]);
+  const current = { solves: new Map(currentSolves.map(s => [s.id, s])), sessions: new Map(currentSessions.map(s => [s.id, s])) };
+  for (const store of ['solves', 'sessions']) for (const s of (store === 'solves' ? solves : sessions).up) {
+    const live = current[store].get(s.id);
+    if (live && !hasUnsavedLocalChange(store, s.id)) updates[userPath(store, s.id)] = live;
+  }
   if (!sameRecord(learn, cloudLearn)) updates[userPath('learn')] = learn;
   /* Only when the account has none yet. Uploading this browser's copy over an
      existing one was how signing in on a fresh device reset every other
@@ -734,6 +701,8 @@ async function performMerge({ localSolves, localSessions, cloudSolves, cloudSess
   // uploads the union rather than a second pass that could half-apply.
   for (const id of dead.solves) updates[userPath('solves', id)] = null;
   for (const id of dead.sessions) updates[userPath('sessions', id)] = null;
+  if (gen !== _generation) return;
+  for (const path of Object.keys(updates)) if (outbound.protects(path)) delete updates[path];
   const competition = splitCompetition(updates, userPath('competitionSets'));
   await pushUpdateOrQueue(updates);
   await pushUpdateOrQueue(competition);
@@ -741,19 +710,14 @@ async function performMerge({ localSolves, localSessions, cloudSolves, cloudSess
   // once this browser and this account have been reconciled, every later
   // sign-in — including the one a page reload performs for you — goes
   // straight to live sync with nothing to confirm.
+  if (gen !== _generation) return;
   rememberMerged(_uid);
   if (solves.down.length || sessions.down.length) notifyRemote();
 }
 
 let _writeUnsubs = [];
 
-async function start() {
-  // Before the listeners, never after: attaching replays the whole tree, and
-  // every incoming record is checked against the tombstones. Pruning behind
-  // that replay could drop a note a split second before the row it guards
-  // against arrives.
-  await Tombstones.prune();
-  await attachListeners();
+function watchWrites() {
   _writeUnsubs = [
     onWrite('solves', pushSolve),
     onWrite('solvesBatch', pushSolvesBatch),
@@ -765,21 +729,25 @@ async function start() {
     onWrite('rec', pushRec),
     onWrite('recDel', pushRecDel),
   ];
-  window.addEventListener('online', flushQueue);
-  await flushQueue();
+}
+async function start() {
+  const gen = _generation;
+  await attachListeners();
+  if (gen !== _generation) return;
+  _started = true;
+  await outbound.ready();
 }
 
 function stop() {
   detachListeners();
   clearTimeout(_incomingTimer);
   _incomingTimer = 0;
-  _incoming.solves.clear();
-  _incoming.sessions.clear();
+  _incoming.solves.clear(); _incoming.sessions.clear();
   for (const unsub of _writeUnsubs) unsub();
-  _writeUnsubs = [];
-  window.removeEventListener('online', flushQueue);
-  _sdk = null;
-  _uid = null;
+  _writeUnsubs = []; _started = false;
+  _lastRemoteJSON.clear();
+  _sdk = null; _uid = null;
+  void outbound.activate(null);
 }
 
 /**
@@ -834,6 +802,7 @@ let _onMergeNeeded = null;
  * Resolves once sync is live; rejects (after scheduling a retry) if it could not start.
  */
 function handleUser(user, force = false) {
+  authChecked = true; authUnavailable = false;
   if (!force && user && _bringUp && _user?.uid === user.uid) return _bringUp;
   const gen = ++_generation;
   stop();
@@ -842,7 +811,21 @@ function handleUser(user, force = false) {
   _bringUp = (async () => {
     try {
       _uid = user.uid;
-      _sdk = await getDatabaseHandle();
+      watchWrites();
+      await outbound.activate(user.uid, async entry => {
+        if (gen !== _generation || !_sdk) throw new Error('Account changed');
+        const sdk = _sdk;
+        if (entry.kind === 'update') await sdk.update(sdk.ref(sdk.db), entry.updates);
+        else if (entry.kind === 'remove') await sdk.remove(sdk.ref(sdk.db, entry.path));
+        else await sdk.set(sdk.ref(sdk.db, entry.path), entry.value);
+      });
+      if (gen !== _generation) return;
+      const sdk = await getDatabaseHandle();
+      if (gen !== _generation) return;
+      _sdk = sdk;
+      await Tombstones.prune();
+      if (gen !== _generation) return;
+      await outbound.flush();
       if (gen !== _generation) return;
       const mergeInfo = await mergeOnSignIn(user);
       if (gen !== _generation) return;
@@ -857,6 +840,7 @@ function handleUser(user, force = false) {
       // retrying, and a second retry here would fight it.
       if (gen !== _generation) return;
       _bringUp = null;
+      outbound.problem('start');
       console.warn('[sync] could not start, retrying', err?.code || err);
       retrySoon(() => { if (gen === _generation) handleUser(user).catch(() => {}); });
       throw err;
@@ -873,7 +857,7 @@ function handleUser(user, force = false) {
 export async function syncNow() {
   if (!_user) throw new Error('signed-out');
   await handleUser(_user, true);
-  return ((await KV.get(QUEUE_KEY, [])) || []).length;
+  return getSyncStatus().pending;
 }
 
 /** Call once at boot. Resolves the Firebase SDK lazily — only signing in (or already being signed in) pulls it in. */
@@ -882,6 +866,7 @@ export async function initSync({ onMergeNeeded } = {}) {
   try {
     await onAuthChange((user) => { handleUser(user).catch(() => {}); });
   } catch (err) {
+    authUnavailable = true; publishStatus();
     // The SDK itself never loaded, so there is no auth listener at all yet.
     retrySoon(() => initSync({ onMergeNeeded }).catch(() => {}));
     throw err;

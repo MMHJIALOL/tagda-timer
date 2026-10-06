@@ -586,6 +586,11 @@ Everything lives in your browser's IndexedDB, and stays there unless you sign in
 
 - **Sessions** per event, named, reordered and managed from the session picker (`S`).
 - Full JSON backup and restore.
+- **Data Health** at the top of **Settings → Data** shows confirmed local saves,
+  pending cloud changes, and browser storage estimates. Failed saves remain
+  available for retry and recovery export. Cloud status follows acknowledgements;
+  the backup date means **export prepared**—check your Downloads folder and keep
+  the file somewhere safe.
 - Per-session CSV export.
 - **csTimer import**: one picker takes either a Tagda backup (`.json`) or a csTimer
   export (`.txt`) and works out which it is from the contents, because csTimer writes

@@ -34,6 +34,7 @@ const ALIASES = [
   ['Cubes per attempt', 'multi blind mbld mbf number count puzzles'],
   ['Buffers, orientation, letters', 'bld blindfold blindsolving speffz scheme memo execution edges corners'],
   ['Letter pairs', 'bld blindfold memory memo dictionary words images commutators algorithms'],
+  ['Data Health', 'storage saved save sync cloud offline pending retry backup export health datos almacenamiento sincronizacion'],
   ['Backup', 'download export save restore data json archive copia seguridad exportar guardar'],
   ['Import solves', 'upload restore backup migrate transfer cstimer cubedesk data copia seguridad importar restaurar'],
   ['Session as CSV', 'download export spreadsheet excel data'],

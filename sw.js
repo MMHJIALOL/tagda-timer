@@ -18,7 +18,7 @@
    index.html on every deploy so users get it on their next visit instead.
    =========================================================== */
 
-const CACHE = 'tagda-v3'; // Competition Mode: pick up the schema and new modules together.
+const CACHE = 'tagda-v4'; // Data Health and the durable sync queue ship together.
 
 /* ponytail: time-based pickup of JS-only deploys; a build-step version file
    would make it instant if 3 days ever feels too slow. */

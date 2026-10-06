@@ -308,7 +308,7 @@ export async function loadSettings() {
 let saveTimer = null;
 export function saveSettings(s) {
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => KV.set('settings', s), 220);
+  saveTimer = setTimeout(() => KV.set('settings', s).catch(error => console.warn('[db] settings save failed', error)), 220);
 }
 
 /* ---------------------------------------------------------
