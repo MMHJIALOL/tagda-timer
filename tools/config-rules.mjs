@@ -1,4 +1,5 @@
-/* The `config` block of firebase.rules.json, written from js/config.js.
+/* The generated blocks of firebase.rules.json (config, configScheduled,
+   sotdFeatured), written from js/config.js.
        node tools/config-rules.mjs           rewrite the block in place
        node tools/config-rules.mjs --check   exit 1 if it is out of date
 
@@ -12,13 +13,13 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { configBlock, replaceBlock } from '../js/config-rules.js';
+import { generatedRules } from '../js/config-rules.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const FILE = join(ROOT, 'firebase.rules.json');
 
 const text = readFileSync(FILE, 'utf8');
-const next = replaceBlock(text, configBlock());
+const next = generatedRules(text);
 JSON.parse(next);   // still valid JSON, or nothing is written
 
 if (process.argv.includes('--check')) {
@@ -28,5 +29,5 @@ if (process.argv.includes('--check')) {
   console.log('firebase.rules.json already matches js/config.js');
 } else {
   writeFileSync(FILE, next);
-  console.log('firebase.rules.json: config block rewritten from js/config.js');
+  console.log('firebase.rules.json: generated blocks rewritten from js/config.js');
 }

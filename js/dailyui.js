@@ -54,9 +54,10 @@ import { RACE_EMOJI } from './raceapp.js';
 import { isOwnerName, openOwnerCard } from './ownercard.js';
 // Policy lives with the controller — see the comment on it there.
 import { showCountBoard } from './daily.js';
-import { canPlay, playButton, replayKept, keepDays, shareBox, bindReplays, dropClip } from './sotd-replays.js';
+import { canPlay, playButton, replayKept, keepDays, shareBox, bindReplays, dropClip, replaysForMe } from './sotd-replays.js';
 import { mountChat } from './sotd-chat.js';
 import { knownFace, lookupFace } from './faces.js';
+import { EVENTS } from './events.js';
 
 /* ---------------------------------------------------------
    A face, or the next best thing
@@ -686,11 +687,14 @@ export function openSotd(app, ctl, { onExit, solving = () => false } = {}) {
     const past = history.day;
     const rows = past ? [] : ctl.ranked();
     const dayKey = past ? String(dayStartMs(past)) : ctl.net?.target?.().dayKey;
-    const replays = dayKey ? { dayKey, event: ctl.eventId, onGone: () => { renderBoard(); placeBoard(); }, onBan: replayBan(ctl, ctl.eventId), onReport: replayReport(ctl, dayKey, ctl.eventId) } : null;
+    // No replays for this account at all (their audience, ADMIN.md §9): no tab, no ▶.
+    const replays = dayKey && replaysForMe() ? { dayKey, event: ctl.eventId, onGone: () => { renderBoard(); placeBoard(); }, onBan: replayBan(ctl, ctl.eventId), onReport: replayReport(ctl, dayKey, ctl.eventId) } : null;
+    if (!replays && mode === 'replays') mode = 'times';
     // Today's rows only: a past day's picker builds its own (it has to drop the row itself).
     const opts = { remove: past ? null : adminRemover(ctl, { dayKey }), locked: lockText(ctl) };
     const sharedN = replays ? rows.filter(r => r.result?.replay === true).length : 0;
     board.append(el('div', { class: 'sotd-board-card' },
+      past ? null : featuredLine(),
       /* The heading and the picker share a row: the column is narrow and
          parked under the scramble, so a control on a line of its own costs
          the board a row of names to buy nothing. */
@@ -699,7 +703,7 @@ export function openSotd(app, ctl, { onExit, solving = () => false } = {}) {
            does not repeat it — it says only what kind of board this is. */
         el('div', { class: 'sotd-tabs', role: 'tablist', 'aria-label': t('Board') },
           tab('times', past ? t('Times') : t('Today’s times')),
-          tab('replays', sharedN ? t('Replays · {n}', { n: sharedN }) : t('Replays')),
+          replays ? tab('replays', sharedN ? t('Replays · {n}', { n: sharedN }) : t('Replays')) : null,
           /* Narrow screens only (the stylesheet hides it elsewhere, where the
              chat has a column of its own): swaps the board for the chat. */
           ctl.chatOpen ? el('button', {
@@ -728,6 +732,25 @@ export function openSotd(app, ctl, { onExit, solving = () => false } = {}) {
         countBoard(ctl.countBoard()),
       ] : null,
     ));
+  };
+
+  /**
+   * Today's featured event (an admin's pick, DAILY.md §3), over the board:
+   * a mark when this is it, a way across when it is not. Moving events moves
+   * the timer too, the way the panel's Open does, and never mid-attempt.
+   */
+  const featuredLine = () => {
+    const f = ctl.featured;
+    if (!f) return null;
+    const name = EVENTS[f]?.short || f;
+    if (f === ctl.eventId) return el('div', { class: 'sotd-featured on', text: t('★ Today’s featured event') });
+    return el('div', { class: 'sotd-featured' },
+      el('span', { text: t('★ Today’s featured event is {event}', { event: name }) }),
+      el('button', {
+        class: 'ghost-btn sm', type: 'button', text: t('Go to it'),
+        onclick: () => { if (!solving()) app.setEvent(f); },
+        onkeydown: (e) => e.stopPropagation(),
+      }));
   };
 
   /* Declared after renderBoard because it calls it, and before onChange ever

@@ -4219,3 +4219,12 @@ body.relay .scramble-label { display: none; }
    the phone layout is on: a window widened past 640px keeps the elements and
    never shows them. */
 body:not(.ph) :is(.ph-only, .ph-best, #ph-context, #ph-net, #ph-recent, #ph-dock, .ph-screen) { display: none !important; }
+
+/* Today's featured event, over the SOTD board (dailyui.js featuredLine, DAILY.md §3). */
+.sotd-featured {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  margin: 0 0 10px; padding: 8px 10px; border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  font-size: .82rem; font-weight: 600;
+}
+.sotd-featured.on { justify-content: flex-start; color: var(--accent); }

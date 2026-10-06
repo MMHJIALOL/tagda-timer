@@ -53,7 +53,7 @@ import { t } from './i18n.js';
    =========================================================== */
 
 import { getDatabaseHandle } from './sync-auth.js';
-import { adminStatus } from './admins.js';
+import { loadRoles } from './audience.js';
 import { getConfig } from './config.js';
 import { removalUpdate, sendReport } from './moderation.js';
 import { CLOCK_SLACK_MS, CLOCK_SLACK_RATIO, CHAT_HISTORY } from './raceapp.js';
@@ -243,22 +243,39 @@ export class DailyTransport extends EventTarget {
     }, () => {});
   }
 
-  /** Ask admins/<uid> once per account; until it answers, not an admin. */
+  /**
+   * Ask admins/<uid> and testers/<uid> once per account (audience.js, which
+   * keeps the answer for every feature with an audience); until they answer,
+   * neither.
+   */
   _checkAdmin(user) {
     const uid = user?.uid || null;
     if (!this._sdk || uid === this._adminUid) return;
     this._adminUid = uid;
     this.snap.admin = false;
-    if (!uid) return;
-    adminStatus(this._sdk, user).then(({ admin }) => {
-      if (this._adminUid !== uid || !admin) return;
-      this.snap.admin = true;
+    this.snap.tester = false;
+    loadRoles(this._sdk, user).then(({ uid: who, admin, tester }) => {
+      if (this._adminUid !== uid || who !== uid) {
+        // Offline, most likely: the next auth event asks again.
+        if (this._adminUid === uid && uid) this._adminUid = null;
+        return;
+      }
+      this.snap.admin = admin;
+      this.snap.tester = tester;
       this._emit();
-    }, (err) => {
-      // Offline, most likely: the next auth event asks again.
-      if (this._adminUid === uid) this._adminUid = null;
-      console.warn('[daily] could not ask admins/', err?.code || err);
     });
+  }
+
+  /** The day's featured event (sotdFeatured/<dayKey>, DAILY.md §3), read once a day. Refused or none: null. */
+  _readFeatured(dayKey) {
+    if (this._featuredDay === dayKey) return;
+    this._featuredDay = dayKey;
+    this.featured = null;
+    this._sdk.get(this._ref(`sotdFeatured/${dayKey}`)).then((s) => {
+      if (this._featuredDay !== dayKey) return;
+      this.featured = typeof s.val() === 'string' ? s.val() : null;
+      this._emit();
+    }, () => {});
   }
 
   serverNow() { return Date.now() + this._offset; }
@@ -275,7 +292,7 @@ export class DailyTransport extends EventTarget {
     this._teardownEvent();
 
     this.snap = { ...emptySnapshot(eventId), uid: this.snap.uid, signedIn: this.snap.signedIn,
-      displayName: this.snap.displayName, photoURL: this.snap.photoURL, admin: this.snap.admin, ban: this.snap.ban,
+      displayName: this.snap.displayName, photoURL: this.snap.photoURL, admin: this.snap.admin, tester: this.snap.tester, ban: this.snap.ban,
       // The count board is not per-event, so switching events must not blank it.
       counts: this.snap.counts || {}, serverNow: now };
     this.snap.dayId = dayId;
@@ -283,6 +300,7 @@ export class DailyTransport extends EventTarget {
     // Computed from the same `now` as dayId above, so the two always name
     // the same day even though only the key ever reaches the database.
     this._dayKey = dayKeyFromServerMs(now);
+    this._readFeatured(this._dayKey);
 
     const S = this._sdk;
     const base = `daily/${this._dayKey}/${eventId}`;

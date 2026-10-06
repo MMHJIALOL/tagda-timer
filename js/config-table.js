@@ -27,10 +27,13 @@ const MB = 1024 * 1024;
 export const SOTD_EVENTS = ['333', '222', '444', '555', '666', '777', '333bf', '333oh', 'clock', 'minx', 'pyram', 'skewb', 'sq1', '444bf', '555bf', 'fto'];
 /** The latest a time setting can be: 2100. */
 const TIME_MAX = 4102444800000;
+/** Who a feature is on for (ADMIN.md §9): the 'choice' a section's `audience` key holds. */
+export const AUDIENCES = ['everyone', 'testers', 'admins'];
 
 /**
  * One entry per section, one per key inside it.
  *   type   'bool' | 'int' | 'text' | 'time' (ms since 1970) | 'set' (some of `options`, comma-separated)
+          | 'choice' (one of `options`)
  *   def    the built-in default
  *   min, max   ints: the range. text: `max` characters.
  *   unit, factor   ints shown in the admin page as value / factor, in `unit`
@@ -44,6 +47,8 @@ export const CONFIG = {
     keys: {
       enabled: { type: 'bool', def: true, label: 'Sharing and watching', where: 'worker',
         help: 'Off: nobody can share or watch a replay. The clips stay, and come back when this is on.' },
+      audience: { type: 'choice', def: 'everyone', options: AUDIENCES, label: 'Who has it', where: 'worker',
+        help: 'While it is on: everybody, only testers and admins, or only admins. The Worker checks the account.' },
       message: { type: 'text', def: '', max: 200, label: 'Message while off', where: 'app',
         help: 'Shown where Share replay would be. Empty: “Replays are switched off for now”.' },
       maxPerDay: { type: 'int', def: 1000, min: 0, max: 1000, label: 'Replays a day', unit: 'clips', where: 'worker',
@@ -62,6 +67,8 @@ export const CONFIG = {
     keys: {
       enabled: { type: 'bool', def: true, label: 'Posting', where: 'rules',
         help: 'Off: nobody can post. The room can still be read and messages deleted.' },
+      audience: { type: 'choice', def: 'everyone', options: AUDIENCES, label: 'Who has it', where: 'rules',
+        help: 'While it is on: everybody, only testers and admins, or only admins. Everybody else sees no chat at all.' },
       message: { type: 'text', def: '', max: 200, label: 'Message while off', where: 'app',
         help: 'Shown in place of the box you type in. Empty: “The chat is switched off for now”.' },
       gapMs: { type: 'int', def: 1500, min: 1500, max: 600000, unit: 'ms', label: 'Time between messages', where: 'rules',
@@ -195,6 +202,7 @@ export function clean(sp, v) {
     if (sp.pattern === 'https' && !HTTPS.test(v)) return undefined;
     return v.slice(0, sp.max);
   }
+  if (sp.type === 'choice') return sp.options.includes(v) ? v : undefined;
   if (sp.type === 'set') {
     if (typeof v !== 'string') return undefined;
     // Unknown items dropped, order kept to the table's.
@@ -212,6 +220,7 @@ export function valid(sp, v) {
   if (sp.type === 'bool') return typeof v === 'boolean';
   if (sp.type === 'int' || sp.type === 'time') return Number.isInteger(v) && v >= sp.min && v <= sp.max;
   if (sp.type === 'text') return typeof v === 'string' && v.length <= sp.max && (sp.pattern !== 'https' || HTTPS.test(v));
+  if (sp.type === 'choice') return sp.options.includes(v);
   if (sp.type === 'set') {
     if (typeof v !== 'string') return false;
     const items = v ? v.split(',') : [];

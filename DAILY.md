@@ -171,6 +171,14 @@ transaction result and adopts it without waiting for the listener.
 Which events have a daily scramble at all is a setting too (`config/sotd/events`, every eligible
 event by default): an event switched off has no window, board or chat, and its data stays.
 
+**A day ahead.** Anybody signed in may publish **today's** scramble, once (with five minutes either
+side of midnight for a clock that is a little out). Only an admin may write a **later** day's, from
+the admin console's *Days ahead* ([ADMIN.md](ADMIN.md) §11), and change or clear it until that day
+starts; on the day it is the scramble everybody gets, written once like any other. Until this rule,
+anybody could plant tomorrow's scramble and practise it. An admin can also make an event the day's
+**featured event** (`sotdFeatured/<dayStart>`): it is starred in the panel's event list, and the
+window's board says so, with *Go to it* from any other event.
+
 ## 4. Files
 
 | File | What it is |

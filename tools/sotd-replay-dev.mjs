@@ -22,6 +22,7 @@ import { spawn, spawnSync, execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, rmSync, writeFileSync, readFileSync, createWriteStream } from 'node:fs';
 import { dirname, join, resolve, delimiter } from 'node:path';
 import { homedir } from 'node:os';
+import { generateKeyPairSync } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -154,6 +155,14 @@ writeFileSync(join(STATE, 'firebase.json'), JSON.stringify({
 // The Worker's local values. Generated every start, so the flags above are all there is to it.
 const budget = opt('--budget', '');
 const clipMax = opt('--clip-max', '');
+/* The scheduler's service account, made up: a fresh key every start. The
+   Auth emulator takes a custom token without checking whose key signed it,
+   so the Worker's real signing and sign-in run here end to end. */
+const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
+const serviceAccount = JSON.stringify({
+  client_email: 'scheduler-dev@tagda-timer.iam.gserviceaccount.com',
+  private_key: privateKey.export({ type: 'pkcs8', format: 'pem' }),
+});
 writeFileSync(join(ROOT, '.dev.vars'), [
   '# Written by tools/sotd-replay-dev.mjs on every start. Local only (gitignored).',
   `RTDB_URL=${RTDB}`,
@@ -162,6 +171,8 @@ writeFileSync(join(ROOT, '.dev.vars'), [
   'CONFIG_TTL_MS=1500',
   budget ? `DAY_BUDGET=${budget}` : '',
   clipMax ? `CLIP_MAX=${clipMax}` : '',
+  `AUTH_URL=${AUTH}/identitytoolkit.googleapis.com`,
+  `FIREBASE_SERVICE_ACCOUNT=${serviceAccount}`,
 ].filter(Boolean).join('\n') + '\n');
 
 /* ---------------- run ---------------- */
@@ -212,7 +223,7 @@ await up(`${AUTH}/`, 'the auth emulator');
 await loadRules(flag('--old-rules') ? 'old' : 'new');
 await seedAdmin();
 
-run('wrangler', [bin.wrangler, 'dev', '--port', String(PORT), '--ip', '127.0.0.1',
+run('wrangler', [bin.wrangler, 'dev', '--port', String(PORT), '--ip', '127.0.0.1', '--test-scheduled',
   '--persist-to', join(STATE, 'r2-state')], ROOT);
 await up(`http://127.0.0.1:${PORT}/`, 'wrangler dev');
 
@@ -232,6 +243,8 @@ console.log(`
   │  node tools/verify-sotd-chat-rules.mjs          the chat rules' own checks
   │  node tools/verify-admin-rules.mjs              the admin console's rules
   │  node tools/verify-safety-rules.mjs             its switches and bans
+  │  node tools/verify-live-rules.mjs               testers, schedules, days ahead
+  │  curl http://127.0.0.1:${PORT}/cdn-cgi/handler/scheduled   run the cron now
   │  node tools/sotd-replay-dev.mjs counts          R2 operations so far
   │  Ctrl+C stops everything. --reset next time wipes the clips.
   └──────────────────────────────────────────────────────────────

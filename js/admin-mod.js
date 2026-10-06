@@ -424,5 +424,18 @@ export function createModeration(ctx) {
     }
   }
 
-  return { view, start, stop, counts };
+  /** What the Today tab counts from (js/admin-live.js): these listeners' copy, never a read of its own. */
+  function snapshot() {
+    return { dayKey: M.dayKey, results: M.results, rooms: M.rooms, roomsLoaded: M.roomsLoaded, roomsRefused: !!M.roomsRefused, reports: groups().length, reportsRefused: !!M.reportsRefused };
+  }
+
+  /** Everybody on today's boards and in today's rooms, for the People tab's tester picker: [{ uid, name }]. */
+  function people() {
+    const by = new Map();
+    for (const rows of Object.values(M.results)) for (const [uid, r] of Object.entries(rows || {})) if (!by.has(uid)) by.set(uid, r?.name || '');
+    for (const list of Object.values(M.sotdChat)) for (const m of list) if (m?.uid && !by.has(m.uid)) by.set(m.uid, m.name || '');
+    return [...by].map(([uid, name]) => ({ uid, name }));
+  }
+
+  return { view, start, stop, counts, snapshot, people, refreshRooms, offset: () => M.offset };
 }

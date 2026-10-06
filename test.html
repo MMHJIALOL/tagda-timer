@@ -2481,8 +2481,8 @@ section('admin console — settings and the rules that guard them');
   const R = await import('./js/config-rules.js');
   const rulesText = await (await fetch('./firebase.rules.json', { cache: 'no-store' })).text();
   const rules = JSON.parse(rulesText).rules;
-  check('firebase.rules.json’s config block is what js/config.js makes (node tools/config-rules.mjs)',
-    R.replaceBlock(rulesText, R.configBlock()) === rulesText);
+  check('firebase.rules.json’s generated blocks (config, configScheduled, sotdFeatured) are what js/config.js makes (node tools/config-rules.mjs)',
+    R.generatedRules(rulesText) === rulesText);
   check('every setting’s default is inside its own range, and has a write and a validate rule',
     C.allSettings().every(([s, k, sp]) => C.valid(sp, sp.def) && rules.config[s][k]['.write'] && rules.config[s][k]['.validate']));
 
@@ -2491,7 +2491,11 @@ section('admin console — settings and the rules that guard them');
   const asks = (rulesText.match(/root\.child\('admins\/' \+ auth\.uid\)\.val\(\) === true/g) || []).length;
   const google = (rulesText.match(/auth\.token\.firebase\.sign_in_provider === 'google\.com' && root\.child\('admins\/' \+ auth\.uid\)\.val\(\) === true/g) || []).length;
   check('no uid is hard-coded as an admin: every admin check reads admins/, and wants a Google sign-in',
-    !/auth\.uid === '/.test(rulesText) && asks >= 10 && google === asks, `${asks} ${google}`);
+    !/auth\.uid === '(?!tagda-scheduler')/.test(rulesText) && asks >= 10 && google === asks, `${asks} ${google}`);
+  // The one uid the rules name is the scheduler's, and only ever with the custom-token sign-in no browser can make.
+  const named = (rulesText.match(/auth\.uid === 'tagda-scheduler'/g) || []).length;
+  const custom = (rulesText.match(/auth\.uid === 'tagda-scheduler' && auth\.token\.firebase\.sign_in_provider === 'custom'/g) || []).length;
+  check('the scheduler is named only with its custom sign-in', named > 10 && named === custom, `${named} ${custom}`);
   check('admins/ is writable by nobody from the client',
     !JSON.stringify(rules.admins).includes('.write'));
 
@@ -2527,14 +2531,14 @@ section('admin console — settings and the rules that guard them');
 
   // Every word the admin page shows goes through t(), and Spanish has each one.
   const { es } = await import('./locales/es.js');
-  const src = (await Promise.all(['admin.js', 'admin-mod.js', 'admin-ann.js'].map(f => fetch(`./js/${f}`).then(r => r.text())))).join(' ');
+  const src = (await Promise.all(['admin.js', 'admin-mod.js', 'admin-ann.js', 'admin-live.js'].map(f => fetch(`./js/${f}`).then(r => r.text())))).join(' ');
   const q = String.raw`'((?:\\'|[^'])*)'`;
   const keys = [
     ...[...src.matchAll(new RegExp(String.raw`\bt\(\s*` + q, 'g'))].map(m => m[1]),
     ...[...src.matchAll(new RegExp(String.raw`(?:\btext|\btitle|'aria-label'):\s*` + q, 'g'))].map(m => m[1]),
     ...[...src.matchAll(new RegExp(String.raw`\bgate\(\s*` + q + String.raw`(?:,\s*` + q + ')?', 'g'))].flatMap(m => [m[1], m[2]]),
-    // The label maps (where a setting is enforced, an announcement's audience, style and panel).
-    ...[...src.matchAll(/const (?:WHERE|AUDIENCE|STYLE|PANEL) = \{([\s\S]*?)\};/g)].flatMap(b => [...b[1].matchAll(new RegExp(q, 'g'))].map(m => m[1])),
+    // The label maps (where a setting is enforced, an announcement's audience, style and panel, a choice's options).
+    ...[...src.matchAll(/const (?:WHERE|AUDIENCE|STYLE|PANEL|CHOICE) = \{([\s\S]*?)\};/g)].flatMap(b => [...b[1].matchAll(new RegExp(q, 'g'))].map(m => m[1])),
     ...Object.values(C.CONFIG).flatMap(sec => [sec.title, sec.about,
       ...Object.values(sec.keys).flatMap(k => [k.label, k.help, k.unit])]),
   ].filter(Boolean).map(k => k.replace(/\\'/g, "'"));
@@ -2629,6 +2633,65 @@ section('admin console — announcements, and the settings moved into it');
   check('the rules allow exactly the styles, audiences and panels announce.js knows',
     rulesText.includes(`(${N.ANN_STYLES.join('|')})`) && rulesText.includes(`(${N.ANN_AUDIENCES.join('|')})`)
     && rulesText.includes(`(${N.ANN_PANELS.join('|')})`));
+}
+
+section('admin console — testers, audiences, schedules and days ahead');
+{
+  const C = await import('./js/config.js');
+  const T = await import('./js/config-table.js');
+  const R = await import('./js/config-rules.js');
+  const rulesText = await (await fetch('./firebase.rules.json', { cache: 'no-store' })).text();
+  const rules = JSON.parse(rulesText).rules;
+
+  check('every setting can be scheduled, and a scheduled value is checked exactly as the setting is',
+    C.allSettings().every(([s, k, sp]) => rules.configScheduled[s]?.[k]?.$id?.to?.['.validate'] === rules.config[s][k]['.validate']
+      && rules.configScheduled[s][k].$id['.write'].includes(`configMeta/${s}/${k}/log`)));
+  check('a featured event is one of the events with a daily scramble, and nothing else',
+    rules.sotdFeatured.$dayStart['.validate'].includes(`(${T.SOTD_EVENTS.join('|')})`));
+  const scr = rules.daily.$dayStart.$event.scramble['.write'];
+  check('a day ahead’s scramble is an admin’s to set: anybody else publishes only today’s',
+    scr.includes('now + 300000') && scr.includes('now - 300000') && scr.includes("root.child('admins/' + auth.uid).val() === true) && $dayStart >"));
+
+  const aud = C.spec('replays', 'audience');
+  check('an audience is one of three, and anything else is everybody',
+    C.valid(aud, 'testers') && !C.valid(aud, 'friends') && C.clean(aud, 'admins') === 'admins' && C.clean(aud, 'x') === undefined
+    && aud.def === 'everyone' && C.spec('sotdChat', 'audience').def === 'everyone');
+
+  /* hasFeature: nothing stored is everybody; 'testers' is testers and admins,
+     'admins' only admins, and never anybody until their account has answered.
+     Shares localStorage with the app, so both kept copies are put back. */
+  const Au = await import('./js/audience.js');
+  let savedCfg = null, savedRoles = null;
+  try { savedCfg = localStorage.getItem('tdt-config'); savedRoles = localStorage.getItem('tdt-roles'); } catch {}
+  C.applyConfig({});
+  Au.setRoles(null);
+  const everybody = Au.hasFeature('replays');
+  C.applyConfig({ replays: { audience: 'testers' } });
+  const nobody = Au.hasFeature('replays');
+  Au.setRoles('u1', { tester: true });
+  const tester = Au.hasFeature('replays') && Au.hasFeature('replays', 'u1') && !Au.hasFeature('replays', 'u2');
+  C.applyConfig({ replays: { audience: 'admins' } });
+  const notAdmin = Au.hasFeature('replays');
+  Au.setRoles('u1', { admin: true });
+  const admin = Au.hasFeature('replays');
+  check('a feature for testers is on for a tester or an admin, one for admins only for an admin, and for nobody unasked',
+    everybody && !nobody && tester && !notAdmin && admin);
+  C.applyConfig(null);
+  try {
+    if (savedCfg === null) localStorage.removeItem('tdt-config'); else localStorage.setItem('tdt-config', savedCfg);
+    if (savedRoles === null) localStorage.removeItem('tdt-roles'); else localStorage.setItem('tdt-roles', savedRoles);
+  } catch {}
+
+  const N = await import('./js/announce.js');
+  check('an announcement for testers reaches testers and admins; one for admins, admins only',
+    N.inAudience({ audience: 'testers' }, { tester: true }) && N.inAudience({ audience: 'testers' }, { admin: true })
+    && !N.inAudience({ audience: 'testers' }, {}) && N.inAudience({ audience: 'admins' }, { admin: true })
+    && !N.inAudience({ audience: 'admins' }, { tester: true }));
+
+  check('testers/ is an admin’s to write, and each account reads only its own',
+    rules.testers.$uid['.write'] === R.ADMIN && rules.testers.$uid['.read'] === 'auth != null && auth.uid === $uid');
+  check('the day’s chat checks its audience as well as its switch',
+    rulesText.includes(R.audienceRule('sotdChat')));
 }
 
 section('gear — seed files');

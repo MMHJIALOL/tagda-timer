@@ -155,7 +155,8 @@ most). The rules read them. The room's tuning in `js/raceapp.js` (room size, the
 grace, the timeouts, the presence heartbeat, reaping, the fold, and the ⚑ threshold) is the default
 of `config/race/*`, which the app reads instead; the room size can only go down from 24 and the
 heartbeat only slow from 15 s. The clock slack is not a setting: the rules hold the same numbers.
-Race chat had no limit on the server before, only the client's 0.7 s
+Race rooms have no audience (ADMIN.md §9): race accounts are anonymous, so the server could not
+tell a tester from anybody. Race chat had no limit on the server before, only the client's 0.7 s
 cooldown; the rule is new, and a client on rules from before it sends the message the old way.
 
 A message from somebody else has a ⚑ to report it, when the browser is also signed in to the timer
