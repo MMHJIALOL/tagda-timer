@@ -168,6 +168,9 @@ transaction result and adopts it without waiting for the listener.
 
 ---
 
+Which events have a daily scramble at all is a setting too (`config/sotd/events`, every eligible
+event by default): an event switched off has no window, board or chat, and its data stays.
+
 ## 4. Files
 
 | File | What it is |
@@ -321,10 +324,11 @@ retired all day, on a page where signing back in was the only thing it was askin
 
 ## 6. The second board: most solves today — built, then switched off
 
-**Currently off.** `SHOW_COUNT_BOARD` in [`js/daily.js`](js/daily.js) is `false`, and while it
-is, the board is not drawn in either the window or the panel and nothing writes to
-`dailyCount`. Everything below still exists and is still tested; flipping that one boolean is
-the whole of turning it back on. The rules for `dailyCount` are left in place so that turning
+**Currently off.** `config/sotd/countBoard` is off (the admin console's *Scramble of the Day*
+section, [ADMIN.md](ADMIN.md) §3; `showCountBoard()` in [`js/daily.js`](js/daily.js)), and while
+it is, the board is not drawn in either the window or the panel and nothing writes to
+`dailyCount`. Everything below still exists and is still tested; that one switch is the whole of
+turning it back on. The rules for `dailyCount` are left in place so that turning
 it on later does not need a rules deploy to go with it.
 
 It went because two boards side by side invited a comparison between them that neither
@@ -406,7 +410,9 @@ traded for a **backup** scramble, once per day per event.
 ### The thresholds
 
 Judged on the raw time **before** any penalty — a +2 does not lift a 1.5 s misfire over the
-line. `misfireAction` in [`js/dayid.js`](js/dayid.js) (re-exported by `daily.js`, checked by
+line. The two cut-offs below are the defaults: the admin console can move them
+(`config/sotd/autoDiscardMs` and `askMs`, ADMIN.md §3), and the ask line never sits below the
+discard one. `misfireAction` in [`js/dayid.js`](js/dayid.js) (re-exported by `daily.js`, checked by
 `node tools/verify-misfire.mjs`):
 
 | Time | What happens |

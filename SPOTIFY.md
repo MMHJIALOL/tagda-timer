@@ -200,6 +200,14 @@ this is visible.
 
 ---
 
+### 3.5 Switching the built-in app off
+
+If the owner's Premium lapses, the built-in app stops working for everybody on its list at once.
+The admin console's *Spotify* section ([ADMIN.md](ADMIN.md) §3) has a switch for that:
+`config/spotify/enabled` off turns **Connect Spotify** off with a message (`config/spotify/message`,
+or "The built-in Spotify connection is off for now"), and a browser already linked through the
+built-in app stops polling Spotify. Anybody who set up their own connection is not affected.
+
 ## 4. Getting a colour out of album art
 
 ### 4.1 The CORS question

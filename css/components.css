@@ -3612,7 +3612,6 @@ body.focus #dock-bottom, body.focus #tile-float-layer { opacity: 0; pointer-even
 /* Shut during the solve, but "Filming" is what says you are being recorded: kept readable. */
 #sotd-camera.rec[disabled] { opacity: .85; }
 /* Over the window's bar and board, under a popover. */
-.cam-hint.sotd-cam-hint { z-index: 95; }
 
 /* A column down the left, not a sheet across the bottom.
 

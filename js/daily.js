@@ -29,8 +29,7 @@ import {
   markSotdDone, clearSotdDone, sotdDoneOn, misfireAction,
   CHAT_GAP_MS,
 } from './daily-net.js';
-import { SUSPECT_RATIO } from './raceapp.js';
-import { getConfig } from './config.js';
+import { getConfig, setOf } from './config.js';
 import { banActive, banLine, banAccount } from './admins.js';
 
 /**
@@ -51,7 +50,7 @@ import { banActive, banLine, banAccount } from './admins.js';
  * consult it too (see pushCount), and a controller reaching into the view for
  * a policy flag is the wrong way round.
  */
-export const SHOW_COUNT_BOARD = false;
+export const showCountBoard = () => getConfig('sotd', 'countBoard');
 
 /** How long to keep retrying a write the leaderboard needs before giving up. */
 const RETRY_MS = [400, 1200];
@@ -118,13 +117,20 @@ const within = (p, ms, why) => Promise.race([
 /** An event only counts as a daily challenge if "one scramble, one time" describes it. */
 export { dailyEligible };
 
+/**
+ * The events that have a Scramble of the Day right now: the eligible ones
+ * (events.js) that the admin console has not switched off (config/sotd/events).
+ */
+export const sotdEvents = () => setOf(getConfig('sotd', 'events')).filter(dailyEligible);
+export const sotdEligible = (eventId) => sotdEvents().includes(eventId);
+
 export class Daily extends EventTarget {
   constructor(app) {
     super();
     this.app = app;
     this.net = null;
     this.snap = null;
-    this.eventId = dailyEligible(app.settings.event) ? app.settings.event : '333';
+    this.eventId = sotdEligible(app.settings.event) ? app.settings.event : (sotdEvents()[0] || '333');
 
     /**
      * Whether the Scramble of the Day window is open.
@@ -212,7 +218,7 @@ export class Daily extends EventTarget {
 
   /** Switch which event's board is being watched. Does not touch the main timer's event. */
   setEvent(eventId) {
-    if (!dailyEligible(eventId) || eventId === this.eventId) return;
+    if (!sotdEligible(eventId) || eventId === this.eventId) return;
     this.eventId = eventId;
     this.attempting = false;
     this.submittedToday = false;
@@ -623,7 +629,8 @@ export class Daily extends EventTarget {
    */
   misfireCheck(timeMs) {
     if (!this.engaged || !this.attempting) return null;
-    const act = misfireAction(timeMs, this.eventId);
+    // The cut-offs can be moved from the admin console (config/sotd); never ask below the discard line.
+    const act = misfireAction(timeMs, this.eventId, { discard: getConfig('sotd', 'autoDiscardMs'), ask: getConfig('sotd', 'askMs') });
     if (!this.onBackup) return act;
     return act === 'discard' ? 'dnf' : 'keep';
   }
@@ -1023,7 +1030,7 @@ export class Daily extends EventTarget {
     // Nothing reads this board while it is switched off, and a write nobody
     // reads is a write worth not making — it is also the one write that needs
     // a rules node this deployment may not have yet.
-    if (!SHOW_COUNT_BOARD) return;
+    if (!showCountBoard()) return;
     if (!this.net || !this.snap?.signedIn || !this.snap.dayId) return;
     const n = countSolvesForDay(this.app.solves || [], dayStartMs(this.snap.dayId));
     if (n === this._lastCount) return;   // nothing new to say
@@ -1066,7 +1073,8 @@ export class Daily extends EventTarget {
   _looksSuspect(solve) {
     const avg = bestAvg(this.app.solves || [], 12).value;
     if (!avg || !isFinite(avg)) return false;
-    return solve.timeMs < avg * SUSPECT_RATIO;
+    // The same line as race mode's, from the admin console (config/race/suspectPct).
+    return solve.timeMs < avg * (getConfig('race', 'suspectPct') / 100);
   }
 
   async _retry(fn) {

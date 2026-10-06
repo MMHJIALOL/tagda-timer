@@ -19,8 +19,16 @@ export const ADMIN = "auth != null && auth.token.firebase.sign_in_provider === '
 /** What a key may hold, from its type and range. */
 export function validateFor(sp) {
   if (sp.type === 'bool') return 'newData.isBoolean()';
-  if (sp.type === 'int') return `newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= ${sp.min} && newData.val() <= ${sp.max}`;
-  if (sp.type === 'text') return `newData.isString() && newData.val().length <= ${sp.max}`;
+  if (sp.type === 'int' || sp.type === 'time') return `newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= ${sp.min} && newData.val() <= ${sp.max}`;
+  if (sp.type === 'text') {
+    const https = sp.pattern === 'https' ? ` && newData.val().matches(/^https:[/][/][^ ]+$/)` : '';
+    return `newData.isString() && newData.val().length <= ${sp.max}${https}`;
+  }
+  if (sp.type === 'set') {
+    // Some of the options, comma-separated, or none. Repeats are the app's to tidy.
+    const one = `(${sp.options.join('|')})`;
+    return `newData.isString() && newData.val().matches(/^(${one}(,${one})*)?$/)`;
+  }
   throw new Error(`unknown setting type ${sp.type}`);
 }
 

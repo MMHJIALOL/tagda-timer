@@ -1,0 +1,77 @@
+/* ===========================================================
+   Tagda Timer — announcements (js/announce-ui.js)
+
+   Loaded by the timer and by the admin page, so the preview there is the
+   real thing. Theme tokens only. The card is the old camera card's look,
+   the popup and the pill the old feedback form's.
+   =========================================================== */
+
+@keyframes anIn { from { opacity: 0; transform: translateY(8px) scale(.97); } to { opacity: 1; transform: none; } }
+
+.an-btn {
+  font: inherit; font-weight: 600; font-size: .8rem; cursor: pointer;
+  height: 32px; padding: 0 14px; border-radius: var(--radius-sm);
+  border: 1px solid var(--border); background: transparent; color: var(--text-dim);
+}
+.an-btn:hover { color: var(--text); border-color: var(--text-faint); }
+.an-btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+
+/* ---- card: under the button it is about, or in the corner ---- */
+.an-card {
+  position: fixed; z-index: 90; width: min(290px, calc(100vw - 20px));
+  display: flex; flex-direction: column; gap: 6px; padding: 13px 14px 12px;
+  border-radius: var(--radius-sm); font-size: .8rem; line-height: 1.4; color: var(--text-dim);
+  background: var(--surface-2); border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border));
+  box-shadow: 0 22px 50px -18px rgba(0,0,0,.8);
+  animation: anIn 420ms var(--ease-back, ease);
+}
+.an-card .an-title { color: var(--text); font-size: .88rem; padding-right: 22px; }
+.an-x {
+  position: absolute; top: 6px; right: 6px; width: 26px; height: 26px; border-radius: 50%;
+  display: grid; place-items: center; font-size: 1.1rem; line-height: 1; color: var(--text-faint);
+  background: none; border: 0; cursor: pointer;
+}
+.an-x:hover { color: var(--text); background: color-mix(in srgb, var(--text) 8%, transparent); }
+.an-card.an-anchored::before {
+  content: ''; position: absolute; top: -7px; left: calc(var(--arrow, 50%) - 6px); width: 12px; height: 12px;
+  background: var(--surface-2); transform: rotate(45deg);
+  border-left: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border));
+  border-top: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border));
+}
+.an-card.an-corner { right: 20px; bottom: 20px; width: min(320px, calc(100vw - 20px)); }
+@media (max-width: 620px) { .an-card.an-corner { right: 10px; bottom: 10px; } }
+.an-row { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+/* Above the SOTD window's own layers, like the camera card it replaces. */
+body.sotd .an-card { z-index: 95; }
+
+/* ---- popup: a dialog, once ---- */
+.an-dlg {
+  position: fixed; inset: 0; margin: auto; width: max-content; height: max-content; border: 0; padding: 0;
+  background: transparent; max-width: min(92vw, 440px); color: var(--text);
+}
+.an-dlg::backdrop { background: rgba(0,0,0,.6); backdrop-filter: blur(3px); }
+.an-dlg-card {
+  outline: 0; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius, 14px);
+  padding: 26px 26px 20px; box-shadow: 0 20px 60px rgba(0,0,0,.5);
+}
+.an-dlg-card .an-title { margin: 0 0 10px; font-size: 20px; line-height: 1.25; }
+.an-dlg-card .an-text { margin: 0 0 18px; line-height: 1.5; color: var(--text-dim); }
+.an-dlg-card .an-note { margin: 14px 0 0; font-size: 12px; color: var(--text-faint); }
+.an-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.an-actions .an-btn { height: auto; padding: 10px 18px; font-size: .9rem; }
+
+/* ---- pill: on the main screen, until crossed out ---- */
+.an-pill {
+  position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 5;
+  display: flex; align-items: center; border: 1px solid var(--border); border-radius: 999px;
+  background: var(--surface); font-size: 13px; max-width: calc(100% - 24px);
+}
+.an-pill button { font: inherit; background: none; border: 0; color: var(--text-dim); cursor: pointer; padding: 6px 12px; }
+.an-pill button:hover { color: var(--text); }
+.an-pill-go { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.an-pill-x { padding-left: 2px; }
+
+/* ---- the admin page's preview: in place, not on top ---- */
+.an-preview { position: relative !important; inset: auto !important; transform: none !important; margin: 0 !important; animation: none; }
+.an-dlg.an-preview { display: block; max-width: 100%; }
+.an-card.an-preview { width: 100%; max-width: 320px; }

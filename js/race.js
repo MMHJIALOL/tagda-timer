@@ -23,13 +23,15 @@ import { shockwave, confetti, flash, chime } from './fx.js';
 import { themeColors } from './theme.js';
 import { createTransport, cloudAvailable, scrambleHash, isStale, cleanChat } from './race-net.js';
 import {
-  ROOM_MAX, ROWS_BEFORE_FOLD, CODE_ALPHABET, CODE_LENGTH,
-  GRACE_MS, SOFT_TIMEOUT_MS, SUSPECT_RATIO,
+  CODE_ALPHABET, CODE_LENGTH,
   CLOCK_SLACK_MS, CLOCK_SLACK_RATIO,
   CHAT_MAX_LEN, CHAT_COOLDOWN_MS, RACE_EMOJI,
 } from './raceapp.js';
 import { isOwnerName, openOwnerCard } from './ownercard.js';
 import { getConfig } from './config.js';
+
+/* Tuning from the admin console (config/race); the defaults are raceapp.js's. */
+const tune = (k) => getConfig('race', k);
 import { banActive, banLine } from './admins.js';
 import { hasPersistedSession } from './sync-auth.js';
 
@@ -689,7 +691,7 @@ export class Race extends EventTarget {
   _looksSuspect(solve) {
     const avg = bestAvg(this.app.solves || [], 12).value;
     if (!avg || !isFinite(avg)) return false;
-    return solve.timeMs < avg * SUSPECT_RATIO;
+    return solve.timeMs < avg * (tune('suspectPct') / 100);
   }
 
   /* ---------------- round settling ---------------- */
@@ -741,7 +743,7 @@ export class Race extends EventTarget {
 
     // The grace clock starts the moment the first person finishes, and only
     // matters if somebody never does.
-    if (someone && !everyone && !this.graceAt) this.graceAt = Date.now() + GRACE_MS;
+    if (someone && !everyone && !this.graceAt) this.graceAt = Date.now() + tune('graceSec') * 1000;
     if (everyone) this.graceAt = 0;
 
     const graceUp = this.graceAt && Date.now() >= this.graceAt;
@@ -1107,7 +1109,7 @@ export class Race extends EventTarget {
     if (this.phase === 'lobby') {
       status.append(
         el('span', { class: 'race-round', text: t('Lobby') }),
-        el('span', { class: 'race-count', text: t('{n} / {max} here', { n: live, max: ROOM_MAX }) }),
+        el('span', { class: 'race-count', text: t('{n} / {max} here', { n: live, max: tune('roomMax') }) }),
       );
     } else {
       status.append(
@@ -1120,7 +1122,7 @@ export class Race extends EventTarget {
     const host = node.querySelector('.race-rows');
     host.innerHTML = '';
     const shown = this.collapsed && innerWidth <= 860 ? [] : rows;
-    const fold = this._expanded ? shown.length : Math.min(shown.length, ROWS_BEFORE_FOLD);
+    const fold = this._expanded ? shown.length : Math.min(shown.length, tune('rowsBeforeFold'));
     shown.slice(0, fold).forEach((row, i) => host.append(this._row(row, i)));
 
     const more = node.querySelector('.race-more');
@@ -1681,4 +1683,6 @@ export function getRace(app) {
    transport and the tuning constants stay an implementation detail. */
 export { cloudAvailable } from './race-net.js';
 export { ROOM_MAX } from './raceapp.js';
+/** The room size now: config/race/roomMax, at most ROOM_MAX. */
+export const roomMax = () => getConfig('race', 'roomMax');
 export { hueOf, initialsOf };

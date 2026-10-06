@@ -6,9 +6,9 @@ import { t, translateDOM } from './i18n.js';
    use it is admins/<uid> in the database (js/admins.js); what the settings
    are is js/config.js; ADMIN.md has the rest.
 
-   Four tabs: Settings, Moderate (js/admin-mod.js: reports, every chat,
-   flagged times, shared replays), Bans (bans/, who may not post, share or
-   submit) and the Change log.
+   Five tabs: Settings, Moderate (js/admin-mod.js: reports, every chat,
+   flagged times, shared replays), Announce (js/admin-ann.js), Bans (bans/,
+   who may not post, share or submit) and the Log.
 
    Every Save is one multi-path update: the value, its configMeta pointer and
    a configLog entry saying who changed what from what to what. The rules
@@ -28,6 +28,8 @@ import { adminStatus, banAccount, unbanAccount, banActive } from './admins.js';
 import { CONFIG, spec, clean, valid } from './config.js';
 import { APP_VERSION } from './version.js';
 import { createModeration } from './admin-mod.js';
+import { createAnnounce } from './admin-ann.js';
+import { eventOf } from './events.js';
 
 /** How many log entries the page keeps live. Older ones stay in the database. */
 const LOG_SHOWN = 200;
@@ -92,6 +94,13 @@ function show(sp, v) {
     return sp.def === '' ? t('default (empty)') : t('default ({v})', { v: show(sp, sp.def) });
   }
   if (sp?.type === 'bool' || typeof v === 'boolean') return v ? t('On') : t('Off');
+  if (sp?.type === 'time') return new Date(v).toLocaleString(undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  if (sp?.type === 'set') {
+    const items = String(v).split(',').filter(Boolean);
+    if (!items.length) return t('none');
+    if (items.length === sp.options.length) return t('all {n}', { n: items.length });
+    return items.map(optionLabel).join(', ');
+  }
   if (typeof v === 'string') return v === '' ? t('(empty)') : `“${v}”`;
   const n = typeof v === 'number' ? v / fac(sp) : v;
   return sp?.unit ? `${n} ${t(sp.unit)}` : String(n);
@@ -108,7 +117,14 @@ function ago(ms) {
 
 const who = (uid) => (uid === S.user?.uid ? t('you') : `${String(uid).slice(0, 6)}…`);
 
+/** One option of a 'set' setting, as people know it (the events: 3x3, OH…). */
+const optionLabel = (o) => eventOf(o)?.short || o;
+
+/** The settings' current values, as getConfig() would give them, from the live copy: for the built-in announcements. */
+const cfg = (s, k) => { const sp = spec(s, k); const v = clean(sp, S.config?.[s]?.[k]); return v === undefined ? sp?.def : v; };
+
 function labelOf(path) {
+  if (String(path).startsWith('ann/')) return t('Announcement · {id}', { id: String(path).slice(4) });
   const [s, k] = String(path).split('/');
   const sec = CONFIG[s];
   const sp = spec(s, k);
@@ -138,6 +154,8 @@ function route() {
   if (h === 'bans') return { view: 'bans' };
   const mod = /^mod(?:\/(reports|chats|suspect|replays))?$/.exec(h);
   if (mod) return { view: 'mod', sub: mod[1] || 'reports' };
+  const ann = /^ann(?:\/(new|[a-z0-9-]{1,40}))?$/.exec(h);
+  if (ann) return { view: 'ann', sub: ann[1] || null };
   const m = /^settings\/([a-zA-Z]+)$/.exec(h);
   if (m && CONFIG[m[1]]) return { view: 'section', section: m[1] };
   return { view: 'sections' };
@@ -174,6 +192,7 @@ function view() {
       if (r.view === 'log') return viewLog();
       if (r.view === 'bans') return viewBans();
       if (r.view === 'mod') return moderation.view(r.sub);
+      if (r.view === 'ann') return announce.view(r.sub);
       if (r.view === 'section') return viewSection(r.section);
       return viewSections();
     }
@@ -206,8 +225,9 @@ function renderTabs() {
   $tabs.replaceChildren(
     tab('#settings', 'Settings', r === 'sections' || r === 'section'),
     tab('#mod', open ? t('Moderate · {n}', { n: open }) : t('Moderate'), r === 'mod'),
+    tab('#ann', 'Announce', r === 'ann'),
     tab('#bans', banned ? t('Bans · {n}', { n: banned }) : t('Bans'), r === 'bans'),
-    tab('#log', 'Change log', r === 'log'));
+    tab('#log', 'Log', r === 'log'));
 }
 
 /* ---------------- settings ---------------- */
@@ -313,6 +333,29 @@ function settingRow(s, k, sp) {
       raw('button', { class: 'ad-step', type: 'button', 'aria-label': 'Less', onclick: () => step(-1) }, '−'),
       input,
       raw('button', { class: 'ad-step', type: 'button', 'aria-label': 'More', onclick: () => step(1) }, '+'));
+  } else if (sp.type === 'time') {
+    const toLocal = (ms) => {
+      const d = new Date(ms);
+      const p2 = (n) => String(n).padStart(2, '0');
+      return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}T${p2(d.getHours())}:${p2(d.getMinutes())}`;
+    };
+    const input = el('input', { id, class: 'ad-inp', type: 'datetime-local' });
+    input.value = toLocal(shownValue(path, sp));
+    input.addEventListener('input', () => { setEdit(path, sp, input.value ? new Date(input.value).getTime() : sp.def); refresh(); });
+    control = el('div', { class: 'ad-text' }, input);
+  } else if (sp.type === 'set') {
+    // A tick each, in the table's order; stored as the ticked ones, comma-separated.
+    const now = new Set(String(shownValue(path, sp)).split(',').filter(Boolean));
+    const boxes = sp.options.map((o) => {
+      const box = el('input', { type: 'checkbox' });
+      box.checked = now.has(o);
+      box.addEventListener('change', () => {
+        setEdit(path, sp, sp.options.filter((x, i) => boxes[i].firstChild.checked).join(','));
+        refresh();
+      });
+      return el('label', { class: 'ad-chip' }, box, raw('span', {}, optionLabel(o)));
+    });
+    control = el('div', { class: 'ad-chips', id }, ...boxes);
   } else {
     const long = sp.max > 120;
     const input = el(long ? 'textarea' : 'input', { id, class: 'ad-inp', maxlength: sp.max, autocomplete: 'off', rows: long ? 3 : null });
@@ -444,7 +487,7 @@ async function write(changes, { undo = null } = {}) {
     return true;
   } catch (err) {
     console.warn('[admin] save refused', err?.code || err);
-    toast(t('The database refused that. If somebody changed it a moment ago, check it and save again.'), { kind: 'bad', hold: true });
+    toast(t('The database refused that. If somebody changed it a moment ago, check it and save again. A setting new in this version needs its firebase.rules.json published first.'), { kind: 'bad', hold: true });
     return false;
   } finally {
     S.saving = false;
@@ -465,6 +508,16 @@ function viewLog() {
 }
 
 function logRow(e, byId) {
+  // An announcement's entry: what was done to it. Undone by editing it, not from here.
+  if (String(e.path).startsWith('ann/')) {
+    const what = { create: t('created'), edit: t('edited'), end: t('ended'), again: t('shown again') }[e.action] || e.action;
+    return el('li', { class: 'ad-entry' },
+      el('div', { class: 'ad-entry-main' },
+        raw('b', {}, labelOf(e.path)),
+        raw('span', { class: 'ad-reason' }, `${e.title ? `“${e.title}” ` : ''}${what}`),
+        raw('span', { class: 'ad-entry-meta', title: e.at ? new Date(e.at).toLocaleString() : '' }, [who(e.uid), ago(e.at)].join(' · '))),
+      el('a', { class: 'ad-btn small', href: `#ann/${String(e.path).slice(4)}`, text: 'Open' }));
+  }
   const [s, k] = String(e.path).split('/');
   const sp = spec(s, k);
   const now = stored(e.path);
@@ -649,6 +702,7 @@ async function doSignOut() {
 
 function teardown() {
   moderation.stop();
+  announce.stop();
   for (const off of S.unsubs.splice(0)) off();
   S.config = {}; S.meta = {}; S.log = []; S.bans = {};
   S.loaded = { config: false, log: false, bans: false };
@@ -706,6 +760,7 @@ async function onUser(user) {
 }
 
 const moderation = createModeration({ S, scheduleRender, raw, ago, who, openSheet, closeSheet, askBan, gate });
+const announce = createAnnounce({ S, scheduleRender, raw, ago, who, openSheet, closeSheet, gate, cfg });
 
 window.addEventListener('hashchange', () => { closeSheet(); render(); window.scrollTo(0, 0); });
 window.addEventListener('beforeunload', (e) => { if (S.edits.size) e.preventDefault(); });

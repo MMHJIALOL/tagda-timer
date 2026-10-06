@@ -759,9 +759,12 @@ export function buildSpotify(app) {
             connected
               ? el('button', { class: 'btn danger', text: t('Disconnect'),
                   onclick: async () => { await app.disconnectSpotify(); render(); } })
-              : el('button', { class: 'btn primary', text: t('Connect Spotify'),
+              : el('button', { class: 'btn primary', text: t('Connect Spotify'), disabled: !!st.builtInOff,
                   onclick: () => app.connectSpotify() }),
           ),
+          // Switched off from the admin console (config/spotify): your own app below still works.
+          st.builtInOff ? el('div', { class: 'hint-note warn-note', text:
+            st.builtInOff + ' ' + t('Your own connection, below, is not affected.') }) : null,
           st.problem ? el('div', { class: 'hint-note warn-note', text:
             st.problem.reason
             + (st.problem.openInstead
@@ -2879,7 +2882,7 @@ export function buildRace(app) {
             /* The toast has to stay short; the real cause (permission_denied,
                unauthorized-domain, a dropped socket) only exists here. */
             console.error('[race] join failed:', err);
-            const why = err?.message === 'room-full' ? t('That room is full ({n} max)', { n: race.ROOM_MAX })
+            const why = err?.message === 'room-full' ? t('That room is full ({n} max)', { n: race.roomMax?.() ?? race.ROOM_MAX })
               : err?.message === 'bad-code' ? t('A room code is at least 3 characters')
               : err?.message === 'race-off' ? (getConfig('race', 'message') || t('New race rooms are switched off for now'))
               : err?.message === 'no-config' ? t('Real rooms are not configured — see RACE.md')
@@ -2965,7 +2968,7 @@ export function buildDaily(app) {
     const render = async () => {
       const mod = await app.dailyModule();
       ui ??= await import('./dailyui.js');
-      const { dailyEligible, formatCountdown } = mod;
+      const { sotdEligible: dailyEligible, formatCountdown } = mod;
       if (!ctl) {
         ctl = mod.getDaily(app);
         // Subscribed once per drawer-open, not once per render() call —
@@ -3054,10 +3057,10 @@ export function buildDaily(app) {
       }
 
       /* ---- board two: who solved the most, of anything ----
-         Behind mod.SHOW_COUNT_BOARD, which is currently false — see the comment
-         on it in js/daily.js. Left wired up rather than deleted so turning the
-         feature back on is one boolean, not an archaeology exercise. */
-      if (mod.SHOW_COUNT_BOARD) {
+         Behind config/sotd/countBoard, off by default — see the comment on it
+         in js/daily.js. Left wired up rather than deleted, so turning the
+         feature back on is one switch on the admin page. */
+      if (mod.showCountBoard()) {
         const mine = ctl.myCount();
         body.append(group(t('Most solves today'),
           el('div', { class: 'race-hero-sub', text:

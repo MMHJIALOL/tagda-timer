@@ -53,10 +53,16 @@ import { t } from './i18n.js';
    =========================================================== */
 
 import { getConfig, loadConfig } from './config.js';
+
+/* The room's tuning, from the admin console (config/race); the defaults are
+   raceapp.js's constants. Read at each use, so a change reaches open rooms. */
+const roomMax = () => getConfig('race', 'roomMax');
+const heartbeatMs = () => getConfig('race', 'heartbeatSec') * 1000;
+const staleRoomMs = () => getConfig('race', 'staleRoomMin') * 60_000;
+const hardTimeoutMs = () => getConfig('race', 'hardTimeoutSec') * 1000;
 import { EMULATED } from './sync-auth.js';
 import {
-  FIREBASE_CONFIG, FIREBASE_VERSION, ROOM_MAX,
-  HEARTBEAT_MS, STALE_ROOM_MS, HARD_TIMEOUT_MS,
+  FIREBASE_CONFIG, FIREBASE_VERSION,
   CHAT_MAX_LEN, CHAT_HISTORY,
 } from './raceapp.js';
 
@@ -235,13 +241,13 @@ class FirebaseTransport extends EventTarget {
     if (cur?.players) {
       const now = Date.now();
       const dead = Object.entries(cur.players)
-        .filter(([, p]) => now - (p.lastSeen || 0) > STALE_ROOM_MS);
+        .filter(([, p]) => now - (p.lastSeen || 0) > staleRoomMs());
       /* Not awaited. Clearing out ghosts is housekeeping for whoever reads
          this room next, and holding our own join behind a write we do not
          need the answer to bought nothing but the wait. */
       dead.forEach(([id]) => S.remove(this._ref(`${this._base}/players/${id}`)).catch(() => {}));
       const live = Object.keys(cur.players).length - dead.length;
-      if (live >= ROOM_MAX && !cur.players[uid]) {
+      if (live >= roomMax() && !cur.players[uid]) {
         // Undo the early subscription — we are not going to be in this room.
         this._teardown();
         this.snap = { ...emptySnapshot(), uid };
@@ -511,7 +517,7 @@ class FirebaseTransport extends EventTarget {
       if (!this.snap.players?.[this.snap.uid]) { this._ensureSeat(); return; }
       this._sdk.update(this._ref(`${this._base}/players/${this.snap.uid}`),
         { lastSeen: this._sdk.serverTimestamp() }).catch(() => {});
-    }, HEARTBEAT_MS);
+    }, heartbeatMs());
   }
 
   async leave() {
@@ -632,9 +638,9 @@ class LocalTransport extends EventTarget {
     this._mutate((room) => {
       const now = Date.now();
       for (const [id, p] of Object.entries(room.players || {})) {
-        if (now - (p.lastSeen || 0) > STALE_ROOM_MS) delete room.players[id];
+        if (now - (p.lastSeen || 0) > staleRoomMs()) delete room.players[id];
       }
-      if (Object.keys(room.players || {}).length >= ROOM_MAX && !room.players[uid]) {
+      if (Object.keys(room.players || {}).length >= roomMax() && !room.players[uid]) {
         throw new Error('room-full');
       }
       room.meta ||= { createdAt: now, event: player.event, mode: player.mode, round: 1 };
@@ -650,7 +656,7 @@ class LocalTransport extends EventTarget {
 
     this._beat = setInterval(() => {
       this._mutate((room) => { if (room.players?.[uid]) room.players[uid].lastSeen = Date.now(); else return false; });
-    }, HEARTBEAT_MS);
+    }, heartbeatMs());
 
     /* Drop our own row, and nothing else.
      *
@@ -785,4 +791,4 @@ export function createTransport(prefer = 'auto') {
 }
 
 /** Exported so race.js and the UI agree on what counts as gone. */
-export const isStale = (p, now = Date.now()) => now - (p?.lastSeen || 0) > HARD_TIMEOUT_MS;
+export const isStale = (p, now = Date.now()) => now - (p?.lastSeen || 0) > hardTimeoutMs();

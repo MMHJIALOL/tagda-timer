@@ -53,7 +53,7 @@ import { formatCountdown, safePhotoUrl, shiftDayId, cleanNote, NOTE_MAX_LEN, day
 import { RACE_EMOJI } from './raceapp.js';
 import { isOwnerName, openOwnerCard } from './ownercard.js';
 // Policy lives with the controller — see the comment on it there.
-import { SHOW_COUNT_BOARD } from './daily.js';
+import { showCountBoard } from './daily.js';
 import { canPlay, playButton, replayKept, keepDays, shareBox, bindReplays, dropClip } from './sotd-replays.js';
 import { mountChat } from './sotd-chat.js';
 import { knownFace, lookupFace } from './faces.js';
@@ -722,7 +722,7 @@ export function openSotd(app, ctl, { onExit, solving = () => false } = {}) {
       (!past && ctl.revealed) ? note() : null,
       (!past && ctl.revealed) ? share() : null,
       ctl.snap?.signedIn ? null : signInPrompt(),
-      SHOW_COUNT_BOARD ? [
+      showCountBoard() ? [
         el('h3', { class: 'sotd-h3-second' }, t('Most solves today'),
           el('span', { class: 'sotd-h3-note', text: t('any event · resets at midnight IST') })),
         countBoard(ctl.countBoard()),
