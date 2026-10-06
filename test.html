@@ -798,9 +798,26 @@ section('reconstruction');
   check('the solver can talk itself through a whole Roux solve, a milestone a step',
     C.analyseRoux(rp.state).solved && rose, `${rSteps} steps to solved`);
 
-  /* The same thing on real scrambles, because the position that used to defeat
-     it was always the last F2L slot: three pairs in, and every line that fixes
-     the fourth without scattering them is nine or ten moves deep. */
+  /* The last slot at its worst, on purpose rather than by luck: the pair
+     already in its own slot the wrong way round, the edge flipped or the
+     corner twisted either way. Keeping the cross and three pairs, nothing
+     shorter than nine moves fixes any of them, and these were the positions
+     that ran the search out of budget and left the panel with nothing. */
+  const wrongWay = ["R2 U2 F R2 F' U2 R' U R'", "R U2 R U R' U R U2 R2", "R2 U2 R' U' R U' R' U2 R'"].map(scr => {
+    const p = C.applyAlg(C.SOLVED, scr);
+    const a = C.analyse(p.state);
+    const t0 = performance.now();
+    const res = SV.suggest(p.state, p.frame, a, { limit: 3 });
+    const ms = performance.now() - t0;
+    const top = res.list[0];
+    const after = top && C.analyse(C.applyAlg(p.state, top.alg, p.frame).state);
+    return { ok: a.phase === 'f2l' && a.slots.filter(s => s.done).length === 3 && !!after?.f2l, best: res.best, ms };
+  });
+  check('a last pair stuck in its slot the wrong way round still gets its nine moves',
+    wrongWay.every(x => x.ok && x.best === 9), wrongWay.map(x => `${x.best} moves in ${Math.round(x.ms)}ms`).join(' · '));
+
+  /* The same thing on real scrambles: whatever the first three pairs leave
+     behind, the fourth has to come out of the search too. */
   let solvedAll = 0, worstMs = 0;
   for (let n = 0; n < 3; n++) {
     const s = await G.generate('333', 'wca');
