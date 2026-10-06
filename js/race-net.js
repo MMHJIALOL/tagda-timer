@@ -240,6 +240,32 @@ class FirebaseTransport extends EventTarget {
     await (on ? d.remove() : d.cancel()).catch(() => {});
   }
 
+  /* ---- 1v1 cam and mic: the call's setup messages (RACE.md §9) ----
+     rooms/<id>/rtc/<uid>, written only by that player and readable only by
+     the people in the room. Paths are below that: 'media', 'desc',
+     'ice/<sid>'. Nothing here carries video — it goes peer to peer. */
+
+  _rtcRef(uid, path = '') { return this._ref(`${this._base}/rtc/${uid}${path ? `/${path}` : ''}`); }
+
+  rtcSet(path, value) { return this._sdk.set(this._rtcRef(this.snap.uid, path), value); }
+
+  rtcPush(path, value) { return this._sdk.set(this._sdk.push(this._rtcRef(this.snap.uid, path)), value); }
+
+  /** The other player's node at `path`, now and on every change. Returns the unsubscribe. */
+  rtcOn(uid, path, cb) {
+    return this._sdk.onValue(this._rtcRef(uid, path), (s) => cb(s.val() ?? null), () => {});
+  }
+
+  /** Each child added under the other player's `path`, the ones already there first. */
+  rtcOnAdded(uid, path, cb) {
+    return this._sdk.onChildAdded(this._rtcRef(uid, path), (s) => cb(s.val()), () => {});
+  }
+
+  /** Ours gone, now and when this tab goes. */
+  async rtcClear() { await this._sdk.remove(this._rtcRef(this.snap.uid)).catch(() => {}); }
+
+  async rtcArm() { await this._sdk.onDisconnect(this._rtcRef(this.snap.uid)).remove().catch(() => {}); }
+
   _ref(path) { return this._sdk.ref(this._sdk.db, path); }
   get _base() { return `rooms/${this.snap.roomId}`; }
 
@@ -665,6 +691,90 @@ class LocalTransport extends EventTarget {
   /** A closed tab's seat just goes stale here; nothing to arm. */
   async armMatchDrop() {}
 
+  /* ---- 1v1 cam and mic, between this browser's tabs ----
+     The same tree as the hosted rtc/ node, in one localStorage entry per
+     room, and the same five calls. */
+
+  get _rtcKey() { return `tdt-race-rtc-${this.snap.roomId}`; }
+
+  _rtcRead() {
+    try { return JSON.parse(localStorage.getItem(this._rtcKey) || '{}'); } catch { return {}; }
+  }
+
+  _rtcWrite(fn) {
+    const all = this._rtcRead();
+    fn(all);
+    localStorage.setItem(this._rtcKey, JSON.stringify(all));
+    this._rtcBus().postMessage('changed');
+    this._rtcFire();
+  }
+
+  /** One channel per room, and every listener re-reads on any change. */
+  _rtcBus() {
+    if (this._rtcChan?.name !== `tdt-race-rtc-${this.snap.roomId}`) {
+      this._rtcChan?.close();
+      this._rtcChan = new BroadcastChannel(`tdt-race-rtc-${this.snap.roomId}`);
+      this._rtcChan.onmessage = () => this._rtcFire();
+      this._rtcSubs ||= new Set();
+    }
+    return this._rtcChan;
+  }
+
+  _rtcFire() { for (const fn of this._rtcSubs || []) fn(); }
+
+  _rtcSub(fn) {
+    this._rtcBus();
+    this._rtcSubs.add(fn);
+    fn();
+    return () => this._rtcSubs.delete(fn);
+  }
+
+  static _at(obj, path) { return path.split('/').reduce((o, k) => (o == null ? o : o[k]), obj); }
+
+  static _put(obj, path, value) {
+    const keys = path.split('/');
+    const last = keys.pop();
+    const parent = keys.reduce((o, k) => (o[k] ||= {}), obj);
+    if (value == null) delete parent[last]; else parent[last] = value;
+  }
+
+  async rtcSet(path, value) {
+    const me = this.snap.uid;
+    this._rtcWrite((all) => LocalTransport._put(all, `${me}/${path}`, value));
+  }
+
+  async rtcPush(path, value) {
+    const id = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+    await this.rtcSet(`${path}/${id}`, value);
+  }
+
+  rtcOn(uid, path, cb) {
+    let last;
+    return this._rtcSub(() => {
+      const v = LocalTransport._at(this._rtcRead(), `${uid}/${path}`) ?? null;
+      const key = JSON.stringify(v);
+      if (key !== last) { last = key; cb(v); }
+    });
+  }
+
+  rtcOnAdded(uid, path, cb) {
+    const seen = new Set();
+    return this._rtcSub(() => {
+      const kids = LocalTransport._at(this._rtcRead(), `${uid}/${path}`) || {};
+      for (const [k, v] of Object.entries(kids)) if (!seen.has(k)) { seen.add(k); cb(v); }
+    });
+  }
+
+  async rtcClear() {
+    if (!this.snap.roomId) return;
+    const me = this.snap.uid;
+    this._rtcWrite((all) => { delete all[me]; });
+  }
+
+  async rtcArm() {
+    addEventListener('pagehide', () => { try { this.rtcClear(); } catch {} }, { once: true });
+  }
+
   _read() {
     try { return JSON.parse(localStorage.getItem(this._key) || 'null'); }
     catch { return null; }
@@ -692,6 +802,21 @@ class LocalTransport extends EventTarget {
   _pull() {
     const room = this._read();
     if (!room) return;
+    /* Two tabs joining in the same instant each read the room, add their own
+       seat and write it back, and the slower write drops the faster one's
+       seat — there is no transaction here to have. A matched 1v1 is exactly
+       two tabs joining at once, so this is its normal case: put ours back the
+       moment we notice it is gone. */
+    if (this._seat && !room.players?.[this.snap.uid] && !this._reseating) {
+      this._reseating = true;
+      try {
+        this._mutate((r) => {
+          r.players ||= {};
+          r.players[this.snap.uid] = { ...this._seat, lastSeen: Date.now() };
+        });
+      } finally { this._reseating = false; }
+      return;
+    }
     this.snap.meta = room.meta || null;
     this.snap.players = room.players || {};
     this.snap.chat = room.chat || [];
@@ -729,6 +854,8 @@ class LocalTransport extends EventTarget {
         ...(player.kind ? { kind: player.kind } : {}),
       };
       room.players[uid] = { name: player.name, color: player.color, joinedAt: now, lastSeen: now };
+      // Kept, so _pull can put the seat back if another tab's write drops it.
+      this._seat = { name: player.name, color: player.color, joinedAt: now };
     });
 
     this._chan = new BroadcastChannel(`tdt-race-${roomId}`);
@@ -821,6 +948,7 @@ class LocalTransport extends EventTarget {
   /** Retire this player. The room survives whether or not anyone is left. */
   _removeSelf() {
     const uid = this.snap.uid;
+    this._seat = null;      // gone on purpose: _pull must not put it back
     this._mutate((room) => { delete room.players?.[uid]; });
   }
 
@@ -834,6 +962,7 @@ class LocalTransport extends EventTarget {
     if (!this.snap.roomId) return;
     const uid = this.snap.uid;
     const key = this._key;
+    this._seat = null;
     this._mutate((room) => {
       delete room.players?.[uid];
       // Only a deliberate Leave reaps the room, and only when it is genuinely
@@ -853,6 +982,9 @@ class LocalTransport extends EventTarget {
     clearInterval(this._beat);
     this._chan?.close();
     this._chan = null;
+    this._rtcChan?.close();
+    this._rtcChan = null;
+    this._rtcSubs?.clear();
     if (this._onStorage) removeEventListener('storage', this._onStorage);
     this._onStorage = null;
   }

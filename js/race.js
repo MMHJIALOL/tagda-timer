@@ -18,7 +18,7 @@ import { t } from './i18n.js';
 import { $, el, fmt } from './util.js';
 import { toast, confirmToast } from './toast.js';
 import { eventOf } from './events.js';
-import { bestAvg } from './stats.js';
+import { bestAvg, summarize } from './stats.js';
 import { shockwave, confetti, flash, chime } from './fx.js';
 import { themeColors } from './theme.js';
 import { createTransport, cloudAvailable, scrambleHash, isStale, cleanChat } from './race-net.js';
@@ -59,6 +59,15 @@ const chatOff = () => (getConfig('raceChat', 'enabled') ? null
  * scramble area waits before handing you the next one to pick up.
  */
 const SETTLE_MS = 700;
+
+/**
+ * The same, in a 1v1. A room's leaderboard is a list you glance at; a 1v1's
+ * result is the moment itself — who took the round and by how much — and at
+ * 0.7 s it was gone before anybody had read it. The round's result stays on
+ * the panel after this anyway (the "last round" banner), so this is only the
+ * beat before the next scramble.
+ */
+const DUEL_SETTLE_MS = 3000;
 
 /**
  * How long a round may sit without a scramble before somebody who is not the
@@ -297,6 +306,8 @@ export class Race extends EventTarget {
        dropped socket or a rejoin reset the room to nobody having won
        anything, which is the one number people are actually keeping. */
     this.standings = this._loadStandings(roomId);
+    /** A 1v1's rounds, oldest first: { no, me, them } with each side's result or null. */
+    this.duelRounds = [];
     this.prevRanks.clear();
     this.mySolves.clear();
     this._resetChat();
@@ -342,6 +353,9 @@ export class Race extends EventTarget {
     this._tick = 0;
     clearTimeout(this._settleTimer);
     this._settleTimer = 0;
+    // Camera and mic off before anything else: leaving must never leave either lit.
+    this._cam?.stop();
+    this._cam = null;
     await this.net.leave();
     this.snap = null;
     this.settleAt = 0;
@@ -353,6 +367,7 @@ export class Race extends EventTarget {
     this._prevRound = undefined;
     this._prevPhase = undefined;
     this._duel = null;
+    this.duelRounds = [];
     this._resetChat();
     this._syncPanel();
     // Back to the session you were in, and to the app's own scrambles. The
@@ -783,14 +798,15 @@ export class Race extends EventTarget {
 
     if ((ready || graceUp) && this.settledRound !== r.no) {
       this.settledRound = r.no;
-      this.settleAt = Date.now() + SETTLE_MS;
+      const settleMs = this.isDuel ? DUEL_SETTLE_MS : SETTLE_MS;
+      this.settleAt = Date.now() + settleMs;
       this.settleFrom = r.no;
       this._settle(r);
       /* Scheduled, not waited for. The tick below is still a backstop, but on
          a foreground tab this is what makes the next round arrive when the
          countdown says it will rather than up to a second afterwards. */
       clearTimeout(this._settleTimer);
-      this._settleTimer = setTimeout(() => this._advanceIfSettled(), SETTLE_MS + 20);
+      this._settleTimer = setTimeout(() => this._advanceIfSettled(), settleMs + 20);
     }
 
     if (this.settleAt && Date.now() >= this.settleAt) this._advanceIfSettled();
@@ -1021,6 +1037,7 @@ export class Race extends EventTarget {
     if (opp) {
       d.opp = { uid: opp[0], name: opp[1].name || 'Cuber' };
       d.goneAt = 0;
+      this._ensureCam(d.opp);
       // Both sides write it; the same value twice is harmless.
       if (this.phase === 'lobby' && !d.started) {
         d.started = true;
@@ -1038,6 +1055,30 @@ export class Race extends EventTarget {
     } else if (Date.now() - d.since >= MATCH_SHOWUP_MS) {
       this._duelOver('noshow');
     }
+  }
+
+  /**
+   * The 1v1's cam and mic (race-cam.js, RACE.md §9), fetched the first time a
+   * 1v1 has somebody in it. Nothing is opened here: both switches start off.
+   */
+  async _ensureCam(opp) {
+    if (!this._cam) {
+      if (this._camLoading) return;
+      this._camLoading = true;
+      try {
+        const { DuelCam } = await import('./race-cam.js');
+        this._cam ||= new DuelCam(this);
+      } catch (err) {
+        console.warn('[race] cam unavailable', err);
+        return;
+      } finally {
+        this._camLoading = false;
+      }
+    }
+    if (!this.inRoom || !this.isDuel) return;
+    const host = this._node?.querySelector('.race-cam');
+    if (host) this._cam.mount(host);
+    this._cam.start(opp);
   }
 
   async _duelOver(why) {
@@ -1103,8 +1144,177 @@ export class Race extends EventTarget {
     });
     this._saveStandings();
 
+    /* A 1v1 keeps every round, both times: the round-by-round list and the
+       you-vs-them figures in the stats panel are built from it. */
+    if (this.isDuel && this.opponent && !this.duelRounds.some(x => x.no === r.no)) {
+      this.duelRounds.push({
+        no: r.no,
+        me: r.results?.[this.uid] || null,
+        them: r.results?.[this.opponent.uid] || null,
+      });
+    }
+
     const mine = ranked.findIndex(x => x.uid === this.uid);
     if (mine === 0 && ranked.length > 1) this._celebrate();
+  }
+
+  /* ---------------- the 1v1's own view ---------------- */
+
+  /** "11.23", "11.23+", "DNF", or "—" for a round that side never finished. */
+  static resText(res) {
+    if (!res) return '—';
+    if (res.penalty === 'DNF') return 'DNF';
+    return fmt(res.timeMs + (res.penalty === '+2' ? 2000 : 0)) + (res.penalty === '+2' ? '+' : '');
+  }
+
+  /** Who took a recorded round: 'me', 'them', 'tie', or '' when neither finished it. */
+  static roundWinner(x) {
+    const a = effOf(x.me), b = effOf(x.them);
+    const fa = a != null && isFinite(a), fb = b != null && isFinite(b);
+    if (!fa && !fb) return '';
+    if (fa && !fb) return 'me';
+    if (fb && !fa) return 'them';
+    return a < b ? 'me' : b < a ? 'them' : 'tie';
+  }
+
+  /**
+   * The head-to-head card that stands in for the rows in a 1v1: both players
+   * with what each is doing (or their time, once the round is readable), the
+   * score between them, and the last round's result underneath — kept up for
+   * the whole of the next round, so a result is never only a flash.
+   */
+  _duelBoard(rows) {
+    const opp = this.opponent;
+    const meRow = rows.find(x => x.isMe);
+    const themRow = rows.find(x => !x.isMe);
+    const { me, them } = this.duelScore();
+    const lead = me > them ? 'me' : them > me ? 'them' : '';
+
+    const side = (row, name, who) => {
+      const hue = row?.player?.color ?? hueOf(name);
+      const av = el('span', { class: 'duel-board-av', text: initialsOf(name) });
+      av.style.setProperty('--av-h', String(hue));
+      const state = !row ? 'waiting'
+        : this.revealed && row.result ? (row.result.penalty === 'DNF' ? 'dnf' : 'time')
+        : row.status === 'done' ? 'locked' : row.status;
+      const label = state === 'time' || state === 'dnf' ? Race.resText(row.result)
+        : { locked: t('finished'), solving: t('solving…'), inspecting: t('inspecting'), waiting: t('ready') }[state] || t('ready');
+      return el('div', { class: 'duel-board-side', dataset: { who, state, lead: String(lead === who) } },
+        av,
+        el('span', { class: 'duel-board-name', text: who === 'me' ? t('You') : name, title: name }),
+        el('span', { class: 'duel-board-val', text: label,
+          title: state === 'locked' ? t('They are done. You will see the time when you are.') : '' }),
+      );
+    };
+
+    const board = el('div', { class: 'duel-board' },
+      side(meRow, meRow?.player?.name || this.nickname(), 'me'),
+      el('div', { class: 'duel-board-mid' },
+        el('div', { class: 'duel-board-score' },
+          el('b', { dataset: { lead: String(lead === 'me') }, text: String(me) }),
+          el('i', { text: '–' }),
+          el('b', { dataset: { lead: String(lead === 'them') }, text: String(them) })),
+        el('div', { class: 'duel-board-round', text: this.phase === 'lobby' ? t('starting…') : t('Round {n}', { n: this.round?.no ?? 1 }) }),
+      ),
+      side(themRow, opp?.name || 'Cuber', 'them'),
+    );
+
+    const last = this.duelRounds.at(-1);
+    if (!last) return [board];
+    const w = Race.roundWinner(last);
+    const a = effOf(last.me), b = effOf(last.them);
+    // Number.isFinite, not isFinite: a round one side never finished is null, and isFinite(null) is true.
+    const gap = Number.isFinite(a) && Number.isFinite(b) && a !== b ? fmt(Math.abs(a - b)) : '';
+    const headline = w === 'me' ? (gap ? t('You won by {gap}', { gap }) : t('You won'))
+      : w === 'them' ? (gap ? t('{name} won by {gap}', { name: opp?.name || 'Cuber', gap }) : t('{name} won', { name: opp?.name || 'Cuber' }))
+      : w === 'tie' ? t('Dead heat') : t('No result');
+    // One line: it shares the panel with the cam and the chat.
+    const banner = el('div', { class: 'duel-last', dataset: { winner: w }, title: t('Round {n}', { n: last.no }) },
+      el('span', { class: 'duel-last-k', text: `R${last.no}` }),
+      el('span', { class: 'duel-last-h', text: headline }),
+      el('span', { class: 'duel-last-times' },
+        el('span', { dataset: { win: String(w === 'me') }, text: Race.resText(last.me) }),
+        el('i', { text: '–' }),
+        el('span', { dataset: { win: String(w === 'them') }, text: Race.resText(last.them) })),
+    );
+    return [board, banner];
+  }
+
+  /**
+   * You against them, in the stats panel, for as long as a 1v1 lasts: the
+   * figures side by side and every round's two times. Built from the rounds
+   * this tab watched — the opponent's times exist nowhere else.
+   */
+  _syncDuelStats() {
+    const panel = document.getElementById('panel-stats');
+    if (!panel) return;
+    let box = document.getElementById('stats-duel');
+    const on = this.inRoom && this.isDuel && !!this.opponent;
+    if (!on) { box?.remove(); this._duelStatsSig = ''; return; }
+
+    const opp = this.opponent;
+    const rounds = this.duelRounds;
+    const sig = [opp.uid, opp.name, rounds.length, this.duelScore().me, this.duelScore().them].join('|');
+    if (box && sig === this._duelStatsSig) return;
+    this._duelStatsSig = sig;
+
+    if (!box) {
+      box = el('div', { id: 'stats-duel', class: 'stats-duel' });
+      // Under the header, outside the fold: visible whether the panel is open or not.
+      panel.querySelector('#stats-toggle')?.after(box);
+    }
+
+    const sum = (pick) => summarize(rounds.map(pick).filter(Boolean));
+    const A = sum(x => x.me), B = sum(x => x.them);
+    const { me, them } = this.duelScore();
+    const f = (v) => (v == null || !Number.isFinite(v) ? '—' : fmt(v));
+
+    /* One row each, a column a figure: three lines where a list of figures
+       was six, because this shares a rail with the race panel and its cam. */
+    const cols = [
+      ['won', t('won'), me, them, (x, y) => x > y],
+      ['best', t('best'), A.best, B.best, (x, y) => x < y],
+      ['mean', t('mean'), A.mean, B.mean, (x, y) => x < y],
+      ['ao5', 'ao5', A.ao5, B.ao5, (x, y) => x < y],
+      ['ao12', 'ao12', A.ao12, B.ao12, (x, y) => x < y],
+    ];
+    const grid = el('div', { class: 'stats-duel-grid', role: 'table' }, el('span', { class: 'sd-h' }));
+    for (const [, label] of cols) grid.append(el('span', { class: 'sd-h', text: label }));
+    const line = (who, name, pick) => {
+      grid.append(el('span', { class: 'sd-who', dataset: { who }, text: name, title: name }));
+      for (const [k, , x, y, better] of cols) {
+        const mine = pick(x, y), other = pick(y, x);
+        // Ahead on that figure: more rounds won, a lower time everywhere else.
+        const ok = Number.isFinite(mine) && Number.isFinite(other) && better(mine, other);
+        grid.append(el('span', { class: 'sd-v', dataset: { ahead: String(ok) },
+          text: k === 'won' ? String(mine) : f(mine) }));
+      }
+    };
+    line('me', t('You'), (x) => x);
+    line('them', opp.name, (x, y) => y);
+
+    /* Every round, newest first, as a strip that scrolls sideways: the two
+       times stacked under the round number, the winner's in bold. */
+    const list = el('div', { class: 'stats-duel-list' });
+    if (!rounds.length) {
+      list.append(el('div', { class: 'sd-empty', text: t('Each round’s two times land here.') }));
+    }
+    for (const x of [...rounds].reverse()) {
+      const w = Race.roundWinner(x);
+      list.append(el('div', { class: 'sd-round', dataset: { winner: w }, title: t('Round {n}', { n: x.no }) },
+        el('span', { class: 'sd-no', text: `#${x.no}` }),
+        el('span', { class: 'sd-t', dataset: { win: String(w === 'me') }, text: Race.resText(x.me) }),
+        el('span', { class: 'sd-t', dataset: { win: String(w === 'them') }, text: Race.resText(x.them) }),
+      ));
+    }
+
+    box.replaceChildren(
+      el('div', { class: 'stats-duel-head' },
+        el('span', { text: t('This 1v1') }),
+        el('span', { class: 'sd-vs', text: t('vs {name}', { name: opp.name }) })),
+      grid,
+      list,
+    );
   }
 
   _celebrate() {
@@ -1205,6 +1415,7 @@ export class Race extends EventTarget {
         <button class="race-more" type="button" hidden></button>
         <div class="race-board" hidden></div>
         <div class="race-foot"></div>
+        <div class="race-cam" hidden></div>
         <div class="race-chat">
           <div class="race-chat-head"><span class="race-chat-label">Chat</span></div>
           <div class="race-chat-log" role="log" aria-live="polite" aria-label="Room chat"></div>
@@ -1304,8 +1515,13 @@ export class Race extends EventTarget {
       this.app.registerRaceTile?.();
     }
 
+    this._syncDuelStats();
+    // For the stats panel's styles: in a 1v1 its folded peek gives way to the you-vs-them table.
+    document.body.classList.toggle('duel-on', on && this.isDuel && !!this.opponent);
     if (!on) { this.app.refreshLayout?.(); return; }
+    node.dataset.duel = String(this.isDuel && !!this.opponent);
     this._render(node);
+    node.querySelector('.race-cam').hidden = !(this.isDuel && this.opponent);
     /* Outside _render, and outside its signature guard.
      *
      * _render is throttled on a signature built from the rows, so a message
@@ -1330,7 +1546,7 @@ export class Race extends EventTarget {
   _sig(rows) {
     return [
       this.snap.roomId, this.phase, this.round?.no, this.revealed, this._expanded, this.collapsed,
-      this.isHost, this.isDuel, this.opponent?.name,
+      this.isHost, this.isDuel, this.opponent?.name, this.duelRounds.length,
       ...rows.map(x => `${x.uid}:${x.status}:${x.eff ?? ''}:${x.standing?.wins ?? 0}:${x.clockOff ? 1 : 0}`),
     ].join('|');
   }
@@ -1358,20 +1574,23 @@ export class Race extends EventTarget {
     node.querySelector('.race-meter').dataset.state =
       this.revealed ? 'revealed' : done ? 'pressure' : 'idle';
 
-    /* ---- status line ---- */
+    /* ---- a 1v1: one head-to-head card in place of the status, rows and standings ---- */
+    const duel = this.isDuel && !!this.opponent;
     const status = node.querySelector('.race-status');
+    status.hidden = duel;
+    node.querySelector('.race-meter').hidden = duel;
+    node.querySelector('.race-board').hidden = duel;
+    if (duel) {
+      node.querySelector('.race-rows').replaceChildren(...this._duelBoard(rows));
+      node.querySelector('.race-more').hidden = true;
+      this._foot(node.querySelector('.race-foot'), { rows, done, live });
+      this._actions(node.querySelector('.race-actions'));
+      return;
+    }
+
+    /* ---- status line ---- */
     status.innerHTML = '';
-    if (this.isDuel && this.opponent) {
-      // The score, where a room shows how many are done: in a 1v1 the rows already say that.
-      const { me, them } = this.duelScore();
-      status.append(
-        el('span', { class: 'race-round', text: this.phase === 'lobby' ? t('1v1') : t('Round {n}', { n: r?.no ?? 1 }) }),
-        el('span', { class: 'race-count race-score' },
-          el('span', { text: t('you') + ' ' }),
-          el('b', { text: `${me} – ${them}` }),
-          el('span', { text: ' ' + this.opponent.name })),
-      );
-    } else if (this.phase === 'lobby') {
+    if (this.phase === 'lobby') {
       status.append(
         el('span', { class: 'race-round', text: t('Lobby') }),
         el('span', { class: 'race-count', text: t('{n} / {max} here', { n: live, max: this.isDuel ? 2 : tune('roomMax') }) }),
@@ -1914,7 +2133,19 @@ export class Race extends EventTarget {
       return;
     }
 
-    if (!this.revealed) {
+    /* A 1v1 says who is done and when it unlocks on the head-to-head card,
+       so the foot keeps only its countdowns — and the panel keeps the height
+       for the cam and the chat. */
+    if (this.isDuel && this.opponent) {
+      if (this.revealed && this.settleAt) {
+        const left = Math.max(0, Math.ceil((this.settleAt - Date.now()) / 1000));
+        foot.append(el('div', { class: 'race-next' },
+          el('span', { text: t('Next scramble in') + ' ' }), el('b', { text: `${left}s` })));
+      } else if (this.revealed && this.graceAt) {
+        const left = Math.max(0, Math.ceil((this.graceAt - Date.now()) / 1000));
+        foot.append(el('div', { class: 'race-note', text: t('Waiting on {name} — {s}s', { name: this.opponent.name, s: left }) }));
+      }
+    } else if (!this.revealed) {
       foot.append(el('div', { class: 'race-note strong', text: done
         ? t(done === 1 ? '{n} person has finished. Times unlock when you do.' : '{n} people have finished. Times unlock when you do.', { n: done })
         : t('Solve the scramble to unlock the room’s times.') }));

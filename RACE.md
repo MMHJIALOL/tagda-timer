@@ -57,7 +57,9 @@ nobody's actual time is readable until you have sent your own.
 
 ## 2. Anti‑cheat, honestly
 
-No camera. No microphone. No screen recording. Ever. What there is:
+No camera, no microphone and no screen recording are ever used to referee a race. A random
+1v1 has an opt-in cam and mic for seeing each other (§9), but nothing checks or keeps what it
+sends. What there is:
 
 ### Enforced by database rules — Tier 1
 
@@ -290,3 +292,64 @@ looking, because the seat holds at most one. With few people online, most search
 will end in "couldn't find anyone"; that is the honest answer, not a bug.
 
 Tuning is in `js/raceapp.js` (`MATCH_*`, `DUEL_GONE_MS`).
+
+**What a 1v1 looks like.**
+- **Race panel:** a head-to-head card replaces the room's status line, rows and standings.
+  It shows both players, what each is doing (or their time once you've finished), and
+  the score.
+- **After a round:** both times stay on the card for 3 s (`DUEL_SETTLE_MS` in `race.js`;
+  a room's is 0.7 s). Then a one-line banner ("R4 · You won by 0.62 · 11.20 – 11.82")
+  stays up through the whole next round.
+- **Stats panel:** a "This 1v1" table compares won, best, mean, ao5 and ao12 for you and
+  your opponent, with every round's two times in a strip below it. While the panel is
+  folded, the table takes the place of its six-figure preview. The opponent's times exist
+  only in this tab: they come from the rounds it watched, and they go when the 1v1 ends.
+- **Chat:** the race panel takes the rest of the column in a 1v1, and the chat grows into
+  it. On a short screen the chat shrinks first, and then the panel scrolls, so Quit 1v1
+  stays reachable.
+
+---
+
+## 9. Cam and mic in a 1v1
+
+A random 1v1's panel has two switches, **Cam** and **Mic**. Both start off, and leaving
+the 1v1 turns them off. The opponent's picture stays covered and their sound muted until
+you press **Show**, so nobody's camera reaches you unasked. The eye button covers them again.
+
+**Peer to peer.** Video and sound go straight between the two browsers over WebRTC.
+Nothing passes through Firebase, the Worker or R2, and nothing is recorded. The database
+only carries the call's setup, under `rooms/<id>/rtc/<uid>`:
+
+| Path | What |
+|---|---|
+| `media` | `{ cam, mic }`: what that player is sending right now |
+| `desc` | `{ sid, type, sdp }`: the offer, or the answer to it |
+| `ice/<sid>/<id>` | connection candidates for that attempt |
+
+- The lower uid always offers, so the two sides never both offer at once.
+- The call has one audio and one video transceiver from the start. Switching a camera on
+  or off is `replaceTrack` on its sender, so nothing is renegotiated.
+- A failed connection is retried from scratch three times with a new `sid`. After that the
+  tile says it couldn't connect and offers **Retry**.
+- Your own node is removed when you leave, and by `onDisconnect` when the tab goes.
+
+**The rules** (`rtc` under `rooms/$roomId`):
+- Each player writes only their own node, and only in a room whose `meta/kind` is `'duel'`.
+- Only players in the room can read it. Connection candidates include IP addresses,
+  which no one else should see.
+- **It needs firebase.rules.json published.** Until then the first switch is refused, the
+  device goes straight back off, and a toast says to publish the rules. The 1v1 itself
+  is unaffected.
+
+**What it does not do.**
+- **There is no TURN relay**, only free STUN (`RTC_ICE_SERVERS` in `js/raceapp.js`). Roughly
+  one pair in five sits behind networks that won't connect directly. Those pairs get "Couldn't
+  connect" and keep racing without video. Adding a TURN server there fixes that, at a
+  per-gigabyte cost.
+- **Peer to peer means the two players can learn each other's IP address.** A relay-only
+  TURN setup would hide it.
+- **There is no video moderation.** Video can't be reported, so the safeguards are the
+  covered-until-Show default, the eye button and Quit 1v1.
+
+The camera and mic are the ones picked for webcam replays in Settings, when one is picked.
+Video is asked for at 640×360 and 24 fps, capped at 600 kbps (`CAM_*` in `js/raceapp.js`).
