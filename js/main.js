@@ -25,6 +25,7 @@ import { initReplay, syncReplay, takeClip, hasReplay, openReplay, replayOpen, re
 import { summarize, eff, DNF, isMoveResult, bestSingle, bestAvg, trimmedIndices, byCase, sessionBests, rollingSeries, statWindow, STAT_LABELS, goalProgress, bpaWpa } from './stats.js';
 import { renderMiniTrend } from './charts.js';
 import { DEFAULTS, loadSettings, saveSettings, applyTheme, applyBackground, themeColors, setAlbumTint, paintBackgroundColors, liquidGlassOK } from './theme.js';
+import { chooseInspection, mergeInspection } from './inspection-setting.js';
 import { loadLibraryPrefs } from './alglibrary.js';
 import { initTiles, applyTiles, measureLayout } from './tiles.js';
 import { SPOTIFY_CLIENT_ID, DEV_MODE_LIMIT, OWNER_NEEDS_PREMIUM } from './spotifyapp.js';
@@ -4441,6 +4442,7 @@ function adoptCloudChanges() {
   // the same values.
   onWrite('kv', ({ key, value }) => {
     if (key !== 'settings' || !value || value === app.settings) return;
+    value = mergeInspection(app.settings, value);
     // Our own push comes back as a new object with the same contents; applying
     // that would reset a multi-phase solve already under way for nothing.
     if (JSON.stringify({ ...app.settings, ...value }) === JSON.stringify(app.settings)) return;
@@ -5054,7 +5056,7 @@ app.shareAverageCard = async (kind) => {
 /* =========================================================
    Settings plumbing
    ========================================================= */
-function persist() { saveSettings(app.settings); }
+function persist(options) { return saveSettings(app.settings, options); }
 app.persist = persist;
 
 /* Settings the reset deliberately keeps. Which event you are on, which session
@@ -5063,6 +5065,9 @@ app.persist = persist;
    be a nasty surprise. Nothing in the database is touched either way. */
 const RESET_KEEPS = [
   'event', 'mode', 'sessionId', 'returnSessionId', 'allowedCases', 'multiCount',
+  // The reset is a new inspection choice, newer than even a device whose
+  // clock was ahead of ours when its last choice synced.
+  'inspectionUpdatedAt',
   'spotifyClientId', 'featuredReel',
   // A buffer and a letter scheme are years of memorisation, not a look.
   'bld',
@@ -5084,7 +5089,8 @@ app.resetSettings = () => {
   // settings object nothing else reads.
   for (const k of Object.keys(app.settings)) delete app.settings[k];
   Object.assign(app.settings, structuredClone(DEFAULTS), kept);
-  persist();
+  chooseInspection(app.settings, app.settings.inspection);
+  persist({ immediate: true, replace: true });
   applyAll();
   app.syncStatsCollapsed?.();
   // cubePos and mascotPos are settings, but where those two widgets actually
@@ -5100,9 +5106,11 @@ app.resetSettings = () => {
 };
 
 app.setSetting = (k, v) => {
-  app.settings[k] = v;
-  persist();
+  if (k === 'inspection') chooseInspection(app.settings, v);
+  else app.settings[k] = v;
+  const saved = persist({ immediate: k === 'inspection' });
   applyAll(k);
+  return saved;
 };
 
 function applyAll(changed) {
