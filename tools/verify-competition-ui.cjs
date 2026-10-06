@@ -5,6 +5,7 @@ const path = require('node:path');
 const { chromium, firefox } = require(process.env.TAGDA_PLAYWRIGHT_PATH || 'playwright');
 const url = process.argv[2] || 'http://localhost:5184';
 const out = process.env.TAGDA_QA_OUTPUT || path.resolve('competition-qa');
+const exportTimeout = 180000;
 async function start(page, mode = 'none') {
   await page.evaluate(() => tagdatimer.openCompetition());
   await page.locator('#competition-recording').selectOption(mode);
@@ -42,6 +43,8 @@ async function test(engine,name) {
   };
   try {
     await page.goto(url);await page.waitForFunction(()=>window.tagdatimer?.scramble?.scramble,null,{timeout:60000});
+    // Keep the animated background from competing with software video encoding in headless Firefox.
+    await page.evaluate(()=>tagdatimer.setSetting('bgMode','solid'));
     await start(page);
     assert.equal(await page.locator('.competition-set-box').count(),1);
     assert.match(await page.locator('.competition-set-heading').innerText(),/Ao5.*Set 1/s);
@@ -80,36 +83,43 @@ async function test(engine,name) {
     await page.setViewportSize({width:1440,height:1000});
     await start(page,'whole-set');await page.waitForTimeout(2200);await solve(page,5);
     await page.waitForSelector('.competition-dialog');
+    const media = await page.evaluate(async()=>{
+      const c=(await (await import('/js/db.js')).CompetitionSets.all()).find(c=>c.sequence===3);
+      const m=await (await import('/js/competition-replay.js')).setReplayMeta(c.id);
+      return {durationMs:m.durationMs,bytes:m.bytes};
+    });
+    console.log(name,'captured',JSON.stringify(media));
     await page.getByRole('button',{name:'Watch & save video',exact:true}).click();await page.waitForSelector('.replay-dlg');
+    await page.waitForFunction(()=>document.querySelectorAll('.rp-marks .rp-solve').length===5,null,{timeout:60000});
     assert.equal(await page.locator('.rp-marks .rp-solve').count(),5);
     assert.equal(await page.locator('.rp-more').count(),0);
     await page.getByRole('button',{name:'Save video',exact:true}).click();
     for(const label of ['Original','Landscape','Reel'])assert(await page.locator('.rp-menu').innerText().then(s=>s.includes(label)));
     await page.locator('.replay-dlg').screenshot({path:path.join(out,`${name}-competition-video-options.png`)});
-    const originalDownload=page.waitForEvent('download',{timeout:90000});
+    const originalDownload=page.waitForEvent('download',{timeout:exportTimeout});originalDownload.catch(()=>{});
     await page.getByRole('menuitem',{name:/Original/}).click();
-    await page.waitForFunction(()=>document.querySelector('.rp-export')?.dataset.done==='clean',null,{timeout:90000});
+    await page.waitForFunction(()=>document.querySelector('.rp-export')?.dataset.done==='clean',null,{timeout:exportTimeout});
     const sourceSize=await page.locator('.rp-video').evaluate(v=>[v.videoWidth,v.videoHeight]);
     await verifyDownload(await originalDownload,'original',sourceSize);
     await page.getByRole('button',{name:'Save video',exact:true}).click();
     await page.getByRole('menuitem',{name:/Landscape/}).click();
-    const wideDownload=page.waitForEvent('download',{timeout:90000});
+    const wideDownload=page.waitForEvent('download',{timeout:exportTimeout});wideDownload.catch(()=>{});
     await page.getByRole('button',{name:'Whole picture',exact:true}).click();
-    await page.waitForFunction(()=>document.querySelector('.rp-export')?.dataset.done==='wide',null,{timeout:90000});
+    await page.waitForFunction(()=>document.querySelector('.rp-export')?.dataset.done==='wide',null,{timeout:exportTimeout});
     await verifyDownload(await wideDownload,'landscape',[1920,1080]);
     await page.getByRole('button',{name:'Save video',exact:true}).click();
     await page.getByRole('menuitem',{name:/Reel/}).click();
-    const reelDownload=page.waitForEvent('download',{timeout:90000});
+    const reelDownload=page.waitForEvent('download',{timeout:exportTimeout});reelDownload.catch(()=>{});
     // Crop confirmation is the primary action inside the crop panel.
     await page.getByRole('button',{name:'Make the reel',exact:true}).click();
-    await page.waitForFunction(()=>document.querySelector('.rp-export')?.dataset.done==='reel',null,{timeout:90000});
+    await page.waitForFunction(()=>document.querySelector('.rp-export')?.dataset.done==='reel',null,{timeout:exportTimeout});
     await verifyDownload(await reelDownload,'reel',[1080,1920]);
     assert(!errors.length,errors.join('\n'));
-    await page.keyboard.press('Escape');
+    await page.close(); // Release the camera, graphics and video encoders before the general suite.
     const selftest=await context.newPage();await selftest.goto(`${url}/test.html`);
-    await selftest.waitForFunction(()=>!document.querySelector('#summary').textContent.includes('running'),null,{timeout:90000});
+    await selftest.waitForFunction(()=>!document.querySelector('#summary').textContent.includes('running'),null,{timeout:180000});
     const summary=await selftest.locator('#summary').innerText();assert.match(summary,/All \d+ checks passed/);
     console.log(name,JSON.stringify({groups:2,inspection:'hidden',exports:['clean','wide','reel'],summary,errors}));
   } finally { await browser.close(); }
 }
-(async()=>{await fs.mkdir(out,{recursive:true});for(const [engine,name] of [[chromium,'Chrome'],[firefox,'Firefox']])await test(engine,name);})().catch(e=>{console.error(e);process.exitCode=1;});
+(async()=>{await fs.mkdir(out,{recursive:true});for(const [engine,name] of [[chromium,'Chrome'],[firefox,'Firefox']])if(!process.argv[3]||process.argv[3].toLowerCase()===name.toLowerCase())await test(engine,name);})().catch(e=>{console.error(e);process.exitCode=1;});

@@ -16,6 +16,8 @@ The revised UI checks passed in Chrome and Firefox: two distinct Ao5 boxes, numb
 
 All 412 `test.html` checks passed in Chrome and Firefox, including Competition scoring and Spanish phone controls. All 50 `sync-test.html` checks passed in Chrome. Disposable browser contexts were used; tests did not access a saved browser profile.
 
+After integrating current `main`, all 448 self-tests passed in Chrome and Firefox. The three video layouts, grouped set UI, database guards and mixed/Ao100 history checks passed too. The headless UI fixture uses a static background, waits for video metadata/attempt markers, and releases the video page before the general suite to avoid competing for graphics/encoding resources. An individual browser can be selected with `node tools/verify-competition-ui.cjs http://localhost:5184 Firefox`.
+
 The focused browser checks cover Ao5/Ao12, custom input validation, refresh at attempt 2 with the original next scramble, member deletion through the database/menu/Delete key, +2 correction and unchanged raw time, exact whole-set removal with unrelated solves preserved, duplicate JSON restores, portrait cards and 375px layout, continuous capture including an inter-attempt gap, one-file MP4 export, and interrupted replay recovery after refresh. Normal keyboard timing, session switching/resumption and a second tab adopting membership/progress also passed.
 
 Database checks cover upgrading IndexedDB v3 while preserving old solves, only one of two concurrent submissions being accepted for the same attempt, rejecting raw-time/membership changes, rejecting mixed partial deletion atomically, validating a corrupt backup before destructive restore, resisting old-backup resurrection and preserving ordinary v1 imports.
