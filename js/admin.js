@@ -47,11 +47,11 @@ const WHERE = {
   nowhere: 'Nothing reads it',
 };
 
-const $main = document.getElementById('ad-main');
-const $tabs = document.getElementById('ad-tabs');
-const $account = document.getElementById('ad-account');
-const $savebar = document.getElementById('ad-savebar');
-const $sheet = document.getElementById('ad-sheet');
+const $main = document.getElementById('ac-main');
+const $tabs = document.getElementById('ac-tabs');
+const $account = document.getElementById('ac-account');
+const $savebar = document.getElementById('ac-savebar');
+const $sheet = document.getElementById('ac-sheet');
 
 const S = {
   /** 'loading' | 'signed-out' | 'checking' | 'not-admin' | 'old-rules' | 'admin' | 'error' */
@@ -190,12 +190,12 @@ function render() {
 
 function view() {
   switch (S.status) {
-    case 'loading': return [el('p', { class: 'ad-note', text: 'Loading…' })];
-    case 'checking': return [el('p', { class: 'ad-note', text: 'Checking your account…' })];
+    case 'loading': return [el('p', { class: 'ac-note', text: 'Loading…' })];
+    case 'checking': return [el('p', { class: 'ac-note', text: 'Checking your account…' })];
     case 'signed-out': return [gate(
       'Tagda Timer admin',
       'Sign in with the Google account you use on the timer.',
-      el('button', { class: 'ad-btn primary', text: 'Sign in with Google', onclick: doSignIn }))];
+      el('button', { class: 'ac-btn primary', text: 'Sign in with Google', onclick: doSignIn }))];
     case 'not-admin': return [gate('This page is for the site’s admins.', null)];
     case 'old-rules': return [gate(
       'Publish the rules first',
@@ -203,7 +203,7 @@ function view() {
     case 'error': return [gate(
       'Couldn’t reach the database',
       'Check the connection, then try again.',
-      el('button', { class: 'ad-btn', text: 'Try again', onclick: () => onUser(S.user) }))];
+      el('button', { class: 'ac-btn', text: 'Try again', onclick: () => onUser(S.user) }))];
     default: {
       const r = route();
       if (r.view === 'today') return live.viewToday();
@@ -219,9 +219,9 @@ function view() {
 }
 
 function gate(title, text, ...extra) {
-  return el('section', { class: 'ad-gate' },
-    el('h1', { class: 'ad-h1', text: title }),
-    text ? el('p', { class: 'ad-sub', text }) : null,
+  return el('section', { class: 'ac-gate' },
+    el('h1', { class: 'ac-h1', text: title }),
+    text ? el('p', { class: 'ac-sub', text }) : null,
     ...extra);
 }
 
@@ -229,18 +229,18 @@ function renderAccount() {
   const u = S.user;
   if (!u) { $account.replaceChildren(); return; }
   const face = u.photoURL
-    ? el('img', { class: 'ad-face', src: u.photoURL, alt: '', referrerpolicy: 'no-referrer', width: 28, height: 28 })
-    : raw('span', { class: 'ad-face ad-face-letter', 'aria-hidden': 'true' }, (u.displayName || u.email || '?')[0].toUpperCase());
+    ? el('img', { class: 'ac-face', src: u.photoURL, alt: '', referrerpolicy: 'no-referrer', width: 28, height: 28 })
+    : raw('span', { class: 'ac-face ac-face-letter', 'aria-hidden': 'true' }, (u.displayName || u.email || '?')[0].toUpperCase());
   $account.replaceChildren(face,
-    raw('span', { class: 'ad-name' }, u.displayName || u.email || ''),
-    el('button', { class: 'ad-link', text: 'Sign out', onclick: doSignOut }));
+    raw('span', { class: 'ac-name' }, u.displayName || u.email || ''),
+    el('button', { class: 'ac-link', text: 'Sign out', onclick: doSignOut }));
 }
 
 function renderTabs() {
   const r = route().view;
   // Six across a phone: a count is a badge on the tab, not words beside it.
-  const tab = (href, label, on, n = 0) => el('a', { class: `ad-tab${on ? ' on' : ''}`, href, 'aria-current': on ? 'page' : null },
-    el('span', { text: label }), n ? raw('span', { class: 'ad-tab-n', 'aria-label': t('{n} open', { n }) }, String(n)) : null);
+  const tab = (href, label, on, n = 0) => el('a', { class: `ac-tab${on ? ' on' : ''}`, href, 'aria-current': on ? 'page' : null },
+    el('span', { text: label }), n ? raw('span', { class: 'ac-tab-n', 'aria-label': t('{n} open', { n }) }, String(n)) : null);
   const open = moderation.counts().reports;
   $tabs.replaceChildren(
     tab('#today', 'Today', r === 'today' || r === 'days'),
@@ -255,27 +255,27 @@ function renderTabs() {
 
 function viewSections() {
   return [
-    el('h1', { class: 'ad-h1', text: 'Settings' }),
-    el('p', { class: 'ad-sub', text: 'Each setting runs on its built-in default until it is changed here. Every change is logged and can be undone, and any change can be given a time instead of now.' }),
+    el('h1', { class: 'ac-h1', text: 'Settings' }),
+    el('p', { class: 'ac-sub', text: 'Each setting runs on its built-in default until it is changed here. Every change is logged and can be undone, and any change can be given a time instead of now.' }),
     scheduledList().length ? [
-      el('h2', { class: 'ad-h2 ad-gap', text: 'Scheduled' }),
-      el('ol', { class: 'ad-log' }, ...scheduledList().map(scheduledRow)),
-      el('h2', { class: 'ad-h2 ad-gap', text: 'Sections' }),
+      el('h2', { class: 'ac-h2 ac-gap', text: 'Scheduled' }),
+      el('ol', { class: 'ac-log' }, ...scheduledList().map(scheduledRow)),
+      el('h2', { class: 'ac-h2 ac-gap', text: 'Sections' }),
     ] : null,
-    el('div', { class: 'ad-list' }, ...Object.entries(CONFIG).map(([s, sec]) => {
+    el('div', { class: 'ac-list' }, ...Object.entries(CONFIG).map(([s, sec]) => {
       const keys = Object.keys(sec.keys);
       const changed = keys.filter(k => stored(`${s}/${k}`) !== undefined).length;
       const pending = keys.filter(k => S.edits.has(`${s}/${k}`)).length;
       const planned = keys.filter(k => Object.keys(S.scheduled?.[s]?.[k] || {}).length).length;
-      return el('a', { class: 'ad-card', href: `#settings/${s}` },
-        el('div', { class: 'ad-card-main' },
+      return el('a', { class: 'ac-card', href: `#settings/${s}` },
+        el('div', { class: 'ac-card-main' },
           el('b', { text: sec.title }),
-          el('span', { class: 'ad-card-sub', text: sec.about })),
-        el('div', { class: 'ad-card-side' },
-          pending ? el('span', { class: 'ad-pill warn', text: t('{n} unsaved', { n: pending }) }) : null,
-          planned ? el('span', { class: 'ad-pill', text: t('{n} scheduled', { n: planned }) }) : null,
-          el('span', { class: 'ad-pill', text: changed ? t('{n} of {m} changed', { n: changed, m: keys.length }) : t('all default') }),
-          raw('span', { class: 'ad-chev', 'aria-hidden': 'true' }, '›')));
+          el('span', { class: 'ac-card-sub', text: sec.about })),
+        el('div', { class: 'ac-card-side' },
+          pending ? el('span', { class: 'ac-pill warn', text: t('{n} unsaved', { n: pending }) }) : null,
+          planned ? el('span', { class: 'ac-pill', text: t('{n} scheduled', { n: planned }) }) : null,
+          el('span', { class: 'ac-pill', text: changed ? t('{n} of {m} changed', { n: changed, m: keys.length }) : t('all default') }),
+          raw('span', { class: 'ac-chev', 'aria-hidden': 'true' }, '›')));
     })),
   ];
 }
@@ -283,11 +283,11 @@ function viewSections() {
 function viewSection(s) {
   const sec = CONFIG[s];
   return [
-    el('a', { class: 'ad-back', href: '#settings', text: '‹ Settings' }),
-    el('h1', { class: 'ad-h1', text: sec.title }),
-    el('p', { class: 'ad-sub', text: sec.about }),
-    S.loaded.config ? el('div', { class: 'ad-form' }, ...Object.entries(sec.keys).map(([k, sp]) => settingRow(s, k, sp)))
-      : el('p', { class: 'ad-note', text: 'Loading…' }),
+    el('a', { class: 'ac-back', href: '#settings', text: '‹ Settings' }),
+    el('h1', { class: 'ac-h1', text: sec.title }),
+    el('p', { class: 'ac-sub', text: sec.about }),
+    S.loaded.config ? el('div', { class: 'ac-form' }, ...Object.entries(sec.keys).map(([k, sp]) => settingRow(s, k, sp)))
+      : el('p', { class: 'ac-note', text: 'Loading…' }),
   ];
 }
 
@@ -307,9 +307,9 @@ function setEdit(path, sp, v) {
 
 function settingRow(s, k, sp) {
   const path = `${s}/${k}`;
-  const id = `ad-${s}-${k}`;
-  const status = el('div', { class: 'ad-status' });
-  const row = el('div', { class: 'ad-row', dataset: { path } });
+  const id = `ac-${s}-${k}`;
+  const status = el('div', { class: 'ac-status' });
+  const row = el('div', { class: 'ac-row', dataset: { path } });
 
   const refresh = () => {
     const has = S.edits.has(path);
@@ -320,19 +320,19 @@ function settingRow(s, k, sp) {
     const was = stored(path);
     const meta = S.meta?.[s]?.[k];
     const kids = [];
-    if (bad) kids.push(el('span', { class: 'ad-err', text: rangeText(sp) }));
-    else if (has) kids.push(raw('span', { class: 'ad-was' }, t('Unsaved · currently {v}', { v: show(sp, was) })));
+    if (bad) kids.push(el('span', { class: 'ac-err', text: rangeText(sp) }));
+    else if (has) kids.push(raw('span', { class: 'ac-was' }, t('Unsaved · currently {v}', { v: show(sp, was) })));
     else if (was !== undefined) {
       kids.push(raw('span', {}, meta ? t('Changed {when} by {who}', { when: ago(meta.at), who: who(meta.by) }) : t('Changed')));
-    } else kids.push(el('span', { class: 'ad-pill', text: 'default' }));
+    } else kids.push(el('span', { class: 'ac-pill', text: 'default' }));
     if (!has && was !== undefined) {
-      kids.push(raw('span', { class: 'ad-def' }, t('Default: {v}', { v: show(sp, sp.def) })),
-        el('button', { class: 'ad-link', text: 'Use default', onclick: () => { S.edits.set(path, DEFAULT); render(); } }));
+      kids.push(raw('span', { class: 'ac-def' }, t('Default: {v}', { v: show(sp, sp.def) })),
+        el('button', { class: 'ac-link', text: 'Use default', onclick: () => { S.edits.set(path, DEFAULT); render(); } }));
     }
-    if (has) kids.push(el('button', { class: 'ad-link', text: 'Keep as it was', onclick: () => { S.edits.delete(path); render(); } }));
+    if (has) kids.push(el('button', { class: 'ac-link', text: 'Keep as it was', onclick: () => { S.edits.delete(path); render(); } }));
     for (const e of scheduledList().filter(x => x.path === path)) {
-      kids.push(raw('span', { class: 'ad-sched' }, t('Scheduled: {v} on {when}', { v: show(sp, e.def ? DEFAULT : e.to), when: whenText(e.at) })),
-        el('button', { class: 'ad-link', text: 'Cancel', onclick: () => askCancel(e) }));
+      kids.push(raw('span', { class: 'ac-sched' }, t('Scheduled: {v} on {when}', { v: show(sp, e.def ? DEFAULT : e.to), when: whenText(e.at) })),
+        el('button', { class: 'ac-link', text: 'Cancel', onclick: () => askCancel(e) }));
     }
     status.replaceChildren(...kids);
     renderSavebar();
@@ -347,7 +347,7 @@ function settingRow(s, k, sp) {
   } else if (sp.type === 'int') {
     // In the table's unit (MB for bytes): what is typed is multiplied back before it is stored.
     const f = fac(sp);
-    const input = el('input', { type: 'text', id, inputmode: 'numeric', autocomplete: 'off', class: 'ad-inp ad-num-inp' });
+    const input = el('input', { type: 'text', id, inputmode: 'numeric', autocomplete: 'off', class: 'ac-inp ac-num-inp' });
     input.value = String(shownValue(path, sp) / f);
     const read = () => {
       const txt = input.value.trim();
@@ -361,25 +361,25 @@ function settingRow(s, k, sp) {
       input.value = String(next);
       read();
     };
-    control = el('div', { class: 'ad-num' },
-      raw('button', { class: 'ad-step', type: 'button', 'aria-label': 'Less', onclick: () => step(-1) }, '−'),
+    control = el('div', { class: 'ac-num' },
+      raw('button', { class: 'ac-step', type: 'button', 'aria-label': 'Less', onclick: () => step(-1) }, '−'),
       input,
-      raw('button', { class: 'ad-step', type: 'button', 'aria-label': 'More', onclick: () => step(1) }, '+'));
+      raw('button', { class: 'ac-step', type: 'button', 'aria-label': 'More', onclick: () => step(1) }, '+'));
   } else if (sp.type === 'time') {
     const toLocal = (ms) => {
       const d = new Date(ms);
       const p2 = (n) => String(n).padStart(2, '0');
       return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}T${p2(d.getHours())}:${p2(d.getMinutes())}`;
     };
-    const input = el('input', { id, class: 'ad-inp', type: 'datetime-local' });
+    const input = el('input', { id, class: 'ac-inp', type: 'datetime-local' });
     input.value = toLocal(shownValue(path, sp));
     input.addEventListener('input', () => { setEdit(path, sp, input.value ? new Date(input.value).getTime() : sp.def); refresh(); });
-    control = el('div', { class: 'ad-text' }, input);
+    control = el('div', { class: 'ac-text' }, input);
   } else if (sp.type === 'choice') {
-    const input = el('select', { id, class: 'ad-inp' }, ...sp.options.map(o => raw('option', { value: o }, t(CHOICE[o] || o))));
+    const input = el('select', { id, class: 'ac-inp' }, ...sp.options.map(o => raw('option', { value: o }, t(CHOICE[o] || o))));
     input.value = shownValue(path, sp);
     input.addEventListener('change', () => { setEdit(path, sp, input.value); refresh(); });
-    control = el('div', { class: 'ad-text' }, input);
+    control = el('div', { class: 'ac-text' }, input);
   } else if (sp.type === 'set') {
     // A tick each, in the table's order; stored as the ticked ones, comma-separated.
     const now = new Set(String(shownValue(path, sp)).split(',').filter(Boolean));
@@ -390,14 +390,14 @@ function settingRow(s, k, sp) {
         setEdit(path, sp, sp.options.filter((x, i) => boxes[i].firstChild.checked).join(','));
         refresh();
       });
-      return el('label', { class: 'ad-chip' }, box, raw('span', {}, optionLabel(o)));
+      return el('label', { class: 'ac-chip' }, box, raw('span', {}, optionLabel(o)));
     });
-    control = el('div', { class: 'ad-chips', id }, ...boxes);
+    control = el('div', { class: 'ac-chips', id }, ...boxes);
   } else {
     const long = sp.max > 120;
-    const input = el(long ? 'textarea' : 'input', { id, class: 'ad-inp', maxlength: sp.max, autocomplete: 'off', rows: long ? 3 : null });
+    const input = el(long ? 'textarea' : 'input', { id, class: 'ac-inp', maxlength: sp.max, autocomplete: 'off', rows: long ? 3 : null });
     input.value = shownValue(path, sp);
-    const count = raw('span', { class: 'ad-count' }, '');
+    const count = raw('span', { class: 'ac-count' }, '');
     const read = () => {
       count.textContent = `${input.value.length}/${sp.max}`;
       setEdit(path, sp, input.value);
@@ -405,20 +405,20 @@ function settingRow(s, k, sp) {
     };
     input.addEventListener('input', read);
     count.textContent = `${input.value.length}/${sp.max}`;
-    control = el('div', { class: 'ad-text' }, input, count);
+    control = el('div', { class: 'ac-text' }, input, count);
   }
 
   // replaceChildren(), like append(), writes a null out as the text "null".
   row.replaceChildren(...[
-    el('div', { class: 'ad-row-head' },
-      el('label', { class: 'ad-label', for: id, text: sp.label }),
+    el('div', { class: 'ac-row-head' },
+      el('label', { class: 'ac-label', for: id, text: sp.label }),
       sp.type === 'bool' ? control : null),
-    sp.help ? el('p', { class: 'ad-help', text: sp.help }) : null,
+    sp.help ? el('p', { class: 'ac-help', text: sp.help }) : null,
     sp.type === 'bool' ? null : control,
-    el('div', { class: 'ad-facts' },
-      sp.type === 'int' ? raw('span', { class: 'ad-range' }, t('{min} to {max}', { min: sp.min / fac(sp), max: maxHere(sp) / fac(sp) }) + (sp.unit ? ` ${t(sp.unit)}` : '')) : null,
-      sp.deployed ? raw('span', { class: 'ad-range' }, t('this deploy is version {v}', { v: APP_VERSION })) : null,
-      el('span', { class: 'ad-where', text: WHERE[sp.where] || sp.where })),
+    el('div', { class: 'ac-facts' },
+      sp.type === 'int' ? raw('span', { class: 'ac-range' }, t('{min} to {max}', { min: sp.min / fac(sp), max: maxHere(sp) / fac(sp) }) + (sp.unit ? ` ${t(sp.unit)}` : '')) : null,
+      sp.deployed ? raw('span', { class: 'ac-range' }, t('this deploy is version {v}', { v: APP_VERSION })) : null,
+      el('span', { class: 'ac-where', text: WHERE[sp.where] || sp.where })),
     status].filter(Boolean));
   refresh();
   return row;
@@ -450,10 +450,10 @@ function renderSavebar() {
   if (!show) return;
   const bad = list.some(c => !c.ok);
   $savebar.replaceChildren(
-    raw('span', { class: 'ad-savebar-text' }, bad ? t('Fix the highlighted setting first')
+    raw('span', { class: 'ac-savebar-text' }, bad ? t('Fix the highlighted setting first')
       : list.length === 1 ? t('1 unsaved change') : t('{n} unsaved changes', { n: list.length })),
-    el('button', { class: 'ad-btn', text: 'Discard', onclick: () => { S.edits.clear(); render(); } }),
-    el('button', { class: 'ad-btn primary', text: 'Review', disabled: bad || S.saving, onclick: review }));
+    el('button', { class: 'ac-btn', text: 'Discard', onclick: () => { S.edits.clear(); render(); } }),
+    el('button', { class: 'ac-btn primary', text: 'Review', disabled: bad || S.saving, onclick: review }));
 }
 
 function closeSheet() {
@@ -463,8 +463,8 @@ function closeSheet() {
 }
 
 function openSheet(...kids) {
-  const panel = el('div', { class: 'ad-sheet-panel', role: 'dialog', 'aria-modal': 'true' }, ...kids);
-  $sheet.replaceChildren(el('div', { class: 'ad-sheet-back', onclick: closeSheet }), panel);
+  const panel = el('div', { class: 'ac-sheet-panel', role: 'dialog', 'aria-modal': 'true' }, ...kids);
+  $sheet.replaceChildren(el('div', { class: 'ac-sheet-back', onclick: closeSheet }), panel);
   $sheet.hidden = false;
   document.body.classList.add('sheet-open');
   panel.querySelector('.primary')?.focus();
@@ -473,12 +473,12 @@ function openSheet(...kids) {
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$sheet.hidden) closeSheet(); });
 
 function diffRow(label, sp, from, to) {
-  return el('li', { class: 'ad-diff' },
+  return el('li', { class: 'ac-diff' },
     raw('b', {}, label),
-    el('span', { class: 'ad-diff-vals' },
-      raw('span', { class: 'ad-from' }, show(sp, from)),
-      raw('span', { class: 'ad-arrow', 'aria-hidden': 'true' }, '→'),
-      raw('span', { class: 'ad-to' }, show(sp, to))));
+    el('span', { class: 'ac-diff-vals' },
+      raw('span', { class: 'ac-from' }, show(sp, from)),
+      raw('span', { class: 'ac-arrow', 'aria-hidden': 'true' }, '→'),
+      raw('span', { class: 'ac-to' }, show(sp, to))));
 }
 
 /** The next whole hour, as a datetime-local input wants it. */
@@ -497,13 +497,13 @@ function review() {
   const label = () => (when.value === 'later'
     ? (list.length === 1 ? t('Schedule it') : t('Schedule all {n}', { n: list.length }))
     : (list.length === 1 ? t('Save it') : t('Save all {n}', { n: list.length })));
-  const when = el('select', { class: 'ad-inp', 'aria-label': t('When') },
+  const when = el('select', { class: 'ac-inp', 'aria-label': t('When') },
     raw('option', { value: 'now' }, t('Now')), raw('option', { value: 'later' }, t('At a time…')));
-  const at = el('input', { class: 'ad-inp', type: 'datetime-local', 'aria-label': t('At') });
+  const at = el('input', { class: 'ac-inp', type: 'datetime-local', 'aria-label': t('At') });
   at.value = nextHourLocal();
-  const atField = el('label', { class: 'ad-field', hidden: true }, el('span', { class: 'ad-label', text: 'At (this device’s time)' }), at,
-    el('span', { class: 'ad-help', text: 'Applied by the Worker within a minute of it, and logged then, as the scheduler’s change on your behalf.' }));
-  const save = el('button', { class: 'ad-btn primary', text: label() });
+  const atField = el('label', { class: 'ac-field', hidden: true }, el('span', { class: 'ac-label', text: 'At (this device’s time)' }), at,
+    el('span', { class: 'ac-help', text: 'Applied by the Worker within a minute of it, and logged then, as the scheduler’s change on your behalf.' }));
+  const save = el('button', { class: 'ac-btn primary', text: label() });
   when.addEventListener('change', () => { atField.hidden = when.value !== 'later'; save.textContent = label(); });
   save.addEventListener('click', async () => {
     const changes = list.map(c => ({ path: c.path, to: c.to }));
@@ -526,12 +526,12 @@ function review() {
     else save.disabled = false;
   });
   openSheet(
-    el('h2', { class: 'ad-h2', text: list.length === 1 ? t('Save this change?') : t('Save these {n} changes?', { n: list.length }) }),
-    el('ul', { class: 'ad-diffs' }, ...list.map(c => diffRow(labelOf(c.path), c.sp, c.from, c.to))),
-    el('label', { class: 'ad-field' }, el('span', { class: 'ad-label', text: 'When' }), when),
+    el('h2', { class: 'ac-h2', text: list.length === 1 ? t('Save this change?') : t('Save these {n} changes?', { n: list.length }) }),
+    el('ul', { class: 'ac-diffs' }, ...list.map(c => diffRow(labelOf(c.path), c.sp, c.from, c.to))),
+    el('label', { class: 'ac-field' }, el('span', { class: 'ac-label', text: 'When' }), when),
     atField,
-    el('div', { class: 'ad-sheet-actions' },
-      el('button', { class: 'ad-btn', text: 'Back', onclick: closeSheet }),
+    el('div', { class: 'ac-sheet-actions' },
+      el('button', { class: 'ac-btn', text: 'Back', onclick: closeSheet }),
       save));
 }
 
@@ -573,22 +573,22 @@ function scheduledRow(e) {
   const [s, k] = e.path.split('/');
   const sp = spec(s, k);
   const late = e.at < Date.now() - 3 * 60_000;
-  return el('li', { class: `ad-entry${late ? ' ad-late' : ''}` },
-    el('div', { class: 'ad-entry-main' },
+  return el('li', { class: `ac-entry${late ? ' ac-late' : ''}` },
+    el('div', { class: 'ac-entry-main' },
       raw('b', {}, labelOf(e.path)),
-      el('span', { class: 'ad-diff-vals' },
-        raw('span', { class: 'ad-from' }, show(sp, stored(e.path))),
-        raw('span', { class: 'ad-arrow', 'aria-hidden': 'true' }, '→'),
-        raw('span', { class: 'ad-to' }, show(sp, e.def ? DEFAULT : e.to))),
-      raw('span', { class: 'ad-entry-meta' }, [whenText(e.at), t('by {who}', { who: who(e.by) })].join(' · ')),
-      late ? el('span', { class: 'ad-err', text: 'Overdue: the Worker has not applied it. ADMIN.md §10 says what to check.' }) : null),
-    el('button', { class: 'ad-btn small', text: 'Cancel', onclick: () => askCancel(e) }));
+      el('span', { class: 'ac-diff-vals' },
+        raw('span', { class: 'ac-from' }, show(sp, stored(e.path))),
+        raw('span', { class: 'ac-arrow', 'aria-hidden': 'true' }, '→'),
+        raw('span', { class: 'ac-to' }, show(sp, e.def ? DEFAULT : e.to))),
+      raw('span', { class: 'ac-entry-meta' }, [whenText(e.at), t('by {who}', { who: who(e.by) })].join(' · ')),
+      late ? el('span', { class: 'ac-err', text: 'Overdue: the Worker has not applied it. ADMIN.md §10 says what to check.' }) : null),
+    el('button', { class: 'ac-btn small', text: 'Cancel', onclick: () => askCancel(e) }));
 }
 
 function askCancel(e) {
   const [s, k] = e.path.split('/');
   const sp = spec(s, k);
-  const go = el('button', { class: 'ad-btn primary', text: 'Cancel it' });
+  const go = el('button', { class: 'ac-btn primary', text: 'Cancel it' });
   go.addEventListener('click', async () => {
     go.disabled = true;
     try {
@@ -602,11 +602,11 @@ function askCancel(e) {
     }
   });
   openSheet(
-    el('h2', { class: 'ad-h2', text: 'Cancel this scheduled change?' }),
-    el('ul', { class: 'ad-diffs' }, diffRow(labelOf(e.path), sp, stored(e.path), e.def ? DEFAULT : e.to)),
-    raw('p', { class: 'ad-sub' }, t('It was due {when}.', { when: whenText(e.at) })),
-    el('div', { class: 'ad-sheet-actions' },
-      el('button', { class: 'ad-btn', text: 'Back', onclick: closeSheet }),
+    el('h2', { class: 'ac-h2', text: 'Cancel this scheduled change?' }),
+    el('ul', { class: 'ac-diffs' }, diffRow(labelOf(e.path), sp, stored(e.path), e.def ? DEFAULT : e.to)),
+    raw('p', { class: 'ac-sub' }, t('It was due {when}.', { when: whenText(e.at) })),
+    el('div', { class: 'ac-sheet-actions' },
+      el('button', { class: 'ac-btn', text: 'Back', onclick: closeSheet }),
       go));
 }
 
@@ -647,43 +647,43 @@ async function write(changes, { undo = null } = {}) {
 
 function viewLog() {
   const head = [
-    el('h1', { class: 'ad-h1', text: 'Change log' }),
-    el('p', { class: 'ad-sub', text: 'Every change made here, newest first. Undo puts a setting back to what it was before that change, as a new change of its own.' }),
+    el('h1', { class: 'ac-h1', text: 'Change log' }),
+    el('p', { class: 'ac-sub', text: 'Every change made here, newest first. Undo puts a setting back to what it was before that change, as a new change of its own.' }),
   ];
-  if (!S.loaded.log) return [...head, el('p', { class: 'ad-note', text: 'Loading…' })];
-  if (!S.log.length) return [...head, el('p', { class: 'ad-note', text: 'Nothing has been changed yet.' })];
+  if (!S.loaded.log) return [...head, el('p', { class: 'ac-note', text: 'Loading…' })];
+  if (!S.log.length) return [...head, el('p', { class: 'ac-note', text: 'Nothing has been changed yet.' })];
   const byId = new Map(S.log.map(e => [e.id, e]));
-  return [...head, el('ol', { class: 'ad-log' }, ...S.log.map(e => logRow(e, byId)))];
+  return [...head, el('ol', { class: 'ac-log' }, ...S.log.map(e => logRow(e, byId)))];
 }
 
 function logRow(e, byId) {
   // An announcement's entry: what was done to it. Undone by editing it, not from here.
   if (String(e.path).startsWith('ann/')) {
     const what = { create: t('created'), edit: t('edited'), end: t('ended'), again: t('shown again') }[e.action] || e.action;
-    return el('li', { class: 'ad-entry' },
-      el('div', { class: 'ad-entry-main' },
+    return el('li', { class: 'ac-entry' },
+      el('div', { class: 'ac-entry-main' },
         raw('b', {}, labelOf(e.path)),
-        raw('span', { class: 'ad-reason' }, `${e.title ? `“${e.title}” ` : ''}${what}`),
-        raw('span', { class: 'ad-entry-meta', title: e.at ? new Date(e.at).toLocaleString() : '' }, [who(e.uid), ago(e.at)].join(' · '))),
-      el('a', { class: 'ad-btn small', href: `#ann/${String(e.path).slice(4)}`, text: 'Open' }));
+        raw('span', { class: 'ac-reason' }, `${e.title ? `“${e.title}” ` : ''}${what}`),
+        raw('span', { class: 'ac-entry-meta', title: e.at ? new Date(e.at).toLocaleString() : '' }, [who(e.uid), ago(e.at)].join(' · '))),
+      el('a', { class: 'ac-btn small', href: `#ann/${String(e.path).slice(4)}`, text: 'Open' }));
   }
   const [s, k] = String(e.path).split('/');
   const sp = spec(s, k);
   const now = stored(e.path);
   const undone = byId.get(e.undo);
   const can = !!sp && (e.from === undefined || validHere(sp, e.from)) && now !== e.from;
-  return el('li', { class: 'ad-entry' },
-    el('div', { class: 'ad-entry-main' },
+  return el('li', { class: 'ac-entry' },
+    el('div', { class: 'ac-entry-main' },
       raw('b', {}, labelOf(e.path)),
-      el('span', { class: 'ad-diff-vals' },
-        raw('span', { class: 'ad-from' }, show(sp, e.from)),
-        raw('span', { class: 'ad-arrow', 'aria-hidden': 'true' }, '→'),
-        raw('span', { class: 'ad-to' }, show(sp, e.to))),
-      raw('span', { class: 'ad-entry-meta', title: e.at ? new Date(e.at).toLocaleString() : '' },
+      el('span', { class: 'ac-diff-vals' },
+        raw('span', { class: 'ac-from' }, show(sp, e.from)),
+        raw('span', { class: 'ac-arrow', 'aria-hidden': 'true' }, '→'),
+        raw('span', { class: 'ac-to' }, show(sp, e.to))),
+      raw('span', { class: 'ac-entry-meta', title: e.at ? new Date(e.at).toLocaleString() : '' },
         [e.sched ? t('scheduled by {who}', { who: who(e.by) }) : who(e.uid), ago(e.at), e.undo ? (undone ? t('undid the change from {when}', { when: ago(undone.at) }) : t('an undo')) : '']
           .filter(Boolean).join(' · '))),
     el('button', {
-      class: 'ad-btn small', text: 'Undo', disabled: !can,
+      class: 'ac-btn small', text: 'Undo', disabled: !can,
       title: !sp ? t('That setting no longer exists') : now === e.from ? t('It is already {v}', { v: show(sp, e.from) }) : null,
       onclick: () => askUndo(e, sp),
     }));
@@ -693,7 +693,7 @@ function askUndo(e, sp) {
   const now = stored(e.path);
   const to = e.from === undefined ? DEFAULT : e.from;
   const moved = now !== e.to;
-  const go = el('button', { class: 'ad-btn primary', text: 'Undo it' });
+  const go = el('button', { class: 'ac-btn primary', text: 'Undo it' });
   go.addEventListener('click', async () => {
     go.disabled = true;
     // An unsaved edit to the same setting would be stale after this.
@@ -703,12 +703,12 @@ function askUndo(e, sp) {
     } else go.disabled = false;
   });
   openSheet(
-    el('h2', { class: 'ad-h2', text: 'Undo this change?' }),
-    el('ul', { class: 'ad-diffs' }, diffRow(labelOf(e.path), sp, now, to)),
-    moved ? raw('p', { class: 'ad-warn' }, t('It has been changed again since: it is {now} now, not {was}. Undo sets it to {to} anyway.',
+    el('h2', { class: 'ac-h2', text: 'Undo this change?' }),
+    el('ul', { class: 'ac-diffs' }, diffRow(labelOf(e.path), sp, now, to)),
+    moved ? raw('p', { class: 'ac-warn' }, t('It has been changed again since: it is {now} now, not {was}. Undo sets it to {to} anyway.',
       { now: show(sp, now), was: show(sp, e.to), to: show(sp, to) })) : null,
-    el('div', { class: 'ad-sheet-actions' },
-      el('button', { class: 'ad-btn', text: 'Back', onclick: closeSheet }),
+    el('div', { class: 'ac-sheet-actions' },
+      el('button', { class: 'ac-btn', text: 'Back', onclick: closeSheet }),
       go));
 }
 
@@ -724,30 +724,30 @@ const banFor = () => [
 
 /** People: testers (admin-live.js) and bans, as two views of one tab. */
 function viewPeople(sub) {
-  const nav = el('nav', { class: 'ad-subtabs', 'aria-label': t('People') },
+  const nav = el('nav', { class: 'ac-subtabs', 'aria-label': t('People') },
     ...[['bans', t('Bans'), Object.values(S.bans).filter(b => banActive(b)).length], ['testers', t('Testers'), Object.keys(S.testers || {}).length]]
-      .map(([id, label, n]) => raw('a', { class: `ad-subtab${sub === id ? ' on' : ''}`, href: `#people/${id}`, 'aria-current': sub === id ? 'page' : null },
+      .map(([id, label, n]) => raw('a', { class: `ac-subtab${sub === id ? ' on' : ''}`, href: `#people/${id}`, 'aria-current': sub === id ? 'page' : null },
         n ? `${label} · ${n}` : label)));
-  const head = [el('h1', { class: 'ad-h1', text: 'People' }), nav];
+  const head = [el('h1', { class: 'ac-h1', text: 'People' }), nav];
   return [...head, ...(sub === 'testers' ? live.viewTesters() : viewBans())];
 }
 
 function viewBans() {
   const head = [
-    el('p', { class: 'ad-sub', text: 'A banned account cannot post in either chat, share a replay, or put a time or a note on the Scramble of the Day board. Its timer and its own synced solves are untouched. The database rules and the Worker enforce it. In the timer, an admin can also ban from a chat message, a board row or a shared replay.' }),
+    el('p', { class: 'ac-sub', text: 'A banned account cannot post in either chat, share a replay, or put a time or a note on the Scramble of the Day board. Its timer and its own synced solves are untouched. The database rules and the Worker enforce it. In the timer, an admin can also ban from a chat message, a board row or a shared replay.' }),
   ];
-  const field = (label, input) => el('label', { class: 'ad-field' }, el('span', { class: 'ad-label', text: label }), input);
-  const uid = el('input', { class: 'ad-inp', autocomplete: 'off', spellcheck: 'false', autocapitalize: 'off', maxlength: 128 });
-  const name = el('input', { class: 'ad-inp', autocomplete: 'off', maxlength: 32 });
-  const reason = el('input', { class: 'ad-inp', autocomplete: 'off', maxlength: 200 });
-  const len = el('select', { class: 'ad-inp' }, ...banFor().map((b, i) => raw('option', { value: String(i) }, b.label)));
-  const form = el('form', { class: 'ad-row ad-ban-form' },
+  const field = (label, input) => el('label', { class: 'ac-field' }, el('span', { class: 'ac-label', text: label }), input);
+  const uid = el('input', { class: 'ac-inp', autocomplete: 'off', spellcheck: 'false', autocapitalize: 'off', maxlength: 128 });
+  const name = el('input', { class: 'ac-inp', autocomplete: 'off', maxlength: 32 });
+  const reason = el('input', { class: 'ac-inp', autocomplete: 'off', maxlength: 200 });
+  const len = el('select', { class: 'ac-inp' }, ...banFor().map((b, i) => raw('option', { value: String(i) }, b.label)));
+  const form = el('form', { class: 'ac-row ac-ban-form' },
     el('b', { text: 'Ban an account' }),
     field(t('Account id (uid)'), uid),
     field(t('Name, for this list'), name),
     field(t('Reason, which they are shown'), reason),
     field(t('For'), len),
-    el('div', { class: 'ad-sheet-actions' }, el('button', { class: 'ad-btn primary', type: 'submit', text: 'Ban…' })));
+    el('div', { class: 'ac-sheet-actions' }, el('button', { class: 'ac-btn primary', type: 'submit', text: 'Ban…' })));
   form.addEventListener('submit', (e) => {
     e.preventDefault();
     const id = uid.value.trim();
@@ -760,10 +760,10 @@ function viewBans() {
     return [...head, gate('Publish the rules first', 'Bans need the firebase.rules.json from this version of the page. Publish it in the Firebase console and reload.')];
   }
   const rows = Object.entries(S.bans).sort((a, b) => (b[1]?.at || 0) - (a[1]?.at || 0));
-  const list = !S.loaded.bans ? el('p', { class: 'ad-note', text: 'Loading…' })
-    : !rows.length ? el('p', { class: 'ad-note', text: 'Nobody is banned.' })
-      : el('ol', { class: 'ad-log' }, ...rows.map(([id, b]) => banRow(id, b)));
-  return [...head, form, el('h2', { class: 'ad-h2 ad-gap', text: 'Banned now' }), list];
+  const list = !S.loaded.bans ? el('p', { class: 'ac-note', text: 'Loading…' })
+    : !rows.length ? el('p', { class: 'ac-note', text: 'Nobody is banned.' })
+      : el('ol', { class: 'ac-log' }, ...rows.map(([id, b]) => banRow(id, b)));
+  return [...head, form, el('h2', { class: 'ac-h2 ac-gap', text: 'Banned now' }), list];
 }
 
 function banRow(id, b) {
@@ -771,14 +771,14 @@ function banRow(id, b) {
   const until = typeof b?.until === 'number'
     ? (live ? t('until {when}', { when: new Date(b.until).toLocaleString() }) : t('ended {when}', { when: ago(b.until) }))
     : t('until unbanned');
-  return el('li', { class: `ad-entry${live ? '' : ' ad-ended'}` },
-    el('div', { class: 'ad-entry-main' },
+  return el('li', { class: `ac-entry${live ? '' : ' ac-ended'}` },
+    el('div', { class: 'ac-entry-main' },
       raw('b', {}, b?.name || id),
-      raw('span', { class: 'ad-uid' }, id),
-      raw('span', { class: 'ad-reason' }, b?.reason || '—'),
-      raw('span', { class: 'ad-entry-meta', title: b?.at ? new Date(b.at).toLocaleString() : '' },
+      raw('span', { class: 'ac-uid' }, id),
+      raw('span', { class: 'ac-reason' }, b?.reason || '—'),
+      raw('span', { class: 'ac-entry-meta', title: b?.at ? new Date(b.at).toLocaleString() : '' },
         [ago(b?.at), b?.by ? t('by {who}', { who: who(b.by) }) : '', until].filter(Boolean).join(' · '))),
-    el('button', { class: 'ad-btn small', text: live ? t('Unban') : t('Clear'), onclick: () => askUnban(id, b) }));
+    el('button', { class: 'ac-btn small', text: live ? t('Unban') : t('Clear'), onclick: () => askUnban(id, b) }));
 }
 
 /**
@@ -788,12 +788,12 @@ function banRow(id, b) {
  */
 function askBan({ uid, name = '', reason = '', ms = 0, then = null }) {
   if (uid === S.user?.uid) { toast(t('That is your own account'), { kind: 'bad', long: true }); return; }
-  const why = el('input', { class: 'ad-inp', autocomplete: 'off', maxlength: 200 });
+  const why = el('input', { class: 'ac-inp', autocomplete: 'off', maxlength: 200 });
   why.value = String(reason).slice(0, 200);
   const choices = banFor();
-  const len = el('select', { class: 'ad-inp' }, ...choices.map((b, i) => raw('option', { value: String(i) }, b.label)));
+  const len = el('select', { class: 'ac-inp' }, ...choices.map((b, i) => raw('option', { value: String(i) }, b.label)));
   len.value = String(Math.max(0, choices.findIndex(b => b.ms === ms)));
-  const go = el('button', { class: 'ad-btn primary', text: 'Ban' });
+  const go = el('button', { class: 'ac-btn primary', text: 'Ban' });
   go.addEventListener('click', async () => {
     go.disabled = true;
     const pick = choices[Number(len.value)] || choices[0];
@@ -808,20 +808,20 @@ function askBan({ uid, name = '', reason = '', ms = 0, then = null }) {
       go.disabled = false;
     }
   });
-  const field = (label, input) => el('label', { class: 'ad-field' }, el('span', { class: 'ad-label', text: label }), input);
+  const field = (label, input) => el('label', { class: 'ac-field' }, el('span', { class: 'ac-label', text: label }), input);
   openSheet(
-    el('h2', { class: 'ad-h2', text: t('Ban {who}?', { who: name || uid }) }),
-    raw('span', { class: 'ad-uid' }, uid),
+    el('h2', { class: 'ac-h2', text: t('Ban {who}?', { who: name || uid }) }),
+    raw('span', { class: 'ac-uid' }, uid),
     field(t('Reason, which they are shown'), why),
     field(t('For'), len),
-    el('p', { class: 'ad-sub', text: 'Until it ends or you unban them: no chat messages, no shared replays, nothing on the Scramble of the Day board. A race account is a throwaway, so a ban on one lasts only as long as that tab’s account.' }),
-    el('div', { class: 'ad-sheet-actions' },
-      el('button', { class: 'ad-btn', text: 'Back', onclick: closeSheet }),
+    el('p', { class: 'ac-sub', text: 'Until it ends or you unban them: no chat messages, no shared replays, nothing on the Scramble of the Day board. A race account is a throwaway, so a ban on one lasts only as long as that tab’s account.' }),
+    el('div', { class: 'ac-sheet-actions' },
+      el('button', { class: 'ac-btn', text: 'Back', onclick: closeSheet }),
       go));
 }
 
 function askUnban(id, b) {
-  const go = el('button', { class: 'ad-btn primary', text: banActive(b) ? t('Unban') : t('Clear') });
+  const go = el('button', { class: 'ac-btn primary', text: banActive(b) ? t('Unban') : t('Clear') });
   go.addEventListener('click', async () => {
     go.disabled = true;
     try {
@@ -835,9 +835,9 @@ function askUnban(id, b) {
     }
   });
   openSheet(
-    el('h2', { class: 'ad-h2', text: banActive(b) ? t('Unban {who}?', { who: b?.name || id }) : t('Clear this ended ban?') }),
-    el('div', { class: 'ad-sheet-actions' },
-      el('button', { class: 'ad-btn', text: 'Back', onclick: closeSheet }),
+    el('h2', { class: 'ac-h2', text: banActive(b) ? t('Unban {who}?', { who: b?.name || id }) : t('Clear this ended ban?') }),
+    el('div', { class: 'ac-sheet-actions' },
+      el('button', { class: 'ac-btn', text: 'Back', onclick: closeSheet }),
       go));
 }
 
