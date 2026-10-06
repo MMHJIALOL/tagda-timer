@@ -29,6 +29,13 @@
             "bld":          { ".validate": true },
             "phases":       { ".validate": true },
             "recon":        { ".validate": true },
+            "competitionSetId": { ".validate": "!newData.exists() || (newData.isString() && root.child('users').child($uid).child('competitionSets').child(newData.val()).child('status').val() !== 'discarded')" },
+            "competitionAttempt": { ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 1 && newData.val() % 1 === 0)" },
+            "competitionTiming": { ".validate": true },
+            "competitionRecordedAt": { ".validate": "!newData.exists() || newData.isNumber()" },
+            "competitionStartedAt": { ".validate": "!newData.exists() || newData.isNumber()" },
+            "competitionInspectionAt": { ".validate": "!newData.exists() || newData.isNumber()" },
+            "penaltyUpdatedAt": { ".validate": "!newData.exists() || newData.isNumber()" },
             "$other":       { ".validate": false }
           }
         },
@@ -60,6 +67,11 @@
         },
         "learn": { ".validate": "newData.hasChildren() || !newData.exists()" },
 
+        "competitionSets": {
+          "$id": {
+            ".validate": "newData.hasChildren(['id', 'status', 'size', 'sessionId', 'event', 'createdAt']) && newData.child('id').val() === $id && newData.child('size').isNumber() && newData.child('size').val() >= 5 && newData.child('size').val() % 1 === 0 && (data.child('status').val() !== 'discarded' || newData.child('status').val() === 'discarded')"
+          }
+        },
         "gear":        { "$id":   { ".validate": "newData.hasChildren(['id']) && newData.child('id').val() === $id" } },
         "gearLog":     { "$id":   { ".validate": "newData.hasChildren(['id', 'gearId']) && newData.child('id').val() === $id" } },
         "letterPairs": { "$pair": { ".validate": "newData.hasChildren(['pair']) && newData.child('pair').val() === $pair" } },

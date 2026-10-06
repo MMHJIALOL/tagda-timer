@@ -819,3 +819,20 @@ typed-result input.
 The reconstructor suggests and animates, but it cannot know what you actually turned.
 Without a smart cube it removes the typing, not the remembering. It reads CFOP; Roux, ZZ and
 freestyle solves will not split into phases cleanly, and it says so rather than guessing.
+
+
+## Competition Mode
+
+Start **Competition Mode** from the **Session** picker (on a phone, the Sessions section of the event sheet). Choose Ao5, Ao12, or a custom whole number of attempts of at least 5. The selected event and set size are fixed, and the set stays in the current session. Switch explicitly to Random state when leaving a trainer or a pasted scramble list. Relay, FMC, Multi-Blind, race and virtual sessions are excluded.
+
+A set saves each ordered attempt and resumes after a refresh. Use **Leave view** to do ordinary practice, then **Return to set** to resume. Completion opens the exact average and stops collecting attempts; **Start another AoX** starts the next set explicitly. Competition history has session/event filters. Ordinary rolling averages keep their existing behavior.
+
+Individual Competition attempts cannot be deleted. Correct their penalties, discard an unfinished set, or delete the entire average and its replays. Session clearing/deletion explains the whole-set consequence. Whole-set deletions have no undo, and merging an old backup cannot resurrect a deleted set. Tagda backups now include `competitionSets` in format version 2; old ordinary backups remain supported.
+
+Replay defaults to the existing per-solve behavior when the webcam setting is enabled. **Record entire AoX** is opt-in at setup: it records scrambling, inspection, attempts and gaps into one local video. Capture is limited to **30 minutes / 256 MiB**, with a 32 MiB storage reserve; these limits do not limit the number of timed attempts. Video chunks are saved every two seconds, so a killed page may lose the final unsaved chunk. Leaving the view, switching sessions/tabs, camera failure, device sleep or storage exhaustion interrupts full recording while preserving solves. Surviving footage is explicitly labeled interrupted. Where supported, a wake lock holds the screen on during capture. Background recording is intentionally stopped when the tab is hidden.
+
+The entire replay opens in the normal replay player. **Save video** offers **Original**, **Landscape**, and **Reel**, with the same crop controls and MP4/WebM export pipeline as ordinary solves. Landscape and Reel show attempt numbers, clocks and current penalties; Original keeps the filmed picture and small watermark. Whole-set videos live in a separate local media database and are not pruned to make room for another capture. Cloud sync and JSON backups carry set metadata and solves, without the video bytes. A device without the video says it is stored on the original device. Updated `firebase.rules.json` must be deployed for the new metadata and solve fields to sync.
+
+Completed sets have a separate paper score-sheet card, clearly branded Tagda Timer and labeled as unofficial practice. Cards show numbered results, trim markers and the calculated final average. They use the existing copy/save/device-share controls and paginate at 12 legible rows per image. Cards generated after a penalty correction use the corrected score; exported images remain immutable.
+
+See [Competition Mode verification and handover](docs/competition-mode.md) for checks and local preview instructions.

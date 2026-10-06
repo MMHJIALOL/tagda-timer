@@ -11,7 +11,7 @@ import { el, download, fmtResult } from './util.js';
 import { eff, isMoveResult } from './stats.js';
 import { toast } from './toast.js';
 import {
-  drawSolveCard, drawAverageCard, drawReconCard, canvasBlob, shareText, socialLinks,
+  drawCompetitionCard, drawSolveCard, drawAverageCard, drawReconCard, canvasBlob, shareText, socialLinks,
   SITE, SITE_URL, INSTA, INSTA_URL,
 } from './sharecard.js';
 
@@ -196,4 +196,20 @@ export async function shareAverage(solves, { label, value, trimmed } = {}) {
     filename: `tagda-${slug(label)}-${stamp(solves.at(-1).createdAt)}.png`,
     text: shareText(label, value),
   });
+}
+
+
+export async function shareCompetitionCard(set, solves, page = 0) {
+  const canvas = await drawCompetitionCard(set, solves, { page });
+  present(canvas, { title: t('Competition score sheet'),
+    filename: `tagda-Ao${set.size}-${stamp(set.createdAt)}-${page+1}.png`,
+    text: `Tagda Timer · ${t('Competition practice')} · Ao${set.size} · tagdatimer.me` });
+  const pages=Math.ceil(set.size/12);
+  if(pages>1){
+    const nav=el('div',{class:'competition-chips'},
+      el('button',{class:'ghost-btn',text:t('Previous'),disabled:page===0,onclick:()=>shareCompetitionCard(set,solves,page-1)}),
+      el('span',{text:`${page+1}/${pages}`}),
+      el('button',{class:'ghost-btn',text:t('Next'),disabled:page>=pages-1,onclick:()=>shareCompetitionCard(set,solves,page+1)}));
+    host.querySelector('.sh-head').after(nav);
+  }
 }

@@ -418,6 +418,8 @@ function openEventSheet() {
       }),
       { label: t('New session'), accent: true, keep: true, onSelect: async () => { await A.newSession(); refresh(); } },
       { label: t('Manage sessions'), chevron: true, onSelect: () => X.openPanel('Sessions', 'buildSessions') },
+      { label: t('Start Competition Mode'), accent: true, onSelect: () => A.openCompetition() },
+      { label: t('Competition history'), chevron: true, onSelect: () => A.competitionHistory() },
     ], () => sheet);
     return [evGrid, settingsRows, el('h3', { class: 'sheet-label', text: t('Sessions') }), sessions];
   };
@@ -584,7 +586,7 @@ export function openSolveSheet(solve, { focusNote = false } = {}) {
     if (extra.length) out.push(sheetRows(extra, () => sheet));
     out.push(el('div', { class: 'ph-sv-foot' },
       wordBtn('ph-link', I.copy, t('Copy scramble'), () => X.copyToast(solve.scramble, 'Scramble')),
-      wordBtn('ph-link danger' + (armed ? ' armed' : ''), I.trash, armed ? t('Tap again to delete') : t('Delete'), () => {
+      solve.competitionSetId ? wordBtn('ph-link', I.trash, t('Open Competition average · whole-set deletion only'), () => { sheet.close(); A.openCompetitionSet(solve.competitionSetId); }) : wordBtn('ph-link danger' + (armed ? ' armed' : ''), I.trash, armed ? t('Tap again to delete') : t('Delete'), () => {
         if (!armed) { armed = true; refresh(); setTimeout(() => { if (armed) { armed = false; refresh(); } }, 3000); return; }
         armed = false;
         noteEl = null;          // nothing to keep on a solve that is going

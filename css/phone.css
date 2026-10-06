@@ -637,6 +637,11 @@ body.ph #panel-times .hist-cols {
   min-height: 0; margin: 0 0 4px; padding: 6px 12px 4px; border: 0;
   font-family: var(--font-ui); font-size: 12px; font-weight: 600; letter-spacing: 0; text-transform: none; color: var(--text-dim);
 }
+body.ph #panel-times .hist-cols[hidden] { display: none; }
+body.ph .competition-set-box .competition-set-attempt { grid-template-columns: 24px minmax(0, 1fr); height: 44px; padding: 0 6px; }
+body.ph .competition-set-box .competition-set-attempt .t { font-size: calc(17px * var(--times-scale)); }
+body.ph .competition-set-heading { padding: 13px 12px; }
+body.ph .competition-set-title { font-size: 13px; }
 body.ph #panel-times .hist-cols > span:first-child::before { content: '#'; }
 body.ph #panel-times .hist-cols > span:last-child:empty { display: none; }
 body.ph #panel-times .hist-cols [data-sort].sorted { color: var(--accent-text); }

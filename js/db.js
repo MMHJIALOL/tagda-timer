@@ -7,7 +7,7 @@ import { t } from './i18n.js';
    =========================================================== */
 
 const DB_NAME = 'tagdatimer';
-const DB_VER  = 3;
+const DB_VER  = 4;
 let _db = null;
 
 function openDB() {
@@ -46,9 +46,22 @@ function openDB() {
         const g = db.createObjectStore('gearLog', { keyPath: 'id' });
         g.createIndex('byGear', 'gearId');
       }
+      // v4 — fixed competition sets, with immutable ordered solve membership.
+      if (!db.objectStoreNames.contains('competitionSets')) {
+        const c = db.createObjectStore('competitionSets', { keyPath: 'id' });
+        c.createIndex('bySession', 'sessionId');
+        c.createIndex('byStatus', 'status');
+      }
+      const solves = req.transaction.objectStore('solves');
+      if (!solves.indexNames.contains('byCompetition')) solves.createIndex('byCompetition', 'competitionSetId');
       void e;
     };
-    req.onsuccess = () => { _db = req.result; resolve(_db); };
+    req.onblocked = () => reject(new Error(t('Close older Tagda Timer tabs, then reload to upgrade the local database.')));
+    req.onsuccess = () => {
+      const connection = req.result; _db = connection;
+      connection.onversionchange = () => { connection.close(); if (_db === connection) _db = null; };
+      resolve(connection);
+    };
     req.onerror = () => reject(req.error);
   });
 }
@@ -70,7 +83,7 @@ export const wrap = (req) => new Promise((res, rej) => {
    subscriber, and it reaches in through this tiny pub-sub instead of db.js
    importing Firebase. Fired after the local write has already succeeded, so
    a hook throwing or a slow cloud push can never affect what IndexedDB has. */
-const hooks = { solves: [], solvesBatch: [], sessions: [], solvesDel: [], sessionsDel: [], kv: [], rec: [], recDel: [] };
+const hooks = { solves: [], solvesBatch: [], sessions: [], solvesDel: [], sessionsDel: [], kv: [], rec: [], recDel: [], competition: [] };
 
 export function onWrite(store, fn) {
   hooks[store].push(fn);
@@ -133,6 +146,7 @@ function saveTombstones() {
 }
 
 export const Tombstones = {
+  async refresh() { _tomb = null; _tombPromise = null; return loadTombstones(); },
   async all() { return loadTombstones(); },
   async has(store, id) { return !!(await loadTombstones())[store]?.[id]; },
 
@@ -174,14 +188,31 @@ export const Tombstones = {
 /* ---------------- solves ---------------- */
 export const Solves = {
   async put(solve)      {
-    const r = await wrap((await tx('solves', 'readwrite')).put(solve));
+    const r = await atomic(['solves', 'competitionSets'], async tr => {
+      const os = tr.objectStore('solves'), previous = await wrap(os.get(solve.id));
+      if (previous?.competitionSetId && (solve.competitionSetId !== previous.competitionSetId || solve.competitionAttempt !== previous.competitionAttempt || solve.timeMs !== previous.timeMs || solve.scramble !== previous.scramble)) {
+        throw new Error(t('Competition attempt membership and raw time cannot be changed'));
+      }
+      if (solve.competitionSetId) {
+        const c = await wrap(tr.objectStore('competitionSets').get(solve.competitionSetId));
+        if (!c || c.solveIds[solve.competitionAttempt-1] !== solve.id) throw new Error(t('This Competition average was deleted or is still syncing'));
+      }
+      return wrap(os.put(solve));
+    });
     await Tombstones.clear('solves', [solve.id]);
     emit('solves', solve);
     return r;
   },
   async putMany(list)   {
-    const store = await tx('solves', 'readwrite');
-    await Promise.all(list.map(s => wrap(store.put(s))));
+    await atomic(['solves'], async tr => {
+      const store = tr.objectStore('solves');
+      const current = await Promise.all(list.map(s=>wrap(store.get(s.id))));
+      for (let i=0;i<list.length;i++) {
+        const s=list[i],prev=current[i];
+        if (prev?.competitionSetId && (s.competitionSetId!==prev.competitionSetId || s.competitionAttempt!==prev.competitionAttempt || s.timeMs!==prev.timeMs || s.scramble!==prev.scramble)) throw new Error(t('Competition attempt membership and raw time cannot be changed'));
+        store.put(s);
+      }
+    });
     await Tombstones.clear('solves', list.map(s => s.id));
     // One batch event, not one per solve — a 1000-solve csTimer import
     // firing 1000 individual cloud writes would be needless amplification
@@ -191,18 +222,17 @@ export const Solves = {
   async get(id)         { return wrap((await tx('solves')).get(id)); },
   async count()         { return wrap((await tx('solves')).count()); },
   async del(id)         {
-    const r = await wrap((await tx('solves', 'readwrite')).delete(id));
-    await Tombstones.record('solves', [id]);
-    emit('solvesDel', [id]);
-    return r;
+    return this.delMany([id]);
   },
   async delMany(ids)    {
     if (!ids.length) return;
-    const store = await tx('solves', 'readwrite');
-    await Promise.all(ids.map(id => wrap(store.delete(id))));
+    await atomic(['solves'], async tr => {
+      const store = tr.objectStore('solves');
+      const rows = await Promise.all(ids.map(id => wrap(store.get(id))));
+      if (rows.some(s => s?.competitionSetId)) throw new Error(t('Competition attempts belong to a set. Delete the entire average.'));
+      ids.forEach(id => store.delete(id));
+    });
     await Tombstones.record('solves', ids);
-    // One event for the batch, mirroring putMany: clearing a 500-solve
-    // session is a single multi-path delete upstream, not 500 of them.
     emit('solvesDel', ids);
   },
   /** Chronological (oldest first) list for a session. */
@@ -216,6 +246,7 @@ export const Solves = {
     return list.sort((a, b) => a.createdAt - b.createdAt);
   },
   async clearSession(sessionId) {
+    for (const set of (await CompetitionSets.all()).filter(s => s.sessionId === sessionId)) await CompetitionSets.delete(set.id);
     const list = await this.bySession(sessionId);
     await this.delMany(list.map(s => s.id));
     return list;
@@ -232,6 +263,7 @@ export const Sessions = {
   },
   async get(id) { return wrap((await tx('sessions')).get(id)); },
   async del(id) {
+    if ((await CompetitionSets.all()).some(c=>c.sessionId===id)) throw new Error(t('Clear the session’s whole Competition sets before deleting it'));
     const r = await wrap((await tx('sessions', 'readwrite')).delete(id));
     await Tombstones.record('sessions', [id]);
     emit('sessionsDel', [id]);
@@ -312,12 +344,17 @@ export const LetterPairs = {
 
 /* ---------------- backup ---------------- */
 export async function exportAll() {
+  // Solves and their set boundaries must come from the same snapshot, even
+  // when another tab records an attempt while a backup is being downloaded.
+  const snapshot = (await openDB()).transaction(['sessions','solves','competitionSets']);
+  const [sessions, solves, sets] = await Promise.all(['sessions','solves','competitionSets'].map(name=>wrap(snapshot.objectStore(name).getAll())));
   return {
     app: 'tagdatimer',
-    version: 1,
+    version: 2,
     exportedAt: Date.now(),
-    sessions: await Sessions.all(),
-    solves: await Solves.all(),
+    sessions: sessions.sort((a,b)=>(a.order??0)-(b.order??0)||a.createdAt-b.createdAt),
+    solves: solves.sort((a,b)=>a.createdAt-b.createdAt),
+    competitionSets: sets.map(normalizeCompetition).sort((a,b)=>b.createdAt-a.createdAt),
     settings: await KV.get('settings', {}),
     letterPairs: await LetterPairs.all(),
     /* The gear log rides along, read straight from the stores rather than
@@ -335,13 +372,56 @@ export async function exportAll() {
 
 export async function importAll(data, { merge = true } = {}) {
   if (!data || !Array.isArray(data.solves)) throw new Error(t('Not a Tagda Timer backup'));
-  if (!merge) {
-    const db = await openDB();
-    await Promise.all(['solves', 'sessions'].map(name =>
-      wrap(db.transaction(name, 'readwrite').objectStore(name).clear())));
+  // Validate the complete backup before any destructive replacement or write.
+  const incomingSets = Array.isArray(data.competitionSets) ? data.competitionSets.map(normalizeCompetition) : [];
+  const known = new Map(incomingSets.map(c => [c.id,c]));
+  const rows = new Map(data.solves.map(s => [s.id,s]));
+  if (rows.size !== data.solves.length) throw new Error(t('Duplicate solve IDs in backup'));
+  for (const c of incomingSets) for (let i=0;i<c.solveIds.length;i++) {
+    const s=rows.get(c.solveIds[i]);
+    if (!s || s.competitionSetId!==c.id || s.competitionAttempt!==i+1 || s.event!==c.event || s.sessionId!==c.sessionId || s.mode!=='wca') {
+      throw new Error(t('Invalid Competition set membership'));
+    }
   }
-  for (const s of (data.sessions || [])) await Sessions.put(s);
-  await Solves.putMany(data.solves);
+  for (const s of data.solves) {
+    if (!s.competitionSetId) continue;
+    const c=known.get(s.competitionSetId);
+    if (!c || c.solveIds[s.competitionAttempt-1]!==s.id) throw new Error(t('Backup is missing a Competition set'));
+  }
+  const deleted = await KV.get('_competitionDeleted', {});
+  // A merge of an old backup cannot revive an intentionally deleted set.
+  const sets = incomingSets.filter(c => !deleted[c.id]);
+  const solves = data.solves.filter(s => !s.competitionSetId || !deleted[s.competitionSetId]);
+  if (!merge) for (const c of await CompetitionSets.all()) await CompetitionSets.delete(c.id);
+  await atomic(['solves', 'competitionSets', 'sessions', 'kv'], async tr => {
+    if (!merge) { tr.objectStore('solves').clear(); tr.objectStore('sessions').clear(); tr.objectStore('competitionSets').clear(); }
+    for (const s of (data.sessions || [])) tr.objectStore('sessions').put(s);
+    for (let i=0;i<sets.length;i++) {
+      const c=sets[i], current=await wrap(tr.objectStore('competitionSets').get(c.id));
+      if (current) {
+        const common=Math.min(current.solveIds.length,c.solveIds.length);
+        if (current.size!==c.size || current.event!==c.event || current.sessionId!==c.sessionId || current.solveIds.slice(0,common).some((id,j)=>id!==c.solveIds[j])) {
+          throw new Error(t('Backup conflicts with existing Competition membership'));
+        }
+        if (current.solveIds.length>c.solveIds.length) sets[i]=current;
+      }
+      tr.objectStore('competitionSets').put(sets[i]);
+    }
+    for (let i=0;i<solves.length;i++) {
+      const s=solves[i], current=await wrap(tr.objectStore('solves').get(s.id));
+      if (current?.competitionSetId) {
+        if (current.competitionSetId!==s.competitionSetId || current.competitionAttempt!==s.competitionAttempt || current.timeMs!==s.timeMs || current.scramble!==s.scramble) throw new Error(t('Backup conflicts with existing Competition membership'));
+        if ((current.penaltyUpdatedAt||0)>(s.penaltyUpdatedAt||0)) solves[i]=current;
+      }
+      tr.objectStore('solves').put(solves[i]);
+    }
+    const pending=(await wrap(tr.objectStore('kv').get('_competitionDeleted'))) || {};
+    sets.forEach(c=>delete pending[c.id]);tr.objectStore('kv').put(pending,'_competitionDeleted');
+  });
+  await Tombstones.clear('solves', solves.map(s => s.id));
+  await Tombstones.clear('competitionSets', sets.map(c => c.id));
+  for (const s of (data.sessions || [])) { await Tombstones.clear('sessions',[s.id]); emit('sessions',s); }
+  emit('competition', { sets, solves });
   // Backups written before the dictionary existed simply have no key here.
   if (Array.isArray(data.letterPairs) && data.letterPairs.length) {
     await LetterPairs.putMany(data.letterPairs);
@@ -371,3 +451,109 @@ export async function importAll(data, { merge = true } = {}) {
   }
   return data.solves.length;
 }
+
+
+/* Transactions resolve only after commit, not after the last request. Any
+   guard failure aborts the entire operation, including writes already queued. */
+async function atomic(stores, fn) {
+  const tr = (await openDB()).transaction(stores, 'readwrite');
+  const done = new Promise((resolve, reject) => {
+    tr.oncomplete = resolve;
+    tr.onabort = tr.onerror = () => reject(tr.error || new Error('Transaction aborted'));
+  });
+  try { const value = await fn(tr); await done; return value; }
+  catch (err) { try { tr.abort(); } catch {} await done.catch(() => {}); throw err; }
+}
+
+export function normalizeCompetition(c) {
+  if (!c?.id || !c.sessionId || !c.event || !['active','complete','discarded'].includes(c.status) || !Number.isSafeInteger(c.size) || c.size < 5) throw new Error(t('Invalid Competition set size'));
+  const solveIds = Array.isArray(c.solveIds) ? [...c.solveIds] : Object.values(c.solveIds || {});
+  if (new Set(solveIds).size !== solveIds.length || solveIds.length > c.size || (c.status === 'complete' && solveIds.length !== c.size)) {
+    throw new Error(t('Invalid Competition set membership'));
+  }
+  return { ...c, solveIds };
+}
+
+export const CompetitionSets = {
+  async get(id) { const c = await wrap((await tx('competitionSets')).get(id)); return c ? normalizeCompetition(c) : null; },
+  async all() { return (await wrap((await tx('competitionSets')).getAll())).map(normalizeCompetition).sort((a,b) => b.createdAt-a.createdAt); },
+  async put(c) {
+    c=normalizeCompetition(c);
+    await atomic(['competitionSets'],async tr=>{
+      const os=tr.objectStore('competitionSets'),prev=await wrap(os.get(c.id));
+      if(prev?.solveIds.length && (prev.size!==c.size || prev.event!==c.event || prev.sessionId!==c.sessionId || JSON.stringify(prev.solveIds)!==JSON.stringify(c.solveIds))) throw new Error(t('Competition membership is immutable; discard and start a new set'));
+      os.put(c);
+    });
+    await Tombstones.clear('competitionSets',[c.id]);emit('competition',{sets:[c]});
+  },
+  async create(c) {
+    c = normalizeCompetition(c);
+    await atomic(['competitionSets'], async tr => {
+      const os = tr.objectStore('competitionSets');
+      if ((await wrap(os.getAll())).some(s => s.status === 'active')) throw new Error(t('Resume or discard the unfinished set first'));
+      os.add(c);
+    });
+    emit('competition', { sets: [c] });
+    return c;
+  },
+  // Never write a stale in-memory set over membership another tab committed.
+  async patch(id, patch, expectedAttempt = null) {
+    delete patch.solveIds; delete patch.size; delete patch.event; delete patch.sessionId;
+    const c = await atomic(['competitionSets'], async tr => {
+      const os = tr.objectStore('competitionSets'), c = await wrap(os.get(id));
+      if (!c) return null;
+      if (patch.currentScramble && (c.status !== 'active' || (expectedAttempt !== null && c.solveIds.length+1 !== expectedAttempt))) return c;
+      Object.assign(c, patch, { updatedAt: Date.now() }); os.put(c); return c;
+    });
+    if (c) emit('competition', { sets: [c] });
+    return c;
+  },
+  async record(id, solve, expectedAttempt) {
+    const c = await atomic(['competitionSets', 'solves'], async tr => {
+      const os = tr.objectStore('competitionSets'), c = await wrap(os.get(id));
+      if (!c || c.status !== 'active' || c.solveIds.length + 1 !== expectedAttempt) throw new Error(t('The set changed in another tab. Return to set before timing.'));
+      if (!c.currentScramble?.scramble || solve.scramble !== c.currentScramble.scramble) throw new Error(t('The scramble changed in another tab. Return to set before timing.'));
+      if (solve.event !== c.event || solve.sessionId !== c.sessionId || solve.mode !== 'wca') throw new Error(t('Return to the set event and Random state mode'));
+      solve.competitionSetId = id; solve.competitionAttempt = expectedAttempt;
+      c.solveIds.push(solve.id); c.currentScramble = null; c.updatedAt = Date.now();
+      if (c.solveIds.length === c.size) { c.status = 'complete'; c.completedAt = Date.now(); }
+      tr.objectStore('solves').add(solve); os.put(c); return c;
+    });
+    emit('competition', { sets: [c], solves: [solve] });
+    return c;
+  },
+  async members(c) {
+    const os = await tx('solves');
+    return Promise.all(c.solveIds.map(id => wrap(os.get(id))));
+  },
+  async delete(id) {
+    await loadTombstones();
+    let tomb;
+    const result = await atomic(['competitionSets', 'solves', 'kv'], async tr => {
+      const c = await wrap(tr.objectStore('competitionSets').get(id));
+      if (!c) return null;
+      tomb = (await wrap(tr.objectStore('kv').get(TOMBSTONE_KEY))) || {};
+      // Include tagged rows too: recovery from an incomplete older sync cannot
+      // strand a member or accidentally delete an unrelated solve.
+      const rows = await wrap(tr.objectStore('solves').index('byCompetition').getAll(id));
+      const ids = [...new Set([...c.solveIds, ...rows.map(s => s.id)])];
+      tomb.competitionSets ||= {}; tomb.competitionSets[id] = Date.now();
+      tomb.solves ||= {}; ids.forEach(sid => { tomb.solves[sid] = Date.now(); tr.objectStore('solves').delete(sid); });
+      tr.objectStore('competitionSets').delete(id);
+      tr.objectStore('kv').put(tomb, TOMBSTONE_KEY);
+      // Media is a separate local database. Persist cleanup in the same commit
+      // as deletion; a reload retries it if media deletion was interrupted.
+      const cleanup = (await wrap(tr.objectStore('kv').get('_competitionMediaCleanup'))) || [];
+      cleanup.push({ id, solveIds: ids }); tr.objectStore('kv').put(cleanup, '_competitionMediaCleanup');
+      const set = { ...c, status: 'discarded', replayStatus: 'none', deletedAt: Date.now(), updatedAt: Date.now() };
+      const deleted = (await wrap(tr.objectStore('kv').get('_competitionDeleted'))) || {};
+      deleted[id] = set; tr.objectStore('kv').put(deleted, '_competitionDeleted');
+      return { id, ids, set };
+    });
+    if (result) {
+      _tomb = tomb;
+      emit('competition', { deleted: result });
+    }
+    return result;
+  },
+};
