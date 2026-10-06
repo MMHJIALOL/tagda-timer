@@ -54,6 +54,13 @@ simulating a real cube), the reconstruction model and solver (superflip, the wid
 identities, and whole CFOP solves driven only by the suggestions it gives back), and
 the rendered page itself (that no overlay is stuck on screen).
 
+Settings, Appearance and Blindsolving have a search field that filters the live
+controls by name, related words and common typos. For example, `precision` finds
+Decimals and `sound` finds audio options. Clear the search to see every option.
+The focused search checks use Node and jsdom: run `npm ci`, then
+`npm run test:settings-search`. These dependencies are only for tests; serving
+the timer still needs no build step.
+
 ---
 
 ## Timing

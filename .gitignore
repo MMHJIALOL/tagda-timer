@@ -23,3 +23,6 @@ __pycache__/
 
 # Disposable Competition Mode browser verification screenshots
 competition-qa/
+
+# Local test dependencies
+node_modules/

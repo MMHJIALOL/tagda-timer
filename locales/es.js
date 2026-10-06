@@ -1,6 +1,18 @@
 /* Spanish for Tagda Timer. Keys are the English source text exactly as it is
    written in js/ and in the HTML; {name} placeholders are filled by t(). */
 export const es = {
+  "Search settings…": "Buscar ajustes…",
+  "Search settings": "Buscar ajustes",
+  "Focus settings search": "Ir a la búsqueda de ajustes",
+  "Clear settings search": "Borrar búsqueda de ajustes",
+  "Clear": "Borrar",
+  "Search by name or related words": "Busca por nombre o palabras relacionadas",
+  "1 matching option": "1 opción encontrada",
+  "{n} matching options": "{n} opciones encontradas",
+  "No settings found": "No se encontraron ajustes",
+  "Try a related word, like “sound”, “precision” or “backup”.": "Prueba una palabra relacionada, como «sonido», «precisión» o «copia de seguridad».",
+  "Theme, background and layout": "Tema, fondo y distribución",
+  "colours, fonts, sizes and panels": "colores, fuentes, tamaños y paneles",
   "Close older Tagda Timer tabs, then reload to upgrade the local database.": "Cierra las pestañas antiguas de Tagda Timer y recarga para actualizar la base de datos local.",
   "The scramble changed in another tab. Return to set before timing.": "La mezcla cambió en otra pestaña. Vuelve a la serie antes de cronometrar.",
   // Competition Mode
