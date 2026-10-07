@@ -9,7 +9,8 @@
      the moment an attempt starts and comes back once it is over;
    - never over another popup, a panel, or the support card, and never in a
      hidden tab;
-   - one at a time;
+   - one at a time, and once one is answered no other on the same page load
+     (a popup's reminder pill aside), so they never come in a queue;
    - inside the Scramble of the Day window only a card about a button the
      window has (the camera), so nothing else interrupts the day's attempt;
    - an answer (the button, Not now, ×) is remembered in localStorage by id
@@ -32,8 +33,9 @@ const MIGRATED_KEY = 'tdt-ann-migrated';
 const PER_LOAD = 3;
 
 let host = null;
-let current = null;            // { a, as, node, place }
+let current = null;            // { a, as, node, target }
 const appeared = new Map();    // id -> appearances this page load
+let answered = false;          // one was answered on this page load: no other until the next
 
 const readJson = (k) => { try { return JSON.parse(localStorage.getItem(k) || '{}') || {}; } catch { return {}; } };
 const writeJson = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* private window: asked again next visit */ } };
@@ -74,6 +76,7 @@ async function stat(a, what) {
 function hide() {
   if (!current) return;
   const { node } = current;
+  pointAt(null);
   current = null;
   removeEventListener('resize', place);
   if (node.tagName === 'DIALOG') { if (node.open) node.close(); }
@@ -82,30 +85,44 @@ function hide() {
 
 function answer(a, what) {
   remember(a, { answer: what });
+  if (what !== 'later') answered = true;
   if (what !== 'later') stat(a, what === 'clicked' ? 'clicked' : 'dismissed');
   hide();
   if (what === 'later') setTimeout(tick, 600);
 }
 
-/** A card about a panel sits under that panel's button, with an arrow; otherwise in the corner. */
+/** The button a card points at pulses while it does (css/announce.css, .an-target). */
+function pointAt(btn) {
+  if (current?.target === btn) return;
+  current?.target?.classList.remove('an-target');
+  if (current) current.target = btn;
+  btn?.classList.add('an-target');
+}
+
+/** A card about a panel sits under that panel's button with an arrow (above it, for a button low
+    on the screen, like a phone's dock); otherwise in the corner. */
 function place() {
   if (!current || current.as !== 'card') return;
   const { node, a } = current;
   const btn = a.button?.action === 'panel' ? host.anchor(a.button.target) : null;
   const r = btn?.getBoundingClientRect();
   if (!r?.width) {
+    pointAt(null);
     if (host.inSotd()) { hide(); return; }
-    node.classList.remove('an-anchored');
+    node.classList.remove('an-anchored', 'an-above');
     node.classList.add('an-corner');
     node.style.left = node.style.top = '';
     return;
   }
   node.classList.add('an-anchored');
   node.classList.remove('an-corner');
+  pointAt(btn);
   const w = node.offsetWidth;
   const left = Math.max(10, Math.min(r.left + r.width / 2 - w / 2, innerWidth - w - 10));
+  const above = r.top > innerHeight / 2;
+  node.classList.toggle('an-above', above);
   node.style.left = `${left}px`;
-  node.style.top = `${r.bottom + 12}px`;
+  node.style.top = `${above ? r.top - 12 - node.offsetHeight : r.bottom + 12}px`;
   node.style.setProperty('--arrow', `${r.left + r.width / 2 - left}px`);
 }
 
@@ -174,7 +191,7 @@ function who() {
 
 /** Look for something to show, if nothing is going on. */
 function tick() {
-  if (!host || current) return;
+  if (!host || current || answered) return;
   if (document.hidden || !host.idle() || host.blocked()) return;
   const anns = allAnnouncements(storedAnnouncements(), getConfig);
   if (!rolesKnown && Object.values(anns).some(a => a.audience === 'testers' || a.audience === 'admins')) askRoles();

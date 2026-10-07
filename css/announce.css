@@ -38,8 +38,23 @@
   border-left: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border));
   border-top: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border));
 }
+.an-card.an-above::before {
+  top: auto; bottom: -7px; border-left: 0; border-top: 0;
+  border-right: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border));
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border));
+}
 .an-card.an-corner { right: 20px; bottom: 20px; width: min(320px, calc(100vw - 20px)); }
 @media (max-width: 620px) { .an-card.an-corner { right: 10px; bottom: 10px; } }
+/* The button an anchored card points at: a ring that breathes until the card is answered.
+   On the button itself, since the race flag's ::after is its live-room dot. */
+.an-target { box-shadow: 0 0 0 2px var(--accent); }
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-motion="off"]) .an-target { animation: anPulse 1.6s ease-in-out infinite; }
+}
+@keyframes anPulse {
+  0%, 100% { box-shadow: 0 0 0 2px var(--accent), 0 0 0 0 color-mix(in srgb, var(--accent) 50%, transparent); }
+  50% { box-shadow: 0 0 0 2px var(--accent), 0 0 0 8px color-mix(in srgb, var(--accent) 0%, transparent); }
+}
 .an-row { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
 /* Above the SOTD window's own layers, like the camera card it replaces. */
 body.sotd .an-card { z-index: 95; }

@@ -2653,8 +2653,8 @@ section('admin console — announcements, and the settings moved into it');
   check('the built-in announcements are there with no database, and the feedback one takes config/feedback’s link and end',
     all['webcam-replay']?.style === 'card' && all['webcam-replay'].audience === 'webcamOff'
     && all.feedback?.button?.target === 'https://forms.example/x' && all.feedback.endAt === 9e12 && all.hello?.version === 2);
-  check('the random 1v1 launch is a popup to the Race panel, once each, for 7 Oct to 7 Nov 2026 (IST)',
-    all['random-1v1']?.style === 'popup' && all['random-1v1'].button?.target === 'race' && all['random-1v1'].maxShows === 1
+  check('the random 1v1 launch is a card pointing at the race flag, version 2 (after the popup), for 7 Oct to 7 Nov 2026 (IST)',
+    all['random-1v1']?.style === 'card' && all['random-1v1'].button?.target === 'race' && all['random-1v1'].version === 2
     && N.isLive(all['random-1v1'], Date.parse('2026-10-10T12:00:00Z')) && !N.isLive(all['random-1v1'], Date.parse('2026-11-07T00:00:00Z'))
     && !N.isLive(all['random-1v1'], Date.parse('2026-10-06T18:00:00Z')));
   check('a record with a style, audience or link that is not allowed is refused or cut down',

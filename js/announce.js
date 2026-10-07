@@ -50,13 +50,14 @@ export const BUILT_IN = {
     // After "Maybe later", a pill on the main screen until it is crossed out (the old form's).
     reminder: true,
   },
-  // The launch of random 1v1 (RACE.md §8), asked for by many: once, for a month.
+  // The launch of random 1v1 (RACE.md §8), asked for by many: a card pointing at the race flag, for a month.
+  // Version 2: version 1 was a popup in the middle, so whoever answered that sees where the flag is once.
   'random-1v1': {
     title: 'New: random 1v1',
-    text: 'Race a stranger on 3x3: the same scramble for both of you, head to head, round after round until one of you quits. Find an opponent in the Race panel.',
+    text: 'Race a stranger on 3x3: the same scramble for both of you, head to head, round after round until one of you quits.',
     button: { label: 'Try it', action: 'panel', target: 'race' },
     // 7 Oct to 7 Nov 2026, 00:00 IST.
-    style: 'popup', audience: 'everyone', startAt: 1791311400000, endAt: 1793989800000, maxShows: 1, version: 1,
+    style: 'card', audience: 'everyone', startAt: 1791311400000, endAt: 1793989800000, maxShows: 3, version: 2,
   },
 };
 

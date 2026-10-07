@@ -2682,7 +2682,7 @@ export const es = {
   "Got 2 minutes? Tell us what to build next, what bugs you hit, and which timer you like best. It is anonymous and your name is optional.": "¿Tienes 2 minutos? Cuéntanos qué hacer después, qué fallos encuentras y qué cronómetro te gusta más. Es anónimo y tu nombre es opcional.",
   "Fill the form": "Rellenar el formulario",
   "New: random 1v1": "Nuevo: 1v1 aleatorio",
-  "Race a stranger on 3x3: the same scramble for both of you, head to head, round after round until one of you quits. Find an opponent in the Race panel.": "Compite contra un desconocido en 3x3: la misma mezcla para los dos, cara a cara, ronda tras ronda hasta que uno de los dos lo deje. Busca un rival en el panel Carrera.",
+  "Race a stranger on 3x3: the same scramble for both of you, head to head, round after round until one of you quits.": "Compite contra un desconocido en 3x3: la misma mezcla para los dos, cara a cara, ronda tras ronda hasta que uno de los dos lo deje.",
   /* the admin console's Today tab, days ahead, testers, audiences and scheduled changes (js/admin-live.js, js/admin.js, js/audience.js) */
   "the scheduler": "el programador",
   "{n} open": "{n} abiertos",
