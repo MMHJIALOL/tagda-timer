@@ -9,10 +9,10 @@
        audience: 'everyone' | 'signedIn' | 'webcamOff' | 'notOpened' | 'newUsers' | 'returningUsers',
        startAt, endAt?, maxShows, version, log, by, updatedAt }
 
-   Two are built in (BUILT_IN): the announcements the app used to hand-write,
-   so they still behave with no database at all, and so they can be pushed
-   again from the admin page. A record in the database with the same id
-   replaces the built-in one.
+   Three are built in (BUILT_IN): the two the app used to hand-write, and the
+   random 1v1 launch, so they behave with no database at all, and so they can
+   be edited or pushed again from the admin page. A record in the database
+   with the same id replaces the built-in one.
 
    Pure: no DOM, no storage. The app's manager (main.js, wireAnnouncements)
    and the admin page's preview build on it; announce-ui.js draws them.
@@ -29,7 +29,7 @@ export const LIMITS = { title: 80, text: 400, label: 30, target: 300, maxShows: 
 const HTTPS = /^https:\/\/[^\s]+$/;
 
 /**
- * The announcements the app hand-wrote before the console. The webcam card
+ * The announcements the app hand-wrote before the console, and the 1v1 one. The webcam card
  * (once anchored to the camera, wherever it is on screen) and the feedback
  * form's popup, whose link and end come from config/feedback. `answeredBy`
  * names the flags those versions stored, so nobody who answered them is
@@ -49,6 +49,14 @@ export const BUILT_IN = {
     style: 'popup', audience: 'everyone', startAt: 0, endAt: 0, maxShows: 1, version: 1,
     // After "Maybe later", a pill on the main screen until it is crossed out (the old form's).
     reminder: true,
+  },
+  // The launch of random 1v1 (RACE.md §8), asked for by many: once, for a month.
+  'random-1v1': {
+    title: 'New: random 1v1',
+    text: 'Race a stranger on 3x3: the same scramble for both of you, head to head, round after round until one of you quits. Find an opponent in the Race panel.',
+    button: { label: 'Try it', action: 'panel', target: 'race' },
+    // 7 Oct to 7 Nov 2026, 00:00 IST.
+    style: 'popup', audience: 'everyone', startAt: 1791311400000, endAt: 1793989800000, maxShows: 1, version: 1,
   },
 };
 
