@@ -172,6 +172,7 @@ class FirebaseTransport extends EventTarget {
     if (EMULATED) dbMod.connectDatabaseEmulator(db, '127.0.0.1', 9000);
 
     this._sdk = { ...dbMod, db };
+    this._user = cred.user;
     this.snap.uid = cred.user.uid;
 
     /* Open the socket now, while nobody is waiting for it.
@@ -265,6 +266,20 @@ class FirebaseTransport extends EventTarget {
   async rtcClear() { await this._sdk.remove(this._rtcRef(this.snap.uid)).catch(() => {}); }
 
   async rtcArm() { await this._sdk.onDisconnect(this._rtcRef(this.snap.uid)).remove().catch(() => {}); }
+
+  /** TURN relay credentials from the Worker (worker.js /turn), or null when it has none. */
+  async rtcIceServers() {
+    const token = await this._user?.getIdToken();
+    if (!token || !this.snap.roomId) return null;
+    const r = await fetch('/turn', {
+      method: 'POST', cache: 'no-store',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ room: this.snap.roomId }),
+    });
+    if (!r.ok) return null;
+    const j = await r.json();
+    return Array.isArray(j?.iceServers) && j.iceServers.length ? { list: j.iceServers, ttl: Number(j.ttl) || 0 } : null;
+  }
 
   _ref(path) { return this._sdk.ref(this._sdk.db, path); }
   get _base() { return `rooms/${this.snap.roomId}`; }

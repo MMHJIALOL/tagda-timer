@@ -1,7 +1,7 @@
 /* ===========================================================
    Tagda Timer — the Worker
 
-   Only two kinds of path ever run this file (run_worker_first in
+   Only three kinds of path ever run this file (run_worker_first in
    wrangler.jsonc); everything else is a static asset, which is not metered.
    It also runs once a minute on its own (the cron in wrangler.jsonc), to
    apply the admin console's scheduled changes when they are due.
@@ -14,6 +14,10 @@
    /replay/*   Shared Scramble of the Day replays, kept in R2 for 7 days
                after their day (DAILY.md §8). /replay/usage is the admin
                console's look at today's share of the bucket (ADMIN.md §8).
+
+   /turn       Short-lived TURN relay credentials for a 1v1's cam and mic
+               (RACE.md §9), only to a player in that 1v1. Off until the
+               TURN_KEY_ID and TURN_KEY_TOKEN secrets are set.
 
    The money rule for /replay/. R2 bills past its free tier instead of
    failing, so this file is what keeps every meter under it:
@@ -60,6 +64,13 @@ export default {
     if (pathname.startsWith('/__/auth/')) {
       return fetch(new Request(`https://tagda-timer.firebaseapp.com${pathname}${search}`, request));
     }
+    if (pathname === '/turn') {
+      try { return await turn(request, env); }
+      catch (err) {
+        console.log(JSON.stringify({ turn: 'error', message: String(err?.message || err) }));
+        return fail(502, 'upstream');
+      }
+    }
     if (pathname === '/replay' || pathname.startsWith('/replay/')) {
       try { return pathname === '/replay/usage' ? await usage(request, env) : await replay(request, env, pathname); }
       catch (err) {
@@ -104,8 +115,8 @@ function claims(token) {
   } catch { return null; }
 }
 
-function rtdb(env, path, token, init = {}) {
-  const q = new URLSearchParams({ auth: token });
+function rtdb(env, path, token, init = {}, extra = {}) {
+  const q = new URLSearchParams({ auth: token, ...extra });
   if (env.RTDB_NS) q.set('ns', env.RTDB_NS);
   const base = String(env.RTDB_URL || '').replace(/\/+$/, '');
   return fetch(`${base}/${path}.json?${q}`, { ...init, headers: { 'content-type': 'application/json' } });
@@ -402,6 +413,60 @@ async function usage(request, env) {
     day, clips: listed.objects.length, more: listed.truncated, bytes, byEvent,
     perDay: lim.perDay, budget: lim.budget, clipMax: lim.clipMax, enabled: cfg.enabled, audience: cfg.audience,
   });
+}
+
+/* ---------------- TURN for 1v1 cam and mic (RACE.md §9) ----------------
+
+   Most pairs connect straight to each other with STUN alone. Two players
+   both behind strict NATs (many Indian broadband and mobile networks) never
+   do: their video has to go through a relay. Cloudflare's TURN service is
+   that relay, free for the first 1,000 GB a month, then $0.05/GB.
+
+   The TURN key's token stays here; the browser gets credentials that expire
+   after TURN_TTL, and only when the database agrees that the caller is a
+   player in that room and the room is a 1v1. Race accounts are anonymous,
+   so that is the whole gate: anybody can start a 1v1 with themselves in two
+   tabs, and get a few hours of relay. That is the same reach as using the
+   1v1 itself, and the dashboard shows the month's gigabytes. */
+
+const TURN_TTL = 4 * 3600;            // seconds; longer than any 1v1 lasts
+const ROOM = /^[A-Za-z0-9_-]{1,64}$/;
+
+async function turn(request, env) {
+  if (request.method !== 'POST') return fail(405, 'method');
+  if (!env.TURN_KEY_ID || !env.TURN_KEY_TOKEN) return fail(503, 'off');
+  const token = bearer(request);
+  if (!token) return fail(401, 'no-token');
+  const sub = claims(token)?.sub;
+  if (typeof sub !== 'string' || !UID.test(sub)) return fail(401, 'bad-token');
+  const room = (await request.json().catch(() => null))?.room;
+  if (typeof room !== 'string' || !ROOM.test(room)) return fail(400, 'bad-room');
+  /* rtc/ is readable only by the room's players (firebase.rules.json), so a
+     read that succeeds proves both the token and the seat. */
+  const [seat, kind] = await Promise.all([
+    rtdb(env, `rooms/${room}/rtc`, token, {}, { shallow: 'true' }),
+    rtdb(env, `rooms/${room}/meta/kind`, token),
+  ]);
+  if (!seat.ok) return fail(seat.status === 401 ? 401 : 403, 'not-in-room');
+  if (!kind.ok || (await kind.json()) !== 'duel') return fail(403, 'not-a-1v1');
+  const r = await fetch(`https://rtc.live.cloudflare.com/v1/turn/keys/${encodeURIComponent(env.TURN_KEY_ID)}/credentials/generate-ice-servers`, {
+    method: 'POST',
+    headers: { authorization: `Bearer ${env.TURN_KEY_TOKEN}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ ttl: TURN_TTL }),
+  });
+  if (!r.ok) {
+    console.log(JSON.stringify({ turn: 'cloudflare', status: r.status }));
+    return fail(502, 'upstream');
+  }
+  const { iceServers } = await r.json();
+  /* Port 53 is blocked by browsers, and a URL that can never answer only
+     slows the gathering down (Cloudflare's own advice). */
+  const list = (Array.isArray(iceServers) ? iceServers : [iceServers]).map((s) => {
+    const urls = [].concat(s?.urls || []).filter(u => typeof u === 'string' && !/:53(\?|$)/.test(u));
+    return { ...s, urls };
+  }).filter(s => s.urls.length);
+  console.log(JSON.stringify({ turn: 'issued', room }));
+  return json(200, { iceServers: list, ttl: TURN_TTL });
 }
 
 /* ---------------- scheduled changes (ADMIN.md §10) ---------------- */

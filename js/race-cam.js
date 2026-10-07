@@ -21,6 +21,11 @@ import { t } from './i18n.js';
    so the switch is instant and nothing about the call has to be redone. A
    connection that fails is retried from scratch by the offerer with a new
    sid; anything still in flight for the old one is ignored.
+
+   Where the network allows, the media goes straight between the two players.
+   Two players behind strict NATs can't reach each other that way, so each
+   attempt first asks the Worker for TURN relay credentials (worker.js /turn)
+   and falls back to STUN alone if it has none.
    =========================================================== */
 
 import { el } from './util.js';
@@ -51,6 +56,8 @@ export class DuelCam {
     this.revealed = false;         // the viewer's own opt-in to see and hear them
     this.pc = null;
     this.sid = null;
+    this.dialing = null;           // the sid whose call is waiting for ICE servers
+    this.ice = null;               // { list, until } from the Worker, for this 1v1
     this.tx = null;                // { audio, video } transceivers
     this.pendingIce = [];
     this.tries = 0;
@@ -69,6 +76,7 @@ export class DuelCam {
     if (this.opp?.uid === opp.uid) { this.opp.name = opp.name; return; }
     this.stop({ keepUi: true });
     this.opp = { ...opp };
+    this.ice = null;
     this.role = String(this.race.uid) < String(opp.uid) ? 'offer' : 'answer';
     this._unsubs.push(
       this.net.rtcOn(opp.uid, 'media', (v) => {
@@ -107,6 +115,7 @@ export class DuelCam {
     }
     this.pc = null;
     this.sid = null;
+    this.dialing = null;
     this.tx = null;
     this.pendingIce = [];
     this.remoteStream = null;
@@ -214,15 +223,45 @@ export class DuelCam {
 
   /** A call is needed once either side sends anything; the offerer starts it. */
   _maybeConnect() {
-    if (!this.opp || this.pc || this.state === 'rules') return;
+    if (!this.opp || this.pc || this.dialing || this.state === 'rules') return;
     const wanted = this.local.cam || this.local.mic || this.remoteMedia.cam || this.remoteMedia.mic;
     if (!wanted) return;
     if (this.role === 'offer') this._offer();
     else { this.state = 'connecting'; this._draw(); }
   }
 
-  _newPc(sid) {
-    const pc = new RTCPeerConnection({ iceServers: RTC_ICE_SERVERS });
+  /**
+   * STUN plus, when the Worker hands them out, TURN relay credentials. Asked
+   * once per 1v1 and kept until shortly before they expire; anything going
+   * wrong (no Worker locally, the secrets unset) means STUN alone.
+   */
+  async _iceServers() {
+    if (!this.ice || this.ice.until < Date.now()) {
+      const got = await this.net.rtcIceServers?.().catch((err) => {
+        console.warn('[cam] turn', err?.message || err);
+        return null;
+      });
+      this.ice = got
+        ? { list: got.list, until: Date.now() + Math.max(0, got.ttl - 600) * 1000 }
+        : { list: [], until: Date.now() + 60_000 };
+    }
+    return [...RTC_ICE_SERVERS, ...this.ice.list];
+  }
+
+  /** The servers for attempt `sid`, or null when that attempt was dropped while we waited. */
+  async _dial(sid) {
+    this._closePc();
+    this.dialing = sid;
+    this.state = 'connecting';
+    this._draw();
+    const servers = await this._iceServers();
+    if (this.dialing !== sid || !this.opp) return null;
+    this.dialing = null;
+    return servers;
+  }
+
+  _newPc(sid, iceServers) {
+    const pc = new RTCPeerConnection({ iceServers });
     this.pc = pc;
     this.sid = sid;
     this.remoteStream = new MediaStream();
@@ -257,10 +296,10 @@ export class DuelCam {
   }
 
   async _offer() {
-    this._closePc();
     const sid = sidOf();
-    const pc = this._newPc(sid);
-    this.state = 'connecting';
+    const servers = await this._dial(sid);
+    if (!servers) return;
+    const pc = this._newPc(sid, servers);
     this.tx = {
       audio: pc.addTransceiver('audio', { direction: 'sendrecv' }),
       video: pc.addTransceiver('video', { direction: 'sendrecv' }),
@@ -280,10 +319,10 @@ export class DuelCam {
 
   async _onDesc(d) {
     if (!d || !this.opp) return;
-    if (this.role === 'answer' && d.type === 'offer' && d.sid !== this.sid) {
-      this._closePc();
-      const pc = this._newPc(d.sid);
-      this.state = 'connecting';
+    if (this.role === 'answer' && d.type === 'offer' && d.sid !== this.sid && d.sid !== this.dialing) {
+      const servers = await this._dial(d.sid);
+      if (!servers) return;
+      const pc = this._newPc(d.sid, servers);
       try {
         await pc.setRemoteDescription({ type: 'offer', sdp: d.sdp });
         if (this.sid !== d.sid) return;
