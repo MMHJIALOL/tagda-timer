@@ -1812,6 +1812,8 @@ const ANN_BUTTON = {
   appearance: () => $('#btn-theme'), settings: () => $('#btn-settings'), spotify: () => $('#btn-spotify'),
   gear: () => $('#btn-gear'), about: () => $('#btn-about'),
 };
+/** On a phone (phoneshell.js), the dock tab a top-bar button lives under, for a card to point at. */
+const ANN_PHONE_TAB = { race: 'train' };
 /** openPanel's builder → the panel id it is, for the notOpened audience. */
 const PANEL_OF = {
   buildStats: 'stats', buildGear: 'gear', buildAppearance: 'appearance', buildSettings: 'settings',
@@ -1834,7 +1836,12 @@ function wireAnnouncements() {
       // The camera card means nothing where this browser cannot record.
       if (id === 'camera' && !replaySupported()) return null;
       const btn = ANN_BUTTON[id]?.();
-      return btn && btn.getBoundingClientRect().width && !btn.disabled ? btn : null;
+      if (btn && btn.getBoundingClientRect().width && !btn.disabled) return btn;
+      // Where the top bar's button is folded away (not from the SOTD window): on a phone, the
+      // dock's tab that holds it (race: Train), otherwise the ☰ menu.
+      if (inSotdWindow() || !btn?.closest('.topbar-right')) return null;
+      const alt = (ANN_PHONE_TAB[id] && $(`.ph-tab[data-tab="${ANN_PHONE_TAB[id]}"]`)) || $('#btn-menu');
+      return alt && alt.getBoundingClientRect().width ? alt : null;
     },
     available: (id) => id !== 'camera' || replaySupported(),
     signedIn: () => signedIn(),

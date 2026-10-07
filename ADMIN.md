@@ -380,14 +380,16 @@ in the SOTD window, and the feedback form's popup with its pill) is one system n
 `announcements.json` with the same plain REST fetch as the settings, and shows at most one at a
 time, with the old cards' manners: never during a solve or inspection (one on screen steps aside
 when an attempt starts and comes back after it), never over a panel, a dialog or the support card,
-never in a hidden tab, and inside the SOTD window only a card about a button the window has (the
+never in a hidden tab, never a second one on a page load once one is answered, and inside the SOTD window only a card about a button the window has (the
 camera). An answer (the button, Not now, ×, Escape) is remembered in `localStorage` by id and
 version; a show counts once per page load against `maxShows` (0: until answered).
 
 **Styles.** *Popup*: a dialog in the middle. With `reminder`, Maybe later leaves a *pill* on the
 main screen until it is crossed out, which is what the feedback form did. *Card*: under the
-button of the panel it opens, with an arrow (in the SOTD window, under the window's own camera
-button), or in the corner when it has no panel. *Pill*: a slim button at the top of the timer.
+button of the panel it opens, with an arrow, while a ring pulses on that button (in the SOTD
+window, under the window's own camera button; where the top bar is folded away, at what holds the
+button: on a phone the dock's tab, above it (race: Train), on a narrow screen the ☰ menu), or in
+the corner when it has no panel. *Pill*: a slim button at the top of the timer.
 
 **Audiences.** *Everyone*; *Signed in* (a Google session on this browser); *Camera off* (webcam
 replay not on); *Has not opened that panel* (the panel the button opens, never opened on this
@@ -401,8 +403,9 @@ the Day, race, statistics, appearance, settings, Spotify, gear or About.
 keep the answers people gave the old cards (carried over once, from the old flags):
 `webcam-replay` (a card, audience *Camera off*, until answered) and `feedback` (a popup with a
 reminder pill, its link and end from `config/feedback`; it ended on 1 Oct 2026). The third,
-`random-1v1`, launches random 1v1: a popup for everyone, shown once, whose **Try it** opens the
-Race panel, from 7 Oct to 7 Nov 2026 (00:00 IST). The old camera
+`random-1v1`, launches random 1v1: a card for everyone under the race flag, with an arrow, on up
+to three page loads until answered, whose **Try it** opens the Race panel, from 7 Oct to 7 Nov
+2026 (00:00 IST). It is version 2: version 1 was a popup in the middle of the screen. The old camera
 card's second version, "Your attempt will be filmed" for people who already had the camera on, is
 gone: its audience is no longer anybody the card is for. Editing a built-in one on the page saves a
 copy in the database, which replaces it. The built-in ones are in Spanish for people who chose it;
