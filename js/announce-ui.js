@@ -8,7 +8,7 @@ import { t } from './i18n.js';
 
    The title, text and button label are the admin's words, not the app's,
    so they are set as text and never run through t(): except the built-in
-   two, unedited, which are the app's own words and have their Spanish.
+   ones, unedited, which are the app's own words and have their Spanish.
    =========================================================== */
 
 import { el } from './util.js';

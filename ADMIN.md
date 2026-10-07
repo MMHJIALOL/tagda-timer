@@ -397,13 +397,15 @@ browser; for a link, until answered); *New* (fewer than 50 solves on this device
 **The button** opens a link (https only, in a new tab) or a panel: webcam replay, the Scramble of
 the Day, race, statistics, appearance, settings, Spotify, gear or About.
 
-**Built in.** Two are part of the app, so they behave with no database at all, and they keep the
-answers people gave the old cards (carried over once, from the old flags):
+**Built in.** Three are part of the app, so they behave with no database at all. The first two
+keep the answers people gave the old cards (carried over once, from the old flags):
 `webcam-replay` (a card, audience *Camera off*, until answered) and `feedback` (a popup with a
-reminder pill, its link and end from `config/feedback`; it ended on 1 Oct 2026). The old camera
+reminder pill, its link and end from `config/feedback`; it ended on 1 Oct 2026). The third,
+`random-1v1`, launches random 1v1: a popup for everyone, shown once, whose **Try it** opens the
+Race panel, from 7 Oct to 7 Nov 2026 (00:00 IST). The old camera
 card's second version, "Your attempt will be filmed" for people who already had the camera on, is
 gone: its audience is no longer anybody the card is for. Editing a built-in one on the page saves a
-copy in the database, which replaces it. The built-in two are in Spanish for people who chose it;
+copy in the database, which replaces it. The built-in ones are in Spanish for people who chose it;
 anything written on the page is shown as written.
 
 **The Announce tab** lists every announcement with whether it is live, scheduled or ended, its
