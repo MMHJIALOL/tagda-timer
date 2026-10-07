@@ -152,13 +152,11 @@ export const DUEL_GONE_MS = 10000;
    --------------------------------------------------------- */
 
 /**
- * How two browsers find a way to each other. STUN only, and free: it is
- * enough for most home and office networks, and the video then goes straight
- * between the two players and costs nothing to anybody. Roughly one pair in
- * five sits behind networks that will not let that happen (strict NATs, some
- * mobile carriers); those need a TURN relay, which carries the whole stream
- * and is billed by the gigabyte, so none is configured. Add one here —
- * { urls: 'turn:…', username, credential } — and those pairs connect too.
+ * How two browsers find a way to each other: free STUN, which is enough for
+ * most home and office networks, so the video goes straight between the two
+ * players. Strict NATs on both sides (common on Indian broadband and mobile
+ * networks) defeat it; for those, race-cam.js adds the TURN relay credentials
+ * that worker.js /turn hands out, and the video goes through Cloudflare.
  */
 export const RTC_ICE_SERVERS = [
   { urls: ['stun:stun.l.google.com:19302', 'stun:stun.cloudflare.com:3478'] },

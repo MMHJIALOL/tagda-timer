@@ -342,10 +342,17 @@ only carries the call's setup, under `rooms/<id>/rtc/<uid>`:
   is unaffected.
 
 **What it does not do.**
-- **There is no TURN relay**, only free STUN (`RTC_ICE_SERVERS` in `js/raceapp.js`). Roughly
-  one pair in five sits behind networks that won't connect directly. Those pairs get "Couldn't
-  connect" and keep racing without video. Adding a TURN server there fixes that, at a
-  per-gigabyte cost.
+- **Strict NATs need the TURN relay.** Media goes straight between the two players when
+  their networks allow it (free STUN, `RTC_ICE_SERVERS` in `js/raceapp.js`). When both sit
+  behind strict NATs, as on many Indian broadband and mobile networks, it can't, so each
+  attempt first asks the Worker for TURN credentials (`POST /turn` in `worker.js`). The Worker
+  gives them out only to a player in that room, and only if the room is a 1v1. They are
+  short-lived (4 h) Cloudflare Realtime TURN credentials. The first 1,000 GB a month are
+  free, then it costs $0.05/GB. A relayed call at the 600 kbps cap uses about 0.3 GB an hour
+  each way. **It needs two Worker secrets**, from dash.cloudflare.com > Realtime > TURN Server:
+  `npx wrangler secret put TURN_KEY_ID` and `npx wrangler secret put TURN_KEY_TOKEN`. Without
+  them `/turn` answers 503, calls use STUN alone, and those pairs get "Couldn't connect" and
+  keep racing without video.
 - **Peer to peer means the two players can learn each other's IP address.** A relay-only
   TURN setup would hide it.
 - **There is no video moderation.** Video can't be reported, so the safeguards are the

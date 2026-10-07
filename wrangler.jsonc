@@ -11,7 +11,7 @@
   "assets": {
     "directory": ".",
     "binding": "ASSETS",
-    "run_worker_first": ["/__/auth/*", "/replay/*"],
+    "run_worker_first": ["/__/auth/*", "/replay/*", "/turn"],
     // /algs.html -> /algs, like cleanUrls did on Vercel.
     "html_handling": "auto-trailing-slash"
   },
@@ -24,6 +24,11 @@
   // signs in with the FIREBASE_SERVICE_ACCOUNT secret (wrangler secret put);
   // without it nothing is applied and the admin page says so.
   "triggers": { "crons": ["* * * * *"] },
+  // TURN for 1v1 cam and mic (worker.js, RACE.md §9): two secrets, from
+  // dash.cloudflare.com > Realtime > TURN Server > Create.
+  //   npx wrangler secret put TURN_KEY_ID
+  //   npx wrangler secret put TURN_KEY_TOKEN
+  // Without them /turn answers 503 and calls fall back to STUN alone.
   // Local values (the emulators, a small budget for tests) go in .dev.vars.
   // ADMIN_UIDS is the fallback for rules from before the admin console: once
   // they are published, admins/<uid> in the database decides (ADMIN.md).
