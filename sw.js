@@ -65,10 +65,20 @@ function isAdminPage(url) {
       || url.pathname === '/admin.webmanifest');
 }
 
-/** Whether a request comes from an open admin page: its modules and styles too. */
+/**
+ * Whether a request comes from an open admin page: its modules and styles too.
+ *
+ * Looked up among the open windows, never with clients.get(). Firefox's
+ * clients.get() waits for the client to be running, and a worker's own script
+ * request comes from the worker itself, which cannot run until that request
+ * is answered: the two waited on each other forever. That is how the square-1
+ * worker never started in Firefox, the scramble warm-up hung behind it, and
+ * the 3x3 queue stopped refilling after a solve.
+ */
 async function fromAdmin(e) {
   if (!e.clientId) return false;
-  const client = await self.clients.get(e.clientId);
+  const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+  const client = windows.find(c => c.id === e.clientId);
   return !!client && isAdminPage(new URL(client.url));
 }
 

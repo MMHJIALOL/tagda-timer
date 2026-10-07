@@ -71,18 +71,31 @@ const OWN = { clock: () => clockScramble(), sq1: () => sq1() };
 let sq1Worker = null;
 const sq1Waiting = new Map();
 let sq1Seq = 0;
+/* A worker that never starts says nothing: no message, no error. Firefox did
+   exactly that under the old sw.js, and the scramble warm-up waited on it for
+   good. The table build is ~2 s, so a request unanswered for this long means
+   the worker is not coming. */
+const SQ1_SILENT_MS = 10000;
+
+/** Stop using the worker; everything it owes, and every later square-1, is made on the page. */
+function abandonSq1(why) {
+  console.warn('[scramble] square-1 worker', why, '— making them on the page');
+  if (sq1Worker) sq1Worker.terminate();
+  sq1Worker = false;
+  for (const w of sq1Waiting.values()) sq1().then(w.resolve);
+  sq1Waiting.clear();
+}
 
 function sq1(warmOnly = false) {
   if (sq1Worker === null) {
     try {
       sq1Worker = new Worker(new URL('./sidescramble.worker.js', import.meta.url), { type: 'module' });
-      sq1Worker.onmessage = ({ data }) => { sq1Waiting.get(data.id)?.resolve(data.scramble); sq1Waiting.delete(data.id); };
-      sq1Worker.onerror = (err) => {
-        console.warn('[scramble] square-1 worker failed — making them on the page', err.message);
-        sq1Worker = false;
-        for (const w of sq1Waiting.values()) sq1().then(w.resolve);
-        sq1Waiting.clear();
+      sq1Worker.onmessage = ({ data }) => {
+        clearTimeout(sq1Waiting.get(data.id)?.timer);
+        sq1Waiting.get(data.id)?.resolve(data.scramble);
+        sq1Waiting.delete(data.id);
       };
+      sq1Worker.onerror = (err) => abandonSq1(`failed (${err.message})`);
     } catch {
       sq1Worker = false;          // no module workers: the page makes them
     }
@@ -91,7 +104,8 @@ function sq1(warmOnly = false) {
   if (!sq1Worker) return import('./sidescramble.js').then(m => m.sq1Scramble());
   return new Promise((resolve) => {
     const id = ++sq1Seq;
-    sq1Waiting.set(id, { resolve });
+    const timer = setTimeout(() => { if (sq1Waiting.has(id)) abandonSq1('never answered'); }, SQ1_SILENT_MS);
+    sq1Waiting.set(id, { resolve, timer });
     sq1Worker.postMessage({ id });
   });
 }
