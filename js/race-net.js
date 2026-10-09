@@ -14,6 +14,7 @@ import { t } from './i18n.js';
      openRound(n, i)   publish a round's scramble (write-once, first wins)
      advanceRound(n)   move the room's pointer forward by exactly one
      unlockResults()   start reading other people's times
+     fetchResults(n)   one read of a past round's times, once you raced it
      destroy()
 
    It is an EventTarget and emits one event, 'room', carrying the whole
@@ -566,6 +567,21 @@ class FirebaseTransport extends EventTarget {
     } catch { return false; }
   }
 
+  /**
+   * Every time in round n, read once — or null if the read is refused.
+   *
+   * The live listener is dropped the moment the pointer moves on, and the
+   * pointer can move on before the last finisher's time has reached this tab:
+   * somebody else's clock settled first. The same rule that gated the live
+   * read gates this one, so it only ever answers a round you raced yourself.
+   */
+  async fetchResults(n) {
+    try {
+      const s = await this._sdk.get(this._ref(`${this._base}/rounds/${n}/results`));
+      return s.val() || {};
+    } catch { return null; }
+  }
+
   async advanceRound(next) {
     const S = this._sdk;
     // A transaction, so two clients deciding "the round is over" at the same
@@ -971,6 +987,12 @@ class LocalTransport extends EventTarget {
   async hasOwnResult(n) {
     const room = this._read();
     return !!room?.rounds?.[n]?.results?.[this.snap.uid];
+  }
+
+  /** The same gate as the hosted rule: only a round you have a result in. */
+  async fetchResults(n) {
+    const res = this._read()?.rounds?.[n]?.results;
+    return res?.[this.snap.uid] ? { ...res } : null;
   }
 
   async leave() {

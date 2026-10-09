@@ -2053,7 +2053,7 @@ body.inspecting #last-replay, body.focus #last-replay { display: none; }
    sotdShine above rather than a second keyframe for the same gesture. */
 .owner-shine {
   position: relative; display: inline-block; overflow: hidden;
-  /* !important: this sits inside .race-name > b, .db-name and .race-board-name,
+  /* !important: this sits inside .race-name > b, .db-name, .race-last-n and .tr-name,
      each of which sets its own color at equal or higher specificity. */
   color: var(--gold) !important;
   cursor: pointer;
@@ -3158,44 +3158,154 @@ body.focus #dock-bottom, body.focus #tile-float-layer { opacity: 0; pointer-even
 }
 .race-chat-send:hover { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
 
-/* ---- standings ---- */
-.race-board {
-  display: flex; flex-direction: column; gap: 2px;
-  margin-top: 8px; padding-top: 8px;
-  border-top: 1px solid var(--border);
+/* ---- the round before this one ----
+   Stays up for the whole of the next round (race.js, _lastRound), so a
+   result is something you can read rather than a flash. */
+.race-last {
+  display: flex; flex-direction: column; gap: 4px;
+  padding: 7px 9px 8px; border-radius: 11px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--text) 3%, transparent);
+  animation: duel-last-in .35s var(--ease) both;
 }
-.race-board-head {
-  display: flex; justify-content: space-between; align-items: baseline;
-  font-size: .62rem; letter-spacing: .09em; text-transform: uppercase;
-  color: var(--text-faint); margin-bottom: 3px;
+.race-last[hidden] { display: none; }
+.race-last-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.race-last-k { font-size: .62rem; letter-spacing: .09em; text-transform: uppercase; color: var(--text-faint); font-weight: 700; }
+.race-last-v { font-size: .7rem; font-weight: 700; color: var(--text-dim); }
+.race-last-v[data-win="true"] { color: var(--gold); }
+/* Two columns: six racers in three lines, in a rail barely wider than one. */
+.race-last-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px 6px; }
+.race-last-row {
+  display: grid; grid-template-columns: 12px minmax(0, 1fr) auto; align-items: baseline; gap: 5px;
+  padding: 2px 6px; border-radius: 7px; font-size: .72rem;
 }
-.race-board-row {
-  display: grid;
-  grid-template-columns: 14px minmax(0, 1fr) auto auto;
-  align-items: center; gap: 8px;
-  padding: 3px 7px; border-radius: var(--radius-sm);
-  font-size: .74rem;
+.race-last-row[data-me="true"] { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.race-last-p { font-size: .62rem; color: var(--text-faint); font-variant-numeric: tabular-nums; text-align: right; }
+.race-last-row[data-win="true"] .race-last-p { color: var(--gold); font-weight: 700; }
+.race-last-n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-weight: 600; }
+.race-last-t { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: .7rem; font-weight: 600; color: var(--text-dim); }
+.race-last-row[data-win="true"] .race-last-t { color: var(--gold); }
+.race-last-more { font-size: .64rem; color: var(--text-faint); padding-left: 6px; }
+@media (prefers-reduced-motion: reduce) { .race-last { animation: none; } }
+[data-motion="off"] .race-last { animation: none; }
+
+/* A finished round, as a line in the room's chat. */
+.race-chat-round {
+  margin: 3px 0; padding: 2px 0;
+  border-top: 1px dashed color-mix(in srgb, var(--border) 80%, transparent);
+  border-bottom: 1px dashed color-mix(in srgb, var(--border) 80%, transparent);
+  text-align: center; font-size: .66rem; color: var(--text-faint);
 }
-.race-board-row[data-me="true"] { background: color-mix(in srgb, var(--accent) 10%, transparent); }
-/* Somebody who has left keeps their wins and stops claiming to be here. */
-.race-board-row[data-gone="true"] { opacity: .5; }
-.race-board-rank {
-  font-size: .66rem; color: var(--text-faint);
-  font-variant-numeric: tabular-nums; text-align: right;
+
+/* With the standings moved into the Race stats panel, the chat is what the
+   race panel has room for: on a desktop it takes what the rail has left,
+   the same as in a 1v1. Below the breakpoint the panel is a capped sheet and
+   keeps its capped log. */
+@media (min-width: 861px) {
+  #panel-race:not([data-duel="true"]) { flex: 1 1 auto; }
+  #panel-race:not([data-duel="true"]) .race-body { flex: 1 1 auto; }
+  /* On a short rail the live rows are what give way — they scroll in place —
+     so the chat and the room's buttons never leave the screen. Not the body:
+     see the note on #panel-race for why an overflow container there stops
+     anything inside it from shrinking. */
+  #panel-race:not([data-duel="true"]) .race-rows {
+    flex: 0 1 auto; min-height: 30px;
+    overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin;
+  }
+  #panel-race:not([data-duel="true"]) .race-chat { flex: 1 1 auto; min-height: 130px; display: flex; flex-direction: column; }
+  #panel-race:not([data-duel="true"]) .race-chat-log { flex: 1 1 auto; min-height: 64px; max-height: none; }
+  /* Everyone's numbers are in the Race stats panel now, so the live rows
+     only have to say who is where: a slimmer line each buys the chat room. */
+  #panel-race:not([data-duel="true"]) .race-row { min-height: 26px; padding: 2px 7px; }
+  #panel-race:not([data-duel="true"]) .race-av { width: 18px; height: 18px; font-size: .5rem; }
+  #panel-race:not([data-duel="true"]) .race-row { grid-template-columns: 14px 18px minmax(0, 1fr) auto; }
 }
-.race-board-row:first-of-type .race-board-rank { color: var(--gold); font-weight: 700; }
-.race-board-name {
-  color: var(--text); font-weight: 600;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+
+/* ---- Race stats, in the times panel while a room is open ----
+   The solve list and its foot step aside for the room's own numbers; the
+   "Your solves" tab puts them back. */
+#panel-times[data-race] > .panel-head { display: none; }
+#panel-times[data-race]:not([data-race="solves"]) > :not(.tile-grip, #times-race) { display: none !important; }
+.times-race { display: flex; flex-direction: column; gap: 9px; min-height: 0; }
+#panel-times:not([data-race="solves"]) > .times-race { flex: 1 1 auto; }
+.tr-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.tr-title { font-weight: 650; color: var(--text); }
+.tr-sub { font-family: var(--font-mono); font-size: .7rem; color: var(--text-faint); }
+.tr-tabs {
+  display: flex; gap: 3px; padding: 3px; border-radius: 10px;
+  background: color-mix(in srgb, var(--bg-2) 80%, transparent);
 }
-.race-board-best {
-  font-family: ui-monospace, monospace; font-size: .7rem;
-  color: var(--text-faint); font-variant-numeric: tabular-nums;
+.tr-tab {
+  flex: 1 1 0; min-width: 0; padding: 5px 4px; border: 0; border-radius: 8px;
+  background: none; color: var(--text-dim); font: inherit; font-size: .74rem; font-weight: 600;
+  cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.race-board-wins {
-  font-size: .7rem; font-weight: 700; color: var(--gold);
-  font-variant-numeric: tabular-nums;
+.tr-tab:hover { color: var(--text); }
+.tr-tab[aria-selected="true"] { background: var(--surface-2); color: var(--text); }
+.tr-me { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; }
+.tr-fig {
+  display: flex; flex-direction: column; align-items: center; gap: 1px;
+  padding: 6px 4px; border-radius: 9px;
+  background: color-mix(in srgb, var(--bg-2) 80%, transparent);
 }
+.tr-fig i {
+  font-style: normal; font-size: .58rem; letter-spacing: .07em; text-transform: uppercase;
+  color: var(--text-faint); white-space: nowrap;
+}
+.tr-fig span { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: .86rem; font-weight: 650; color: var(--text); }
+.tr-fig span.wins { color: var(--gold); }
+.tr-fig span.best { color: var(--ok); }
+.tr-scroll {
+  flex: 1 1 auto; min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin;
+  /* What the sticky name column paints behind itself: opaque, or the times
+     scrolling underneath it would show through. */
+  --tr-bg: color-mix(in srgb, var(--surface) 96%, var(--text));
+}
+.tr-table {
+  border-collapse: separate; border-spacing: 0; width: max-content; min-width: 100%;
+  font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: .72rem;
+}
+.tr-table th, .tr-table td { padding: 4px 5px; text-align: right; white-space: nowrap; }
+.tr-table thead th {
+  position: sticky; top: 0; z-index: 1;
+  background: var(--tr-bg); color: var(--text-faint);
+  font-family: var(--font-ui); font-size: .62rem; font-weight: 600; letter-spacing: .04em;
+}
+.tr-table tbody td, .tr-table tbody th { border-top: 1px solid color-mix(in srgb, var(--border) 55%, transparent); }
+/* The racer and their wins stay put while older rounds scroll past. */
+.tr-table .tr-who {
+  position: sticky; left: 0; z-index: 2;
+  width: 96px; min-width: 96px; max-width: 96px; text-align: left;
+  background: var(--tr-bg);
+  font-family: var(--font-ui); font-weight: 600; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis;
+}
+.tr-table .tr-w {
+  position: sticky; left: 96px; z-index: 2;
+  background: var(--tr-bg); color: var(--gold); font-weight: 700;
+  box-shadow: 1px 0 0 var(--border);
+}
+.tr-table thead .tr-who, .tr-table thead .tr-w { z-index: 3; color: var(--text-faint); font-weight: 600; }
+.tr-rank { display: inline-block; min-width: 14px; margin-right: 4px; font-size: .62rem; color: var(--text-faint); text-align: right; font-variant-numeric: tabular-nums; }
+.tr-dot {
+  display: inline-block; width: 7px; height: 7px; margin-right: 6px; border-radius: 50%;
+  vertical-align: 1px; background: hsl(var(--av-h, 260) 75% 62%);
+}
+.tr-name { vertical-align: baseline; }
+.tr-table tbody tr[data-me="true"] > * { background: color-mix(in srgb, var(--accent) 14%, var(--tr-bg)); }
+.tr-table tbody tr[data-me="true"] > .tr-who { box-shadow: inset 2px 0 var(--accent); }
+.tr-table tbody tr[data-gone="true"] { opacity: .5; }
+.tr-table td[data-s="best"] { color: var(--ok); font-weight: 700; }
+.tr-table td[data-s="dnf"] { color: var(--danger); }
+.tr-table td[data-s="none"], .tr-table td[data-s="hidden"] { color: var(--text-faint); }
+.tr-table td { color: var(--text-dim); }
+.tr-empty { padding: 10px 4px; font-family: var(--font-ui); font-size: .72rem; color: var(--text-faint); }
+/* On a phone the Times tab is this panel, full width and without its card. */
+body.ph .times-race { padding: 6px 12px 0; }
+/* ...and the race sheet, which sits over the foot of every tab, steps aside
+   on that one: it would cover the very table the tab is showing. The Timer
+   tab still has it, chat and all. */
+body.ph[data-tab="times"]:has(#times-race) #panel-race { display: none; }
 
 .race-delta {
   font-style: normal; font-size: .62rem; font-weight: 650;
@@ -3297,7 +3407,6 @@ body.focus #dock-bottom, body.focus #tile-float-layer { opacity: 0; pointer-even
    last round's result under it for the whole of the next round. */
 #panel-race .race-status[hidden],
 #panel-race .race-meter[hidden],
-#panel-race .race-board[hidden] { display: none; }
 
 .duel-board {
   display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);

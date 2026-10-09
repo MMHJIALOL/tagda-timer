@@ -54,11 +54,31 @@ const chatOff = () => (getConfig('raceChat', 'enabled') ? null
  * fire on the event that caused them rather than on the next tick.
  *
  * Short enough now that it is not a pause you sit through. Nothing about the
- * finished round vanishes when it expires — the standings board and the row
- * with your time stay exactly where they are — so this is only how long the
- * scramble area waits before handing you the next one to pick up.
+ * finished round vanishes when it expires — it is kept (see _settle), stays
+ * on the race panel as the last round until a newer one replaces it, and is a
+ * column in the Race stats panel for the rest of the visit — so this is only
+ * how long the scramble area waits before handing you the next one to pick up.
  */
 const SETTLE_MS = 700;
+
+/**
+ * How long a finished round waits for the last finisher's time to arrive.
+ *
+ * Their 'done' is written before their result, so "everyone is done" is
+ * usually true a round trip before every time is readable. Settling on the
+ * first meant the round was kept without the time that decided it. Bounded,
+ * because a time that never comes must not hold the room up.
+ */
+const RESULTS_WAIT_MS = 2500;
+
+/** Rounds kept per room before the oldest are folded into the tally. */
+const HISTORY_MAX = 200;
+
+/** Racers the last-round card lists before it points at the Race stats panel. */
+const LAST_MAX = 4;
+
+/** 1st, 2nd, 3rd, 4th… 11th, 12th, 13th, 21st. */
+const ordinal = (n) => n + ((n % 100 >= 11 && n % 100 <= 13) ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] || 'th');
 
 /**
  * The same, in a 1v1. A room's leaderboard is a list you glance at; a 1v1's
@@ -168,12 +188,14 @@ export class Race extends EventTarget {
     /** Rounds we have already celebrated / folded into standings. */
     this.settledRound = 0;
 
-    /** uid -> { name, wins, played, best, lastRank } for this room. */
+    /** uid -> { name, wins, played, best, lastRank, ... } for this room, worked out from `history`. */
     this.standings = new Map();
+    /** Every finished round in this room, oldest first — see _loadHistory. */
+    this.history = [];
+    /** The tally from before rounds were kept, or from rounds trimmed off the end. */
+    this.baseStandings = {};
     /** roundNo -> the solve this client saved for it, so a row can edit it. */
     this.mySolves = new Map();
-    /** uid -> rank in the previous settled round, for the ▲▼ column. */
-    this.prevRanks = new Map();
 
     /** Set while a settled leaderboard is being read, before the next round. */
     this.settleAt = 0;
@@ -305,10 +327,8 @@ export class Race extends EventTarget {
        can rebuild everything else — so clearing here meant a reload, a
        dropped socket or a rejoin reset the room to nobody having won
        anything, which is the one number people are actually keeping. */
-    this.standings = this._loadStandings(roomId);
-    /** A 1v1's rounds, oldest first: { no, me, them } with each side's result or null. */
-    this.duelRounds = [];
-    this.prevRanks.clear();
+    this._loadHistory(roomId);
+    this._allDoneAt = 0;
     this.mySolves.clear();
     this._resetChat();
 
@@ -353,6 +373,7 @@ export class Race extends EventTarget {
     this._tick = 0;
     clearTimeout(this._settleTimer);
     this._settleTimer = 0;
+    clearTimeout(this._waitTimer);
     // Camera and mic off before anything else: leaving must never leave either lit.
     this._cam?.stop();
     this._cam = null;
@@ -367,7 +388,6 @@ export class Race extends EventTarget {
     this._prevRound = undefined;
     this._prevPhase = undefined;
     this._duel = null;
-    this.duelRounds = [];
     this._resetChat();
     this._syncPanel();
     // Back to the session you were in, and to the app's own scrambles. The
@@ -394,9 +414,14 @@ export class Race extends EventTarget {
      * mid-round from noticing it had already submitted. */
     const prevRound = this._prevRound;
     const prevPhase = this._prevPhase;
+    /* The round object as last seen, kept for the same reason: once the
+       pointer moves, the snapshot only holds the new round, and the old one's
+       progress is what a round this tab never got to settle is kept from. */
+    const prevObj = this._roundObj;
     this.snap = snap;
     this._prevRound = this.round?.no;
     this._prevPhase = this.phase;
+    this._roundObj = this.round;
 
     /* The race was ended under us — by the host, or by this client's own
        End race. Give the timer its own scrambles back and forget the round
@@ -436,7 +461,27 @@ export class Race extends EventTarget {
        * was suppressed as a repeat — the room saw you sitting at 'waiting'
        * while you were already on the cube. */
       this._lastStatus = null;
+      this._allDoneAt = 0;
       this._restoreOwnResult(this.round.no);
+
+      /* The room moved on. If another tab's clock settled it before this
+         one did, keep it now from what was last seen; and either way, a round
+         kept with a time still missing reads that time once, directly. */
+      if (prevObj && prevObj.no === prevRound && prevPhase === 'racing' && this.phase === 'racing') {
+        if (prevObj.info && this.settledRound !== prevObj.no) {
+          this.settledRound = prevObj.no;
+          this._settle(prevObj);
+        }
+        this._backfill(prevObj.no);
+      }
+    }
+
+    /* A time that lands after its round was kept, while the round is still
+       the live one: patch it in rather than leave the round short. */
+    const kept = this.history.at(-1);
+    if (kept?.pending && kept.no === this.round?.no && this._patch(kept, this.round.results)) {
+      this._restand();
+      this._maybeCelebrate(kept);
     }
 
     this._maybeOpenRound();
@@ -775,8 +820,20 @@ export class Race extends EventTarget {
 
     const live = this.livePlayers();
     const done = live.filter(([id]) => r.progress?.[id]?.status === 'done');
-    const everyone = live.length > 0 && done.length === live.length;
+    const allDone = live.length > 0 && done.length === live.length;
     const someone = done.length > 0;
+
+    /* Everyone is done — but if this tab can read the times, wait (briefly)
+       until it actually has them, so the round is kept with the time that
+       decided it. See RESULTS_WAIT_MS. */
+    if (allDone && !this._allDoneAt) this._allDoneAt = Date.now();
+    if (!allDone) this._allDoneAt = 0;
+    const timesIn = !this.revealed || done.every(([id]) => r.results?.[id]);
+    const everyone = allDone && (timesIn || Date.now() - this._allDoneAt >= RESULTS_WAIT_MS);
+    if (allDone && !everyone) {
+      clearTimeout(this._waitTimer);
+      this._waitTimer = setTimeout(() => this._evaluateRound(), RESULTS_WAIT_MS + 20);
+    }
 
     // The grace clock starts the moment the first person finishes, and only
     // matters if somebody never does.
@@ -1100,62 +1157,193 @@ export class Race extends EventTarget {
     });
   }
 
-  /* ---------------- standings, kept across reloads ---------------- */
-
-  _standingsKey(roomId = this.snap?.roomId) { return `race:standings:${roomId}`; }
-
-  /**
+  /* ---------------- every round, kept across reloads ----------------
+   *
+   * Each finished round is kept whole — who raced it and every time this tab
+   * was allowed to see — and the standings are worked out from that list
+   * rather than tallied as the rounds go by. A tally can only ever be as right
+   * as the moment it was taken, and the moment a round settles is exactly
+   * when the last finisher's time has usually not arrived yet: their 'done'
+   * is written before their result. Kept as rounds, a late time just patches
+   * the round it belongs to and the standings are worked out again.
+   *
    * Per room, and only in this browser. It is a scoreboard for the visit, not
    * a record: putting it in the database would need write rules of its own,
    * and a tally anybody in the room can write to is a tally anybody in the
    * room can forge.
    */
-  _loadStandings(roomId) {
-    try {
-      const raw = JSON.parse(localStorage.getItem(this._standingsKey(roomId)) || '{}');
-      return new Map(Object.entries(raw));
-    } catch { return new Map(); }
+
+  _historyKey(roomId = this.snap?.roomId) { return `race:rounds:${roomId}`; }
+  _standingsKey(roomId = this.snap?.roomId) { return `race:standings:${roomId}`; }
+
+  _loadHistory(roomId) {
+    let saved = null;
+    try { saved = JSON.parse(localStorage.getItem(this._historyKey(roomId)) || 'null'); } catch {}
+    if (Array.isArray(saved?.rounds)) {
+      this.baseStandings = saved.base || {};
+      this.history = saved.rounds;
+    } else {
+      /* A room joined before rounds were kept: its old tally becomes the
+         starting point, so nobody's wins vanish on the way across. */
+      try { this.baseStandings = JSON.parse(localStorage.getItem(this._standingsKey(roomId)) || '{}'); }
+      catch { this.baseStandings = {}; }
+      this.history = [];
+    }
+    this._restand(false);
   }
 
-  _saveStandings() {
+  _saveHistory() {
     if (!this.snap?.roomId) return;
     try {
+      localStorage.setItem(this._historyKey(),
+        JSON.stringify({ base: this.baseStandings, rounds: this.history }));
+      // Still written, so a tab on the previous version reads the same tally.
       localStorage.setItem(this._standingsKey(), JSON.stringify(Object.fromEntries(this.standings)));
     } catch { /* a blocked or full store costs the scoreboard, not the race */ }
   }
 
-  /** Fold a finished round into the standings, and celebrate if it was yours. */
-  _settle(r) {
-    const ranked = this.ranked(r);
-    this.prevRanks = new Map(this.standings.size ? [...this.standings].map(([k, v]) => [k, v.lastRank]) : []);
+  /** Just what a table needs from a result. */
+  static slim(res) {
+    return res ? { timeMs: res.timeMs, penalty: res.penalty || 'none' } : null;
+  }
 
-    ranked.forEach((row, i) => {
-      const s = this.standings.get(row.uid) || { name: '', wins: 0, played: 0, best: null, lastRank: null };
+  /** uid -> place in a kept round. Only people with a time are placed; DNFs go last. */
+  static places(entry) {
+    const out = new Map();
+    entry.rows.filter(x => x.res)
+      .sort((a, b) => { const x = effOf(a.res), y = effOf(b.res); return x === y ? 0 : x < y ? -1 : 1; })
+      .forEach((x, i) => out.set(x.uid, i + 1));
+    return out;
+  }
+
+  /** Add one kept round to a standings map. */
+  static fold(st, entry) {
+    const places = Race.places(entry);
+    for (const row of entry.rows) {
+      const s = st.get(row.uid) || { name: '', wins: 0, played: 0, best: null, lastRank: null };
       s.played += 1;
       /* Carried on the entry so the table can still name somebody who has
          since left. The player list only holds people who are still here,
          and a winner who closed their tab should not vanish from the board. */
-      s.name = row.player?.name || s.name;
-      const e = effOf(row.result);
-      if (isFinite(e) && (s.best == null || e < s.best)) s.best = e;
-      if (i === 0 && row.result && e !== Infinity) s.wins += 1;
-      s.lastRank = i + 1;
-      this.standings.set(row.uid, s);
-    });
-    this._saveStandings();
-
-    /* A 1v1 keeps every round, both times: the round-by-round list and the
-       you-vs-them figures in the stats panel are built from it. */
-    if (this.isDuel && this.opponent && !this.duelRounds.some(x => x.no === r.no)) {
-      this.duelRounds.push({
-        no: r.no,
-        me: r.results?.[this.uid] || null,
-        them: r.results?.[this.opponent.uid] || null,
-      });
+      s.name = row.name || s.name;
+      const e = effOf(row.res);
+      if (Number.isFinite(e)) {
+        if (s.best == null || e < s.best) s.best = e;
+        s.sum = (s.sum || 0) + e;
+        s.timed = (s.timed || 0) + 1;
+      }
+      const p = places.get(row.uid);
+      if (p) {
+        s.placeSum = (s.placeSum || 0) + p;
+        s.placed = (s.placed || 0) + 1;
+        if (p === 1 && Number.isFinite(e)) s.wins += 1;
+      }
+      s.lastRank = p ?? null;
+      st.set(row.uid, s);
     }
+  }
 
-    const mine = ranked.findIndex(x => x.uid === this.uid);
-    if (mine === 0 && ranked.length > 1) this._celebrate();
+  /** Work the standings out again from the kept rounds. */
+  _restand(save = true) {
+    const st = new Map(Object.entries(this.baseStandings || {}).map(([k, v]) => [k, { ...v }]));
+    for (const entry of this.history) Race.fold(st, entry);
+    this.standings = st;
+    if (save) this._saveHistory();
+  }
+
+  /**
+   * A round as this tab saw it: everyone who was in it, whether they finished,
+   * and their time if this tab had earned the right to read it.
+   */
+  _entryFor(r) {
+    const seen = this.submittedRound === r.no;
+    const rows = this.livePlayers().map(([uid, p]) => ({
+      uid, name: p.name || '', color: p.color ?? null,
+      done: r.progress?.[uid]?.status === 'done',
+      res: seen ? Race.slim(r.results?.[uid]) : null,
+    }));
+    const entry = { no: r.no, at: Date.now(), seen, rows };
+    // Somebody who finished and has since closed their tab still raced it.
+    if (seen) this._patch(entry, r.results);
+    entry.pending = Race.missing(entry);
+    return entry;
+  }
+
+  /** A round this tab could read, with somebody's time still on its way. */
+  static missing(entry) {
+    return entry.seen && entry.rows.some(x => x.done && !x.res);
+  }
+
+  /** Patch a kept round with times that arrived after it was kept. */
+  _patch(entry, results) {
+    let changed = false;
+    for (const [uid, res] of Object.entries(results || {})) {
+      const row = entry.rows.find(x => x.uid === uid);
+      if (row && row.res) continue;
+      if (row) { row.res = Race.slim(res); row.done = true; }
+      else entry.rows.push({ uid, name: this.standings.get(uid)?.name || 'Cuber', color: null, done: true, res: Race.slim(res) });
+      changed = true;
+    }
+    entry.pending = Race.missing(entry);
+    return changed;
+  }
+
+  /** Keep a finished round, and celebrate if it was yours. */
+  _settle(r) {
+    if (this.history.some(h => h.no === r.no)) return;
+    const entry = this._entryFor(r);
+    this.history.push(entry);
+    /* Bounded, without losing anything that counts: a round that falls off
+       the end is folded into the starting tally first. */
+    while (this.history.length > HISTORY_MAX) {
+      const st = new Map(Object.entries(this.baseStandings || {}));
+      Race.fold(st, this.history.shift());
+      this.baseStandings = Object.fromEntries(st);
+    }
+    this._restand();
+    this._maybeCelebrate(entry);
+  }
+
+  /**
+   * The live listener for a round goes the moment the room moves on. A round
+   * kept with a time missing gets one read of its own instead — allowed by
+   * the same rule, since this tab raced it.
+   */
+  async _backfill(no) {
+    const entry = this.history.find(h => h.no === no);
+    if (!entry?.pending || this._filling?.has(no)) return;
+    (this._filling ||= new Set()).add(no);
+    try {
+      const res = await this.net?.fetchResults?.(no);
+      if (!this.history.includes(entry)) return;   // left the room meanwhile
+      if (res) this._patch(entry, res);
+      // Whatever is still missing now is missing for good: stop asking.
+      entry.pending = false;
+      this._restand();
+      this._maybeCelebrate(entry);
+      this._syncPanel();
+    } finally {
+      this._filling.delete(no);
+    }
+  }
+
+  /** Once a round is complete, and only once. */
+  _maybeCelebrate(entry) {
+    if (entry.pending || entry.cele) return;
+    entry.cele = true;
+    this._saveHistory();
+    const mine = entry.rows.find(x => x.uid === this.uid);
+    if (entry.rows.length > 1 && Race.places(entry).get(this.uid) === 1 && Number.isFinite(effOf(mine?.res))) {
+      this._celebrate();
+    }
+  }
+
+  /** A 1v1's rounds, oldest first: { no, me, them } with each side's result or null. */
+  get duelRounds() {
+    const opp = this.opponent;
+    if (!opp) return [];
+    const of = (h, uid) => h.rows.find(x => x.uid === uid)?.res || null;
+    return this.history.map(h => ({ no: h.no, me: of(h, this.uid), them: of(h, opp.uid) }));
   }
 
   /* ---------------- the 1v1's own view ---------------- */
@@ -1411,9 +1599,9 @@ export class Race extends EventTarget {
       <div class="race-body">
         <div class="race-meter"><i></i></div>
         <div class="race-status"></div>
+        <div class="race-last" hidden></div>
         <div class="race-rows" role="list"></div>
         <button class="race-more" type="button" hidden></button>
-        <div class="race-board" hidden></div>
         <div class="race-foot"></div>
         <div class="race-cam" hidden></div>
         <div class="race-chat">
@@ -1483,6 +1671,20 @@ export class Race extends EventTarget {
 
     this._wireEmoji(chat);
 
+    /* Pinned to the newest message for as long as the reader has not scrolled
+       up — remembered on scroll rather than measured at redraw, because the
+       log changes height on its own: it is the part of the panel that gives
+       way, so a new round's card or a row folding resizes it after the
+       messages were drawn, and a log measured then was left part-way up. */
+    const log = chat.querySelector('.race-chat-log');
+    this._chatPinned = true;
+    log.addEventListener('scroll', () => {
+      this._chatPinned = log.scrollTop + log.clientHeight >= log.scrollHeight - 24;
+    }, { passive: true });
+    if (typeof ResizeObserver === 'function') {
+      new ResizeObserver(() => { if (this._chatPinned) log.scrollTop = log.scrollHeight; }).observe(log);
+    }
+
     // Crossing the breakpoint changes which layout this panel is in, and with
     // it what "folded" should default to.
     addEventListener('resize', () => this._syncPanel());
@@ -1516,6 +1718,7 @@ export class Race extends EventTarget {
     }
 
     this._syncDuelStats();
+    this._syncRaceStats();
     // For the stats panel's styles: in a 1v1 its folded peek gives way to the you-vs-them table.
     document.body.classList.toggle('duel-on', on && this.isDuel && !!this.opponent);
     if (!on) { this.app.refreshLayout?.(); return; }
@@ -1546,7 +1749,7 @@ export class Race extends EventTarget {
   _sig(rows) {
     return [
       this.snap.roomId, this.phase, this.round?.no, this.revealed, this._expanded, this.collapsed,
-      this.isHost, this.isDuel, this.opponent?.name, this.duelRounds.length,
+      this.isHost, this.isDuel, this.opponent?.name, this._histSig(),
       ...rows.map(x => `${x.uid}:${x.status}:${x.eff ?? ''}:${x.standing?.wins ?? 0}:${x.clockOff ? 1 : 0}`),
     ].join('|');
   }
@@ -1579,7 +1782,7 @@ export class Race extends EventTarget {
     const status = node.querySelector('.race-status');
     status.hidden = duel;
     node.querySelector('.race-meter').hidden = duel;
-    node.querySelector('.race-board').hidden = duel;
+    node.querySelector('.race-last').hidden = duel;
     if (duel) {
       node.querySelector('.race-rows').replaceChildren(...this._duelBoard(rows));
       node.querySelector('.race-more').hidden = true;
@@ -1615,8 +1818,8 @@ export class Race extends EventTarget {
     more.textContent = this._expanded ? t('show fewer') : t('+{n} more', { n: hidden });
     more.onclick = () => { this._expanded = !this._expanded; this._syncPanel(); };
 
-    /* ---- standings ---- */
-    this._board(node.querySelector('.race-board'));
+    /* ---- the round before this one, until there is a newer one ---- */
+    this._lastRound(node.querySelector('.race-last'));
 
     /* ---- foot ---- */
     this._foot(node.querySelector('.race-foot'), { rows, done, live });
@@ -1759,6 +1962,7 @@ export class Race extends EventTarget {
   _resetChat() {
     this._chatSig = null;
     this._chatSentAt = 0;
+    this._chatPinned = true;
     const input = this._node?.querySelector('.race-chat-input');
     if (input) input.value = '';
     this._closeEmoji();
@@ -1851,20 +2055,32 @@ export class Race extends EventTarget {
     const log = this.chatLog;
 
     const host = wrap.querySelector('.race-chat-log');
-    const sig = log.map(m => m.id).join(',');
+    /* A room's rounds are part of its conversation: each one that finishes
+       says so in the log, in among what people said about it. Local lines —
+       nobody else is sent them. The last dozen, so a long visit's rounds
+       do not crowd out what was said. */
+    const lines = this.isDuel ? [] : this.history.slice(-12);
+    const sig = log.map(m => m.id).join(',') + '|' + (lines.length ? this._histSig() : '');
     if (sig === this._chatSig) return;
     this._chatSig = sig;
 
     /* Pinned to the bottom unless the reader has scrolled up to look at
        something, in which case yanking them back down is rude. */
-    const pinned = host.scrollTop + host.clientHeight >= host.scrollHeight - 24;
+    const pinned = this._chatPinned !== false;
 
     host.innerHTML = '';
-    if (!log.length) {
+    if (!log.length && !lines.length) {
       host.append(el('div', { class: 'race-chat-empty', text: t('Nothing said yet.') }));
     } else {
       let lastUid = null;
-      for (const m of log) {
+      const items = [...log, ...lines.map(h => ({ round: h, at: h.at }))]
+        .sort((a, b) => (a.at || 0) - (b.at || 0));
+      for (const m of items) {
+        if (m.round) {
+          lastUid = null;
+          host.append(el('div', { class: 'race-chat-round', text: this._roundLine(m.round) }));
+          continue;
+        }
         /* Consecutive messages from one person drop the name. In a rail this
            narrow the name is most of the line, and repeating it four times
            for four short messages leaves no room for the messages. */
@@ -1913,53 +2129,251 @@ export class Race extends EventTarget {
     toast('Race ended — back in the lobby', { long: true });
   }
 
+  /** Changes whenever what the kept rounds would draw changes. */
+  _histSig() {
+    const last = this.history.at(-1);
+    return `${this.history.length}:${last?.no ?? ''}:${last ? last.rows.filter(x => x.res).length : ''}:${last?.pending ? 1 : 0}`;
+  }
+
+  /** A racer's name, with the site owner's shine and card where it applies. */
+  _nameEl(name, cls, title = name) {
+    const owner = isOwnerName(name);
+    const node = el('span', {
+      class: `${cls}${owner ? ' owner-shine' : ''}`, text: name || 'Cuber',
+      title: owner ? t('{name} — that’s the site owner, click for the card', { name }) : title,
+    });
+    if (owner) node.addEventListener('click', (e) => { e.stopPropagation(); openOwnerCard(node); });
+    return node;
+  }
+
   /**
-   * The scoreboard for the visit: who has won how many, and who is still here.
+   * The round that just finished, kept on screen for the whole of the next one.
    *
-   * Separate from the rows on purpose. The rows are this round — they change
-   * every few seconds and go blank between scrambles, which is what made a
-   * win look like it had been taken away the moment the next round opened.
-   * This survives the round, the reload and the player leaving.
+   * The rows above are the live round, and they go back to "solving…" the
+   * moment the next scramble lands — less than a second after the last person
+   * finishes, which for the last person is no time at all. This is the same
+   * result, staying put until there is a newer one. Hidden while the rows are
+   * themselves showing that round, so it is never on screen twice.
    */
-  _board(host) {
+  _lastRound(host) {
     if (!host) return;
-    const entries = [...this.standings.entries()]
-      .filter(([, s]) => s.played > 0)
+    const last = this.history.at(-1);
+    const show = !!last && last.seen && !(last.no === this.round?.no && this.revealed);
+    host.hidden = !show;
+    if (!show) { host.replaceChildren(); return; }
+
+    const places = Race.places(last);
+    const ranked = last.rows.filter(x => places.has(x.uid))
+      .sort((a, b) => places.get(a.uid) - places.get(b.uid));
+    const mine = places.get(this.uid);
+    const myRes = last.rows.find(x => x.uid === this.uid)?.res;
+
+    const verdict = !mine ? t('you didn’t finish')
+      : myRes?.penalty === 'DNF' ? t('you DNF’d')
+      : mine === 1 ? t('you won')
+      : t('you {place} of {n}', { place: ordinal(mine), n: last.rows.length });
+
+    /* Two short lines: the top three and you, and the rest one look away in
+       the Race stats panel — the chat needs the height more. */
+    let shown = ranked;
+    if (ranked.length > LAST_MAX) {
+      shown = ranked.slice(0, LAST_MAX - 1);
+      const me = ranked.find(x => x.uid === this.uid);
+      shown.push(me && !shown.includes(me) ? me : ranked[LAST_MAX - 1]);
+    }
+
+    const list = el('div', { class: 'race-last-list' });
+    for (const row of shown) {
+      const p = places.get(row.uid);
+      list.append(el('div', { class: 'race-last-row', dataset: { me: String(row.uid === this.uid), win: String(p === 1) } },
+        el('span', { class: 'race-last-p', text: String(p) }),
+        this._nameEl(row.uid === this.uid ? t('You') : row.name, 'race-last-n', row.name),
+        el('b', { class: 'race-last-t', text: Race.resText(row.res) }),
+      ));
+    }
+    const rest = last.rows.length - shown.length;
+
+    host.replaceChildren(
+      el('div', { class: 'race-last-head' },
+        el('span', { class: 'race-last-k', text: t('Round {n}', { n: last.no }) }),
+        el('span', { class: 'race-last-v', dataset: { win: String(mine === 1) }, text: verdict })),
+      list,
+      rest > 0 ? el('div', { class: 'race-last-more', text: t('+{n} more in Race stats', { n: rest }) }) : null,
+    );
+  }
+
+  /* ---------------- the Race stats panel ----------------
+   *
+   * While a room is open, the times list makes way for the room's own
+   * numbers: every round's times for everyone in it, and the standings. Your
+   * own solves are still one tab away — this is the same panel, so it is
+   * wherever you docked your times, and on a phone it is the Times tab.
+   */
+  _syncRaceStats() {
+    const panel = document.getElementById('panel-times');
+    if (!panel) return;
+    const on = this.inRoom && !this.isDuel;
+    let box = document.getElementById('times-race');
+    if (!on) {
+      box?.remove();
+      delete panel.dataset.race;
+      this._raceStatsSig = '';
+      return;
+    }
+
+    const tab = this.statsTab || 'rounds';
+    panel.dataset.race = tab;
+    const live = this.livePlayers();
+    const sig = [this.snap.roomId, tab, this._histSig(), this.uid,
+      ...live.map(([uid, p]) => `${uid}:${p.name}`)].join('|');
+    if (box && sig === this._raceStatsSig) return;
+    this._raceStatsSig = sig;
+
+    if (!box) {
+      box = el('div', { id: 'times-race', class: 'times-race' });
+      panel.querySelector('.panel-head')?.after(box);
+    }
+    // Keep the reader where they were: a redraw lands once a round.
+    const scroller = box.querySelector('.tr-scroll');
+    const keep = scroller ? { x: scroller.scrollLeft, y: scroller.scrollTop } : null;
+
+    const tabs = el('div', { class: 'tr-tabs', role: 'tablist' });
+    for (const [id, label] of [['rounds', t('Rounds')], ['standings', t('Standings')], ['solves', t('Your solves')]]) {
+      tabs.append(el('button', {
+        class: 'tr-tab', type: 'button', role: 'tab', text: label,
+        'aria-selected': String(tab === id),
+        onclick: () => { this.statsTab = id; this._syncRaceStats(); this.app.refreshLayout?.(); },
+      }));
+    }
+
+    const head = el('div', { class: 'tr-head' },
+      el('span', { class: 'tr-title', text: t('Race stats') }),
+      el('span', { class: 'tr-sub', text: t('room {code}', { code: this.snap.roomId || '' }) }));
+
+    if (tab === 'solves') { box.replaceChildren(head, tabs); return; }
+
+    const order = this._standingsOrder();
+    const present = new Set(live.map(([uid]) => uid));
+    const me = this.standings.get(this.uid);
+    const f = (v) => (v == null || !Number.isFinite(v) ? '—' : fmt(v));
+    const figs = el('div', { class: 'tr-me' },
+      ...[
+        [t('Wins'), String(me?.wins || 0), 'wins'],
+        [t('Avg place'), me?.placed ? (me.placeSum / me.placed).toFixed(1) : '—', ''],
+        [t('Mean'), me?.timed ? f(me.sum / me.timed) : '—', ''],
+        [t('Best'), f(me?.best), 'best'],
+      ].map(([k, v, cls]) => el('div', { class: 'tr-fig' },
+        el('i', { text: k }), el('span', { class: cls, text: v }))));
+
+    const body = el('div', { class: 'tr-scroll' },
+      tab === 'rounds' ? this._roundsTable(order, present) : this._standingsTable(order, present));
+
+    box.replaceChildren(head, tabs, figs, body);
+    if (keep) { body.scrollLeft = keep.x; body.scrollTop = keep.y; }
+  }
+
+  /** Everyone the room has had, best first: wins, then average place, then best single. */
+  _standingsOrder() {
+    const avgPlace = (s) => (s.placed ? s.placeSum / s.placed : Infinity);
+    const ids = new Set([...this.standings.keys(), ...this.livePlayers().map(([uid]) => uid)]);
+    return [...ids].map(uid => [uid, this.standings.get(uid) || { name: this.snap.players?.[uid]?.name, wins: 0, played: 0, best: null }])
       .sort((a, b) => b[1].wins - a[1].wins
+        || avgPlace(a[1]) - avgPlace(b[1])
         || (a[1].best ?? Infinity) - (b[1].best ?? Infinity)
         || b[1].played - a[1].played);
+  }
 
-    host.hidden = entries.length === 0;
-    if (host.hidden) { host.innerHTML = ''; return; }
+  /** The name cell both tables start with: place, colour, name. */
+  _whoCell(uid, s, i, present) {
+    const name = this.snap.players?.[uid]?.name || s.name || 'Cuber';
+    const hue = this.snap.players?.[uid]?.color ?? hueOf(name);
+    const dot = el('span', { class: 'tr-dot' });
+    dot.style.setProperty('--av-h', String(hue));
+    return el('th', { class: 'tr-who', scope: 'row' },
+      el('span', { class: 'tr-rank', text: String(i + 1) }), dot,
+      this._nameEl(uid === this.uid ? t('You') : name, 'tr-name',
+        present.has(uid) ? name : t('{name} — no longer in the room', { name })));
+  }
 
-    const present = new Set(this.livePlayers().map(([uid]) => uid));
-    host.innerHTML = '';
-    host.append(el('div', { class: 'race-board-head' },
-      el('span', { text: t('Standings') }),
-      el('span', { text: t(entries.length === 1 ? '{n} racer' : '{n} racers', { n: entries.length }) }),
-    ));
-
-    entries.forEach(([uid, s], i) => {
-      const line = el('div', {
-        class: 'race-board-row',
-        dataset: { me: String(uid === this.uid), gone: String(!present.has(uid)) },
-      });
-      const boardOwner = isOwnerName(s.name);
-      const boardName = el('span', {
-        class: `race-board-name${boardOwner ? ' owner-shine' : ''}`, text: s.name || 'Cuber',
-        title: boardOwner ? t('{name} — that’s the site owner, click for the card', { name: s.name })
-          : present.has(uid) ? s.name : t('{name} — no longer in the room', { name: s.name || 'Cuber' }),
-      });
-      if (boardOwner) boardName.addEventListener('click', (e) => { e.stopPropagation(); openOwnerCard(boardName); });
-      line.append(
-        el('span', { class: 'race-board-rank', text: String(i + 1) }),
-        boardName,
-        el('span', { class: 'race-board-best', text: s.best != null && isFinite(s.best) ? fmt(s.best) : '—' }),
-        el('span', { class: 'race-board-wins', text: `${s.wins}/${s.played}`,
-          title: t(s.played === 1 ? '{w} won of {n} round' : '{w} won of {n} rounds', { w: s.wins, n: s.played }) }),
-      );
-      host.append(line);
+  /** One row a racer, one column a round, newest round first. */
+  _roundsTable(order, present) {
+    const rounds = [...this.history].reverse();
+    const table = el('table', { class: 'tr-table tr-rounds' });
+    const hrow = el('tr', {},
+      el('th', { class: 'tr-who', scope: 'col', text: t('Racer') }),
+      el('th', { class: 'tr-w', scope: 'col', text: t('W'), title: t('Rounds won') }));
+    for (const h of rounds) {
+      hrow.append(el('th', { scope: 'col', text: `R${h.no}`,
+        title: h.seen ? t('Round {n}', { n: h.no }) : t('Round {n} — you didn’t finish it, so its times stay hidden', { n: h.no }) }));
+    }
+    const fastest = new Map(rounds.map(h => {
+      const best = Math.min(...h.rows.map(x => effOf(x.res)).filter(Number.isFinite));
+      return [h.no, best];
+    }));
+    const tbody = el('tbody');
+    order.forEach(([uid, s], i) => {
+      const tr = el('tr', { dataset: { me: String(uid === this.uid), gone: String(!present.has(uid)) } },
+        this._whoCell(uid, s, i, present),
+        el('td', { class: 'tr-w', text: String(s.wins || 0) }));
+      for (const h of rounds) {
+        const row = h.rows.find(x => x.uid === uid);
+        const e = effOf(row?.res);
+        const state = !row ? 'out' : !h.seen ? 'hidden' : !row.res ? 'none'
+          : row.res.penalty === 'DNF' ? 'dnf' : e === fastest.get(h.no) ? 'best' : '';
+        tr.append(el('td', {
+          dataset: { s: state },
+          text: !row ? '' : !h.seen ? '?' : Race.resText(row.res),
+          title: state === 'out' ? t('Not in the room for this round')
+            : state === 'hidden' ? t('You didn’t finish this round, so its times stay hidden')
+            : state === 'none' ? t('Didn’t finish in time') : '',
+        }));
+      }
+      tbody.append(tr);
     });
+    table.append(el('thead', {}, hrow), tbody);
+    if (!rounds.length) {
+      return el('div', {}, table, el('div', { class: 'tr-empty', text: t('Each round’s times land here once it’s over.') }));
+    }
+    return table;
+  }
+
+  /** The whole visit, one line a racer. */
+  _standingsTable(order, present) {
+    const f = (v) => (v == null || !Number.isFinite(v) ? '—' : fmt(v));
+    const table = el('table', { class: 'tr-table tr-stand' });
+    table.append(el('thead', {}, el('tr', {},
+      el('th', { class: 'tr-who', scope: 'col', text: t('Racer') }),
+      el('th', { class: 'tr-w', scope: 'col', text: t('W'), title: t('Rounds won, of rounds raced') }),
+      el('th', { scope: 'col', text: t('Best') }),
+      el('th', { scope: 'col', text: t('Mean'), title: t('Mean of the rounds they finished') }),
+      el('th', { scope: 'col', text: t('Place'), title: t('Average place') }))));
+    const tbody = el('tbody');
+    order.forEach(([uid, s], i) => {
+      tbody.append(el('tr', { dataset: { me: String(uid === this.uid), gone: String(!present.has(uid)) } },
+        this._whoCell(uid, s, i, present),
+        el('td', { class: 'tr-w', text: `${s.wins || 0}/${s.played || 0}`,
+          title: t(s.played === 1 ? '{w} won of {n} round' : '{w} won of {n} rounds', { w: s.wins || 0, n: s.played || 0 }) }),
+        el('td', { text: f(s.best) }),
+        el('td', { text: s.timed ? f(s.sum / s.timed) : '—' }),
+        el('td', { text: s.placed ? (s.placeSum / s.placed).toFixed(1) : '—' }),
+      ));
+    });
+    table.append(tbody);
+    return table;
+  }
+
+  /** "Round 12 · Aarav won · 8.77 · you 2nd", for the chat log. */
+  _roundLine(h) {
+    if (!h.seen) return t('Round {n} is over — finish a round to see its times', { n: h.no });
+    const places = Race.places(h);
+    const top = h.rows.find(x => places.get(x.uid) === 1);
+    const mine = places.get(this.uid);
+    const parts = [t('Round {n}', { n: h.no })];
+    if (top && Number.isFinite(effOf(top.res))) {
+      parts.push(top.uid === this.uid ? t('you won') : t('{name} won', { name: top.name || 'Cuber' }), Race.resText(top.res));
+    }
+    if (mine && mine !== 1) parts.push(t('you {place}', { place: ordinal(mine) }));
+    return parts.join(' · ');
   }
 
   _row(row, i) {
