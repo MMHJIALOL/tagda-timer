@@ -1665,12 +1665,14 @@ export class Race extends EventTarget {
         <svg class="chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
       </button>
       <div class="race-body">
-        <div class="race-meter"><i></i></div>
-        <div class="race-status"></div>
-        <div class="race-last" hidden></div>
-        <div class="race-rows" role="list"></div>
-        <button class="race-more" type="button" hidden></button>
-        <div class="race-foot"></div>
+        <div class="race-top">
+          <div class="race-meter"><i></i></div>
+          <div class="race-status"></div>
+          <div class="race-last" hidden></div>
+          <div class="race-rows" role="list"></div>
+          <button class="race-more" type="button" hidden></button>
+          <div class="race-foot"></div>
+        </div>
         <div class="race-cam" hidden></div>
         <div class="race-chat">
           <div class="race-chat-head"><span class="race-chat-label">Chat</span></div>

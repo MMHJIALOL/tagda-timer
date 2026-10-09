@@ -2912,6 +2912,11 @@ body.focus #dock-bottom, body.focus #tile-float-layer { opacity: 0; pointer-even
   min-height: 0;
 }
 #panel-race .race-body > * { flex: none; }
+/* The round itself — progress, last round, rows, countdown — as one block,
+   so that on a short rail it can scroll as one while the chat's composer and
+   the room's buttons stay put underneath it. */
+#panel-race .race-top { display: flex; flex-direction: column; gap: 7px; min-height: 0; }
+#panel-race .race-top > * { flex: none; }
 /* An explicit floor, not `0` and not `auto` Ã¢â‚¬â€ both were tried and both were
    wrong in opposite directions.
    `0` let this box shrink below its own contents: the log and composer spilled
@@ -3162,8 +3167,8 @@ body.focus #dock-bottom, body.focus #tile-float-layer { opacity: 0; pointer-even
    Stays up for the whole of the next round (race.js, _lastRound), so a
    result is something you can read rather than a flash. */
 .race-last {
-  display: flex; flex-direction: column; gap: 4px;
-  padding: 7px 9px 8px; border-radius: 11px;
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 9px 10px 10px; border-radius: 12px;
   border: 1px solid var(--border);
   background: color-mix(in srgb, var(--text) 3%, transparent);
   animation: duel-last-in .35s var(--ease) both;
@@ -3174,16 +3179,16 @@ body.focus #dock-bottom, body.focus #tile-float-layer { opacity: 0; pointer-even
 .race-last-v { font-size: .7rem; font-weight: 700; color: var(--text-dim); }
 .race-last-v[data-win="true"] { color: var(--gold); }
 /* Two columns: six racers in three lines, in a rail barely wider than one. */
-.race-last-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px 6px; }
+.race-last-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 6px; }
 .race-last-row {
   display: grid; grid-template-columns: 12px minmax(0, 1fr) auto; align-items: baseline; gap: 5px;
-  padding: 2px 6px; border-radius: 7px; font-size: .72rem;
+  padding: 4px 7px; border-radius: 8px; font-size: .76rem;
 }
 .race-last-row[data-me="true"] { background: color-mix(in srgb, var(--accent) 14%, transparent); }
 .race-last-p { font-size: .62rem; color: var(--text-faint); font-variant-numeric: tabular-nums; text-align: right; }
 .race-last-row[data-win="true"] .race-last-p { color: var(--gold); font-weight: 700; }
 .race-last-n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-weight: 600; }
-.race-last-t { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: .7rem; font-weight: 600; color: var(--text-dim); }
+.race-last-t { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: .74rem; font-weight: 600; color: var(--text-dim); }
 .race-last-row[data-win="true"] .race-last-t { color: var(--gold); }
 .race-last-more { font-size: .64rem; color: var(--text-faint); padding-left: 6px; }
 @media (prefers-reduced-motion: reduce) { .race-last { animation: none; } }
@@ -3191,7 +3196,7 @@ body.focus #dock-bottom, body.focus #tile-float-layer { opacity: 0; pointer-even
 
 /* A finished round, as a line in the room's chat. */
 .race-chat-round {
-  margin: 3px 0; padding: 2px 0;
+  margin: 4px 0; padding: 3px 0;
   border-top: 1px dashed color-mix(in srgb, var(--border) 80%, transparent);
   border-bottom: 1px dashed color-mix(in srgb, var(--border) 80%, transparent);
   text-align: center; font-size: .66rem; color: var(--text-faint);
@@ -3203,22 +3208,21 @@ body.focus #dock-bottom, body.focus #tile-float-layer { opacity: 0; pointer-even
    keeps its capped log. */
 @media (min-width: 861px) {
   #panel-race:not([data-duel="true"]) { flex: 1 1 auto; }
+  /* The live rows are never squeezed: every racer up to the fold is drawn
+     at full size, which is the thing you are watching mid-round. The chat
+     gives way first, down to a floor that still reads as a conversation; on
+     a rail too short even for that, the round block above it scrolls as one,
+     and the composer and the room's buttons stay on screen. Squeezing the
+     rows instead left a two-person room showing one of the two. */
   #panel-race:not([data-duel="true"]) .race-body { flex: 1 1 auto; }
-  /* On a short rail the live rows are what give way — they scroll in place —
-     so the chat and the room's buttons never leave the screen. Not the body:
-     see the note on #panel-race for why an overflow container there stops
-     anything inside it from shrinking. */
-  #panel-race:not([data-duel="true"]) .race-rows {
-    flex: 0 1 auto; min-height: 30px;
+  #panel-race:not([data-duel="true"]) .race-top {
+    flex: 0 1 auto; min-height: 96px;
     overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin;
   }
-  #panel-race:not([data-duel="true"]) .race-chat { flex: 1 1 auto; min-height: 130px; display: flex; flex-direction: column; }
-  #panel-race:not([data-duel="true"]) .race-chat-log { flex: 1 1 auto; min-height: 64px; max-height: none; }
-  /* Everyone's numbers are in the Race stats panel now, so the live rows
-     only have to say who is where: a slimmer line each buys the chat room. */
-  #panel-race:not([data-duel="true"]) .race-row { min-height: 26px; padding: 2px 7px; }
-  #panel-race:not([data-duel="true"]) .race-av { width: 18px; height: 18px; font-size: .5rem; }
-  #panel-race:not([data-duel="true"]) .race-row { grid-template-columns: 14px 18px minmax(0, 1fr) auto; }
+  /* A shrink factor far above the round block's, so the chat gives its height
+     up first and the round only starts to scroll once the chat is at its floor. */
+  #panel-race:not([data-duel="true"]) .race-chat { flex: 1 1000 auto; min-height: 144px; display: flex; flex-direction: column; }
+  #panel-race:not([data-duel="true"]) .race-chat-log { flex: 1 1 auto; min-height: 72px; max-height: none; gap: 4px; }
 }
 
 /* ---- Race stats, in the times panel while a room is open ----
@@ -3790,6 +3794,7 @@ body.duel-on #panel-stats > .stats-duel { margin-top: 10px; }
   #panel-race[data-collapsed="true"] { max-height: none; }
   #panel-race[data-collapsed="true"] .race-body { display: flex; }
   #panel-race[data-collapsed="true"] .race-rows,
+  #panel-race[data-collapsed="true"] .race-last,
   #panel-race[data-collapsed="true"] .race-more,
   #panel-race[data-collapsed="true"] .race-foot,
   #panel-race[data-collapsed="true"] .race-chat,
