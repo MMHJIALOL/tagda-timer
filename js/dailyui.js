@@ -174,7 +174,11 @@ export function replaysBoard(rows, revealed, replays, { past = false, remove = n
   return el('div', { class: 'db-board' }, shared.map(([r, i]) => timeRow(r, i, replays, remove)));
 }
 
-const timeText = (res) => (res.penalty === 'DNF' ? 'DNF' : fmt(res.timeMs) + (res.penalty === '+2' ? '+' : ''));
+/* The time that counts, as the times list writes it: a 10.00 with a +2 is
+   12.00+. Printing the raw 10.00+ while ranking on 12.00 read as though the
+   +2 had been ignored. */
+const timeText = (res) => (res.penalty === 'DNF' ? 'DNF'
+  : fmt(res.timeMs + (res.penalty === '+2' ? 2000 : 0)) + (res.penalty === '+2' ? '+' : ''));
 
 const DEL_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7L7 17"/></svg>';
 

@@ -956,10 +956,12 @@ export class Daily extends EventTarget {
       ? [{ ...result, backup: true, photo: this._photo() }, { ...result, backup: true }, result]
       : [{ ...result, photo: this._photo() }, result];
     let landed = false;
+    this._submittingId = solve.id;
     for (const r of tries) {
       try { await this._retry(() => this.net.submitResult(r, at)); landed = true; break; }
       catch (err) { console.warn('[daily] result refused', err); }
     }
+    this._submittingId = null;
     if (!landed) toast('Today’s board would not accept that time', { kind: 'bad', hold: true });
     /* Only a result that landed retires the day. The note used to be written
        before the submit, so a time the board never took still skipped the
@@ -967,6 +969,9 @@ export class Daily extends EventTarget {
     if (!landed) return;
     markSotdDone(dayId);
     this._noteAttempt(at, solve.id);
+    /* A +2 or DNF pressed while the time was on its way: the solve object is
+       the one the times list edits, so it already carries it. */
+    if ((solve.penalty || 'none') !== result.penalty) this._pushPenalty(solve, at);
     this.net.unlockResults();
     this._changed();
     // sotd-replays.js: "Always share my SOTD replay" starts from here.
@@ -983,6 +988,34 @@ export class Daily extends EventTarget {
       for (const k of keys.slice(0, Math.max(0, keys.length - ATTEMPTS_KEPT))) delete all[k];
       localStorage.setItem(ATTEMPTS_KEY, JSON.stringify(all));
     } catch { /* private mode: the Share button just will not find the clip after a reload */ }
+  }
+
+  /**
+   * The penalty on a solve changed after it was recorded. If that solve was a
+   * Scramble of the Day attempt, the board's row gets the same penalty.
+   *
+   * The row is write-once except for this field: the rules let it get heavier
+   * at any time and lighter only for 15 s after submitting. Found through the
+   * attempt note, so it works after a reload and for an earlier day's row.
+   */
+  onPenalty(solve) {
+    if (!solve?.id || solve.id === this._submittingId) return;   // the submit picks it up
+    let at = null;
+    try {
+      const all = JSON.parse(localStorage.getItem(ATTEMPTS_KEY) || '{}');
+      const key = Object.keys(all).find(k => all[k] === solve.id);
+      if (key) { const [dayKey, event, uid] = key.split('|'); at = { dayKey, event, uid }; }
+    } catch { /* private mode: nothing was noted, so nothing to find */ }
+    if (at) this._pushPenalty(solve, at);
+  }
+
+  async _pushPenalty(solve, at) {
+    if (!this.net?.setPenalty) return;
+    try { await this.net.setPenalty(solve.penalty || 'none', at); }
+    catch (err) {
+      console.warn('[daily] penalty refused', err?.code || err);
+      toast(t('The board kept your earlier penalty — it can only be lightened in the first 15 seconds'), { kind: 'bad', long: true });
+    }
   }
 
   /** The local solve that was this account's attempt at the watched board, or null. */

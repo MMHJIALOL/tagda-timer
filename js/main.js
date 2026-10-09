@@ -2744,6 +2744,18 @@ function shownSolve() {
   return sotdBlank ? null : app.solves.at(-1) || null;
 }
 
+/**
+ * A penalty changed after the solve was recorded: hand it to whichever shared
+ * board already has this solve's time — a race room, a 1v1, today's Scramble
+ * of the Day. Each one checks whether the solve is one of its own and
+ * ignores it otherwise. Without this a +2 or DNF only ever reached your own
+ * times list, and the room and the board kept the clean time.
+ */
+function sharePenalty(solve) {
+  raceCtl()?.onPenalty?.(solve).catch?.(err => console.warn('[race] penalty not shared', err));
+  dailyCtl()?.onPenalty?.(solve);
+}
+
 /** The 2 / D / 0 keys, and the touch row under the digits. */
 async function penalizeLast(p) {
   const last = app.solves.at(-1);
@@ -2751,6 +2763,7 @@ async function penalizeLast(p) {
   if (last.competitionSetId) last.penaltyUpdatedAt=Date.now();
   last.penalty = last.penalty === p ? 'none' : p;
   await Solves.put(last).catch(error => console.warn('[db] penalty retained for recovery', error));
+  sharePenalty(last);
   renderAll();
   syncTimerDisplay();
   toast(last.penalty === 'none' ? t('Penalty cleared') : t('{p} applied', { p: last.penalty }));
@@ -3737,6 +3750,7 @@ function solveMenu(solve, anchor) {
     if (solve.competitionSetId) solve.penaltyUpdatedAt=Date.now();
     solve.penalty = solve.penalty === p ? 'none' : p;
     await Solves.put(solve).catch(error => console.warn('[db] edit retained for recovery', error));
+    sharePenalty(solve);
     renderAll();
     syncTimerDisplay();
   };
@@ -6183,6 +6197,7 @@ function wirePhoneShell() {
     if (solve.competitionSetId) solve.penaltyUpdatedAt=Date.now();
     solve.penalty = p;
     await Solves.put(solve).catch(error => console.warn('[db] edit retained for recovery', error));
+    sharePenalty(solve);
     renderAll();
     syncTimerDisplay();
   };

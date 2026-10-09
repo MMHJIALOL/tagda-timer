@@ -15,6 +15,8 @@ import { t } from './i18n.js';
      advanceRound(n)   move the room's pointer forward by exactly one
      unlockResults()   start reading other people's times
      fetchResults(n)   one read of a past round's times, once you raced it
+     watchResults(n,f) keep reading one past round's times, until unsubscribed
+     setPenalty(n, p)  change the penalty on your own submitted result
      destroy()
 
    It is an EventTarget and emits one event, 'room', carrying the whole
@@ -582,6 +584,27 @@ class FirebaseTransport extends EventTarget {
     } catch { return null; }
   }
 
+  /**
+   * Keep listening to a round after the room has moved past it.
+   *
+   * A penalty can be added after the time went in (setPenalty below), and
+   * the last round is exactly when that happens: you stop, the room moves on
+   * a moment later, and only then do you press +2. Returns the unsubscribe.
+   */
+  watchResults(n, cb) {
+    return this._sdk.onValue(this._ref(`${this._base}/rounds/${n}/results`),
+      (s) => cb(s.val() || {}), () => {});
+  }
+
+  /**
+   * The one change a submitted result still takes: its penalty, from its owner.
+   * The rules let it get heavier at any time and lighter only for 15 s after
+   * submitting (firebase.rules.json; tools/verify-penalty-rules.mjs).
+   */
+  async setPenalty(n, penalty) {
+    await this._sdk.set(this._ref(`${this._base}/rounds/${n}/results/${this.snap.uid}/penalty`), penalty);
+  }
+
   async advanceRound(next) {
     const S = this._sdk;
     // A transaction, so two clients deciding "the round is over" at the same
@@ -993,6 +1016,23 @@ class LocalTransport extends EventTarget {
   async fetchResults(n) {
     const res = this._read()?.rounds?.[n]?.results;
     return res?.[this.snap.uid] ? { ...res } : null;
+  }
+
+  /** Every change to the room is a 'room' event here, so re-read on each. */
+  watchResults(n, cb) {
+    const read = () => { const r = this._read()?.rounds?.[n]?.results; if (r?.[this.snap.uid]) cb({ ...r }); };
+    this.addEventListener('room', read);
+    read();
+    return () => this.removeEventListener('room', read);
+  }
+
+  /** The hosted rules' window is not modelled: nothing here is enforced. */
+  async setPenalty(n, penalty) {
+    this._mutate((room) => {
+      const mine = room.rounds?.[n]?.results?.[this.snap.uid];
+      if (!mine) return false;
+      mine.penalty = penalty;
+    });
   }
 
   async leave() {

@@ -503,6 +503,17 @@ export class DailyTransport extends EventTarget {
   }
 
   /**
+   * Change the penalty on your own submitted row: a +2 or DNF added after the
+   * solve, which used to reach your times list and never the board. The
+   * rules let it get heavier at any time and lighter only within 15 s of
+   * submitting (firebase.rules.json; tools/verify-penalty-rules.mjs).
+   */
+  async setPenalty(penalty, { dayKey, event, uid } = this.target()) {
+    if (!dayKey || !event || !uid) throw new Error('not-signed-in');
+    await this._sdk.set(this._ref(`daily/${dayKey}/${event}/results/${uid}/penalty`), penalty);
+  }
+
+  /**
    * Attach (or replace) the one-line note on your own row.
    *
    * A separate write from submitResult on purpose: the result is sealed the

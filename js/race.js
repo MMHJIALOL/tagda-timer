@@ -327,6 +327,8 @@ export class Race extends EventTarget {
        can rebuild everything else — so clearing here meant a reload, a
        dropped socket or a rejoin reset the room to nobody having won
        anything, which is the one number people are actually keeping. */
+    this._keptUnsub?.();
+    this._keptUnsub = null;
     this._loadHistory(roomId);
     this._allDoneAt = 0;
     this.mySolves.clear();
@@ -339,6 +341,8 @@ export class Race extends EventTarget {
       mode: this.app.settings.mode,
       kind,
     });
+    // After a reload too: the last round you raced can still take a late penalty.
+    if (this.history.length) this._watchKept(this.history.at(-1));
 
     /* A race is timed on the app's own clock or it is not a race. Switching
        the input source is a smaller surprise than silently letting somebody
@@ -374,6 +378,8 @@ export class Race extends EventTarget {
     clearTimeout(this._settleTimer);
     this._settleTimer = 0;
     clearTimeout(this._waitTimer);
+    this._keptUnsub?.();
+    this._keptUnsub = null;
     // Camera and mic off before anything else: leaving must never leave either lit.
     this._cam?.stop();
     this._cam = null;
@@ -720,19 +726,28 @@ export class Race extends EventTarget {
        for somebody who is sitting right there having finished. */
     await this._retry(() => this.net.setProgress({ status: 'done' }), 'progress');
 
+    const sent = solve.penalty || 'none';
+    let landed = false;
+    this._submittingRound = r.no;
     try {
       await this._retry(() => this.net.submitResult({
         timeMs: Math.round(solve.timeMs),
-        penalty: solve.penalty || 'none',
+        penalty: sent,
         hash: r.info.hash,
         suspect: this._looksSuspect(solve) || null,
       }), 'result');
+      landed = true;
     } catch (err) {
       // The rules refusing a write is information, not a crash: it means the
       // scramble or the server-observed clock gap did not line up.
       console.warn('[race] result refused', err);
       toast('The room would not accept that time', { kind: 'bad' });
+    } finally {
+      this._submittingRound = 0;
     }
+    /* A +2 or DNF pressed while the time was still on its way: the solve
+       object is the one the times list edits, so it already says so. */
+    if (landed && (solve.penalty || 'none') !== sent) this.onPenalty(solve);
     // Only now does the read of everyone else's times become allowed.
     this.net.unlockResults();
     this._serveScramble();
@@ -1248,6 +1263,7 @@ export class Race extends EventTarget {
     const st = new Map(Object.entries(this.baseStandings || {}).map(([k, v]) => [k, { ...v }]));
     for (const entry of this.history) Race.fold(st, entry);
     this.standings = st;
+    this._histVer = (this._histVer || 0) + 1;
     if (save) this._saveHistory();
   }
 
@@ -1262,7 +1278,7 @@ export class Race extends EventTarget {
       done: r.progress?.[uid]?.status === 'done',
       res: seen ? Race.slim(r.results?.[uid]) : null,
     }));
-    const entry = { no: r.no, at: Date.now(), seen, rows };
+    const entry = { no: r.no, at: Date.now(), seen, rows, mine: this.mySolves.get(r.no)?.id || null };
     // Somebody who finished and has since closed their tab still raced it.
     if (seen) this._patch(entry, r.results);
     entry.pending = Race.missing(entry);
@@ -1279,8 +1295,10 @@ export class Race extends EventTarget {
     let changed = false;
     for (const [uid, res] of Object.entries(results || {})) {
       const row = entry.rows.find(x => x.uid === uid);
-      if (row && row.res) continue;
-      if (row) { row.res = Race.slim(res); row.done = true; }
+      const next = Race.slim(res);
+      // A time that is already there only changes by its penalty — see setPenalty.
+      if (row?.res && row.res.timeMs === next.timeMs && row.res.penalty === next.penalty) continue;
+      if (row) { row.res = next; row.done = true; }
       else entry.rows.push({ uid, name: this.standings.get(uid)?.name || 'Cuber', color: null, done: true, res: Race.slim(res) });
       changed = true;
     }
@@ -1302,6 +1320,56 @@ export class Race extends EventTarget {
     }
     this._restand();
     this._maybeCelebrate(entry);
+    this._watchKept(entry);
+  }
+
+  /**
+   * Keep reading the newest kept round until there is a newer one.
+   *
+   * A penalty added after the time went in (onPenalty) lands on a round the
+   * room has often already left — you stop, the round moves on 0.7 s later,
+   * and then you press +2 — and the live listener went with the round. One
+   * extra listener, on one round, swapped as each round is kept.
+   */
+  _watchKept(entry) {
+    this._keptUnsub?.();
+    this._keptUnsub = null;
+    if (!entry.seen || !this.net?.watchResults) return;
+    this._keptUnsub = this.net.watchResults(entry.no, (results) => {
+      if (!this.history.includes(entry) || !this._patch(entry, results)) return;
+      this._restand();
+      this._syncPanel();
+    });
+  }
+
+  /**
+   * The penalty on one of your own race solves changed after it was submitted.
+   *
+   * The room's copy is write-once except for this one field, which the rules
+   * let you make heavier at any time and lighter only for 15 s afterwards. A
+   * change made while the submit is still in flight is picked up at the end of
+   * onSolveRecorded instead, since there is nothing to change yet.
+   */
+  async onPenalty(solve) {
+    if (!this.inRoom || !solve?.id || !this.net?.setPenalty) return;
+    let n = null;
+    for (const [no, s] of this.mySolves) if (s.id === solve.id) n = no;
+    n ??= this.history.find(h => h.mine === solve.id)?.no ?? null;
+    if (n == null || this._submittingRound === n) return;
+    const p = solve.penalty || 'none';
+    try {
+      await this.net.setPenalty(n, p);
+    } catch (err) {
+      console.warn('[race] penalty refused', err?.code || err);
+      toast(t('The room kept your earlier penalty — it can only be lightened in the first 15 seconds'), { kind: 'bad', long: true });
+      return;
+    }
+    // This tab's own copy at once, rather than after the listener comes round.
+    const h = this.history.find(x => x.no === n);
+    if (h && this._patch(h, { [this.uid]: { ...(h.rows.find(x => x.uid === this.uid)?.res || { timeMs: solve.timeMs }), penalty: p } })) {
+      this._restand();
+    }
+    this._syncPanel();
   }
 
   /**
@@ -2132,7 +2200,7 @@ export class Race extends EventTarget {
   /** Changes whenever what the kept rounds would draw changes. */
   _histSig() {
     const last = this.history.at(-1);
-    return `${this.history.length}:${last?.no ?? ''}:${last ? last.rows.filter(x => x.res).length : ''}:${last?.pending ? 1 : 0}`;
+    return `${this._histVer || 0}:${this.history.length}:${last?.no ?? ''}:${last?.pending ? 1 : 0}`;
   }
 
   /** A racer's name, with the site owner's shine and card where it applies. */
@@ -2198,7 +2266,8 @@ export class Race extends EventTarget {
         el('span', { class: 'race-last-k', text: t('Round {n}', { n: last.no }) }),
         el('span', { class: 'race-last-v', dataset: { win: String(mine === 1) }, text: verdict })),
       list,
-      rest > 0 ? el('div', { class: 'race-last-more', text: t('+{n} more in Race stats', { n: rest }) }) : null,
+      // replaceChildren, unlike el(), prints a null as the word "null".
+      ...(rest > 0 ? [el('div', { class: 'race-last-more', text: t('+{n} more in Race stats', { n: rest }) })] : []),
     );
   }
 
@@ -2461,9 +2530,8 @@ export class Race extends EventTarget {
     const { result } = row;
 
     if (state === 'revealed' || state === 'dnf') {
-      const shown = result.penalty === 'DNF' ? 'DNF'
-        : fmt(result.timeMs) + (result.penalty === '+2' ? '+' : '');
-      wrap.append(el('b', { class: 'race-time', text: shown }));
+      // The time that counts — 12.00+ for a 10.00 with a +2, as the times list writes it.
+      wrap.append(el('b', { class: 'race-time', text: Race.resText(result) }));
 
       // Delta against your own time, with a glyph as well as a colour — a
       // colour on its own is not a difference everybody can see.
