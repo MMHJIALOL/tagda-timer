@@ -32,15 +32,15 @@
      import hint in Settings over a main.js that has never heard of CubeDesk.
      vercel.json also serves /css/ as `max-age=31536000, immutable`, so a
      stylesheet there will not even be asked about for a year without it. -->
-<link rel="modulepreload" href="js/main.js?v=116">
-<link rel="stylesheet" href="css/fonts.css?v=116">
-<link rel="stylesheet" href="css/tokens.css?v=116">
-<link rel="stylesheet" href="css/base.css?v=116">
-<link rel="stylesheet" href="css/components.css?v=116">
-<link rel="stylesheet" href="css/announce.css?v=116">
+<link rel="modulepreload" href="js/main.js?v=117">
+<link rel="stylesheet" href="css/fonts.css?v=117">
+<link rel="stylesheet" href="css/tokens.css?v=117">
+<link rel="stylesheet" href="css/base.css?v=117">
+<link rel="stylesheet" href="css/components.css?v=117">
+<link rel="stylesheet" href="css/announce.css?v=117">
 <!-- Phones only: the same query as js/phone.js. A desktop or tablet never
      applies a rule from it, and does not wait on it to paint. -->
-<link rel="stylesheet" href="css/phone.css?v=116" media="(max-width: 640px)">
+<link rel="stylesheet" href="css/phone.css?v=117" media="(max-width: 640px)">
 <link rel="icon" href="assets/favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="assets/logo-192.png">
 <link rel="apple-touch-icon" href="assets/logo-180.png">
@@ -806,7 +806,7 @@
   </div>
 </div>
 
-<script type="module" src="js/main.js?v=116"></script>
+<script type="module" src="js/main.js?v=117"></script>
 <script>
 (function () {
   var isFile = location.protocol === 'file:';
@@ -819,13 +819,47 @@
     box.style.display = 'grid';
   }
   window.__tdtBootFail = fail;
+  /* A module that fails to link ("Importing binding name 'x' is not found",
+     "does not provide an export named 'x'") is two deploys mixed in the
+     worker's cache: the new main.js beside an old copy of a module it
+     imports. A plain reload cannot fix that, because sw.js only empties its
+     cache when index.html changes and the cached page is already the new
+     one. So empty it here (vendor/ and fonts stay, as in sw.js's dropApp)
+     and reload, once per tab session so a really broken deploy cannot loop.
+     main.js's healMixedDeploy does the same for modules loaded later. */
+  var healing = false;
+  function heal() {
+    if (isFile || !window.caches) return false;
+    try {
+      if (sessionStorage.getItem('healed-boot')) return false;
+      sessionStorage.setItem('healed-boot', '1');
+    } catch (err) { return false; }
+    healing = true;
+    var done = function () { location.reload(); };
+    setTimeout(done, 3000);   // a cache that never answers
+    caches.keys().then(function (names) {
+      return Promise.all(names.map(function (name) {
+        return caches.open(name).then(function (cache) {
+          return cache.keys().then(function (reqs) {
+            return Promise.all(reqs.filter(function (r) {
+              var u = new URL(r.url);
+              return !(u.pathname.indexOf('/vendor/') === 0 || u.pathname.indexOf('/assets/fonts/') === 0
+                || u.href.indexOf('https://www.gstatic.com/firebasejs/') === 0);
+            }).map(function (r) { return cache.delete(r); }));
+          });
+        });
+      }));
+    }).then(done, done);
+    return true;
+  }
   window.addEventListener('error', function (e) {
     if (e.message && /module|import/i.test(e.message)) {
+      if (/SyntaxError/.test(e.message) && heal()) return;
       fail('A script could not be loaded: ' + e.message);
     }
   }, true);
   setTimeout(function () {
-    if (window.__tdtBooted) return;
+    if (window.__tdtBooted || healing) return;
     fail(isFile
       ? 'You opened the file directly. Browsers block JavaScript modules on file:// addresses for security, so the timer cannot load. It needs to be served over http.'
       : 'The app scripts did not finish loading. Check that the whole project folder is being served.');
