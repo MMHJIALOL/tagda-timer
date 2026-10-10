@@ -425,7 +425,8 @@ tab's account, so it is little use against somebody determined. The rules apply 
 
 ![The Moderate tab: reports, every chat of the day, flagged times, and a shared replay being watched](docs/screenshots/admin-moderation.webp)
 
-The **Moderate** tab is four views over today, read live on the admin page's one connection.
+The **Moderate** tab is five views over today, read live on the admin page's one connection.
+The fifth, **Rooms**, has a section of its own below ("Race rooms and 1v1").
 An admin reads all of it without having done the scramble: the read rules on a day's `results`
 and `chat` let an admin through, and `rooms` is readable by admins as a whole.
 
@@ -465,6 +466,74 @@ the same update. That entry is write-once and never deleted, so a dismissed repo
 filed again by the same person. Reports are readable and deletable by admins only. `result` is
 accepted by the rules for a board row, but nothing in the app offers it yet: a flagged time is
 already in **Suspect**.
+
+### Race rooms and 1v1
+
+![A race room in the inspector: its players, each round's times with when they came in, and the room's actions](docs/screenshots/admin-rooms.webp)
+
+**Moderate › Rooms** lists the race rooms made in the last day (the same read as Chats): each
+with its code, whether it is a 1v1, how many people are in it now, how many rounds have times,
+and when it was made and last seen. **The last 7 days ›** reads a week of rooms once, on asking,
+and narrows them to one person: a uid finds every room they raced, posted or sat in, and part
+of a name finds them by the name they used. Rooms stay in the database (a racer can't delete
+one; the "last one out" clean-up in `race-net.js` is refused by the rules), so a week back is
+there to read.
+
+Tapping a room opens **the inspector**, which listens to that room while it is open:
+
+| Block | What it shows |
+|---|---|
+| Players | name, uid (tap to copy), when they joined, their last heartbeat, connected or gone quiet (past `race.hardTimeoutSec`), and anybody removed |
+| Rounds | newest first, from `rounds/<n>`: the scramble, the winner, and every time with how long after the round opened it came in, what the server timed between its own start and finish stamps, its penalty and **when the penalty changed** (`penaltyAt`, see below), and its flags |
+| Flags | the ⚑ the racer's own app set (far under their own average), and a time under `race.suspectPct` of the round's median when at least three people have a time (two people are a 1v1, not a field) |
+| Chat | the room's last 30 messages, each with **Delete** |
+
+A penalty lightened or cleared more than 15 s after submitting is refused by the rules (#164).
+A heavier one is allowed at any time, and the inspector marks it *late, allowed: heavier*. A
+penalty changed before this version has no time kept with it, and says so.
+
+**The room's actions** are one write each, to `rooms/<id>/mod`, which only an admin may write and
+every racer in the room listens to:
+
+```
+rooms/<id>/mod/closed               { at, by }           the room is closed
+rooms/<id>/mod/kicked/<uid>         <time>               this person was removed
+rooms/<id>/mod/struck/<round>/<uid> { at, by, reason? }  this time does not count
+```
+
+| Action | What happens | Undo |
+|---|---|---|
+| **Close room** | Every tab in it says *A moderator closed this room* and leaves. The rules refuse its heartbeats, new players, new times and new chat. Its rounds and chat stay to look at | **Reopen** |
+| **Remove** a player | Their row goes and the mark is set, in one update. Their tab says *A moderator removed you from this room* and leaves, and the rules refuse their rejoining, their times and their chat in that room. Other rooms are not affected: to keep somebody out of everything, **Ban** (beside it) | **Let back in** |
+| **Strike** a time | It stops counting on every screen in the room: out of the round, the standings and Race stats, shown as ✕ *Removed by a moderator*. The time itself stays, so it can be counted again. An optional reason is kept with it | **Count again** |
+| **Delete room** | The whole room goes for good. Typing its code is the confirmation. For test junk (the `rooms/ZXCVB` leak) or a room past saving | none |
+
+These marks sit beside `meta` rather than in it on purpose: any racer may write a room's `meta`
+(that is how a room runs itself), so a mark there could be wiped by a player.
+
+**The 1v1 lobby** (on Moderate › Rooms and on Today) shows the one waiting seat,
+`rooms/_1v1_333/meta/waiting`: empty, somebody waiting (their uid and when they last re-stamped
+it), or two people matched and joining. A seat not re-stamped for longer than `duel.staleSec`
+(and never under two re-stamps) is marked abandoned. **Clear seat** empties it with a
+transaction that only clears the seat it showed: a claim made in the meantime is left alone,
+and the page says so. Beside it: the day's 1v1s and how long one lasts (the median, from a
+1v1's creation to the last thing that happened in it).
+
+**The 1v1 relay** (on Today) counts the TURN relay logins handed out today. The app counts each
+time it asks the Worker for one, before asking:
+
+```
+turnDay/<dayStart>/<uid>    a count: +1 at a time, today only, read by its owner and by admins
+```
+
+Today shows the day's total, how many people, and the five with the most. Days older than 14
+are swept when the page opens. Bytes relayed are only on Cloudflare's dashboard.
+
+There is deliberately **no per-person cap** on relay logins (the plan's `duel.turnPerDay`). One
+login relays any number of gigabytes for as long as it lasts, so a count of logins bounds
+nothing that costs money, and the Worker has no way to tie a request to a count without a
+server-side counter of its own. The money switch is `duel.turnEnabled` (§4), and
+`duel.turnTtlMin` shortens what one login is worth.
 
 ## 7. Announcements
 
@@ -538,6 +607,8 @@ The tab the page opens on: the day so far, by the server's clock (it turns over 
 | Number | Where it comes from |
 |---|---|
 | Every switch, on or off, and the banner (§4) | `config/`, the copy the Settings tab edits |
+| The 1v1 lobby: the waiting seat, the day's 1v1s and how long one lasts | a listener on the seat, and the Moderate tab's read of the last day's rooms (§6) |
+| The 1v1 relay: logins handed out today, by how many people, the top five | `turnDay/<today>`, read over REST as this admin |
 | Scramble of the Day times, per event, and the day's featured event | the Moderate tab's listeners on today's boards |
 | Replays: clips against `replays.maxPerDay`, bytes against `replays.dayBudgetBytes` | the Worker's `GET /replay/usage`, admins only: one R2 `list` of today's clips (the same list a share makes), with the limits in force |
 | Chat messages in the day's rooms, and in race rooms | each event's room read with `?shallow=true` over REST, so only the message ids come down; race rooms from the Moderate tab's read |
@@ -772,6 +843,13 @@ rules do not know yet (every one Phase 4 added, from race tuning to Spotify, and
 is refused when saved, and the page says a new setting needs its rules published; the app keeps
 using its default.
 
+Phase 8 on Phase 7's rules: the inspector, the lobby and history read as before (admins could
+already read `rooms/`), but **Close**, **Remove**, **Strike** and **Delete room** are refused with
+*room actions need this version's firebase.rules.json published*. The app's listener on a
+room's marks is refused, which reads as no marks. A penalty change is sent with its time and,
+refused, again alone, which lands as it always did. The relay count is refused and the app
+carries on (Today says the count needs the rules). Clearing the 1v1 seat works on any rules.
+
 Phase 7 on Phase 5's rules: every new setting (`duel`, `competition`, `features`, and `app.banner`,
 `app.bannerKind`, `app.readOnly`) is refused when saved, with the usual *needs its rules published*,
 so the app keeps every default: everything on, no banner, writable. The Worker reads `config/duel`
@@ -815,6 +893,11 @@ rules are out. The cron finds nothing to apply.
   custom account, a different value, the schedule left behind, a schedule not due, one by somebody
   no longer an admin, anything but applying); a day ahead's scramble (admins only, changeable until
   the day, today's once by anybody); the featured event.
+- `node tools/verify-rooms-rules.mjs`: 72 checks. Closing a room (and what it then refuses:
+  heartbeats, joining, times, chat; leaving still allowed), removing a player and letting them
+  back, striking a time, deleting a room, each against racers, a non-admin Google account and an
+  anonymous one listed by mistake; `penaltyAt`; the relay count (+1 only, today only, who reads
+  it, the sweep); and the rules from before this phase.
 - `node tools/verify-switches-rules.mjs`: phase 7's rules. Random 1v1's seat and 1v1 rooms with
   `duel.enabled` on, off and missing (clearing the seat always allowed, a running 1v1 untouched);
   the call's setup with `duel.camEnabled`; the new settings four ways and at their edges.

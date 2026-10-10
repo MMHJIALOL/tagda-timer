@@ -166,6 +166,13 @@ with Google: reports need a Google account, and a race identity is anonymous. Th
 lists every race room made in the last day, with its chat and its flagged times, and can take any
 of them down.
 
+An admin can also act on a room (ADMIN.md §6, "Race rooms and 1v1"). Their marks are under
+`rooms/<id>/mod`, which only an admin writes and every racer listens to. A **closed** room or a
+**removed** player is refused by the rules (heartbeat, joining, times, chat), and the tab says
+why and leaves. A **struck** time counts for nothing on any screen in the room: it drops out of
+the round, the standings and Race stats, and shows as ✕. A penalty changed after submitting
+is now written with `penaltyAt` (the server's time), so a dispute can see when it came.
+
 ### Developing against the emulator
 
 To iterate on rules without touching a real project or burning quota:
@@ -294,7 +301,8 @@ looking, because the seat holds at most one. With few people online, most search
 will end in "couldn't find anyone"; that is the honest answer, not a bug.
 
 Tuning is the admin console's `duel.*` settings (ADMIN.md §4), whose defaults are the `MATCH_*`
-and `DUEL_GONE_MS` constants in `js/raceapp.js`.
+and `DUEL_GONE_MS` constants in `js/raceapp.js`. The console also shows the waiting seat, can
+clear a stuck one, and counts the 1v1 relay's logins (ADMIN.md §6).
 
 **What a 1v1 looks like.**
 - **Race panel:** a head-to-head card replaces the room's status line, rows and standings.

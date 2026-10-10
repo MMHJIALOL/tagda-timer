@@ -85,6 +85,8 @@
       ".read": "auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true",
       ".indexOn": ["meta/createdAt"],
       "$roomId": {
+        ".write": "auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true && !newData.exists()",
+
         "meta": {
           ".read": "auth != null",
           ".write": "auth != null && (data.exists() || root.child('config/race/enabled').val() !== false)",
@@ -107,7 +109,7 @@
           ".read": "auth != null",
 
           "$msgId": {
-            ".write": "auth != null && ((data.exists() && !newData.exists() && (auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true)) || (!data.exists() && newData.child('uid').val() === auth.uid && root.child('config/raceChat/enabled').val() !== false && (!root.child('bans/' + auth.uid).exists() || root.child('bans/' + auth.uid + '/until').val() <= now)))",
+            ".write": "auth != null && ((data.exists() && !newData.exists() && (auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true)) || (!data.exists() && newData.child('uid').val() === auth.uid && !root.child('rooms/' + $roomId + '/mod/closed').exists() && !root.child('rooms/' + $roomId + '/mod/kicked/' + auth.uid).exists() && root.child('config/raceChat/enabled').val() !== false && (!root.child('bans/' + auth.uid).exists() || root.child('bans/' + auth.uid + '/until').val() <= now)))",
             ".validate": "newData.hasChildren(['uid', 'name', 'text', 'at']) && newData.parent().parent().child('chatLast/' + auth.uid).val() === now",
             "uid":  { ".validate": "newData.isString() && newData.val().length <= 64" },
             "name": { ".validate": "newData.isString() && newData.val().length <= 24" },
@@ -157,10 +159,37 @@
           }
         },
 
+        "mod": {
+          ".read": "auth != null",
+          ".write": "auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true",
+          "closed": {
+            ".validate": "newData.hasChildren(['at', 'by'])",
+            "at": { ".validate": "newData.val() === now" },
+            "by": { ".validate": "newData.val() === auth.uid" },
+            "$other": { ".validate": false }
+          },
+          "kicked": {
+            "$uid": { ".validate": "$uid.length <= 128 && newData.isNumber() && newData.val() <= now" }
+          },
+          "struck": {
+            "$round": {
+              ".validate": "$round.matches(/^[0-9]{1,6}$/)",
+              "$uid": {
+                ".validate": "newData.hasChildren(['at', 'by'])",
+                "at": { ".validate": "newData.val() === now" },
+                "by": { ".validate": "newData.val() === auth.uid" },
+                "reason": { ".validate": "newData.isString() && newData.val().length <= 200" },
+                "$other": { ".validate": false }
+              }
+            }
+          },
+          "$other": { ".validate": false }
+        },
+
         "players": {
           ".read": "auth != null",
           "$uid": {
-            ".write": "auth != null && auth.uid === $uid",
+            ".write": "auth != null && ((auth.uid === $uid && (!newData.exists() || (!root.child('rooms/' + $roomId + '/mod/closed').exists() && !root.child('rooms/' + $roomId + '/mod/kicked/' + $uid).exists()))) || (!newData.exists() && auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true))",
             ".validate": "!newData.exists() || newData.hasChildren(['name', 'joinedAt'])",
             "name": { ".validate": "newData.isString() && newData.val().length <= 24" },
             "color": { ".validate": "newData.isNumber()" },
@@ -198,12 +227,13 @@
               ".read": "auth != null && data.child(auth.uid).exists()",
 
               "$uid": {
-                ".write": "auth != null && ((auth.uid === $uid && !data.exists()) || (data.exists() && !newData.exists() && (auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true)))",
+                ".write": "auth != null && ((auth.uid === $uid && !data.exists() && !root.child('rooms/' + $roomId + '/mod/closed').exists() && !root.child('rooms/' + $roomId + '/mod/kicked/' + auth.uid).exists()) || (data.exists() && !newData.exists() && (auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true)))",
 
                 ".validate": "newData.hasChildren(['timeMs', 'hash']) && newData.child('hash').val() === root.child('rooms/' + $roomId + '/rounds/' + $roundId + '/info/hash').val() && (!root.child('rooms/' + $roomId + '/rounds/' + $roundId + '/progress/' + auth.uid + '/startedAt').exists() || !root.child('rooms/' + $roomId + '/rounds/' + $roundId + '/progress/' + auth.uid + '/finishedAt').exists() || newData.child('timeMs').val() >= (root.child('rooms/' + $roomId + '/rounds/' + $roundId + '/progress/' + auth.uid + '/finishedAt').val() - root.child('rooms/' + $roomId + '/rounds/' + $roundId + '/progress/' + auth.uid + '/startedAt').val()) * 0.75 - 4000)",
 
                 "timeMs": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 36000000" },
                 "penalty": { ".write": "auth != null && auth.uid === $uid && data.parent().exists() && (newData.val() === 'DNF' || (newData.val() === '+2' && data.val() !== 'DNF') || (newData.val() === 'none' && data.val() === 'none') || ((newData.val() === '+2' || newData.val() === 'none') && now - data.parent().child('submittedAt').val() <= 15000))", ".validate": "newData.isString() && newData.val().length <= 8" },
+                "penaltyAt": { ".write": "auth != null && auth.uid === $uid && data.parent().exists()", ".validate": "newData.val() === now" },
                 "hash": { ".validate": "newData.isString() && newData.val().length <= 16" },
                 "suspect": { ".validate": "newData.isBoolean() || !newData.exists()" },
                 "submittedAt": { ".validate": "newData.isNumber()" },
@@ -676,6 +706,19 @@
         "by":     { ".validate": "newData.val() === auth.uid" },
         "name":   { ".validate": "newData.isString() && newData.val().length <= 32" },
         "$other": { ".validate": false }
+      }
+    },
+
+    "turnDay": {
+      ".read": "auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true",
+      "$dayStart": {
+        ".write": "auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true && !newData.exists() && $dayStart !== '' + (now - ((now + 19800000) % 86400000))",
+        ".validate": "$dayStart.matches(/^[0-9]{13}$/)",
+        "$uid": {
+          ".read": "auth != null && auth.uid === $uid",
+          ".write": "auth != null && auth.uid === $uid && newData.exists() && $dayStart === '' + (now - ((now + 19800000) % 86400000))",
+          ".validate": "newData.isNumber() && newData.val() === (data.exists() ? data.val() : 0) + 1 && newData.val() <= 1000"
+        }
       }
     },
 

@@ -504,12 +504,52 @@ export class Race extends EventTarget {
       this._maybeCelebrate(kept);
     }
 
+    if (this._applyMod()) return;
+
     this._maybeOpenRound();
     this._evaluateRound();
     this._serveScramble();
     this._duelWatch();
     this._syncPanel();
     this.dispatchEvent(new CustomEvent('change'));
+  }
+
+  /* ---------------- a moderator's marks (rooms/<id>/mod) ----------------
+   *
+   * Set from the admin console (ADMIN.md, "Race rooms and 1v1"): the room
+   * closed, somebody removed from it, a time struck. The rules already refuse
+   * a closed room's writes and a removed player's; this is the app saying so
+   * and getting out of the way. A struck time counts for nothing anywhere:
+   * not in the round, not in the standings, not in Race stats.
+   */
+
+  /** Whether round n's time from uid was struck. */
+  _isStruck(n, uid) { return !!this.snap?.mod?.struck?.[n]?.[uid]; }
+
+  /** Leaves (and says why) when the room was closed or this tab removed from it. True if it left. */
+  _applyMod() {
+    const mod = this.snap?.mod;
+    if (this.inRoom && this.net?.kind !== 'local' && (mod?.closed || mod?.kicked?.[this.uid])) {
+      if (this._modLeaving) return true;
+      this._modLeaving = true;
+      const why = mod.closed ? t('A moderator closed this room') : t('A moderator removed you from this room');
+      this.leave().then(() => toast(why, { kind: 'bad', long: true }), () => {}).finally(() => { this._modLeaving = false; });
+      return true;
+    }
+    // Struck since it was kept: out of the kept round, and the standings worked out again.
+    let changed = false;
+    for (const entry of this.history) {
+      for (const row of entry.rows) {
+        const struck = this._isStruck(entry.no, row.uid);
+        if (struck && !row.struck) { row.struck = true; row.res = null; changed = true; }
+        else if (!struck && row.struck) { row.struck = false; entry.pending = entry.seen; changed = true; }
+      }
+    }
+    if (changed) {
+      this._restand();
+      for (const entry of this.history) if (entry.pending) this._backfill(entry.no);
+    }
+    return false;
   }
 
   /**
@@ -1317,7 +1357,8 @@ export class Race extends EventTarget {
     const rows = this.livePlayers().map(([uid, p]) => ({
       uid, name: p.name || '', color: p.color ?? null,
       done: r.progress?.[uid]?.status === 'done',
-      res: seen ? Race.slim(r.results?.[uid]) : null,
+      res: seen && !this._isStruck(r.no, uid) ? Race.slim(r.results?.[uid]) : null,
+      struck: this._isStruck(r.no, uid),
     }));
     const entry = { no: r.no, at: Date.now(), seen, rows, mine: this.mySolves.get(r.no)?.id || null };
     // Somebody who finished and has since closed their tab still raced it.
@@ -1328,7 +1369,7 @@ export class Race extends EventTarget {
 
   /** A round this tab could read, with somebody's time still on its way. */
   static missing(entry) {
-    return entry.seen && entry.rows.some(x => x.done && !x.res);
+    return entry.seen && entry.rows.some(x => x.done && !x.res && !x.struck);
   }
 
   /** Patch a kept round with times that arrived after it was kept. */
@@ -1336,6 +1377,10 @@ export class Race extends EventTarget {
     let changed = false;
     for (const [uid, res] of Object.entries(results || {})) {
       const row = entry.rows.find(x => x.uid === uid);
+      if (this._isStruck(entry.no, uid)) {
+        if (row && !row.struck) { row.struck = true; row.res = null; changed = true; }
+        continue;
+      }
       const next = Race.slim(res);
       // A time that is already there only changes by its penalty — see setPenalty.
       if (row?.res && row.res.timeMs === next.timeMs && row.res.penalty === next.penalty) continue;
@@ -1644,7 +1689,7 @@ export class Race extends EventTarget {
     const r = round;
     const rows = this.livePlayers().map(([uid, p]) => {
       const prog = r?.progress?.[uid] || null;
-      const result = this.revealed ? (r?.results?.[uid] || null) : null;
+      const result = this.revealed && !this._isStruck(r?.no, uid) ? (r?.results?.[uid] || null) : null;
       return {
         uid, player: p,
         isMe: uid === this.uid,
@@ -2279,7 +2324,8 @@ export class Race extends EventTarget {
     const mine = places.get(this.uid);
     const myRes = last.rows.find(x => x.uid === this.uid)?.res;
 
-    const verdict = !mine ? t('you didn’t finish')
+    const verdict = last.rows.find(x => x.uid === this.uid)?.struck ? t('your time was removed by a moderator')
+      : !mine ? t('you didn’t finish')
       : myRes?.penalty === 'DNF' ? t('you DNF’d')
       : mine === 1 ? t('you won')
       : t('you {place} of {n}', { place: ordinal(mine), n: last.rows.length });
@@ -2430,12 +2476,13 @@ export class Race extends EventTarget {
       for (const h of rounds) {
         const row = h.rows.find(x => x.uid === uid);
         const e = effOf(row?.res);
-        const state = !row ? 'out' : !h.seen ? 'hidden' : !row.res ? 'none'
+        const state = !row ? 'out' : !h.seen ? 'hidden' : row.struck ? 'struck' : !row.res ? 'none'
           : row.res.penalty === 'DNF' ? 'dnf' : e === fastest.get(h.no) ? 'best' : '';
         tr.append(el('td', {
           dataset: { s: state },
-          text: !row ? '' : !h.seen ? '?' : Race.resText(row.res),
+          text: !row ? '' : !h.seen ? '?' : row.struck ? '✕' : Race.resText(row.res),
           title: state === 'out' ? t('Not in the room for this round')
+            : state === 'struck' ? t('Removed by a moderator')
             : state === 'hidden' ? t('You didn’t finish this round, so its times stay hidden')
             : state === 'none' ? t('Didn’t finish in time') : '',
         }));

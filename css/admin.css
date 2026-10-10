@@ -389,3 +389,15 @@ select.ac-inp { appearance: none; -webkit-appearance: none; background-image: li
 }
 .ac-banner-now[data-kind="warn"] { background: color-mix(in srgb, var(--warn) 14%, var(--surface)); border-color: color-mix(in srgb, var(--warn) 45%, var(--border)); }
 .ac-banner-now[data-kind="down"] { background: color-mix(in srgb, var(--danger) 14%, var(--surface)); border-color: color-mix(in srgb, var(--danger) 45%, var(--border)); }
+
+/* ---------------- race rooms and 1v1 (js/admin-rooms.js) ---------------- */
+
+.ac-log.ac-tight { margin-top: 6px; gap: 6px; }
+.ac-flag { font-size: .8rem; color: var(--warn-text); font-weight: 600; }
+.ac-round {
+  display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border-radius: 14px;
+  background: var(--bg-2); border: 1px solid var(--border);
+}
+.ac-round-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.ac-entry-actions.ac-start { justify-content: flex-start; margin-top: 10px; }
+.ac-uid.ac-link { min-height: 0; padding: 0; text-align: left; font-weight: 400; color: var(--text-faint); }
