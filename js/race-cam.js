@@ -26,10 +26,16 @@ import { t } from './i18n.js';
    Two players behind strict NATs can't reach each other that way, so each
    attempt first asks the Worker for TURN relay credentials (worker.js /turn)
    and falls back to STUN alone if it has none.
+
+   While duel.camSignedIn is on (the default), both players need a Google
+   account signed in to the timer and linked to their seat (race.js
+   linkAccount, rooms/<id>/acct/): the rules refuse the call's setup from a
+   seat that is not, and the tile says why instead of offering the switches.
    =========================================================== */
 
 import { el } from './util.js';
 import { toast } from './toast.js';
+import { getConfig } from './config.js';
 import { RTC_ICE_SERVERS, CAM_VIDEO, CAM_MAX_BITRATE, CAM_RETRIES } from './raceapp.js';
 
 const sidOf = () => Math.random().toString(36).slice(2, 12);
@@ -53,6 +59,7 @@ export class DuelCam {
     this.role = null;              // 'offer' | 'answer'
     this.local = { cam: null, mic: null };   // MediaStreamTracks we send
     this.remoteMedia = { cam: false, mic: false };
+    this.oppLinked = null;         // their seat linked to a Google account; null: can't tell (older rules)
     this.revealed = false;         // the viewer's own opt-in to see and hear them
     this.pc = null;
     this.sid = null;
@@ -86,6 +93,40 @@ export class DuelCam {
       }),
       this.net.rtcOn(opp.uid, 'desc', (d) => this._onDesc(d)),
     );
+    const off = this.net.acctOn?.(opp.uid, (v) => { this.oppLinked = v; this._draw(); });
+    if (off) this._unsubs.push(off);
+    this._draw();
+  }
+
+  redraw() { this._draw(); }
+
+  /**
+   * Why the switches are not on offer (duel.camSignedIn), or null when they
+   * are. { wait } while this seat's link is still being made.
+   */
+  _gate() {
+    if (!getConfig('duel', 'camSignedIn')) return null;
+    const mine = this.race.linkState;
+    if (mine === 'pending') return { wait: true };
+    if (mine === 'signed-out') return { text: t('Cam and mic are for signed-in players.'), signIn: true };
+    if (mine === 'refused') return { text: t('Cam and mic aren’t available on this account.') };
+    if (mine === 'linked' && this.oppLinked === false) {
+      return { text: t('{name} isn’t signed in, so there’s no cam or mic in this 1v1.', { name: this.opp?.name || t('Your opponent') }) };
+    }
+    return null;
+  }
+
+  async _signIn() {
+    try {
+      const { signIn } = await import('./sync-auth.js');
+      // null: the popup could not open and the page is going to Google instead.
+      if (await signIn('google')) await this.race.linkAccount(true);
+    } catch (err) {
+      if (err?.code !== 'auth/popup-closed-by-user' && err?.code !== 'auth/cancelled-popup-request') {
+        console.warn('[cam] sign-in', err?.code || err);
+        toast(t('Couldn’t sign in'), { kind: 'bad' });
+      }
+    }
     this._draw();
   }
 
@@ -99,6 +140,7 @@ export class DuelCam {
     const had = this.opp;
     this.opp = null;
     this.remoteMedia = { cam: false, mic: false };
+    this.oppLinked = null;
     this.revealed = false;
     this.tries = 0;
     this.state = 'idle';
@@ -127,6 +169,7 @@ export class DuelCam {
 
   async toggle(kind) {
     if (!this.opp || this.busy[kind]) return;
+    if (!this.local[kind] && this._gate()) return;
     this.busy[kind] = true;
     this._draw();
     try {
@@ -412,7 +455,8 @@ export class DuelCam {
       bar.append(el('button', { class: 'cam-btn', type: 'button', dataset: { kind },
         onclick: () => this.toggle(kind) }));
     }
-    host.append(stage, bar);
+    const gate = el('div', { class: 'cam-gate', hidden: true });
+    host.append(stage, bar, gate);
     if (this.remoteStream) remote.srcObject = this.remoteStream;
     this._drawSelf();
     this._draw();
@@ -481,12 +525,21 @@ export class DuelCam {
       status.append(' ', el('button', { class: 'cam-retry', type: 'button', text: t('Retry'), onclick: () => this.retry() }));
     }
 
-    /* ---- the switches ---- */
+    /* ---- the switches, or why there are none ---- */
+    const g = mine ? null : this._gate();
+    const gate = host.querySelector('.cam-gate');
+    host.querySelector('.cam-bar').hidden = !!(g && !g.wait);
+    gate.hidden = !(g && !g.wait);
+    gate.replaceChildren();
+    if (g?.text) {
+      gate.append(el('span', { text: g.text }));
+      if (g.signIn) gate.append(el('button', { class: 'btn primary cam-signin', type: 'button', text: t('Sign in'), onclick: () => this._signIn() }));
+    }
     for (const btn of host.querySelectorAll('.cam-btn')) {
       const kind = btn.dataset.kind;
       const on = !!this.local[kind];
       btn.setAttribute('aria-pressed', String(on));
-      btn.disabled = this.busy[kind];
+      btn.disabled = this.busy[kind] || !!g?.wait;
       btn.dataset.on = String(on);
       const label = kind === 'cam' ? (on ? t('Cam on') : t('Cam off')) : (on ? t('Mic on') : t('Mic off'));
       // The opt-in, said where you decide it: off until pressed, and theirs stays covered until Show.

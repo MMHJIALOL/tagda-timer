@@ -7,7 +7,7 @@
    =========================================================== */
 
 /** What can be reported, and the path each kind points at. */
-export const REPORT_KINDS = ['chat', 'raceChat', 'replay', 'result'];
+export const REPORT_KINDS = ['chat', 'raceChat', 'replay', 'result', 'duel'];
 
 /**
  * The key under reportOnce/<uid>/ that makes a report one per account per
@@ -21,15 +21,20 @@ export const reportKey = (kind, path) => `${kind}|${String(path).split('/').join
  * reported the same item before (the rules refuse a second; the account can
  * read its own reportOnce to tell the two apart). Throws on any other refusal.
  *
+ * A 1v1 opponent ('duel', path rooms/<id>/players/<their uid>) also names the
+ * `room` and the reporter's own seat in it (`from`), which the rules want
+ * linked to this account (rooms/<id>/acct/, RACE.md §9).
+ *
  * @param sdk  getDatabaseHandle()'s { push, update, get, ref, db, auth, serverTimestamp }
  */
-export async function sendReport(sdk, { kind, path, text = '' }) {
+export async function sendReport(sdk, { kind, path, text = '', room = '', from = '' }) {
   const uid = sdk.auth?.currentUser?.uid;
   if (!uid) throw new Error('not-signed-in');
   const key = reportKey(kind, path);
   const id = sdk.push(sdk.ref(sdk.db, 'reports')).key;
   const rec = { by: uid, at: sdk.serverTimestamp(), kind, path };
   if (text) rec.text = String(text).slice(0, 200);
+  if (room) Object.assign(rec, { room, from });
   try {
     await sdk.update(sdk.ref(sdk.db), { [`reports/${id}`]: rec, [`reportOnce/${uid}/${key}`]: id });
     return 'sent';
