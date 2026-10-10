@@ -2560,9 +2560,14 @@ section('admin console — settings and the rules that guard them');
     low === 0 && n() === 3 && C.getConfig('sandbox', 'text').length === 80);
   C.applyConfig(null);
   check('junk instead of a config is the defaults', n() === 5);
-  let threw = false;
-  try { C.getConfig('sandbox', 'nope'); } catch { threw = true; }
-  check('asking for a setting that does not exist throws rather than quietly defaulting', threw);
+  /* Not a throw: a module imported after a deploy can be newer than this
+     table, and a throw there stopped whatever was drawing (the 1v1 cam tile). */
+  const warn = console.warn;
+  let warned = '', threw = false, got;
+  console.warn = (m) => { warned += m; };
+  try { got = C.getConfig('sandbox', 'nope'); } catch { threw = true; } finally { console.warn = warn; }
+  check('a setting that does not exist is undefined and a console warning, not a throw',
+    !threw && got === undefined && warned.includes('sandbox.nope'), warned);
   const sp = (k) => C.spec('sandbox', k);
   check('the admin page refuses what the rules refuse, before sending',
     C.valid(sp('n'), 10) && !C.valid(sp('n'), 11) && !C.valid(sp('n'), 2.5) && !C.valid(sp('n'), '5')
