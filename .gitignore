@@ -26,3 +26,7 @@ competition-qa/
 
 # Local test dependencies
 node_modules/
+
+# Disposable full-site audit artifacts and local npm cache
+audit-qa/
+.npm-cache/

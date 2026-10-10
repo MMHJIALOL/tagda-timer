@@ -504,6 +504,8 @@ body.ph:is(.focus, .inspecting, .holding, .armed, .timing) :is(#topbar, #scrambl
 body.ph.relay:is(.focus, .inspecting, .holding, .armed, .timing) #scramble-zone { opacity: 1; background: none; border-color: transparent; }
 body.ph.relay:is(.focus, .inspecting, .holding, .armed, .timing) #scramble-zone > :not(#relay-rail) { opacity: 0; }
 body.ph:is(.sotd) .ph-recent { display: none; }
+/* The phone defaults must not restore practice controls inside the daily attempt. */
+body.ph.sotd :is(#scramble-tools, #timer-avgs, #last-delta) { display: none; }
 body.ph:has(#panel-race:not([hidden])) .ph-recent { visibility: hidden; }
 
 /* A toast stands above the dock, never on it: the "New personal best!" one
@@ -511,6 +513,12 @@ body.ph:has(#panel-race:not([hidden])) .ph-recent { visibility: hidden; }
    Times and Train. (Full-screen tools and open sheets place toasts themselves,
    further up this file.) */
 body.ph:not(.recon-open, .xp1-open):not(:has(.sheet)) #toasts { bottom: calc(var(--ph-dock-room) + 4px); }
+/* The support card must leave the tab buttons reachable, just like toasts. */
+body.ph .coffee-nudge { right: var(--phone-gutter); bottom: calc(var(--ph-dock-room) + 4px); }
+/* Save/undo messages must remain readable while the support card is open. */
+body.ph:not(.recon-open, .xp1-open):not(:has(.sheet)):has(.coffee-nudge) #toasts {
+  top: calc(12px + env(safe-area-inset-top)); bottom: auto;
+}
 /* A toast with nothing to press is something to read, not a lid: taps go
    through it to whatever it is lying over. */
 body.ph .toast:not(:has(button, a)) { pointer-events: none; }

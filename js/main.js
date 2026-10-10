@@ -11,7 +11,7 @@ import { competitionResult } from './competition-stats.js';
 import { activeGearId, Gear, gearLabel } from './gear.js';
 import { EVENTS, EVENT_ORDER, MODES, modesForEvent, eventOf, modeOf, virtualSize,
          relayLabel } from './events.js';
-import { ScrambleQueue, setFor, loadSetFor, previewOf, cubingAvailable, generate } from './scramble.js';
+import { ScrambleQueue, setFor, loadSetFor, previewOf, generate } from './scramble.js';
 import { createLearn } from './learnmode.js';
 import { Timer, INSPECT_MS } from './timer.js';
 import { Background, softwareGL } from './bg.js';
@@ -22,9 +22,9 @@ import { mountMetro, metroExternal } from './metro.js';
 import { keepAwake } from './wakelock.js';
 import { initReplay, syncReplay, takeClip, hasReplay, openReplay, replayOpen, replayEnabled,
          onReplayChange, replayStatus, replaySupported, replayOff, setStackmatMic } from './replay.js';
-import { summarize, eff, DNF, isMoveResult, bestSingle, bestAvg, trimmedIndices, byCase, sessionBests, rollingSeries, statWindow, STAT_LABELS, goalProgress, bpaWpa } from './stats.js';
+import { summarize, eff, DNF, isMoveResult, resultsFor, bestSingle, bestAvg, trimmedIndices, byCase, sessionBests, rollingSeries, statWindow, STAT_LABELS, goalProgress, bpaWpa } from './stats.js';
 import { renderMiniTrend } from './charts.js';
-import { DEFAULTS, loadSettings, saveSettings, applyTheme, applyBackground, themeColors, setAlbumTint, paintBackgroundColors, liquidGlassOK } from './theme.js';
+import { DEFAULTS, loadSettings, saveSettings, isOwnSettingsWrite, applyTheme, applyBackground, themeColors, setAlbumTint, paintBackgroundColors, liquidGlassOK } from './theme.js';
 import { chooseInspection, mergeInspection } from './inspection-setting.js';
 import { loadLibraryPrefs } from './alglibrary.js';
 import { initTiles, applyTiles, measureLayout } from './tiles.js';
@@ -149,11 +149,11 @@ const fmcCtl = () => (_fmc ? _fmc.getFmc(app, FMC_HOOKS) : null);
 const fmcAttempting = () => movesMode() && !!fmcCtl()?.attempting;
 /** Is the event we are on scored in moves rather than in seconds? */
 const movesMode = () => !!eventOf(app.settings.event).fmc;
-/* Whether the numbers OVER this session are move counts. Not the same
-   question as the one above: switching a session's event leaves its solves
-   where they are, so a session full of Fewest Moves attempts looked at from
-   3x3 would otherwise print "0.03" for a 31-move solve. */
-const movesStats = () => movesMode() || app.solves.some(isMoveResult);
+/* Keep every solve when changing events, but summarize only results in the
+   selected event's scoring unit. Individual history rows retain their units. */
+const movesStats = () => movesMode();
+const statsSolves = () => resultsFor(app.solves, movesStats());
+app.statsSolves = statsSolves;
 /** One session-wide number, printed in the unit that session is scored in. */
 const fmtNow = (v) => fmtResult(v, movesStats());
 
@@ -646,8 +646,12 @@ async function init() {
   // to an accidental refresh would be the whole feature failing at its job.
   try {
     const saved = await KV.get('customScrambles', null);
-    if (saved && Array.isArray(saved.list) && saved.pos < saved.list.length) {
-      app.custom = { list: saved.list, pos: saved.pos | 0 };
+    if (saved && Array.isArray(saved.list)) {
+      // pos is the next entry; a refresh must resume the one still on screen.
+      const current = Number.isInteger(saved.current) && saved.current >= 0 && saved.current < saved.list.length
+        ? saved.current : null;
+      const pos = current ?? Math.max(0, saved.pos | 0);
+      if (pos < saved.list.length) app.custom = { list: saved.list, pos, current: null };
     }
   } catch { /* an unreadable list is not worth failing the boot over */ }
   updateCustomBar();
@@ -1217,8 +1221,12 @@ function takeCustom() {
      the list is simply not consulted. */
   if (relayOn()) return null;
   const c = app.custom;
-  if (!c.list.length || c.pos >= c.list.length) return null;
+  if (!c.list.length || c.pos >= c.list.length) {
+    if (c.current != null) { c.current = null; saveCustom(); }
+    return null;
+  }
   const i = c.pos++;
+  c.current = i;
   saveCustom();
   updateCustomBar();
   if (c.pos >= c.list.length) {
@@ -1230,7 +1238,9 @@ function takeCustom() {
 function saveCustom() {
   // Persisted outside `settings`: a thousand pasted scrambles have no business
   // in an object that is rewritten on every slider drag.
-  KV.set('customScrambles', { list: app.custom.list, pos: app.custom.pos }).catch(() => {});
+  return KV.set('customScrambles', {
+    list: app.custom.list, pos: app.custom.pos, current: app.custom.current ?? null,
+  }).catch(() => {});
 }
 
 function updateCustomBar() {
@@ -1263,13 +1273,14 @@ app.setCustomScrambles = (text, { append = false } = {}) => {
   } else {
     c.list = list;
     c.pos = 0;
+    c.current = null;
   }
   saveCustom();
   updateCustomBar();
   if (!list.length) { toast('No scrambles found in that text', { kind: 'bad' }); return 0; }
   closeDrawer();
   // Show the first one straight away rather than making you press next.
-  if (!append || c.pos >= c.list.length - list.length) nextScramble();
+  if (!append || c.current == null) nextScramble();
   toast(t(list.length === 1 ? '{n} scramble loaded' : '{n} scrambles loaded', { n: list.length }), { kind: 'good' });
   return list.length;
 };
@@ -1432,7 +1443,7 @@ function showScramble(s, silent = false) {
   cube.set(leg ? leg.scramble : (s.preview || s.scramble));
   resetVcube();
 
-  if (s.official === false && mode.kind === 'wca' && !cubingAvailable()) {
+  if (s.official === false && !s.custom && mode.kind === 'wca') {
     node.title = t('Offline fallback scramble — not competition legal');
   } else node.title = t('click to copy');
 
@@ -2029,8 +2040,8 @@ function resetBgColors() {
 /* ---------------- pace ghost ---------------- */
 function startPace(pace, fill) {
   const ref = app.settings.paceRef === 'ao5'
-    ? summarize(app.solves).ao5
-    : bestSingle(app.solves);
+    ? summarize(statsSolves()).ao5
+    : bestSingle(statsSolves());
   if (!ref || ref === DNF) { pace.hidden = true; return; }
   pace.hidden = false;
   pace.classList.remove('behind');
@@ -2587,11 +2598,12 @@ async function onSolveFinished(res) {
  */
 async function recordSolve({ timeMs, penalty = 'none', inspectionMs = 0, splits = null,
                              scramble = null, fmcMoves = null, fmcSolution = '', fmcNotes = '', clip = null }) {
-  const prevBest = bestSingle(app.solves);
-  const prevAo5  = bestAvg(app.solves, 5).value;
-  const prevAo12 = bestAvg(app.solves, 12).value;
-  const prevAo25 = bestAvg(app.solves, 25).value;
-  const prevAo100 = bestAvg(app.solves, 100).value;
+  const comparable = resultsFor(app.solves, fmcMoves !== null);
+  const prevBest = bestSingle(comparable);
+  const prevAo5  = bestAvg(comparable, 5).value;
+  const prevAo12 = bestAvg(comparable, 12).value;
+  const prevAo25 = bestAvg(comparable, 25).value;
+  const prevAo100 = bestAvg(comparable, 100).value;
 
   const race = raceCtl();
   const racing = !!(race?.inRoom && app.scramble?.race);
@@ -2687,13 +2699,22 @@ async function recordSolve({ timeMs, penalty = 'none', inspectionMs = 0, splits 
   }
   app.solves.push(solve);
 
+  // Once saved, this list entry must not return if a reload interrupts the
+  // remaining UI work before the next scramble is dealt.
+  if (locallySaved && app.scramble?.custom && app.custom.current != null
+      && solve.scramble === app.custom.list[app.custom.current]) {
+    app.custom.current = null;
+    await saveCustom();
+  }
+
   // personal bests — judged and chimed before the writes and the re-render
   // below, which are what the sound used to wait behind.
-  const nowBest = bestSingle(app.solves);
-  const nowAo5  = bestAvg(app.solves, 5).value;
-  const nowAo12 = bestAvg(app.solves, 12).value;
-  const nowAo25 = bestAvg(app.solves, 25).value;
-  const nowAo100 = bestAvg(app.solves, 100).value;
+  comparable.push(solve);
+  const nowBest = bestSingle(comparable);
+  const nowAo5  = bestAvg(comparable, 5).value;
+  const nowAo12 = bestAvg(comparable, 12).value;
+  const nowAo25 = bestAvg(comparable, 25).value;
+  const nowAo100 = bestAvg(comparable, 100).value;
   const beat = (prev, now) => prev !== null && now !== null && now < prev;
 
   let pb = null;
@@ -2840,7 +2861,8 @@ function wireLastActions() {
 
 function showDelta(solve, prevBest) {
   const node = $('#last-delta');
-  const prev = app.solves.length >= 2 ? eff(app.solves.at(-2)) : null;
+  const comparable = resultsFor(app.solves, isMoveResult(solve));
+  const prev = comparable.length >= 2 ? eff(comparable.at(-2)) : null;
   const cur = eff(solve);
   if (prev === null || prev === DNF || cur === DNF) { node.hidden = true; return; }
   const d = cur - prev;
@@ -2861,7 +2883,7 @@ function goalTarget(v, moves = movesStats()) {
  */
 function goalJustHit() {
   const s = app.session, g = s?.goal;
-  const p = g && !g.hitAt ? goalProgress(app.solves, g) : null;
+  const p = g && !g.hitAt && (g.moves ?? movesStats()) === movesStats() ? goalProgress(statsSolves(), g) : null;
   if (!p?.hit) return null;
   g.hitAt = Date.now();
   Sessions.put(s).catch(err => console.warn('[goal] not saved', err));
@@ -2871,9 +2893,9 @@ function goalJustHit() {
 function renderGoal() {
   const node = $('#goal-line');
   const g = app.session?.goal;
-  node.hidden = !g;
-  if (!g) return;
-  const p = goalProgress(app.solves, g);
+  node.hidden = !g || (g.moves ?? movesStats()) !== movesStats();
+  if (node.hidden) return;
+  const p = goalProgress(statsSolves(), g);
   const t = goalTarget(g.value);
   const parts = [`goal sub-${t} ${g.stat}`];
   if (p.current !== null) parts.push(`current ${fmtNow(p.current)}`);
@@ -2904,17 +2926,17 @@ function editSession(anchor, s) {
     if (raw) {
       const value = parseGoal(raw, moves);
       if (value === null) { err.textContent = moves ? t('Type a move count, like 30') : t('Type a time, like 12 or 1:05.2'); return; }
-      goal = { value, stat: stat.value };
+      goal = { value, stat: stat.value, moves };
     }
     closePopover();
     s.name = name.value.trim() || s.name;
     if (!goal) delete s.goal;
     else {
-      const same = s.goal && s.goal.value === goal.value && s.goal.stat === goal.stat;
+      const same = s.goal && s.goal.value === goal.value && s.goal.stat === goal.stat && (s.goal.moves ?? moves) === moves;
       if (same) { if (s.goal.hitAt) goal.hitAt = s.goal.hitAt; }
       else {
         // Already beaten when set: nothing to celebrate on the next solve.
-        const solves = s.id === app.session.id ? app.solves : await Solves.bySession(s.id);
+        const solves = resultsFor(s.id === app.session.id ? app.solves : await Solves.bySession(s.id), moves);
         const best = goal.stat === 'single' ? bestSingle(solves) : bestAvg(solves, goal.stat === 'ao12' ? 12 : 5).value;
         if (best !== null && best < goal.value) goal.hitAt = Date.now();
       }
@@ -2999,7 +3021,8 @@ app.renderAll = renderAll;
 
 let lastStats = {};
 function renderStats() {
-  const st = summarize(app.solves);
+  const solves = statsSolves();
+  const st = summarize(solves);
   const f = fmtNow;
   const map = { best: st.best, ao5: st.ao5, ao12: st.ao12, ao50: st.ao50, ao100: st.ao100, mean: st.mean, mo3: st.mo3 };
 
@@ -3025,7 +3048,7 @@ function renderStats() {
   $('#cons-fill').style.width = cons === null ? '0%' : Math.round(cons * 100) + '%';
   $('#cons-val').textContent = cons === null ? '—' : Math.round(cons * 100) + '%';
   void 0;
-  renderMiniTrend($('#mini-trend'), app.solves);
+  renderMiniTrend($('#mini-trend'), solves);
 
   /* Collapsed peek. Two rows: the three averages you watch while a session is
      running, and the three that say how the session has gone. */
@@ -3043,7 +3066,7 @@ function renderStats() {
   $('#live-ao12').textContent = f(st.ao12);
   const avgs = $('#timer-avgs');
   if (avgs) {
-    const bw = app.settings.showBpa !== false && bpaWpa(app.solves);
+    const bw = app.settings.showBpa !== false && bpaWpa(solves);
     const noAvg = st.ao5 === null || st.ao5 === undefined;
     avgs.hidden = noAvg && !bw;
     avgs.classList.toggle('no-avg', noAvg);
@@ -3054,7 +3077,7 @@ function renderStats() {
 
   // Session bests are O(n x len) to compute, so only when they are on screen.
   if ($('#panel-stats')?.dataset.collapsed === 'false') {
-    const b = sessionBests(app.solves);
+    const b = sessionBests(solves);
     for (const k of ['single', 'mo3', 'ao5', 'ao12', 'ao50', 'ao100']) {
       const node = $('#b-' + k);
       if (node) node.textContent = f(b[k]);
@@ -3205,7 +3228,7 @@ function historyRowData(i) {
       s.competitionSetId ? 'competition-member' : '',
       s.penalty === 'DNF' ? 'dnf' : '',
       s.penalty === '+2' ? 'plus2' : '',
-      v === best && v !== DNF ? 'pb' : '',
+      v === best[isMoveResult(s) ? 'moves' : 'time'] && v !== DNF ? 'pb' : '',
       trim.best.has(i) ? 'best-in-avg' : '',
       s.phases?.length ? 'has-phases' : '',
     ].filter(Boolean).join(' '),
@@ -3215,10 +3238,10 @@ function historyRowData(i) {
     // One entry per average column, in column order.
     avgs: series.map(({ n, values, best: bestAvgN }) => {
       const a = values[i];
-      const isBest = a !== null && bestAvgN !== null && a === bestAvgN;
+      const isBest = a !== null && a === bestAvgN[isMoveResult(s) ? 'moves' : 'time'];
       return {
         n,
-        text: a === null ? '·' : fmtNow(a),
+        text: a === null ? '·' : fmtResult(a, isMoveResult(s)),
         has: a !== null,
         best: isBest,
         title: a === null ? t('needs {n} solves', { n })
@@ -3458,14 +3481,18 @@ function renderHistory() {
      computed for a column that is not on screen. */
   const cols = shownCols();
   histCtx = {
-    best: bestSingle(app.solves),
+    best: { time: bestSingle(resultsFor(app.solves, false)), moves: bestSingle(resultsFor(app.solves, true)) },
     // The green edge marks the counting solves of the first average column —
     // the one nearest your times, and the one people read as "the" average.
     trim: trimmedIndices(app.solves, cols[0] || 5),
     series: cols.map((len) => {
       const values = rollingSeries(app.solves, len);
-      const valid = values.filter(v => v !== null);
-      return { n: len, values, best: valid.length ? Math.min(...valid) : null };
+      const best = { time: null, moves: null };
+      values.forEach((v, i) => {
+        const key = isMoveResult(app.solves[i]) ? 'moves' : 'time';
+        if (v !== null && (best[key] === null || v < best[key])) best[key] = v;
+      });
+      return { n: len, values, best };
     }),
   };
   if (grouped) {
@@ -4507,6 +4534,12 @@ function adoptCloudChanges() {
   // the same values.
   onWrite('kv', ({ key, value }) => {
     if (key !== 'settings' || !value || value === app.settings) return;
+    // A local snapshot may finish saving after another event/theme choice.
+    // Only its transaction's inspection conflict resolution needs adoption;
+    // its other keys describe the past, not a new choice from another device.
+    if (isOwnSettingsWrite(value)) value = {
+      inspection: value.inspection, inspectionUpdatedAt: value.inspectionUpdatedAt,
+    };
     value = mergeInspection(app.settings, value);
     // Our own push comes back as a new object with the same contents; applying
     // that would reset a multi-phase solve already under way for nothing.
@@ -5089,7 +5122,8 @@ app.shareAverageCard = async (kind) => {
   let m;
   try { m = await loadShare(); } catch (err) { return lazyFailed(t('the share card'), err); }
 
-  const w = statWindow(app.solves, kind);
+  const source = kind.includes('@') ? app.solves : statsSolves();
+  const w = statWindow(source, kind);
   if (!w.list.length || w.value === null || w.value === undefined) {
     const n = parseInt(kind.replace(/^best-/, '').slice(2), 10);
     toast(n ? t('Needs {n} solves', { n }) : t('No solves yet'));
@@ -5099,13 +5133,13 @@ app.shareAverageCard = async (kind) => {
   // A single has no window of its own to show — it is one solve, so it gets
   // the solve card.
   if (kind === 'best' || kind === 'best-single') {
-    return m.shareSolve(w.list[0], { index: w.start + 1 });
+    return m.shareSolve(w.list[0], { index: app.solves.indexOf(w.list[0]) + 1 });
   }
 
   // The session mean is every solve there has ever been; a card with four
   // hundred rows on it is not a card. The last twelve stand for it.
   const list = kind === 'mean' ? w.list.slice(-12) : w.list;
-  const base = kind === 'mean' ? app.solves.length - list.length : w.start;
+  const base = kind === 'mean' ? source.length - list.length : w.start;
   const trimmed = new Set([...w.trimmed].map(i => i - base).filter(i => i >= 0 && i < list.length));
 
   /* `aoN@i` has no entry in STAT_LABELS — it is a window, not a named stat —
@@ -5113,7 +5147,7 @@ app.shareAverageCard = async (kind) => {
      key on the card. */
   return m.shareAverage(list, {
     label: (STAT_LABELS[kind] || w.label || kind).toLowerCase(),
-    value: fmtNow(w.value),
+    value: fmtResult(w.value, isMoveResult(w.list[0])),
     trimmed: trimmed.size ? trimmed : null,
   });
 };
@@ -5268,7 +5302,8 @@ async function syncFmc() {
   if (!on && !_fmc) { document.body.classList.remove('fmc', 'fmc-attempting'); return; }
   try { await loadFmcModule(); }
   catch (err) { return lazyFailed(t('the Fewest Moves workspace'), err); }
-  await _fmc.getFmc(app, FMC_HOOKS).sync(on);
+  // The user can change event while the first module import is pending.
+  await _fmc.getFmc(app, FMC_HOOKS).sync(movesMode());
   updateHint();
 }
 
@@ -5307,6 +5342,8 @@ async function setEvent(id) {
      relay is a list of puzzles that has to exist before there is anything to
      scramble. Picking it opens the builder instead. */
   if (eventOf(id).relay && !relayList()) { openRelayBuilder(); return; }
+  // Retain a legacy goal's units before this session is relabelled.
+  if (app.session.goal && app.session.goal.moves == null) app.session.goal.moves = movesMode();
   app.settings.event = id;
   // A virtual session belongs to one event: changing event moves you to that
   // event's virtual session rather than relabelling this one.

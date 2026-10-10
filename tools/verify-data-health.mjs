@@ -97,7 +97,11 @@ try {
     const solve = { id: 'health-ui-solve', sessionId: window.tagdatimer.session.id, timeMs: 9999, penalty: 'none', createdAt: Date.now() };
     await Solves.put(solve);
   });
-  await page.waitForFunction(async () => (await import('/js/sync.js')).getSyncStatus().inFlight);
+  await page.waitForFunction(async () => {
+    const status = (await import('/js/sync.js')).getSyncStatus();
+    return status.inFlight && status.state === 'syncing'
+      && document.getElementById('btn-account').getAttribute('aria-label').includes('change');
+  });
   assert.equal(await page.locator('.account-status-dot').count(), 1);
   assert.match(await page.locator('#btn-account').getAttribute('aria-label'), /change/);
   await page.locator('#btn-account').click();

@@ -119,8 +119,21 @@ export class CubeView {
     this.puzzle = puzzle;               // remembered even without a live player
     if (!this.player) return;
     if (changed) {
-      try { this.player.setAttribute('experimental-setup-alg', ''); } catch { /* ignore */ }
-      this.player.setAttribute('puzzle', puzzle);
+      // A player can still be loading its previous geometry/stickering. Reusing
+      // it across puzzle sizes lets those async results collide (notably in
+      // WebKit). A fresh element keeps each puzzle's loading graph independent.
+      const previous = this.player;
+      const next = document.createElement('twisty-player');
+      next.setAttribute('puzzle', puzzle);
+      for (const name of previous.getAttributeNames()) {
+        if (!['puzzle', 'alg', 'experimental-setup-alg', 'visualization'].includes(name)) {
+          next.setAttribute(name, previous.getAttribute(name));
+        }
+      }
+      next.setAttribute('alg', '');
+      this.player = next;
+      this.setView(view);
+      previous.replaceWith(next);
       this.applied = null;               // force the next set() through
     }
     this.setView(view);
@@ -176,6 +189,7 @@ export class CubeView {
 
     const only = previewAlg(scramble);
     const clean = this.orientation ? `${this.orientation} ${only}`.trim() : only;
+    const player = this.player;
     // `force` also throws away any turns added on top — the virtual cube's reset.
     if (clean === this.applied && !opts.force) return;
 
@@ -198,8 +212,8 @@ export class CubeView {
     // A just-swapped puzzle may not have finished loading, in which case the
     // alg fails to parse. Retry once the puzzle is actually in place.
     if (!apply()) return;
-    this.player.experimentalModel?.puzzleLoader?.get?.()
-      .then(() => { if (this.applied === clean) apply(); })
+    player.experimentalModel?.puzzleLoader?.get?.()
+      .then(() => { if (this.player === player && this.applied === clean) apply(); })
       .catch(() => {});
   }
 

@@ -648,7 +648,7 @@ function statText(w) {
 
 export function buildStatDetail(app, kind) {
   return (body) => {
-    const w = statWindow(app.solves, kind);
+    const w = statWindow(kind.includes('@') ? app.solves : (app.statsSolves?.() || app.solves), kind);
 
     if (!w.list.length) {
       body.append(el('div', { class: 'hint-note', text:
@@ -685,7 +685,7 @@ export function buildStatDetail(app, kind) {
     const list = el('div', { class: 'sd-list' });
     w.list.forEach((s, i) => {
       const gi = w.start + i;
-      list.append(solveRow(app, s, i + 1, gi, { trimmed: w.trimmed.has(gi) }));
+      list.append(solveRow(app, s, i + 1, app.solves.indexOf(s), { trimmed: w.trimmed.has(gi) }));
     });
     body.append(list);
   };

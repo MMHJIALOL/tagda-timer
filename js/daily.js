@@ -890,6 +890,9 @@ export class Daily extends EventTarget {
     if (!this.snap?.signedIn) return true;
     if (this.banned) return true;
     if (!this.snap.scramble) return true;
+    // The scramble may arrive before our account's result does. Until arming
+    // has finished, takeScramble() still shows a hold message, not an attempt.
+    if (!this._resultChecked || !this.attempting) return true;
     /* The misfire question is up, the backup is being claimed, or it is still
        on its way: nothing to solve yet. Shut during the question in particular,
        or a press of space answered it Keep AND started a stray solve on the

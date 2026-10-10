@@ -116,6 +116,7 @@ export class Fmc {
 
   /** Show or hide the whole thing for the event we are on. */
   async sync(on) {
+    const version = this._syncVersion = (this._syncVersion || 0) + 1;
     document.body.classList.toggle('fmc', !!on);
     if (!on) {
       if (this.host) this.host.hidden = true;
@@ -134,17 +135,19 @@ export class Fmc {
     }
     this.mount();
     this.host.hidden = false;
-    if (!this.attempt) await this.restore();
+    if (!this.attempt) await this.restore(() => version === this._syncVersion);
+    if (version !== this._syncVersion) return;
     this._paint();
   }
 
   /* ---------------- the attempt ---------------- */
 
   /** Pick up an attempt left behind by a reload or a crash. */
-  async restore() {
+  async restore(isCurrent = () => true) {
     let saved = null;
     try { saved = await KV.get(KEY, null); }
     catch { /* an unreadable draft is not worth failing a boot over */ }
+    if (!isCurrent()) return;
     if (!saved?.scramble || !saved?.startedAt) return;
 
     const limitMs = saved.limitMs || TIME_LIMIT_MS;

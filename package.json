@@ -4,7 +4,9 @@
   "type": "module",
   "scripts": {
     "test:settings-search": "node --test js/settings-search.check.mjs",
-    "test:stats-session": "node --test js/stats-session.check.mjs"
+    "test:stats-session": "node --test js/stats-session.check.mjs",
+    "test:stats-units": "node --test js/stats-units.check.mjs",
+    "test:site": "node tools/verify-site.cjs"
   },
   "devDependencies": {
     "jsdom": "26.1.0"

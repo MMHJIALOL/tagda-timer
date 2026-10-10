@@ -401,7 +401,7 @@
   /* The six figures on one line, and never the expanded block, which is taller
      than the whole screen here. The drawer has the rest. */
   #panel-stats #stats-body { display: none; }
-  #panel-stats .stats-peek { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  #app #panel-stats[data-collapsed] .stats-peek { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); }
 }
 
 .view-toggle button {
@@ -4476,7 +4476,7 @@ body.duel-on #panel-stats > .stats-duel { margin-top: 10px; }
 @media (max-width: 860px) {
   #sotd-board {
     left: 12px; right: 12px; top: auto; bottom: 0;
-    width: auto; max-height: 46vh;
+    width: auto; max-height: min(46vh, var(--sotd-sheet-max, 46vh));
   }
   /* Lifted clear of the sheet. On a wide screen the preview's usual corner is
      nowhere near the board; here the board IS the bottom of the screen, and a
@@ -4499,7 +4499,7 @@ body.duel-on #panel-stats > .stats-duel { margin-top: 10px; }
   }
   body.sotd:not(.sotd-chat-view) #sotd-chat { display: none; }
   body.sotd.sotd-chat-view #sotd-board { display: none; }
-  .sotd-chat-card { max-height: min(46vh, var(--sotd-chat-max, 46vh)); border-bottom: 0; border-radius: 16px 16px 0 0; }
+  .sotd-chat-card { max-height: min(46vh, var(--sotd-sheet-max, 46vh)); border-bottom: 0; border-radius: 16px 16px 0 0; }
   .sotd-tab-chat { display: inline-block; }
   .sc-back { display: inline-flex; }
 }

@@ -2107,7 +2107,11 @@ section('scramble of the day — when the timer is held shut');
     && at(stub(), live, { attempting: true }).locked() === false);
 
   check('inside the window an armed attempt leaves the timer OPEN — it is the solve being timed',
-    at(Object.assign(stub(), { engaged: true }), live, { attempting: true }).locked() === false);
+    at(Object.assign(stub(), { engaged: true }), live, { attempting: true, _resultChecked: true }).locked() === false);
+
+  check('inside the window the timer waits for the account result check and an armed attempt',
+    at(Object.assign(stub(), { engaged: true }), live, { attempting: true, _resultChecked: false }).locked() === true
+    && at(Object.assign(stub(), { engaged: true }), live, { attempting: false, _resultChecked: true }).locked() === true);
 
   check('inside the window the timer is shut until today’s scramble exists',
     at(Object.assign(stub(), { engaged: true }), { signedIn: true, scramble: null }).locked() === true);
