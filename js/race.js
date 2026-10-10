@@ -26,13 +26,24 @@ import {
   CODE_ALPHABET, CODE_LENGTH,
   CLOCK_SLACK_MS, CLOCK_SLACK_RATIO,
   CHAT_MAX_LEN, CHAT_COOLDOWN_MS, RACE_EMOJI,
-  MATCH_EVENT, MATCH_SEARCH_MS, MATCH_REFRESH_MS, MATCH_STALE_MS, MATCH_SHOWUP_MS, DUEL_GONE_MS,
+  MATCH_EVENT,
 } from './raceapp.js';
 import { isOwnerName, openOwnerCard } from './ownercard.js';
-import { getConfig, loadConfig } from './config.js';
+import { getConfig, loadConfig, readOnlyText } from './config.js';
+import { hasFeature } from './audience.js';
 
 /* Tuning from the admin console (config/race); the defaults are raceapp.js's. */
 const tune = (k) => getConfig('race', k);
+
+/* Random 1v1's (config/duel, ADMIN.md §4), in ms. The defaults are raceapp.js's
+   MATCH_* constants. A seat is never called abandoned inside two of its own
+   re-stamps, whatever the two settings say, or a waiting player would be
+   taken over between stamps. */
+const duelMs = (k) => getConfig('duel', k) * 1000;
+const matchStaleMs = () => Math.max(duelMs('staleSec'), 2 * duelMs('refreshSec') + 1000);
+/** Random 1v1 for this account: switched on, and in its audience. */
+export const duelOn = () => getConfig('duel', 'enabled') && hasFeature('duel');
+export const duelOffText = () => getConfig('duel', 'message') || t('Random 1v1 is switched off for now');
 import { banActive, banLine } from './admins.js';
 import { hasPersistedSession } from './sync-auth.js';
 
@@ -305,6 +316,9 @@ export class Race extends EventTarget {
     const roomId = normaliseCode(code);
     if (roomId.length < 3) throw new Error('bad-code');
     await this.connect(this.app.settings.racePrefer || 'auto');
+    // The admin console's read-only switch: a race writes every round (ADMIN.md §4).
+    await loadConfig();
+    if (readOnlyText()) throw new Error('read-only');
 
     const nick = name || this.nickname();
 
@@ -967,13 +981,16 @@ export class Race extends EventTarget {
     /* Searching from the click, not from the end of the handshake: signing in
        and reading the settings is a second or so, and a button that does
        nothing for that long gets pressed again. The minute starts now too. */
-    const m = { state: 'connecting', code: randomCode(), endsAt: Date.now() + MATCH_SEARCH_MS };
+    const span = duelMs('searchSec');
+    const m = { state: 'connecting', code: randomCode(), span, endsAt: Date.now() + span };
     this.match = m;
     this._matchChanged();
     try {
       await this.connect(this.app.settings.racePrefer || 'auto');
       await loadConfig();
       if (!getConfig('race', 'enabled')) throw new Error('race-off');
+      if (readOnlyText()) throw new Error('read-only');
+      if (!duelOn()) throw new Error('duel-off');
     } catch (err) {
       if (this.match === m) { this.match = { state: 'idle' }; this._matchChanged(); }
       throw err;
@@ -985,7 +1002,7 @@ export class Race extends EventTarget {
       if (this._takenFromMe(seat, m)) this._matched(m, m.code);
     });
     // Re-stamped while waiting, so the seat never looks abandoned while we are here.
-    m.refresh = setInterval(() => this._matchTick(m), MATCH_REFRESH_MS);
+    m.refresh = setInterval(() => this._matchTick(m), duelMs('refreshSec'));
     // The countdown the drawer shows, and the end of the minute.
     m.clock = setInterval(() => {
       if (Date.now() >= m.endsAt) this._giveUp(m); else this._matchChanged();
@@ -1006,7 +1023,7 @@ export class Race extends EventTarget {
       const now = this.net.serverNow();
       const seat = await this.net.matchTransact((cur) => {
         if (cur?.code === m.code && cur.takenBy) return undefined;
-        const waiting = cur && !cur.takenBy && cur.uid !== me && now - (cur.at || 0) < MATCH_STALE_MS;
+        const waiting = cur && !cur.takenBy && cur.uid !== me && now - (cur.at || 0) < matchStaleMs();
         if (waiting) return { uid: cur.uid, code: cur.code, at: cur.at, takenBy: me, takenAt: now };
         return { uid: me, code: m.code, at: now };
       });
@@ -1019,17 +1036,39 @@ export class Race extends EventTarget {
     } catch (err) {
       // Refused (switched off since, or a dropped socket): the next tick tries again.
       console.warn('[race] 1v1 seat refused', err?.code || err);
+      // The rules refuse the seat while Random 1v1 is off (ADMIN.md §4): ask the settings again, and stop if so.
+      if (/permission/i.test(String(err?.code || err?.message || err))) {
+        await loadConfig({ maxAge: 0 });
+        if (!duelOn() && this.match === m && m.state === 'searching') {
+          await this._leaveSeat(m);
+          this.match = { state: 'idle' };
+          this._matchChanged();
+          toast(duelOffText(), { kind: 'bad', long: true });
+        }
+      }
     } finally {
       m.busy = false;
     }
   }
 
   _stopSearch(m) {
-    m.unwatch?.();
-    m.unwatch = null;
     clearInterval(m.refresh);
     clearInterval(m.clock);
+    m.unwatch?.();
+    m.unwatch = null;
     if (m.armed) { m.armed = false; this.net.armMatchDrop(false); }
+  }
+
+  /* Out of the seat, then stop watching it, in that order. The SDK runs a
+     transaction against what it holds for the path, and once nothing listens
+     it holds nothing: the clear saw an empty seat, gave up without asking the
+     server, and left this tab sitting in it for whoever searched next. */
+  async _leaveSeat(m) {
+    clearInterval(m.refresh);
+    clearInterval(m.clock);
+    try { return await this._clearSeat(m); }
+    catch { return null; }
+    finally { this._stopSearch(m); }
   }
 
   /** Out of the seat, unless somebody has just taken it. Resolves to the seat after. */
@@ -1058,15 +1097,14 @@ export class Race extends EventTarget {
   /** A minute with nobody: say so, and offer the next minute. */
   async _giveUp(m) {
     if (this.match !== m || m.state !== 'searching') return;
-    this._stopSearch(m);
     m.state = 'ending';
-    const seat = await this._clearSeat(m).catch(() => null);
+    const seat = await this._leaveSeat(m);
     if (this.match !== m) return;
     // Taken in the last instant: that is a match, not a miss.
     if (this._takenFromMe(seat, m)) { m.state = 'searching'; this._matched(m, m.code); return; }
-    this.match = { state: 'none' };
+    this.match = { state: 'none', span: m.span };
     this._matchChanged();
-    toast(t('Couldn’t find anyone in the last minute.'), {
+    toast(m.span === 60000 ? t('Couldn’t find anyone in the last minute.') : t('Couldn’t find anyone in the last {n} seconds.', { n: Math.round(m.span / 1000) }), {
       action: t('Try again'), long: true,
       onAction: () => this.findMatch().catch(err => toast(this.matchErrorText(err), { kind: 'bad' })),
     });
@@ -1076,10 +1114,9 @@ export class Race extends EventTarget {
     const m = this.match;
     if (m.state === 'connecting') { this.match = { state: 'idle' }; this._matchChanged(); return; }
     if (m.state === 'searching') {
-      this._stopSearch(m);
       this.match = { state: 'idle' };
       this._matchChanged();
-      await this._clearSeat(m).catch(() => {});
+      await this._leaveSeat(m);
       return;
     }
     if (m.state === 'none') { this.match = { state: 'idle' }; this._matchChanged(); }
@@ -1089,6 +1126,8 @@ export class Race extends EventTarget {
     const why = err?.message;
     return why === 'not-333' ? t('Random 1v1 is 3x3 only — switch to 3x3 first')
       : why === 'race-off' ? (getConfig('race', 'message') || t('New race rooms are switched off for now'))
+      : why === 'duel-off' ? duelOffText()
+      : why === 'read-only' ? (readOnlyText() || t('Could not look for an opponent'))
       : why === 'no-config' ? t('Real rooms are not configured — see RACE.md')
       : why === 'room-full' ? t('That 1v1 already has two people in it')
       : t('Could not look for an opponent');
@@ -1123,8 +1162,8 @@ export class Race extends EventTarget {
        for a few seconds and then writes it back. */
     if (d.opp) {
       d.goneAt ||= Date.now();
-      if (Date.now() - d.goneAt >= DUEL_GONE_MS) this._duelOver('left');
-    } else if (Date.now() - d.since >= MATCH_SHOWUP_MS) {
+      if (Date.now() - d.goneAt >= duelMs('goneSec')) this._duelOver('left');
+    } else if (Date.now() - d.since >= duelMs('showupSec')) {
       this._duelOver('noshow');
     }
   }
@@ -1134,6 +1173,8 @@ export class Race extends EventTarget {
    * 1v1 has somebody in it. Nothing is opened here: both switches start off.
    */
   async _ensureCam(opp) {
+    // Switched off from the admin console (duel.camEnabled): no new call. One already up carries on.
+    if (!this._cam && !getConfig('duel', 'camEnabled')) return;
     if (!this._cam) {
       if (this._camLoading) return;
       this._camLoading = true;
@@ -1794,7 +1835,7 @@ export class Race extends EventTarget {
     if (!on) { this.app.refreshLayout?.(); return; }
     node.dataset.duel = String(this.isDuel && !!this.opponent);
     this._render(node);
-    node.querySelector('.race-cam').hidden = !(this.isDuel && this.opponent);
+    node.querySelector('.race-cam').hidden = !(this.isDuel && this.opponent && (this._cam || getConfig('duel', 'camEnabled')));
     /* Outside _render, and outside its signature guard.
      *
      * _render is throttled on a signature built from the rows, so a message

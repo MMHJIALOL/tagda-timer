@@ -126,7 +126,8 @@ function ago(ms) {
 const who = (uid) => (uid === S.user?.uid ? t('you') : uid === SCHEDULER_UID ? t('the scheduler') : `${String(uid).slice(0, 6)}…`);
 
 /** What a 'choice' setting's options are called (the audiences, ADMIN.md §9). */
-const CHOICE = { everyone: 'Everybody', testers: 'Testers and admins', admins: 'Admins only' };
+const CHOICE = { everyone: 'Everybody', testers: 'Testers and admins', admins: 'Admins only',
+  info: 'Information (the theme’s colour)', warn: 'Warning (amber)', down: 'Outage (red)' };
 
 /** One option of a 'set' setting, as people know it (the events: 3x3, OH…). */
 const optionLabel = (o) => eventOf(o)?.short || o;

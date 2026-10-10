@@ -13,6 +13,7 @@
    fails, the last copy or the defaults stay in use and nothing breaks.
    =========================================================== */
 
+import { t } from './i18n.js';
 import { CONFIG, NAME, spec, allSettings, clean, valid, sectionOf, setOf } from './config-table.js';
 
 export { CONFIG, NAME, spec, allSettings, clean, valid, sectionOf, setOf };
@@ -46,6 +47,18 @@ export function getConfig(section, key) {
   if (!sp) throw new Error(`no such setting: ${section}.${key}`);
   const v = clean(sp, live?.[section]?.[key]);
   return v === undefined ? sp.def : v;
+}
+
+/**
+ * The read-only switch (app.readOnly, ADMIN.md §4): what to show in place of
+ * a button that would write to the database (a race, a 1v1, the Scramble of
+ * the Day), or null while the site is writable. The banner's own words when
+ * it has some.
+ */
+export function readOnlyText() {
+  if (!getConfig('app', 'readOnly')) return null;
+  return getConfig('app', 'banner').trim()
+    || t('Tagda Timer is read-only for a while. Timing works and your solves are kept on this device; they sync once it is back.');
 }
 
 /** announcements/ as last fetched (announce.js makes sense of it), or null. */

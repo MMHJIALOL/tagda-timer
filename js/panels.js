@@ -17,7 +17,8 @@ import { MODES, EVENTS, EVENT_ORDER, eventOf, virtualSize, relayLegEvents, relay
 import { setFor } from './scramble.js';
 import { toast, confirmToast } from './toast.js';
 import { canSpeak } from './fx.js';
-import { getConfig } from './config.js';
+import { getConfig, readOnlyText } from './config.js';
+import { hasFeature } from './audience.js';
 import { MATCH_EVENT, MATCH_SEARCH_MS } from './raceapp.js';
 import { Assets, Solves, LetterPairs } from './db.js';
 import { Gear, GearLog, LOG_KINDS, newGear, newLogEntry, gearLabel,
@@ -30,7 +31,7 @@ import { DEFAULT_SPEFFZ_MAP, DEFAULT_BLD, CORNER_STICKER_KEYS, EDGE_STICKER_KEYS
 import { FACES } from './cube3.js';
 import { mountSettingsSearch } from './settings-search.js';
 import { enableReplay, enableSound, requestCamera, attachPreview, onCamerasChanged, listCameras, listMics, cameraName,
-         replayUsage, clearReplays, hasReplay, openReplay, keepCount, replaySupported, fullHdSupport } from './replay.js';
+         replayUsage, clearReplays, hasReplay, openReplay, keepCount, replaySupported, replayOff, fullHdSupport } from './replay.js';
 
 /* ---------------- drawer shell ---------------- */
 
@@ -155,6 +156,12 @@ export function webcamControls(app, { onWatch = null, compact = false } = {}) {
   const set = (k, v) => app.setSetting(k, v);
   const box = el('div', { class: 'rp-settings' });
   const render = () => {
+    // Switched off from the admin console: no switch to flip, only why.
+    if (replayOff()) {
+      box.replaceChildren(...[el('div', { class: 'hint-note', role: 'status', text: replayOff() }),
+        onWatch ? el('button', { class: 'btn primary full', text: t('Watch the last solve  (W)'), onclick: onWatch }) : null].filter(Boolean));
+      return;
+    }
     const on = !!S.webcamReplay;
     const sw = toggle(on, async (v) => {
       if (v && !(await enableReplay())) { sw.querySelector('input').checked = false; return; }
@@ -961,7 +968,10 @@ export function buildSettings(app, searchQuery = '') {
           ? el('div', { class: 'hint-note', html:
               t('Type the time under the clock and press <b>Enter</b>. It understands <b>12.34</b>, <b>1:05.67</b>, bare digits (<b>1234</b> is 12.34), <b>12.34+2</b> for a plus two, and <b>DNF</b>. Each entry records against the scramble on screen and moves you to the next one.') })
           : null,
-        S.inputMode === 'stackmat'
+        // Switched off from the admin console (features.stackmat): the keyboard is in use until it is back.
+        S.inputMode === 'stackmat' && app.stackmatOff?.()
+          ? el('div', { class: 'sc-blocked', role: 'status', text: app.stackmatOff() })
+          : S.inputMode === 'stackmat'
           ? el('div', { class: 'hint-note', html:
               t('Run a 3.5&nbsp;mm cable from the timer&rsquo;s data port to this machine&rsquo;s <b>microphone</b> input and allow the microphone when asked. The bar under the clock says whether packets are actually arriving — if it stays on &ldquo;no signal&rdquo;, raise the input level in your sound settings and check the cable is in the mic socket, not line-out.') })
           : null,
@@ -2962,18 +2972,23 @@ export function buildRace(app) {
          searching, so the radar keeps pinging instead of restarting every tick,
          and the drawer itself is never re-rendered under the name field. */
       let redrawMatch = null;
-      if (!inRoom) {
+      // Not for this account (config/duel's audience): no card at all, as before 1v1 existed.
+      if (!inRoom && hasFeature('duel')) {
         const box = el('div');
         let drawn = '';
         let secsNode = null, barNode = null;
         const leftOf = (m) => Math.max(0, Math.ceil((m.endsAt - Date.now()) / 1000));
-        const fracOf = (m) => Math.max(0, Math.min(1, (m.endsAt - Date.now()) / MATCH_SEARCH_MS));
+        const fracOf = (m) => Math.max(0, Math.min(1, (m.endsAt - Date.now()) / (m.span || MATCH_SEARCH_MS)));
         const drawMatch = () => {
           const m = ctl.match;
           const is333 = S.event === MATCH_EVENT;
-          const state = m.state === 'ending' ? 'joining' : m.state === 'connecting' ? 'searching' : !is333 && (m.state === 'idle' || m.state === 'none') ? 'other' : m.state;
+          // Switched off, or read-only, from the admin console: the card says why in place of its button.
+          const blocked = (m.state === 'idle' || m.state === 'none')
+            && (readOnlyText() || (getConfig('duel', 'enabled') ? null : getConfig('duel', 'message') || t('Random 1v1 is switched off for now')));
+          const state = blocked ? 'off'
+            : m.state === 'ending' ? 'joining' : m.state === 'connecting' ? 'searching' : !is333 && (m.state === 'idle' || m.state === 'none') ? 'other' : m.state;
           const me = ctl.nickname();
-          const key = `${state}|${me}`;
+          const key = `${state}|${me}|${blocked || ''}`;
           if (key === drawn) {
             if (secsNode) secsNode.textContent = `${leftOf(m)}s`;
             if (barNode) barNode.style.transform = `scaleX(${fracOf(m)})`;
@@ -2994,13 +3009,15 @@ export function buildRace(app) {
             idle:      [t('Race a stranger'), t('3x3 · one scramble at a time · head to head until one of you quits')],
             searching: [t('Looking for an opponent…'), null],
             joining:   [t('Opponent found!'), t('Joining the match…')],
-            none:      [t('Nobody around right now'), t('Couldn’t find anyone in the last minute. Try again?')],
+            none:      [t('Nobody around right now'), (m.span || 60000) === 60000 ? t('Couldn’t find anyone in the last minute. Try again?')
+              : t('Couldn’t find anyone in the last {n} seconds. Try again?', { n: Math.round(m.span / 1000) })],
             other:     [t('Race a stranger'), t('Random 1v1 is 3x3 only.')],
+            off:       [t('Race a stranger'), blocked],
           }[state];
           const sub = el('div', { class: 'duel-sub', role: 'status' });
           if (state === 'searching') {
             secsNode = el('span', { class: 'duel-secs', text: `${leftOf(m)}s` });
-            sub.append(t('Each search lasts a minute') + ' · ', secsNode, ' ' + t('left'));
+            sub.append(((m.span || 60000) === 60000 ? t('Each search lasts a minute') : t('Each search lasts {n} seconds', { n: Math.round(m.span / 1000) })) + ' · ', secsNode, ' ' + t('left'));
           } else {
             sub.textContent = copy[1];
           }
@@ -3014,7 +3031,7 @@ export function buildRace(app) {
           } else if (state === 'other') {
             action = [el('button', { class: 'btn primary', text: t('Switch to 3x3'),
               onclick: async () => { await app.setEvent(MATCH_EVENT); render(); } })];
-          } else if (state !== 'joining') {
+          } else if (state !== 'joining' && state !== 'off') {
             action = [find(state === 'none' ? t('Try again') : t('Find an opponent'))];
           }
 
@@ -3069,15 +3086,18 @@ export function buildRace(app) {
             const why = err?.message === 'room-full' ? t('That room is full ({n} max)', { n: race.roomMax?.() ?? race.ROOM_MAX })
               : err?.message === 'bad-code' ? t('A room code is at least 3 characters')
               : err?.message === 'race-off' ? (getConfig('race', 'message') || t('New race rooms are switched off for now'))
+              : err?.message === 'read-only' ? (readOnlyText() || t('Could not join that room'))
               : err?.message === 'no-config' ? t('Real rooms are not configured — see RACE.md')
               : t('Could not join that room');
             toast(why, { kind: 'bad' });
           }
         };
 
+        // Read-only (the admin console, ADMIN.md §4): why, where the buttons would be.
+        const ro = readOnlyText();
         body.append(group(t('Join a room'),
           row(t('Room code'), code),
-          el('div', { class: 'btn-row' },
+          ro ? el('div', { class: 'sc-blocked', role: 'status', text: ro }) : el('div', { class: 'btn-row' },
             el('button', { class: 'btn primary', text: t('Join'), onclick: () => go(normaliseCode(code.value)) }),
             el('button', { class: 'btn', text: t('Create a room'), onclick: () => go(randomCode()) }),
           ),

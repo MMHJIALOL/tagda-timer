@@ -24,7 +24,13 @@
 import { allAnnouncements, pick, memoryFor, inAudience } from './announce.js';
 import { annNode } from './announce-ui.js';
 import { getConfig, storedAnnouncements } from './config.js';
-import { loadRoles, roles } from './audience.js';
+import { loadRoles, roles, hasFeature } from './audience.js';
+
+/* A built-in announcement of a feature switched off from the admin console,
+   or not on for this account yet, is no announcement at all (ADMIN.md §4). */
+const FEATURE_OF = {
+  'random-1v1': () => getConfig('duel', 'enabled') && hasFeature('duel'),
+};
 
 const MEM_KEY = 'tdt-ann';
 const OPENED_KEY = 'tdt-opened';
@@ -200,7 +206,7 @@ function tick() {
   for (const [id, a] of Object.entries(anns)) {
     const here = !sotd || (a.style === 'card' && a.button?.action === 'panel' && host.anchor(a.button.target));
     // A button to a panel this browser cannot use (a camera where nothing can record) is no announcement at all.
-    const usable = a.button?.action !== 'panel' || host.available(a.button.target);
+    const usable = (a.button?.action !== 'panel' || host.available(a.button.target)) && (!FEATURE_OF[id] || FEATURE_OF[id]());
     if (!here || !usable || (appeared.get(id) || 0) >= PER_LOAD) delete anns[id];
   }
   const got = pick(anns, readJson(MEM_KEY), who());

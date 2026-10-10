@@ -83,6 +83,7 @@ import { t } from './i18n.js';
 import { el, fmt, fmtLive } from './util.js';
 import { tx, wrap } from './db.js';
 import { toast, confirmToast } from './toast.js';
+import { featureOff } from './audience.js';
 
 const KEEP_DEFAULT = 200;
 const CLIP_BYTES = 12 * 1024 * 1024;     // room budgeted per kept clip at Standard and HD: about a 30 s HD solve
@@ -121,6 +122,8 @@ const MIC_BPS = 48_000;
 // The Stackmat's settings, for the same reason: speech clean-up mangles the sound of a solve.
 const RAW = { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 };
 export const replaySupported = () => !!MIME && !!navigator.mediaDevices?.getUserMedia;
+/** Why filming is switched off from the admin console (features.webcamReplay, ADMIN.md §4), or null. */
+export const replayOff = () => featureOff('webcamReplay', t('Webcam replays are switched off for now'));
 
 let app = null;                          // main.js's app: settings, setSetting, persist
 const S = () => app?.settings || {};
@@ -1016,6 +1019,10 @@ async function save(r, solve, blob) {
  * fine) and resolves whether it is now on; failures explain themselves.
  */
 export async function enableReplay() {
+  if (replayOff()) {
+    toast(replayOff(), { kind: 'bad', long: true });
+    return false;
+  }
   if (!replaySupported()) {
     toast(t('This browser cannot record video'), { kind: 'bad', long: true });
     return false;
@@ -1040,7 +1047,7 @@ export function requestCamera() {
 /** main.js, from applyAll: the settings may have changed under us (toggle, camera, quality, reset). */
 export function syncReplay() {
   if (!app) return;
-  const on = !!S().webcamReplay && replaySupported();
+  const on = !!S().webcamReplay && replaySupported() && !replayOff();
   if (!on) {
     if (enabled) { enabled = false; drop(); release(); }
     return;
@@ -1087,6 +1094,11 @@ export function initReplay(appRef, tm) {
     });
   }).catch(() => {}) || Promise.resolve();
   ready.then(syncReplay);
+  /* Switched off or on from the admin console, or this account's roles read:
+     an attempt being filmed keeps its clip, and the next one goes by it. */
+  const resync = () => { if (!rec) syncReplay(); };
+  addEventListener('tdt-config', resync);
+  addEventListener('tdt-roles', resync);
   navigator.permissions?.query({ name: 'microphone' }).then((st) => {
     micPerm = st.state;
     st.addEventListener('change', () => { micPerm = st.state; });

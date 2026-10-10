@@ -145,26 +145,30 @@ async function isAdmin(env, who, sub, token) {
 
 /* ---------------- settings (ADMIN.md) ---------------- */
 
-let settings = { at: 0, data: null };
+const settings = new Map();           // section -> { at, data }
 
 /**
- * config/replays, public to read, kept in this isolate for a minute
- * (CONFIG_TTL_MS) so a busy day costs a few database reads rather than one a
- * request. Refused (rules from before the console) is the defaults, which
- * are the constants; a failed fetch keeps the last copy if there is one.
+ * A settings section (config/<section>), public to read, kept in this
+ * isolate for a minute (CONFIG_TTL_MS) so a busy day costs a few database
+ * reads rather than one a request. Refused (rules from before the console) is
+ * the defaults, which are the constants; a failed fetch keeps the last copy
+ * if there is one.
  */
-async function replaySettings(env, now = Date.now()) {
-  if (settings.data && now - settings.at < num(env.CONFIG_TTL_MS, 60_000)) return settings.data;
+async function sectionSettings(env, section, now = Date.now()) {
+  const held = settings.get(section);
+  if (held && now - held.at < num(env.CONFIG_TTL_MS, 60_000)) return held.data;
   let stored;
   try {
     const q = env.RTDB_NS ? `?ns=${encodeURIComponent(env.RTDB_NS)}` : '';
-    const r = await fetch(`${String(env.RTDB_URL || '').replace(/\/+$/, '')}/config/replays.json${q}`);
+    const r = await fetch(`${String(env.RTDB_URL || '').replace(/\/+$/, '')}/config/${section}.json${q}`);
     stored = r.ok ? await r.json() : r.status === 401 ? null : undefined;
   } catch { stored = undefined; }
-  const data = stored === undefined && settings.data ? settings.data : sectionOf('replays', stored);
-  settings = { at: now, data };
+  const data = stored === undefined && held ? held.data : sectionOf(section, stored);
+  settings.set(section, { at: now, data });
   return data;
 }
+
+const replaySettings = (env, now) => sectionSettings(env, 'replays', now);
 
 /** Every limit at min(setting, ceiling). */
 function limits(env, cfg) {
@@ -427,14 +431,23 @@ async function usage(request, env) {
    player in that room and the room is a 1v1. Race accounts are anonymous,
    so that is the whole gate: anybody can start a 1v1 with themselves in two
    tabs, and get a few hours of relay. That is the same reach as using the
-   1v1 itself, and the dashboard shows the month's gigabytes. */
+   1v1 itself, and the dashboard shows the month's gigabytes.
 
-const TURN_TTL = 4 * 3600;            // seconds; longer than any 1v1 lasts
+   The admin console can switch the relay off (config/duel turnEnabled, or
+   camEnabled for the whole cam and mic) and shorten its logins (turnTtlMin),
+   never lengthen them past TURN_TTL. Off is a 403, and race-cam.js then
+   connects with STUN alone, as it does when this Worker has no key. */
+
+const TURN_TTL = 4 * 3600;            // seconds; longer than any 1v1 lasts; the ceiling of duel.turnTtlMin
 const ROOM = /^[A-Za-z0-9_-]{1,64}$/;
 
 async function turn(request, env) {
   if (request.method !== 'POST') return fail(405, 'method');
   if (!env.TURN_KEY_ID || !env.TURN_KEY_TOKEN) return fail(503, 'off');
+  // Switched off, before anything else costs anything.
+  const cfg = await sectionSettings(env, 'duel');
+  if (!cfg.camEnabled || !cfg.turnEnabled) return fail(403, 'off');
+  const ttl = Math.min(TURN_TTL, cfg.turnTtlMin * 60);
   const token = bearer(request);
   if (!token) return fail(401, 'no-token');
   const sub = claims(token)?.sub;
@@ -452,7 +465,7 @@ async function turn(request, env) {
   const r = await fetch(`https://rtc.live.cloudflare.com/v1/turn/keys/${encodeURIComponent(env.TURN_KEY_ID)}/credentials/generate-ice-servers`, {
     method: 'POST',
     headers: { authorization: `Bearer ${env.TURN_KEY_TOKEN}`, 'content-type': 'application/json' },
-    body: JSON.stringify({ ttl: TURN_TTL }),
+    body: JSON.stringify({ ttl }),
   });
   if (!r.ok) {
     console.log(JSON.stringify({ turn: 'cloudflare', status: r.status }));
@@ -465,8 +478,8 @@ async function turn(request, env) {
     const urls = [].concat(s?.urls || []).filter(u => typeof u === 'string' && !/:53(\?|$)/.test(u));
     return { ...s, urls };
   }).filter(s => s.urls.length);
-  console.log(JSON.stringify({ turn: 'issued', room }));
-  return json(200, { iceServers: list, ttl: TURN_TTL });
+  console.log(JSON.stringify({ turn: 'issued', room, ttl }));
+  return json(200, { iceServers: list, ttl });
 }
 
 /* ---------------- scheduled changes (ADMIN.md §10) ---------------- */
@@ -577,5 +590,5 @@ async function applyScheduled(env, now = Date.now()) {
       if (to === undefined) delete current[e.s][e.k]; else current[e.s][e.k] = to;
     }
   }
-  settings.at = 0;                         // this isolate's copy of config/replays is read again
+  settings.clear();                        // this isolate's copies of the settings are read again
 }

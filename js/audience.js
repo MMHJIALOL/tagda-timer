@@ -61,11 +61,28 @@ export function loadRoles(sdk, user) {
   return asked.get(user.uid);
 }
 
-/** Whether this account has the feature `section` stands for, by its audience. Nothing set: everybody. */
-export function hasFeature(section, uid = me.uid) {
-  const a = getConfig(section, 'audience');
+/** Whether this account is in audience `a`. */
+function inAudience(a, uid) {
   if (!a || a === 'everyone') return true;
   if (!uid || uid !== me.uid) return false;
   if (a === 'testers') return me.tester || me.admin;
   return a === 'admins' && me.admin;
+}
+
+/** Whether this account has the feature `section` stands for, by its audience. Nothing set: everybody. */
+export function hasFeature(section, uid = me.uid) {
+  return inAudience(getConfig(section, 'audience'), uid);
+}
+
+/**
+ * One switch of the Features section (config/features, ADMIN.md §4): on,
+ * and this account is in its audience (`<name>Audience`).
+ */
+export function featureOn(name, uid = me.uid) {
+  return getConfig('features', name) === true && inAudience(getConfig('features', `${name}Audience`), uid);
+}
+
+/** Why a Features switch is off for this account (`<name>Message`, else `fallback`), or null while it is on. */
+export function featureOff(name, fallback) {
+  return featureOn(name) ? null : getConfig('features', `${name}Message`) || fallback;
 }

@@ -8,6 +8,7 @@
        node tools/sotd-replay-dev.mjs rules pre-replays  the rules from before replays
        node tools/sotd-replay-dev.mjs rules pre-admin    the rules from before the admin console (admins/, config/)
        node tools/sotd-replay-dev.mjs rules pre-safety   the rules from before its safety switches (bans/, chatLast/)
+       node tools/sotd-replay-dev.mjs rules pre-switches the rules from before phase 7's switches (1v1, cam, read-only)
        node tools/sotd-replay-dev.mjs counts             R2 puts / lists / gets / deletes so far
 
    What runs: the Firebase Realtime Database and Auth emulators (firebase-tools
@@ -50,6 +51,7 @@ const BEFORE = {
   'pre-replays': ['replayClaim', 'replays'],
   'pre-admin': ['configLog', 'the admin console'],
   'pre-safety': ['chatLast', 'the safety switches'],
+  'pre-switches': ['config/duel/enabled', 'the phase 7 switches'],
 };
 function oldRules(which = 'old') {
   const [marker, what] = BEFORE[which];

@@ -3,7 +3,8 @@ import { CompetitionSets, Solves, KV, Tombstones, onWrite } from './db.js';
 import { el, uid, fmt, fmtResult } from './util.js';
 import { eventOf } from './events.js';
 import { toast, confirmToast } from './toast.js';
-import { enableReplay, replaySupported, hasReplay, openReplay } from './replay.js';
+import { enableReplay, replaySupported, replayOff, hasReplay, openReplay } from './replay.js';
+import { getConfig } from './config.js';
 import { competitionResult, competitionTime, validateCompetitionSize } from './competition-stats.js';
 import { recordingBudget, startSetReplay, stopSetReplay, recoverSetReplay, loadSetReplay,
          setRecordingLive, mediaNow, cleanupCompetitionMedia } from './competition-replay.js';
@@ -152,6 +153,10 @@ export async function recordCompetitionSolve(solve) {
 }
 export async function openCompetitionSetup(size = 5) {
   const unfinished = (await CompetitionSets.all()).find(c => c.status === 'active');
+  // Switched off from the admin console (config/competition): a set under way can still be finished.
+  if (!unfinished && !getConfig('competition', 'enabled')) {
+    dialog(t('Competition Mode'), [el('p', { text: getConfig('competition', 'message') || t('Competition Mode is switched off for now') })]); return;
+  }
   if (unfinished) {
     dialog(t('Unfinished Competition set'), [
       el('p', { text: t('Ao{n} · {done}/{n} attempts recorded', { n: unfinished.size, done: unfinished.solveIds.length }) }),
@@ -163,11 +168,12 @@ export async function openCompetitionSetup(size = 5) {
   }
   const event = app.settings.event, sessionId = app.session.id;
   const input = el('input', { id: 'competition-size', type: 'text', inputmode: 'numeric', value: String(size), 'aria-label': t('Number of attempts') });
+  const canFilm = replaySupported() && !replayOff();
   const recording = el('select', { id: 'competition-recording', 'aria-label': t('Recording') },
-    el('option', { value: 'per-solve', text: t('Per-solve replays (default)'), disabled: !replaySupported() }),
-    el('option', { value: 'whole-set', text: t('Record entire AoX'), disabled: !replaySupported() }),
+    el('option', { value: 'per-solve', text: t('Per-solve replays (default)'), disabled: !canFilm }),
+    el('option', { value: 'whole-set', text: t('Record entire AoX'), disabled: !canFilm }),
     el('option', { value: 'none', text: t('No replay') }));
-  recording.value = app.settings.webcamReplay && replaySupported() ? 'per-solve' : 'none';
+  recording.value = app.settings.webcamReplay && canFilm ? 'per-solve' : 'none';
   const needsSwitch = app.settings.mode !== 'wca' || app.custom.list.length > app.custom.pos;
   const switchMode = el('input', { type: 'checkbox', id:'competition-switch' });
   const error = el('p', { class: 'competition-error', role: 'alert' });
