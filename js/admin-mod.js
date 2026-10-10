@@ -6,6 +6,8 @@ import { t } from './i18n.js';
    connection, started the first time the tab is opened:
 
      Reports   reports/, grouped by the item reported, with Dismiss, Delete, Ban
+     SOTD      times held under their floor, re-timing, the featured replay,
+               past days (js/admin-sotd.js)
      Chats     today's room for every Scramble of the Day event, and every race
                room made in the last day, newest message first
      Suspect   today's Scramble of the Day times and race times flagged ⚑
@@ -246,7 +248,7 @@ export function createModeration(ctx) {
 
   /* ---------------- views ---------------- */
 
-  const SUBS = () => [['reports', t('Reports')], ['chats', t('Chats')], ['suspect', t('Suspect')], ['replays', t('Replays')], ['rooms', t('Rooms')]];
+  const SUBS = () => [['reports', t('Reports')], ['sotd', t('SOTD')], ['chats', t('Chats')], ['suspect', t('Suspect')], ['replays', t('Replays')], ['rooms', t('Rooms')]];
 
   /** Report groups: one per item, newest report first. */
   function groups() {
@@ -301,7 +303,7 @@ export function createModeration(ctx) {
 
   /** Counts for the tab bar and the sub-tabs. */
   function counts() {
-    return { reports: groups().length, suspect: suspects().length, replays: replays().length };
+    return { reports: groups().length, sotd: ctx.sotd().count(), suspect: suspects().length, replays: replays().length };
   }
 
   function view(sub, id = null) {
@@ -314,7 +316,7 @@ export function createModeration(ctx) {
         class: `ac-subtab${on === key ? ' on' : ''}`, href: `#mod/${key}`, 'aria-current': on === key ? 'page' : null,
       }, c[key] ? `${label} · ${c[key]}` : label)));
     const head = [el('h1', { class: 'ac-h1', text: 'Moderate' }), nav];
-    // Five across a phone run off its edge: the one you are on is kept in view.
+    // Six across a phone run off its edge: the one you are on is kept in view.
     requestAnimationFrame(() => {
       const cur = nav.querySelector('.ac-subtab.on');
       const over = cur && nav.isConnected ? cur.getBoundingClientRect().right - nav.getBoundingClientRect().right : 0;
@@ -323,6 +325,7 @@ export function createModeration(ctx) {
     if (sub === 'rooms') return [...head, ...ctx.rooms().viewRooms()];
     if (sub === 'history') return [...head, ...ctx.rooms().viewHistory()];
     if (sub === 'room' && id) return [...head, ...ctx.rooms().viewRoom(id)];
+    if (sub === 'sotd') return [...head, ...ctx.sotd().view()];
     if (sub === 'chats') return [...head, viewChats()];
     if (sub === 'suspect') return [...head, viewSuspect()];
     if (sub === 'replays') return [...head, viewReplays()];
