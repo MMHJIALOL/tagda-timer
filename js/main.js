@@ -4139,6 +4139,7 @@ app.joinRace = async (code) => {
   } catch (err) {
     console.error('[race] join failed:', err);
     toast(err?.message === 'room-full' ? t('That room is full')
+      : err?.message === 'banned' ? ctl.matchErrorText(err)
       : err?.message === 'race-off' ? (getConfig('race', 'message') || t('New race rooms are switched off for now'))
         : err?.message === 'read-only' ? (readOnlyText() || 'Could not join that room')
           : 'Could not join that room', { kind: 'bad' });

@@ -45,6 +45,7 @@ const matchStaleMs = () => Math.max(duelMs('staleSec'), 2 * duelMs('refreshSec')
 export const duelOn = () => getConfig('duel', 'enabled') && hasFeature('duel');
 export const duelOffText = () => getConfig('duel', 'message') || t('Random 1v1 is switched off for now');
 import { banActive, banLine } from './admins.js';
+import { blockedWord, filteredText } from './moderation.js';
 import { hasPersistedSession } from './sync-auth.js';
 
 const FLAG_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 21V4m0 0h10l-2 4 2 4H6"/></svg>';
@@ -319,6 +320,7 @@ export class Race extends EventTarget {
     // The admin console's read-only switch: a race writes every round (ADMIN.md §4).
     await loadConfig();
     if (readOnlyText()) throw new Error('read-only');
+    await this._checkBan(kind === 'duel' ? 'duel' : 'race');
 
     const nick = name || this.nickname();
 
@@ -1031,6 +1033,7 @@ export class Race extends EventTarget {
       if (!getConfig('race', 'enabled')) throw new Error('race-off');
       if (readOnlyText()) throw new Error('read-only');
       if (!duelOn()) throw new Error('duel-off');
+      await this._checkBan('duel');
     } catch (err) {
       if (this.match === m) { this.match = { state: 'idle' }; this._matchChanged(); }
       throw err;
@@ -1162,9 +1165,16 @@ export class Race extends EventTarget {
     if (m.state === 'none') { this.match = { state: 'idle' }; this._matchChanged(); }
   }
 
+  /** Throws 'banned' (with the ban) when this account is banned from `scope` (ADMIN.md §5): the rules would refuse it. */
+  async _checkBan(scope) {
+    const ban = await this.net?.banOf?.();
+    if (banActive(ban, Date.now(), scope)) throw Object.assign(new Error('banned'), { ban, scope });
+  }
+
   matchErrorText(err) {
     const why = err?.message;
-    return why === 'not-333' ? t('Random 1v1 is 3x3 only — switch to 3x3 first')
+    return why === 'banned' ? banLine(err.ban, err.scope)
+      : why === 'not-333' ? t('Random 1v1 is 3x3 only — switch to 3x3 first')
       : why === 'race-off' ? (getConfig('race', 'message') || t('New race rooms are switched off for now'))
       : why === 'duel-off' ? duelOffText()
       : why === 'read-only' ? (readOnlyText() || t('Could not look for an opponent'))
@@ -2137,6 +2147,9 @@ export class Race extends EventTarget {
     // The rules' gap (config/raceChat/gapMs) and a little more, or the old 0.7 s if that is longer.
     if (Date.now() - this._chatSentAt < Math.max(CHAT_COOLDOWN_MS, getConfig('raceChat', 'gapMs') + 500)) return;
     if (chatOff()) { toast(chatOff()); return; }
+    // The admin console's word filter (chatFilter.words): said here, never sent, the text left in the box.
+    const word = blockedWord(body, getConfig('chatFilter', 'words'));
+    if (word) { toast(filteredText(word), { kind: 'bad', long: true }); return; }
     this._chatSentAt = Date.now();
 
     /* Cleared before the write, not after.
@@ -2155,7 +2168,7 @@ export class Race extends EventTarget {
       console.warn('[race] chat refused', code);
       // Banned (this racer's own bans/<uid>), or switched off since the settings were read.
       const ban = String(code).includes('PERMISSION_DENIED') ? await this.net.banOf?.() : null;
-      if (banActive(ban)) { toast(banLine(ban), { kind: 'bad', long: true }); return; }
+      if (banActive(ban, Date.now(), 'chat')) { toast(banLine(ban, 'chat'), { kind: 'bad', long: true }); return; }
       if (chatOff()) { toast(chatOff(), { long: true }); this._syncChatOff(); return; }
       /* PERMISSION_DENIED here means one specific thing almost every time:
          the database is running rules that predate chat, so the write falls

@@ -148,6 +148,14 @@ export const CONFIG = {
       maxLen: { type: 'int', def: 200, min: 20, max: 200, unit: 'characters', label: 'Longest message', where: 'rules' },
     },
   },
+  chatFilter: {
+    title: 'Word filter',
+    about: 'Words the timer will not send, in either chat or a Scramble of the Day note. The app checks them, not the database rules: they cannot read a list, so anybody determined can get round it. It is for the casual case; bans are for the rest.',
+    keys: {
+      words: { type: 'text', def: '', max: 2000, label: 'Words and phrases', where: 'app',
+        help: 'Comma-separated. Whole words only, ignoring case and accents, so “ass” never stops “class”. End one with * for anything starting with it. The person is told which word stopped it.' },
+    },
+  },
   sotd: {
     title: 'Scramble of the Day',
     about: 'The daily scramble, its boards and its misfire rules. Read by the app.',

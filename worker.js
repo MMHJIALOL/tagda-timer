@@ -204,7 +204,9 @@ async function isBanned(env, sub, token, now) {
   const r = await rtdb(env, `bans/${sub}`, token).catch(() => null);
   if (!r?.ok) return false;
   const ban = await r.json();
-  return !!ban && !(typeof ban.until === 'number' && ban.until <= now);
+  // A ban with a scope (ADMIN.md §5) stops sharing only when the scope says replays.
+  const scoped = typeof ban?.scope === 'string' && ban.scope && !ban.scope.split(',').includes('replays');
+  return !!ban && !(typeof ban.until === 'number' && ban.until <= now) && !scoped;
 }
 
 function magicOk(type, b) {

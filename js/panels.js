@@ -3085,6 +3085,7 @@ export function buildRace(app) {
             console.error('[race] join failed:', err);
             const why = err?.message === 'room-full' ? t('That room is full ({n} max)', { n: race.roomMax?.() ?? race.ROOM_MAX })
               : err?.message === 'bad-code' ? t('A room code is at least 3 characters')
+              : err?.message === 'banned' ? ctl.matchErrorText(err)
               : err?.message === 'race-off' ? (getConfig('race', 'message') || t('New race rooms are switched off for now'))
               : err?.message === 'read-only' ? (readOnlyText() || t('Could not join that room'))
               : err?.message === 'no-config' ? t('Real rooms are not configured — see RACE.md')

@@ -5,7 +5,8 @@ import { t } from './i18n.js';
    Four views over the same few listeners, all on the admin page's one
    connection, started the first time the tab is opened:
 
-     Reports   reports/, grouped by the item reported, with Dismiss, Delete, Ban
+     Reports   reports/, grouped by the item reported, with Dismiss, Delete, Ban;
+               Open or Closed (dismissed or acted on, kept 30 days, Reopen)
      SOTD      times held under their floor, re-timing, the featured replay,
                past days (js/admin-sotd.js)
      Chats     today's room for every Scramble of the Day event, and every race
@@ -14,20 +15,23 @@ import { t } from './i18n.js';
      Replays   today's shared replays, with Watch and Remove
 
    An admin reads all of it without having solved anything (the rules, since
-   this tab). What each button writes is in ADMIN.md §6; the rules have the
-   final say on all of it.
+   this tab). What each button writes is in ADMIN.md §6, and each goes in the
+   moderation log (§19) in the same update; the rules have the final say on
+   all of it.
    =========================================================== */
 
 import { el, fmt } from './util.js';
 import { toast } from './toast.js';
 import { EVENT_ORDER, eventOf, dailyEligible } from './events.js';
 import { dayKeyFromServerMs } from './dayid.js';
-import { removalUpdate } from './moderation.js';
+import { removalUpdate, logged } from './moderation.js';
 
 const DAY_MS = 86_400_000;
 const CHAT_SHOWN = 25;       // newest messages kept live per room
 const MERGED_SHOWN = 120;    // the Chats view, all rooms together
 const ROOM_WINDOW_MS = DAY_MS;
+const REPORTS_SHOWN = 500;            // the newest reports, open and closed, kept live
+const CLOSED_KEPT_MS = 30 * DAY_MS;   // a closed report is swept after this
 
 /**
  * @param ctx  { S, scheduleRender, raw, ago, who, openSheet, closeSheet, askBan, gate }
@@ -63,10 +67,11 @@ export function createModeration(ctx) {
         M.offset = s.val() || 0;
         watchDay();
       }, () => {}),
-      onValue(query(ref('reports'), orderByKey(), limitToLast(200)), (s) => {
+      onValue(query(ref('reports'), orderByKey(), limitToLast(REPORTS_SHOWN)), (s) => {
         const list = [];
         s.forEach((c) => { list.push({ id: c.key, ...c.val() }); });
         M.reports = list.reverse();
+        if (!M.reportsLoaded) sweepClosed();
         M.reportsLoaded = true;
         ctx.scheduleRender();
       }, (err) => { console.warn('[admin] reports refused', err?.code || err); M.reportsRefused = true; M.reportsLoaded = true; ctx.scheduleRender(); }),
@@ -181,24 +186,28 @@ export function createModeration(ctx) {
     return fetch(path, { method, headers: { Authorization: `Bearer ${token}` } });
   }
 
-  /** Take a reported or listed thing down. Resolves whether it went. */
+  /** Take a reported or listed thing down, logged (ADMIN.md §19). Resolves whether it went. */
   async function takeDown(kind, path, row = null) {
     const S2 = sdk();
     const seg = String(path).split('/');
     try {
       if (kind === 'chat' || kind === 'raceChat') {
-        await S2.remove(ref(path));
+        const m = row || M.items.get(path) || null;
+        await logged(S2, { [path]: null }, { action: 'deleteMessage', path, uid: m?.uid || '',
+          before: m ? { uid: m.uid || '', name: m.name || '', text: m.text || '', at: m.at || 0 } : null });
       } else if (kind === 'replay') {
         const r = await worker('DELETE', `/replay/${seg[1]}/${seg[2]}/${seg[4]}`);
         if (!r.ok) throw new Error(`worker ${r.status}`);
-        await S2.remove(ref(`${path}/replay`));
+        await logged(S2, { [`${path}/replay`]: null }, { action: 'removeReplay', path, uid: seg[4] });
       } else if (kind === 'result') {
         const cur = row || (await S2.get(ref(path))).val();
-        await S2.update(ref(`daily/${seg[1]}/${seg[2]}`), removalUpdate(seg[4], cur?.backup === true, S2.serverTimestamp()));
+        const base = `daily/${seg[1]}/${seg[2]}`;
+        const up = Object.fromEntries(Object.entries(removalUpdate(seg[4], cur?.backup === true, S2.serverTimestamp())).map(([k, v]) => [`${base}/${k}`, v]));
+        await logged(S2, up, { action: 'removeTime', path, uid: seg[4], before: cur || null });
         // Its clip goes too: nobody can reach it without the row, and deletes are free.
         if (cur?.replay === true) worker('DELETE', `/replay/${seg[1]}/${seg[2]}/${seg[4]}`).catch(() => {});
       } else if (kind === 'raceResult') {
-        await S2.remove(ref(path));
+        await logged(S2, { [path]: null }, { action: 'removeRaceTime', path, uid: seg[5] || '', before: row || null });
       }
       return true;
     } catch (err) {
@@ -208,14 +217,60 @@ export function createModeration(ctx) {
     }
   }
 
-  /** Every report about `path` goes: it has been dealt with. */
-  async function resolve(path) {
-    const ids = M.reports.filter(r => r.path === path).map(r => r.id);
+  /**
+   * Every open report about `path` is closed: 'dismissed' (nothing wrong) or
+   * 'actioned' (taken down), with who and when (reports/<id>/status, ADMIN.md
+   * §6), and logged. Closed reports stay 30 days for Reopen and for each
+   * reporter's record. On rules from before triage they are deleted, as they
+   * always were.
+   */
+  async function resolve(path, s = 'dismissed') {
+    const ids = M.reports.filter(r => r.path === path && !r.status).map(r => r.id);
     if (!ids.length) return;
-    await sdk().update(sdk().ref(sdk().db), Object.fromEntries(ids.map(id => [`reports/${id}`, null]))).catch((err) => {
-      console.warn('[admin] dismiss refused', err?.code || err);
+    const st = { s, by: S.user.uid, at: sdk().serverTimestamp() };
+    try {
+      await logged(sdk(), Object.fromEntries(ids.map(id => [`reports/${id}/status`, st])),
+        { action: s === 'actioned' ? 'actioned' : 'dismiss', path, note: ids.length > 1 ? t('{n} reports', { n: ids.length }) : '' });
+    } catch {
+      await sdk().update(sdk().ref(sdk().db), Object.fromEntries(ids.map(id => [`reports/${id}`, null]))).catch((err) => {
+        console.warn('[admin] dismiss refused', err?.code || err);
+        toast(t('The database refused that'), { kind: 'bad', hold: true });
+      });
+    }
+  }
+
+  /** Open the closed reports about `path` again. */
+  async function reopen(path) {
+    const ids = M.reports.filter(r => r.path === path && r.status).map(r => r.id);
+    if (!ids.length) return;
+    try {
+      await logged(sdk(), Object.fromEntries(ids.map(id => [`reports/${id}/status`, null])), { action: 'reopenReport', path });
+      toast(t('Reopened'));
+    } catch (err) {
+      console.warn('[admin] reopen refused', err?.code || err);
       toast(t('The database refused that'), { kind: 'bad', hold: true });
-    });
+    }
+  }
+
+  /** Closed reports older than 30 days go, once a session: housekeeping, not logged. */
+  function sweepClosed() {
+    const cut = Date.now() + M.offset - CLOSED_KEPT_MS;
+    const old = M.reports.filter(r => r.status?.at && r.status.at < cut).map(r => r.id);
+    if (old.length) sdk().update(sdk().ref(sdk().db), Object.fromEntries(old.map(id => [`reports/${id}`, null]))).catch(() => {});
+  }
+
+  /** Per reporter: how many of their reports were acted on, dismissed, or are still open. */
+  function reporters() {
+    const by = new Map();
+    for (const r of M.reports) {
+      if (!r.by) continue;
+      const q = by.get(r.by) || { n: 0, actioned: 0, dismissed: 0 };
+      q.n++;
+      if (r.status?.s === 'actioned') q.actioned++;
+      else if (r.status?.s === 'dismissed') q.dismissed++;
+      by.set(r.by, q);
+    }
+    return by;
   }
 
   const deleteLabel = (kind) => ({
@@ -227,7 +282,7 @@ export function createModeration(ctx) {
   function askDelete({ kind, path, row, author, where, text, reason }) {
     const go = (andBan) => async () => {
       if (!(await takeDown(kind, path, row))) return;
-      await resolve(path);
+      await resolve(path, 'actioned');
       ctx.closeSheet();
       toast(t('Done. Taken down.'), { kind: 'good' });
       if (andBan && author?.uid) ctx.askBan({ uid: author.uid, name: author.name || '', reason });
@@ -250,10 +305,11 @@ export function createModeration(ctx) {
 
   const SUBS = () => [['reports', t('Reports')], ['sotd', t('SOTD')], ['chats', t('Chats')], ['suspect', t('Suspect')], ['replays', t('Replays')], ['rooms', t('Rooms')]];
 
-  /** Report groups: one per item, newest report first. */
-  function groups() {
+  /** Report groups: one per item, newest report first. The open ones, or (`closed`) the closed ones. */
+  function groups(closed = false) {
     const by = new Map();
     for (const r of M.reports) {
+      if (!!r.status !== closed) continue;
       if (!by.has(r.path)) by.set(r.path, { kind: r.kind, path: r.path, reports: [] });
       by.get(r.path).reports.push(r);
     }
@@ -335,29 +391,58 @@ export function createModeration(ctx) {
   const actions = (...btns) => el('div', { class: 'ac-entry-actions' }, ...btns);
   const small = (text, onclick, cls = '') => el('button', { class: `ac-btn small ${cls}`, text, onclick });
 
+  /** Who reported it, each with their record: "3 of 5 acted on, 1 dismissed". */
+  function reportedBy(g, rec) {
+    const ids = [...new Set(g.reports.map(r => r.by).filter(Boolean))];
+    return ids.slice(0, 3).map((uid) => {
+      const q = rec.get(uid) || { n: 0, actioned: 0, dismissed: 0 };
+      return el('span', { class: 'ac-reporter' },
+        el('a', { class: 'ac-link', href: `#people/u/${uid}`, text: ctx.nameOf?.(uid) || uid.slice(0, 8) }),
+        raw('span', { class: 'ac-entry-meta' }, ' ' + t('{a} of {n} acted on, {d} dismissed', { a: q.actioned, n: q.n, d: q.dismissed })),
+        // Somebody whose reports keep being dismissed: ban them from reporting, and nothing else (ADMIN.md §5).
+        q.dismissed >= 3 && !q.actioned ? el('button', { class: 'ac-btn small', text: t('Stop their reports…'),
+          onclick: () => ctx.askBan({ uid, name: ctx.nameOf?.(uid) || '', reason: t('Reports that keep being dismissed'), scope: ['reports'] }) }) : null);
+    });
+  }
+
   function viewReports() {
     if (M.reportsRefused) return ctx.gate('Publish the rules first', 'Reports need the firebase.rules.json from this version of the page.');
     if (!M.reportsLoaded) return el('p', { class: 'ac-note', text: 'Loading…' });
-    const gs = groups();
-    if (!gs.length) return el('p', { class: 'ac-note', text: 'No open reports. People report a chat message or a shared replay from the ⚑ beside it.' });
-    return el('ol', { class: 'ac-log' }, ...gs.map((g) => {
+    const closed = M.reportsClosed === true;
+    const gs = groups(closed);
+    const rec = reporters();
+    const pick = el('div', { class: 'ac-chips' },
+      el('button', { class: `ac-chip${closed ? '' : ' on'}`, type: 'button', onclick: () => { M.reportsClosed = false; ctx.scheduleRender(); } },
+        raw('span', {}, t('Open · {n}', { n: groups(false).length }))),
+      el('button', { class: `ac-chip${closed ? ' on' : ''}`, type: 'button', onclick: () => { M.reportsClosed = true; ctx.scheduleRender(); } },
+        raw('span', {}, t('Closed · {n}', { n: groups(true).length }))));
+    if (!gs.length) {
+      return el('div', {}, pick, el('p', { class: 'ac-note', text: closed
+        ? 'Nothing closed in the last 30 days.'
+        : 'No open reports. People report a chat message or a shared replay from the ⚑ beside it.' }));
+    }
+    return el('div', {}, pick, el('ol', { class: 'ac-log' }, ...gs.map((g) => {
       const d = describe(g.kind, g.path);
       const newest = g.reports[0];
       const reason = g.kind === 'chat' || g.kind === 'raceChat'
         ? `${d.where}: "${String(d.text || newest.text || '').slice(0, 120)}"` : `${d.where} ${d.text || ''}`.trim();
-      return el('li', { class: `ac-entry ac-report${d.gone ? ' ac-ended' : ''}` },
+      const st = newest.status;
+      const how = !st ? '' : ' · ' + (st.s === 'actioned'
+        ? t('acted on {when} by {who}', { when: ago(st.at), who: who(st.by) })
+        : t('dismissed {when} by {who}', { when: ago(st.at), who: who(st.by) }));
+      return el('li', { class: `ac-entry ac-report${d.gone || closed ? ' ac-ended' : ''}` },
         el('div', { class: 'ac-entry-main' },
           raw('b', {}, d.where),
           raw('span', { class: 'ac-reason' }, d.gone ? t('(already gone) {text}', { text: newest.text || '' }) : (d.text || newest.text || '…')),
           d.author ? raw('span', { class: 'ac-uid' }, `${d.author.name || 'Cuber'} · ${d.author.uid || ''}`) : null,
           raw('span', { class: 'ac-entry-meta', title: newest.at ? new Date(newest.at).toLocaleString() : '' },
-            (g.reports.length > 1 ? t('{n} reports', { n: g.reports.length }) : t('1 report')) + ' · '
-            + t('latest {when} by {who}', { when: ago(newest.at), who: who(newest.by) }))),
-        actions(
+            (g.reports.length > 1 ? t('{n} reports', { n: g.reports.length }) : t('1 report')) + ' · ' + t('latest {when}', { when: ago(newest.at) }) + how),
+          el('div', { class: 'ac-reporters' }, ...reportedBy(g, rec))),
+        closed ? actions(small(t('Reopen'), () => reopen(g.path))) : actions(
           small(t('Dismiss'), () => resolve(g.path).then(() => toast(t('Dismissed')))),
           d.gone ? null : small(deleteLabel(g.kind), () => askDelete({ kind: g.kind, path: g.path, row: d.row, author: d.author, where: d.where, text: d.text, reason })),
-          d.author?.uid ? small(t('Ban'), () => ctx.askBan({ uid: d.author.uid, name: d.author.name || '', reason, then: () => resolve(g.path) }), 'danger') : null));
-    }));
+          d.author?.uid ? small(t('Ban'), () => ctx.askBan({ uid: d.author.uid, name: d.author.name || '', reason, then: () => resolve(g.path, 'actioned') }), 'danger') : null));
+    })));
   }
 
   function viewChats() {
@@ -377,7 +462,7 @@ export function createModeration(ctx) {
           raw('span', { class: 'ac-reason' }, m.text || ''),
           raw('span', { class: 'ac-entry-meta', title: m.at ? new Date(m.at).toLocaleString() : '' }, `${ago(m.at)} · ${m.uid || ''}`)),
         actions(
-          small(t('Delete'), () => askDelete({ kind, path, author, where, text: m.text, reason })),
+          small(t('Delete'), () => askDelete({ kind, path, row: m, author, where, text: m.text, reason })),
           small(t('Ban'), () => ctx.askBan({ uid: m.uid, name: m.name || '', reason }), 'danger')));
     })), foot);
   }
@@ -455,5 +540,8 @@ export function createModeration(ctx) {
   /** Every open report, newest first (the person page filters it). */
   const reportsList = () => M.reports;
 
-  return { view, start, stop, counts, snapshot, people, refreshRooms, reportsList, takeDown, offset: () => M.offset };
+  /** One reporter's record, for the person page: { n, actioned, dismissed } or null. */
+  const reporterRecord = (uid) => reporters().get(uid) || null;
+
+  return { view, start, stop, counts, snapshot, people, refreshRooms, reportsList, reporterRecord, takeDown, resolve, offset: () => M.offset };
 }

@@ -4,7 +4,9 @@
    Three top-level blocks of firebase.rules.json come from the settings
    table rather than by hand: `config` (the values), `configScheduled`
    (changes waiting for their time, ADMIN.md §10) and `sotdFeatured` (a
-   day's featured event, whose list is the table's SOTD_EVENTS).
+   day's featured event, whose list is the table's SOTD_EVENTS). And every
+   ban check in the hand-written rules must be notBanned(scope), word for
+   word (ADMIN.md §5): banChecks() refuses the file otherwise.
 
    Pure text in, text out, so the same code runs in node
    (tools/config-rules.mjs, which writes it) and in test.html (which checks
@@ -32,6 +34,41 @@ export const SCHEDULER = `auth != null && auth.uid === '${SCHEDULER_UID}' && aut
 
 /** A tester (testers/<uid>, ADMIN.md §9), or an admin, who has everything a tester has. */
 export const TESTER = "auth != null && (root.child('testers/' + auth.uid).exists() || (auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true))";
+
+/** What a ban can be limited to (bans/<uid>/scope, comma-separated). A ban without a scope is all of them. */
+export const BAN_SCOPES = ['chat', 'sotd', 'race', 'duel', 'replays', 'reports'];
+
+/**
+ * "Not banned from `scope`", in the rules: no ban, one that has ended, or one
+ * whose scope leaves `scope` out. Every ban check in firebase.rules.json is
+ * this, so a scope can never be forgotten in one place.
+ */
+export function notBanned(scope) {
+  if (!BAN_SCOPES.includes(scope)) throw new Error(`no ban scope "${scope}"`);
+  const b = (rest = '') => `root.child('bans/' + auth.uid${rest})`;
+  // `until` is checked for a number first: comparing a missing one with now is an error, which would sink the scope's branch too.
+  return `(!${b()}.exists() || (${b(" + '/until'")}.isNumber() && ${b(" + '/until'")}.val() <= now) || (${b(" + '/scope'")}.isString() && !${b(" + '/scope'")}.val().matches(/^(.*,)?${scope}(,.*)?$/)))`;
+}
+
+/** What bans/<uid>/scope may hold: scopes from the list, comma-separated. */
+export const BAN_SCOPE_VALIDATE = `newData.isString() && newData.val().matches(/^(${BAN_SCOPES.join('|')})(,(${BAN_SCOPES.join('|')}))*$/)`;
+
+/**
+ * `text`, checked: every ban check in it is notBanned() of a known scope, and
+ * the bans/<uid>/scope rule is BAN_SCOPE_VALIDATE. Throws on one written any
+ * other way, so test.html and `node tools/config-rules.mjs --check` fail on it.
+ */
+export function banChecks(text) {
+  let rest = text;
+  for (const s of BAN_SCOPES) rest = rest.split(notBanned(s)).join('');
+  if (rest.includes("root.child('bans/' + auth.uid")) {
+    throw new Error('firebase.rules.json has a ban check that is not notBanned(scope) from js/config-rules.js');
+  }
+  if (!text.includes(`"scope":  { ".validate": ${q(BAN_SCOPE_VALIDATE)} }`)) {
+    throw new Error('firebase.rules.json: bans/$uid/scope is not BAN_SCOPE_VALIDATE from js/config-rules.js');
+  }
+  return text;
+}
 
 /** Whether this account has a feature whose section has an `audience` key. Nothing stored is everybody. */
 export function audienceRule(section) {
@@ -159,7 +196,7 @@ export function replaceBlock(text, block, name = 'config') {
 
 /** `text` with every generated block rewritten: what `node tools/config-rules.mjs` writes and test.html checks. */
 export function generatedRules(text) {
-  let out = replaceBlock(text, configBlock(), 'config');
+  let out = replaceBlock(banChecks(text), configBlock(), 'config');
   out = replaceBlock(out, scheduledBlock(), 'configScheduled');
   return replaceBlock(out, featuredBlock(), 'sotdFeatured');
 }
