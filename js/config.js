@@ -41,10 +41,26 @@ function readCache() {
   if (got) { live = got.data; ann = got.ann && typeof got.ann === 'object' ? got.ann : null; at = got.at; }
 }
 
-/** The setting's value: the database's, clipped to its range, or the default. */
+const unknown = new Set();
+
+/**
+ * The setting's value: the database's, clipped to its range, or the default.
+ *
+ * A setting this table has never heard of is a warning and undefined, not a
+ * throw. A tab keeps the modules it booted with, but one it imports later
+ * (race-cam.js on the first 1v1) comes from whatever is deployed by then; when
+ * that newer module asked for duel.camSignedIn, the throw stopped the 1v1's
+ * cam tile mid-draw and left its two buttons empty.
+ */
 export function getConfig(section, key) {
   const sp = spec(section, key);
-  if (!sp) throw new Error(`no such setting: ${section}.${key}`);
+  if (!sp) {
+    if (!unknown.has(`${section}.${key}`)) {
+      unknown.add(`${section}.${key}`);
+      console.warn(`[config] no such setting: ${section}.${key}`);
+    }
+    return undefined;
+  }
   const v = clean(sp, live?.[section]?.[key]);
   return v === undefined ? sp.def : v;
 }

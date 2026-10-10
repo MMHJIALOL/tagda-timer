@@ -3409,9 +3409,6 @@ body.ph[data-tab="times"]:has(#times-race) #panel-race { display: none; }
    One head-to-head card where a room has its status line, rows and
    standings: you on the left, them on the right, the score between, and the
    last round's result under it for the whole of the next round. */
-#panel-race .race-status[hidden],
-#panel-race .race-meter[hidden],
-
 .duel-board {
   display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center; gap: 6px;
