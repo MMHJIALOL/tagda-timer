@@ -2568,7 +2568,7 @@ section('admin console — settings and the rules that guard them');
   /* Ad blockers hide elements by name: EasyList has #ad-top, #ad-main, .ad-card,
      .ad-row, .ad-btn and more, and the page's names once started ad-, which left
      only its tab bar for anybody running one. They start ac- now. */
-  const page = (await Promise.all(['admin.html', 'css/admin.css', 'js/admin.js', 'js/admin-mod.js', 'js/admin-ann.js', 'js/admin-live.js', 'js/admin-rooms.js', 'js/admin-health.js', 'js/admin-people.js', 'js/admin-sotd.js', 'js/admin-modlog.js']
+  const page = (await Promise.all(['admin.html', 'css/admin.css', 'js/admin.js', 'js/admin-mod.js', 'js/admin-ann.js', 'js/admin-live.js', 'js/admin-rooms.js', 'js/admin-health.js', 'js/admin-people.js', 'js/admin-sotd.js', 'js/admin-modlog.js', 'js/admin-storage.js']
     .map(f => fetch(`./${f}`, { cache: 'no-store' }).then(r => r.text())))).join('\n')
     .replace(/\/\*[\s\S]*?\*\//g, '');   // comments may name them, as admin.css's does
   const adNames = [...new Set(page.match(/(?<![\w-])ad-[a-z0-9]+/g) || [])];
@@ -2576,7 +2576,7 @@ section('admin console — settings and the rules that guard them');
 
   // Every word the admin page shows goes through t(), and Spanish has each one.
   const { es } = await import('./locales/es.js');
-  const src = (await Promise.all(['admin.js', 'admin-mod.js', 'admin-ann.js', 'admin-live.js', 'admin-rooms.js', 'admin-health.js', 'admin-people.js', 'admin-sotd.js', 'admin-modlog.js'].map(f => fetch(`./js/${f}`).then(r => r.text())))).join(' ');
+  const src = (await Promise.all(['admin.js', 'admin-mod.js', 'admin-ann.js', 'admin-live.js', 'admin-rooms.js', 'admin-health.js', 'admin-people.js', 'admin-sotd.js', 'admin-modlog.js', 'admin-storage.js'].map(f => fetch(`./js/${f}`).then(r => r.text())))).join(' ');
   const q = String.raw`'((?:\\'|[^'])*)'`;
   const keys = [
     ...[...src.matchAll(new RegExp(String.raw`\bt\(\s*` + q, 'g'))].map(m => m[1]),
@@ -2637,6 +2637,12 @@ section('admin console — settings and the rules that guard them');
   check('the moderation log’s actions are the rules’ list',
     rulesText.includes(`newData.val().matches(/^(${Mo.MOD_ACTIONS.join('|')})$/)`));
   // The word filter (chatFilter.words): whole words, case and accents ignored, * for "and anything after".
+  // Health › Storage's "oldest": a push id carries the time it was made, in its first eight characters.
+  const St = await import('./js/admin-storage.js');
+  check('a push id’s own time is read back exactly, and a day key is a day',
+    St.pushTime('-OaBcDeFgHiJkLmNoPqR') === (() => { let ms = 0; for (const c of '-OaBcDeF') ms = ms * 64 + '-0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz'.indexOf(c); return ms; })()
+    && St.pushTime('not-a-push-id') === null
+    && St.oldestOf(['1791138600000', '1791052200000', 'x']) === 1791052200000);
   check('the word filter stops whole words only, ignoring case and accents',
     Mo.blockedWord('BADWORD!', 'badword') === 'badword' && Mo.blockedWord('Bädword', 'badword') === 'badword'
     && Mo.blockedWord('badwords', 'badword') === null && Mo.blockedWord('class act', 'ass') === null

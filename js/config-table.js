@@ -255,6 +255,8 @@ export const CONFIG = {
       bannerKind: { type: 'choice', def: 'info', options: ['info', 'warn', 'down'], label: 'Banner colour', where: 'app' },
       readOnly: { type: 'bool', def: false, label: 'Read-only', where: 'app',
         help: 'For an outage, or before a risky rules publish. Timing works and every solve is kept on the device; sync holds its changes and sends them when this is off again. Races, 1v1s and the Scramble of the Day show the banner instead of their buttons. Not enforced by the rules: a cached old tab can still write.' },
+      idleDisconnectMin: { type: 'int', def: 0, min: 0, max: 240, unit: 'minutes', label: 'Let a hidden tab go after', where: 'app',
+        help: 'A tab hidden this long closes its database connections and opens them again when it is shown; what changed meanwhile goes then. 0: never. The Spark plan allows 100 connections at once: Today shows how many there are now.' },
     },
   },
   sandbox: {

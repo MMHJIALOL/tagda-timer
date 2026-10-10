@@ -68,7 +68,7 @@ export function createModLog(ctx) {
     close: t('Closed a room'), reopen: t('Reopened a room'), closeAll: t('Closed every open room'), deleteRoom: t('Deleted a room'),
     keep: t('Kept a held time'), unkeep: t('Took a keep back'), retime: t('Re-timed'), feature: t('Featured a replay'),
     unfeature: t('Took the featured replay off'), dismiss: t('Dismissed reports'), actioned: t('Closed reports as acted on'),
-    reopenReport: t('Reopened reports'), deleteAccount: t('Deleted an account’s cloud data'),
+    reopenReport: t('Reopened reports'), deleteAccount: t('Deleted an account’s cloud data'), sweep: t('Swept old data'),
   })[action] || action;
 
   /* ---------------- undo ---------------- */

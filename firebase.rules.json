@@ -698,6 +698,10 @@
           ".write": "(auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true || auth != null && auth.uid === 'tagda-scheduler' && auth.token.firebase.sign_in_provider === 'custom') && newData.parent().parent().parent().child('configMeta/app/readOnly/at').val() === now",
           ".validate": "newData.isBoolean()"
         },
+        "idleDisconnectMin": {
+          ".write": "(auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true || auth != null && auth.uid === 'tagda-scheduler' && auth.token.firebase.sign_in_provider === 'custom') && newData.parent().parent().parent().child('configMeta/app/idleDisconnectMin/at').val() === now",
+          ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 0 && newData.val() <= 240"
+        },
         "$other": { ".validate": false }
       },
 
@@ -964,6 +968,19 @@
       }
     },
 
+    "presence": {
+      ".read": "auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true",
+      "$uid": {
+        "$conn": {
+          ".write": "auth != null && auth.uid === $uid",
+          ".validate": "$conn.length <= 40 && newData.hasChildren(['at', 'k'])",
+          "at": { ".validate": "newData.val() === now" },
+          "k":  { ".validate": "newData.isString() && newData.val().matches(/^(app|race)$/)" },
+          "$other": { ".validate": false }
+        }
+      }
+    },
+
     "modLog": {
       ".read": "auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true",
       ".indexOn": ["uid"],
@@ -972,7 +989,7 @@
         ".validate": "newData.hasChildren(['by', 'at', 'action', 'path'])",
         "by":     { ".validate": "newData.val() === auth.uid" },
         "at":     { ".validate": "newData.val() === now" },
-        "action": { ".validate": "newData.isString() && newData.val().matches(/^(ban|unban|removeTime|removeRaceTime|deleteMessage|deleteMessages|removeReplay|kick|letBack|strike|unstrike|close|reopen|closeAll|deleteRoom|keep|unkeep|retime|feature|unfeature|dismiss|actioned|reopenReport|deleteAccount)$/)" },
+        "action": { ".validate": "newData.isString() && newData.val().matches(/^(ban|unban|removeTime|removeRaceTime|deleteMessage|deleteMessages|removeReplay|kick|letBack|strike|unstrike|close|reopen|closeAll|deleteRoom|keep|unkeep|retime|feature|unfeature|dismiss|actioned|reopenReport|deleteAccount|sweep)$/)" },
         "path":   { ".validate": "newData.isString() && newData.val().length <= 300" },
         "uid":    { ".validate": "newData.isString() && newData.val().length <= 128" },
         "note":   { ".validate": "newData.isString() && newData.val().length <= 200" },
@@ -1023,6 +1040,7 @@
     "annStats": {
       ".read": "auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true",
       "$id": {
+        ".write": "auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true && !newData.exists()",
         "$version": {
           "$uid": {
             ".write": "auth != null && auth.uid === $uid && auth.token.firebase.sign_in_provider === 'google.com' && newData.exists() && (root.child('announcements/' + $id).exists() || $id === 'webcam-replay' || $id === 'feedback')",
@@ -1918,6 +1936,18 @@
             ".write": "(auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true) || (auth != null && auth.uid === 'tagda-scheduler' && auth.token.firebase.sign_in_provider === 'custom' && !newData.exists() && newData.parent().parent().parent().parent().child('configMeta/app/readOnly/at').val() === now && newData.parent().parent().parent().parent().child('configLog/' + newData.parent().parent().parent().parent().child('configMeta/app/readOnly/log').val() + '/sched').val() === $id)",
             ".validate": "$id.matches(/^[A-Za-z0-9_-]{1,32}$/) && newData.hasChildren(['at', 'by', 'createdAt']) && ((newData.hasChild('to') && !newData.hasChild('def')) || (!newData.hasChild('to') && newData.hasChild('def')))",
             "to": { ".validate": "newData.isBoolean()" },
+            "def": { ".validate": "newData.val() === true" },
+            "at": { ".validate": "newData.isNumber() && newData.val() > now && newData.val() <= now + 31622400000" },
+            "by": { ".validate": "newData.val() === auth.uid" },
+            "createdAt": { ".validate": "newData.val() === now" },
+            "$other": { ".validate": false }
+          }
+        },
+        "idleDisconnectMin": {
+          "$id": {
+            ".write": "(auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true) || (auth != null && auth.uid === 'tagda-scheduler' && auth.token.firebase.sign_in_provider === 'custom' && !newData.exists() && newData.parent().parent().parent().parent().child('configMeta/app/idleDisconnectMin/at').val() === now && newData.parent().parent().parent().parent().child('configLog/' + newData.parent().parent().parent().parent().child('configMeta/app/idleDisconnectMin/log').val() + '/sched').val() === $id)",
+            ".validate": "$id.matches(/^[A-Za-z0-9_-]{1,32}$/) && newData.hasChildren(['at', 'by', 'createdAt']) && ((newData.hasChild('to') && !newData.hasChild('def')) || (!newData.hasChild('to') && newData.hasChild('def')))",
+            "to": { ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 0 && newData.val() <= 240" },
             "def": { ".validate": "newData.val() === true" },
             "at": { ".validate": "newData.isNumber() && newData.val() > now && newData.val() <= now + 31622400000" },
             "by": { ".validate": "newData.val() === auth.uid" },

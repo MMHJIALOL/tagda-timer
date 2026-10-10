@@ -90,7 +90,7 @@ export const filteredText = (word) => t('That has a word this site doesn’t all
 /** What a modLog entry can say was done. firebase.rules.json lists the same words. */
 export const MOD_ACTIONS = ['ban', 'unban', 'removeTime', 'removeRaceTime', 'deleteMessage', 'deleteMessages', 'removeReplay', 'kick', 'letBack',
   'strike', 'unstrike', 'close', 'reopen', 'closeAll', 'deleteRoom', 'keep', 'unkeep', 'retime', 'feature', 'unfeature',
-  'dismiss', 'actioned', 'reopenReport', 'deleteAccount'];
+  'dismiss', 'actioned', 'reopenReport', 'deleteAccount', 'sweep'];
 
 /**
  * `updates` (paths from the root) with the log entry that says what they do:

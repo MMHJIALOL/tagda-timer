@@ -47,6 +47,7 @@ import { initPhoneShell } from './phoneshell.js';
 // The *.vercel.app "we moved" banner, and the tagdatimer.me end of its data move.
 import './moved.js';
 import { captureErrors, startHealth, noteHeal } from './health.js';
+import { startIdleDisconnect } from './presence.js';
 
 // From the first moment, so an error during boot is caught too (js/health.js sends it once signed in).
 captureErrors();
@@ -719,6 +720,8 @@ async function init() {
   startCloudSync().catch(err => console.warn('[sync] not started', err));
   // The heartbeat and error reports for the admin console's Health tab, once idle, signed in only.
   startHealth();
+  // A tab hidden for app.idleDisconnectMin lets its database connections go (Spark allows 100 at once).
+  startIdleDisconnect();
   wireAccountButtonOnFirstClick();
   adoptCloudChanges();
 
