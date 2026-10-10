@@ -33,6 +33,7 @@ import { APP_VERSION } from './version.js';
 import { createModeration } from './admin-mod.js';
 import { createAnnounce } from './admin-ann.js';
 import { createLive } from './admin-live.js';
+import { createRooms } from './admin-rooms.js';
 import { eventOf } from './events.js';
 
 /** How many log entries the page keeps live. Older ones stay in the database. */
@@ -169,8 +170,10 @@ function route() {
   if (people) return { view: 'people', sub: people[1] || 'bans' };
   const days = /^days(?:\/(\d{13}))?$/.exec(h);
   if (days) return { view: 'days', sub: days[1] || null };
-  const mod = /^mod(?:\/(reports|chats|suspect|replays))?$/.exec(h);
+  const mod = /^mod(?:\/(reports|chats|suspect|replays|rooms|history))?$/.exec(h);
   if (mod) return { view: 'mod', sub: mod[1] || 'reports' };
+  const room = /^mod\/room\/([A-Za-z0-9_-]{1,64})$/.exec(h);
+  if (room) return { view: 'mod', sub: 'room', id: room[1] };
   const ann = /^ann(?:\/(new|[a-z0-9-]{1,40}))?$/.exec(h);
   if (ann) return { view: 'ann', sub: ann[1] || null };
   const m = /^settings\/([a-zA-Z]+)$/.exec(h);
@@ -211,7 +214,8 @@ function view() {
       if (r.view === 'days') return live.viewDays(r.sub);
       if (r.view === 'log') return viewLog();
       if (r.view === 'people') return viewPeople(r.sub);
-      if (r.view === 'mod') return moderation.view(r.sub);
+      if (r.view !== 'mod' || r.sub !== 'room') rooms.leaveRoom();
+      if (r.view === 'mod') return moderation.view(r.sub, r.id);
       if (r.view === 'ann') return announce.view(r.sub);
       if (r.view === 'section') return viewSection(r.section);
       return viewSections();
@@ -861,6 +865,7 @@ async function doSignOut() {
 
 function teardown() {
   moderation.stop();
+  rooms.stop();
   announce.stop();
   live.stop();
   for (const off of S.unsubs.splice(0)) off();
@@ -923,9 +928,10 @@ async function onUser(user) {
   if (S.status === 'admin') { listen(); moderation.start(); }
 }
 
-const moderation = createModeration({ S, scheduleRender, raw, ago, who, openSheet, closeSheet, askBan, gate });
+const moderation = createModeration({ S, scheduleRender, raw, ago, who, openSheet, closeSheet, askBan, gate, rooms: () => rooms });
+const rooms = createRooms({ S, scheduleRender, raw, ago, who, openSheet, closeSheet, askBan, gate, cfg, moderation });
 const announce = createAnnounce({ S, scheduleRender, raw, ago, who, openSheet, closeSheet, gate, cfg });
-const live = createLive({ S, scheduleRender, raw, ago, who, openSheet, closeSheet, gate, cfg, moderation, scheduledList, scheduledRow });
+const live = createLive({ S, scheduleRender, raw, ago, who, openSheet, closeSheet, gate, cfg, moderation, rooms, scheduledList, scheduledRow });
 
 window.addEventListener('hashchange', () => { closeSheet(); render(); window.scrollTo(0, 0); });
 window.addEventListener('beforeunload', (e) => { if (S.edits.size) e.preventDefault(); });

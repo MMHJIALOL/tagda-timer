@@ -129,6 +129,7 @@ export function createLive(ctx) {
     loadUsage(true);
     loadChats(true);
     ctx.moderation.refreshRooms();
+    ctx.rooms.loadRelay(true);
   }
 
   /* ---------------- Today ---------------- */
@@ -273,7 +274,7 @@ export function createLive(ctx) {
         el('h1', { class: 'ac-h1', text: 'Today' }),
         el('button', { class: 'ac-btn small', type: 'button', text: 'Refresh', onclick: refresh })),
       raw('p', { class: 'ac-sub' }, t('{day} · resets in {left} (00:00 IST)', { day: dayIdFromServerMs(now), left: formatCountdown(left) })),
-      switchesBlock(), sotd, replays, chat, race, people, scheduled, blind,
+      switchesBlock(), sotd, replays, chat, race, ctx.rooms.seatBlock(), ctx.rooms.relayBlock(), people, scheduled, blind,
     ];
   }
 

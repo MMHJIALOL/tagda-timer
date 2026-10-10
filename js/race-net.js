@@ -97,6 +97,9 @@ export function scrambleHash(str) {
 const emptySnapshot = () => ({
   roomId: null, uid: null, meta: null,
   players: {}, round: null, resultsUnlocked: false,
+  /* A moderator's marks on the room (rooms/<id>/mod, ADMIN.md "Race rooms and
+     1v1"): { closed?: { at, by }, kicked?: { uid: at }, struck?: { round: { uid: { at, by, reason } } } }. */
+  mod: null,
   /* Oldest first, already trimmed to CHAT_HISTORY. An array rather than the
      raw object because the only order a room's messages have is the one the
      push ids give them, and every reader wants that order. */
@@ -274,6 +277,12 @@ class FirebaseTransport extends EventTarget {
   async rtcIceServers() {
     const token = await this._user?.getIdToken();
     if (!token || !this.snap.roomId) return null;
+    /* Counted, one per ask, under turnDay/<today>/<uid>: the admin console's
+       only view of the relay, the one part of the site billed by the
+       gigabyte. Not awaited, and a refusal (rules from before it) is nothing. */
+    const now = this.serverNow();
+    const day = now - ((now + 19800000) % 86400000);
+    this._sdk.runTransaction(this._ref(`turnDay/${day}/${this.snap.uid}`), (n) => (n || 0) + 1).catch(() => {});
     const r = await fetch('/turn', {
       method: 'POST', cache: 'no-store',
       headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
@@ -429,6 +438,8 @@ class FirebaseTransport extends EventTarget {
     };
     on(`${this._base}/meta`, 'meta');
     on(`${this._base}/players`, 'players');
+    // Refused on rules from before it, which is the same as no marks at all.
+    on(`${this._base}/mod`, 'mod');
 
     /* Chat comes back as a query, not a plain node.
      *
@@ -602,7 +613,17 @@ class FirebaseTransport extends EventTarget {
    * submitting (firebase.rules.json; tools/verify-penalty-rules.mjs).
    */
   async setPenalty(n, penalty) {
-    await this._sdk.set(this._ref(`${this._base}/rounds/${n}/results/${this.snap.uid}/penalty`), penalty);
+    const S = this._sdk;
+    const mine = `${this._base}/rounds/${n}/results/${this.snap.uid}`;
+    /* With the time it changed, so a moderator looking into a dispute can see
+       how long after the solve it came. Rules from before penaltyAt refuse the
+       pair: the penalty then goes alone, as it always did. */
+    try {
+      await S.update(this._ref(mine), { penalty, penaltyAt: S.serverTimestamp() });
+    } catch (err) {
+      if (!/permission/i.test(String(err?.code || err?.message || err))) throw err;
+      await S.set(this._ref(`${mine}/penalty`), penalty);
+    }
   }
 
   async advanceRound(next) {

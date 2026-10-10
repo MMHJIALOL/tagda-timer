@@ -246,7 +246,7 @@ export function createModeration(ctx) {
 
   /* ---------------- views ---------------- */
 
-  const SUBS = () => [['reports', t('Reports')], ['chats', t('Chats')], ['suspect', t('Suspect')], ['replays', t('Replays')]];
+  const SUBS = () => [['reports', t('Reports')], ['chats', t('Chats')], ['suspect', t('Suspect')], ['replays', t('Replays')], ['rooms', t('Rooms')]];
 
   /** Report groups: one per item, newest report first. */
   function groups() {
@@ -268,7 +268,8 @@ export function createModeration(ctx) {
     for (const [id, room] of Object.entries(M.rooms)) {
       for (const [n, round] of Object.entries(room?.rounds || {})) {
         for (const [uid, r] of Object.entries(round?.results || {})) {
-          if (!r?.suspect) continue;
+          // Struck from the room's inspector already: dealt with.
+          if (!r?.suspect || room.mod?.struck?.[n]?.[uid]) continue;
           out.push({ kind: 'raceResult', path: `rooms/${id}/rounds/${n}/results/${uid}`, row: r, uid,
             name: room.players?.[uid]?.name || t('a racer'), where: t('Race {room} · round {n}', { room: id, n }), at: r.submittedAt || 0 });
         }
@@ -303,14 +304,25 @@ export function createModeration(ctx) {
     return { reports: groups().length, suspect: suspects().length, replays: replays().length };
   }
 
-  function view(sub) {
+  function view(sub, id = null) {
     start();
     const c = counts();
+    // Rooms, a room and the week's history are one sub-tab (js/admin-rooms.js).
+    const on = ['room', 'history'].includes(sub) ? 'rooms' : sub;
     const nav = el('nav', { class: 'ac-subtabs', 'aria-label': t('Moderation') },
-      ...SUBS().map(([id, label]) => raw('a', {
-        class: `ac-subtab${sub === id ? ' on' : ''}`, href: `#mod/${id}`, 'aria-current': sub === id ? 'page' : null,
-      }, c[id] ? `${label} · ${c[id]}` : label)));
+      ...SUBS().map(([key, label]) => raw('a', {
+        class: `ac-subtab${on === key ? ' on' : ''}`, href: `#mod/${key}`, 'aria-current': on === key ? 'page' : null,
+      }, c[key] ? `${label} · ${c[key]}` : label)));
     const head = [el('h1', { class: 'ac-h1', text: 'Moderate' }), nav];
+    // Five across a phone run off its edge: the one you are on is kept in view.
+    requestAnimationFrame(() => {
+      const cur = nav.querySelector('.ac-subtab.on');
+      const over = cur && nav.isConnected ? cur.getBoundingClientRect().right - nav.getBoundingClientRect().right : 0;
+      if (over > 0) nav.scrollLeft += over + 12;
+    });
+    if (sub === 'rooms') return [...head, ...ctx.rooms().viewRooms()];
+    if (sub === 'history') return [...head, ...ctx.rooms().viewHistory()];
+    if (sub === 'room' && id) return [...head, ...ctx.rooms().viewRoom(id)];
     if (sub === 'chats') return [...head, viewChats()];
     if (sub === 'suspect') return [...head, viewSuspect()];
     if (sub === 'replays') return [...head, viewReplays()];
