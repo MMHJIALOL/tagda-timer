@@ -33,6 +33,7 @@ import { getConfig, setOf } from './config.js';
 import { floorsOf } from './config-table.js';
 import { hasFeature } from './audience.js';
 import { banActive, banLine, banAccount } from './admins.js';
+import { blockedWord, filteredText } from './moderation.js';
 
 /**
  * Whether the "most solves today" board is shown.
@@ -821,7 +822,7 @@ export class Daily extends EventTarget {
     if (!this.snap?.signedIn) return t('Sign in to be given today’s scramble');
     if (this.submittedToday) return t('You have already done today’s scramble — come back after the reset');
     // Banned (bans/, ADMIN.md): the rules would refuse the time, so it is not offered.
-    if (this.banned) return banLine(this.snap.ban);
+    if (this.banned) return banLine(this.snap.ban, 'sotd');
     if (this.frozen) return getConfig('sotd', 'frozenMessage') || t('Today’s board is closed: no new times are taken until the reset.');
     if (this.snap.readError) {
       return t('Today’s board cannot be read on this deployment — see DAILY.md, firebase.rules.json probably needs republishing.');
@@ -1148,8 +1149,11 @@ export class Daily extends EventTarget {
    */
   async setNote(text) {
     if (!this.net || !this.submittedToday) return;
-    if (this.banned) { toast(banLine(this.snap.ban), { kind: 'bad', long: true }); return false; }
+    if (this.bannedFor('chat')) { toast(banLine(this.snap.ban, 'chat'), { kind: 'bad', long: true }); return false; }
     const body = cleanNote(text);
+    // The admin console's word filter (chatFilter.words): said here, never sent.
+    const word = blockedWord(body, getConfig('chatFilter', 'words'));
+    if (word) { toast(filteredText(word), { kind: 'bad', long: true }); return false; }
     try {
       await this._retry(() => this.net.setNote(body));
       const mine = this.snap?.results?.[this.snap?.uid];
@@ -1192,9 +1196,12 @@ export class Daily extends EventTarget {
   /** Closed for the day from the admin console (sotd.frozen, ADMIN.md §18): the board shows, no new result is taken. */
   get frozen() { return getConfig('sotd', 'frozen') === true; }
 
-  /** Whether an admin has banned this account (bans/<uid>), as of the server's clock. */
-  get banned() {
-    return banActive(this.snap?.ban, this.net?.serverNow?.() ?? Date.now());
+  /** Whether an admin has banned this account from the board (bans/<uid>, scope sotd), as of the server's clock. */
+  get banned() { return this.bannedFor('sotd'); }
+
+  /** …from one thing: chat (and notes), sotd, replays, reports (ADMIN.md §5). A ban with no scope is all of them. */
+  bannedFor(scope) {
+    return banActive(this.snap?.ban, this.net?.serverNow?.() ?? Date.now(), scope);
   }
 
   /**
@@ -1203,7 +1210,7 @@ export class Daily extends EventTarget {
    * refuse the message either way; this is so the box says why first.
    */
   get chatBlocked() {
-    if (this.banned) return banLine(this.snap.ban);
+    if (this.bannedFor('chat')) return banLine(this.snap.ban, 'chat');
     if (!getConfig('sotdChat', 'enabled')) return getConfig('sotdChat', 'message') || t('The chat is switched off for now');
     return null;
   }
@@ -1236,7 +1243,7 @@ export class Daily extends EventTarget {
    */
   async removeResult(row, dayKey = this.net?.target?.().dayKey, eventId = this.eventId) {
     if (!this.admin || !this.net || !row?.uid || !dayKey) throw new Error('not-admin');
-    await this.net.removeResult({ dayKey, event: eventId, uid: row.uid, final: row.result?.backup === true });
+    await this.net.removeResult({ dayKey, event: eventId, uid: row.uid, final: row.result?.backup === true, row: row.result || null });
   }
 
   /**
@@ -1251,6 +1258,8 @@ export class Daily extends EventTarget {
     if (!this.net || !this.chatOpen || this.chatBlocked) return 'closed';
     const now = Date.now();
     if (now - (this._chatSentAt || 0) < this.chatGapMs) return 'slow';
+    const word = blockedWord(text, getConfig('chatFilter', 'words'));
+    if (word) { toast(filteredText(word), { kind: 'bad', long: true }); return 'blocked'; }
     this._chatSentAt = now;
     try {
       await this.net.sendChat(text, { name: this._name(), photo: this._photo() });
@@ -1262,19 +1271,19 @@ export class Daily extends EventTarget {
     }
   }
 
-  async deleteChat(id) {
-    await this.net?.deleteChat(id);
+  async deleteChat(id, m = null) {
+    await this.net?.deleteChat(id, m);
   }
 
   /** Report somebody's message to the admins: 'sent', 'already', or null when banned (said so). */
   async reportChat(m) {
-    if (this.banned) { toast(banLine(this.snap.ban), { kind: 'bad', long: true }); return null; }
+    if (this.bannedFor('reports')) { toast(banLine(this.snap.ban, 'reports'), { kind: 'bad', long: true }); return null; }
     return this.net?.reportChat(m);
   }
 
   /** Report somebody's shared replay on `dayKey`'s board for `event`. */
   async reportReplay(at) {
-    if (this.banned) { toast(banLine(this.snap.ban), { kind: 'bad', long: true }); return null; }
+    if (this.bannedFor('reports')) { toast(banLine(this.snap.ban, 'reports'), { kind: 'bad', long: true }); return null; }
     return this.net?.reportReplay(at);
   }
 

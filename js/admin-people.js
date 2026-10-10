@@ -19,6 +19,7 @@ import { t } from './i18n.js';
 
 import { el } from './util.js';
 import { toast } from './toast.js';
+import { logged } from './moderation.js';
 import { dayKeyFromServerMs } from './dayid.js';
 import { eventOf } from './events.js';
 import { setOf } from './config.js';
@@ -109,8 +110,16 @@ export function createPeople(ctx) {
 
   function personData(uid) {
     if (!P.person.has(uid)) {
-      const d = { sotd: null, ann: null, msgs: null, msgsBusy: false };
+      const d = { sotd: null, ann: null, msgs: null, msgsBusy: false, mod: null };
       P.person.set(uid, d);
+      // What admins have done about them (modLog/, indexed on uid; ADMIN.md §19).
+      const { query, orderByChild, equalTo } = sdk();
+      sdk().get(query(ref('modLog'), orderByChild('uid'), equalTo(uid))).then((s) => {
+        const out = [];
+        s.forEach((c) => { out.push({ id: c.key, ...c.val() }); });
+        d.mod = out.sort((a, b) => (b.at || 0) - (a.at || 0));
+        ctx.scheduleRender();
+      }, () => { d.mod = false; ctx.scheduleRender(); });
       // Their Scramble of the Day results this week: one small read per day and event.
       Promise.all(days(WEEK).flatMap(day => sotdEvents().map(ev =>
         sdk().get(ref(`daily/${day}/${ev}/results/${uid}`)).then(s => (s.exists() ? { day, ev, row: s.val() } : null), () => null))))
@@ -154,9 +163,11 @@ export function createPeople(ctx) {
     ctx.scheduleRender();
   }
 
-  async function write(updates, done) {
+  /** One update at the root; with `entry`, logged in the same update (ADMIN.md §19). */
+  async function write(updates, done, entry = null) {
     try {
-      await sdk().update(root(), updates);
+      if (entry) await logged(sdk(), updates, entry);
+      else await sdk().update(root(), updates);
       ctx.closeSheet();
       if (done) toast(done, { kind: 'good' });
       return true;
@@ -219,6 +230,10 @@ export function createPeople(ctx) {
     const about = reports.filter(r => String(r.path || '').includes(`/${uid}`));
     const reportsBlock = block(t('Reports'),
       raw('p', { class: 'ac-sub' }, t('{by} filed by them · {about} about their times or replays', { by: by.length, about: about.length })),
+      (() => {
+        const q = ctx.moderation.reporterRecord?.(uid);
+        return q ? raw('p', { class: 'ac-entry-meta' }, t('As a reporter: {a} of {n} acted on, {d} dismissed', { a: q.actioned, n: q.n, d: q.dismissed })) : null;
+      })(),
       [...by, ...about].length ? el('ol', { class: 'ac-log ac-tight' }, ...[...by, ...about].slice(0, 20).map(r => el('li', { class: 'ac-entry' },
         el('div', { class: 'ac-entry-main' },
           raw('b', {}, r.by === uid ? t('Filed by them') : t('About them')),
@@ -263,7 +278,9 @@ export function createPeople(ctx) {
               t('Delete all {n} of {name}’s messages this week?', { n: d.msgs.length, name }),
               [t('Every one of them, in every day’s room and every race room, in one go.')],
               t('Delete all'), async () => {
-                if (await write(Object.fromEntries(d.msgs.map(m => [m.path, null])), t('Deleted'))) d.msgs = [];
+                if (await write(Object.fromEntries(d.msgs.map(m => [m.path, null])), t('Deleted'),
+                  { action: 'deleteMessages', path: `people/${uid}`, uid, note: t('{n} messages', { n: d.msgs.length }),
+                    before: d.msgs.map(m => ({ path: m.path, text: m.text, at: m.at })) })) d.msgs = [];
               }, true) }),
             el('ol', { class: 'ac-log ac-tight' }, ...d.msgs.slice(0, SHOWN).map(m => el('li', { class: 'ac-entry' },
               el('div', { class: 'ac-entry-main' },
@@ -290,7 +307,17 @@ export function createPeople(ctx) {
       el('div', { class: 'ac-card-main' }, raw('b', {}, x.note || ''), raw('span', { class: 'ac-card-sub' }, ago(x.at))),
       el('span', { class: `ac-pill${x.reply ? '' : ' warn'}`, text: x.reply ? t('replied') : t('waiting') }))))) : null;
 
-    return [...head, status, sup, sotd, races, msgs, healthBlock, reportsBlock, ann];
+    const modBlock = block(t('Moderation'),
+      d.mod === null ? loading() : d.mod === false ? none(t('The moderation log needs this version’s firebase.rules.json published.'))
+        : !d.mod.length ? none(t('Nothing done about them.'))
+          : el('ol', { class: 'ac-log ac-tight' }, ...d.mod.slice(0, 20).map(e => el('li', { class: 'ac-entry' },
+            el('div', { class: 'ac-entry-main' },
+              raw('b', {}, ctx.modLabel?.(e.action) || e.action),
+              e.note ? raw('span', { class: 'ac-reason' }, e.note) : null,
+              raw('span', { class: 'ac-entry-meta' }, `${ago(e.at)} · ${ctx.who(e.by)}`))))),
+      el('a', { class: 'ac-link', href: '#log/mod', text: t('The moderation log ›') }));
+
+    return [...head, status, sup, sotd, races, msgs, healthBlock, reportsBlock, modBlock, ann];
   }
 
   /* ---------------- lookup ---------------- */
@@ -374,7 +401,7 @@ export function createPeople(ctx) {
     for (const m of personData(uid).msgs || []) updates[m.path] = null;
     updates[`deletion/${uid}/doneAt`] = TS();
     updates[`deletion/${uid}/doneBy`] = S.user.uid;
-    return write(updates, t('Deleted'));
+    return write(updates, t('Deleted'), { action: 'deleteAccount', path: `users/${uid}`, uid, note: t('Their deletion request') });
   }
 
   function viewRequests() {
@@ -405,5 +432,5 @@ export function createPeople(ctx) {
     };
   }
 
-  return { start, stop, viewLookup, viewPerson, viewSupport, viewRequests, counts };
+  return { start, stop, viewLookup, viewPerson, viewSupport, viewRequests, counts, nameOf };
 }

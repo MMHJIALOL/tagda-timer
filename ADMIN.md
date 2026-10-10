@@ -155,6 +155,7 @@ rules enforce takes effect at once, whatever any tab has cached.
 | `race.staleRoomMin` | minutes | 10 | 1 to 1440 | app | How long a player row may sit silent before a join reaps it |
 | `race.rowsBeforeFold` | rows | 6 | 1 to 24 | app | Rows drawn before "+N more" |
 | `race.suspectPct` | % | 45 | 10 to 90 | app | The ⚑ on race and SOTD boards: under this share of the person's own average |
+| `chatFilter.words` | text | empty | 2000 characters | app | Words and phrases neither chat nor a note will send (§19) |
 | `sotd.events` | events | all 16 | any of them | app | Which events have a Scramble of the Day. Data already there stays |
 | `sotd.countBoard` | switch | off | | app | The "most solves today" board (DAILY.md §6) |
 | `sotd.autoDiscardMs` | ms | 2000 | 0 to 5000 | app | A main-scramble solve under this is a misfire, thrown away (DAILY.md §7) |
@@ -401,26 +402,37 @@ its version is the deployed one).
 ## 5. Bans
 
 ```
-bans/<uid>: { at, by, reason, name?, until? }   written by an admin; readable by admins, and by the account itself
+bans/<uid>: { at, by, reason, name?, until?, scope? }   written by an admin; readable by admins, and by the account itself
 ```
 
-A banned account cannot post in either chat, share a replay, or put a time or a note on the
-Scramble of the Day board. The timer, and the account's own synced solves, are untouched.
-Without `until` it lasts until an admin lifts it; with one, it ends by itself (nothing has to
-delete it).
+A ban stops an account from any of six things, or only some of them: `scope` is the list,
+comma-separated (`"chat,reports"`). No scope is all six, which is what every ban before scopes
+is. The timer, and the account's own synced solves, are untouched. Without `until` it lasts until
+an admin lifts it; with one, it ends by itself (nothing has to delete it).
 
-| Where | What it stops |
-|---|---|
-| `firebase.rules.json` | `daily/…/chat/m/<id>` (post), `results/<uid>` (submit), `results/<uid>/note`, `replayClaim/<uid>`, `rooms/…/chat/<id>` |
-| `worker.js` | `PUT /replay/…`: `403 banned`, before the claim, so nothing is spent |
-| the app | says why instead of offering it: the window's scramble line, the chat box, the note field, Share replay |
+| Scope | What it stops | Where |
+|---|---|---|
+| `chat` | a message in either chat, a note on the board | rules: `daily/…/chat/m/<id>`, `results/<uid>/note`, `rooms/…/chat/<id>` |
+| `sotd` | a Scramble of the Day time, a lighter penalty on it | rules: `results/<uid>`, its `penalty` |
+| `race` | joining a race room, a time in one | rules: `rooms/…/players/<uid>`, `rooms/…/results/<uid>` (a room that is not a 1v1) |
+| `duel` | a 1v1: the waiting seat, joining one, a time in one | rules: `meta/waiting`, and the same two in a room whose `meta/kind` is `duel` |
+| `replays` | sharing a replay | rules: `replayClaim/<uid>`; `worker.js`: `PUT /replay/…` answers `403 banned` before anything is spent |
+| `reports` | the ⚑ | rules: `reports/<id>` |
+
+The app says why instead of offering each one: the window's scramble line, the chat box, the note
+field, Share replay, the ⚑, and joining a room or looking for a 1v1 (*This account can't race*).
+
+Every ban check in the rules is `notBanned(scope)` from `js/config-rules.js`, word for word:
+`node tools/config-rules.mjs --check` and test.html fail on one written any other way, so no check
+can forget the scope (or `until`, which it tests as a number first: comparing a missing one is an
+error in the rules, and would sink the scope's branch with it).
 
 **Banning.** In the timer, an admin's delete on somebody's SOTD chat message, the × on their board
 row, and **⋯** on their shared replay each offer a second choice, *Delete and ban* or *Remove and
 ban*, never the default. The reason is filled in from what was removed. On the admin page,
-**People › Bans** lists every ban with **Unban**, and can ban by uid with a reason and a length (until
-unbanned, a day, a week, 30 days). A ban is not a setting, so it is not in the change log; the
-record itself says who made it and when.
+**People › Bans** lists every ban with what it covers and **Unban**, and can ban by uid with a
+reason, a length (until unbanned, a day, a week, 30 days) and ticks for the scope (none ticked:
+everything). Every ban and unban is in the moderation log (§19), with **Undo**.
 
 **Race accounts are throwaways.** A ban on an anonymous race account lasts only as long as that
 tab's account, so it is little use against somebody determined. The rules apply it all the same.
@@ -438,7 +450,7 @@ and `chat` let an admin through, and `rooms` is readable by admins as a whole.
 
 | View | What is in it | What you can do |
 |---|---|---|
-| **Reports** | open reports, one card per item, however many people reported it | **Dismiss** (the reports go, the item stays), **Delete** it (the reports go too), **Ban** its author |
+| **Reports** | open reports, one card per item, however many people reported it, each reporter with their record; **Closed**: the last 30 days' | **Dismiss** (closed, the item stays), **Delete** it (closed as acted on), **Ban** its author, **Stop their reports** for a reporter; **Reopen** a closed one |
 | **SOTD** | times held under their event's floor; each event's board today; the last seven days (§18) | **Keep**, **Set to +2**, **Set to DNF**, **Remove**, **Feature replay** |
 | **Chats** | the newest 25 messages of every event's SOTD room today, and of every race room made in the last day, newest first | **Delete**, **Ban** |
 | **Suspect** | today's SOTD times and recent race times flagged ⚑ when they were sent | **Remove time**, **Ban** |
@@ -792,6 +804,7 @@ like any other.
 | `js/admin-live.js` | The Today tab, Days ahead, and testers (§8, §9, §11) |
 | `js/admin-mod.js` | The Moderate tab (§6) |
 | `js/admin-sotd.js` | Moderate › SOTD: held times, re-timing, the featured replay, past days (§18) |
+| `js/admin-modlog.js` | Log › Moderation, and its Undo (§19) |
 | `js/admin-ann.js` | The Announce tab (§7) |
 | `js/announce.js`, `js/announce-ui.js`, `css/announce.css` | What an announcement is and who sees it, and drawing one: shared with the timer |
 | `js/announcer.js` | The timer's side: when to show one, and what each browser answered |
@@ -851,6 +864,13 @@ already read, and the app's ⚑ is refused with *Couldn't send the report*. A se
 rules do not know yet (every one Phase 4 added, from race tuning to Spotify, and the two audiences)
 is refused when saved, and the page says a new setting needs its rules published; the app keeps
 using its default.
+
+Phase 12 on Phase 11's rules: every moderation action is sent with its log entry, refused, and sent
+again alone, which lands as it always did (unlogged; Log › Moderation says *Publish the rules
+first*). A ban with ticks is refused (no `scope` in the old rules): ban without ticks. A ban still
+stops everything it did, and nothing it did not: no race or 1v1 bans. **Dismiss** deletes the
+reports, as before; Closed stays empty. `chatFilter.words` is refused when saved, so nothing is
+filtered.
 
 Phase 11 on Phase 10's rules: the three `sotd.*` settings are refused when saved, so the app
 uses the default floors, and a time under one is marked *checking* with no way to keep it
@@ -919,6 +939,13 @@ rules are out. The cron finds nothing to apply.
   custom account, a different value, the schedule left behind, a schedule not due, one by somebody
   no longer an admin, anything but applying); a day ahead's scramble (admins only, changeable until
   the day, today's once by anybody); the featured event.
+- `node tools/verify-mod2-rules.mjs`: 68 checks. The moderation log: every action the console logs
+  is one the rules know, by an admin in their own name, now, written once and never changed or
+  deleted, an undo pointing at an entry that is there, readable by admins only and by person. Ban
+  scopes six ways, each stopping only what it names (and leaving a room, or an admin clearing the
+  seat, never stopped); no scope is everything; an ended ban nothing. Report triage: closed and
+  reopened by an admin only, in their own name, now, with a known state, after the item is gone too.
+  And the rules from before this phase.
 - `node tools/verify-sotd-tools-rules.mjs`: 65 checks. The floors setting and what it refuses; a
   keep only from an admin (Google), in their own name, now, on a time that is there, and never
   inside the person's own first write of the row; an admin's +2, DNF or no penalty at any time,
@@ -1182,4 +1209,87 @@ in R2, not the database; the scramble's arrival is not written).
 **Read the last 7 days** reads each event's results and removals for the seven days before today
 (results and removals are kept; only the chats are swept), once: each day's events with the winner, how many
 took part and how many times were removed. Each person links to their page (§17).
+
+---
+
+## 19. Moderation, round two: ban scopes, the word filter, report triage, the moderation log
+
+![On a phone: a report with each reporter's record, a ban limited to chat, and the moderation log with Undo](docs/screenshots/admin-mod2.webp)
+
+### Ban scopes
+
+§5 has the six scopes and where each is enforced. On the ban sheet, the ticks under *Only from*
+limit it; none ticked is everything. **Stop their reports…** on a reporter (below) is a ban
+with only *Reporting* ticked.
+
+### The word filter
+
+`chatFilter.words`: words and phrases, comma-separated, that neither chat nor a Scramble of the
+Day note will send. Whole words only, ignoring case and accents, so `ass` never stops `class`;
+end one with `*` for anything starting with it (`spam*`). The person is told which word stopped
+it, and the text stays in the box.
+
+The app checks it, not the rules. The rules cannot read a list from the database (a regex in them
+has to be a literal), so a rules-side list would mean a publish for every word, and spacing a word
+out gets round any list anyway. It is for the casual case; bans are for the rest.
+
+### Bulk actions
+
+- **Close all N open rooms…** (Moderate › Rooms): every room from the last day with somebody in
+  it, closed in one update. For an emergency; new rooms can still be made, so switch race rooms
+  off in Settings as well if that is the problem. Undo reopens all of them.
+- **Delete all** of one person's messages from the last week is on their page (§17), now logged
+  with what each said.
+- Every report about one item is one card already: **Dismiss** or **Delete** closes all of them.
+
+### Report triage
+
+```
+reports/<id>/status   { s: 'actioned' | 'dismissed', by, at, note? }   admins only
+```
+
+**Dismiss** closes a card's reports as *dismissed*; taking the item down closes them as *acted
+on*. Closed reports stay 30 days (the console sweeps older ones when it opens), under **Closed**,
+with **Reopen**. The Moderate badge counts open ones only.
+
+Each reporter is shown with their record over what is kept: *3 of 5 acted on, 1 dismissed*. Somebody
+with three dismissed and none acted on gets **Stop their reports…**: a ban from reporting only.
+Their page (§17) shows the same record.
+
+### The moderation log
+
+```
+modLog/<id>   { by, at, action, path, uid?, before?, note?, undo? }   admins write once, read; never changed
+```
+
+Every moderation action goes in it, in the same update as the action: a ban or unban, a removed
+time (SOTD or race), a deleted message (one or all of somebody's), a removed replay, a room
+closed, reopened or deleted, somebody removed from a room or let back, a time struck or counted
+again, Close all, a held time kept, a re-time, the featured replay, reports closed or reopened, a
+deletion request carried out. From this page and from an admin's buttons in the timer alike.
+`before` keeps what was there: the message's text, the time, the ban.
+
+**Log › Moderation** shows it newest first; each person's page shows what was done about them (the
+log is indexed on `uid`). **Undo**, where an action can be undone, is an action of its own, logged
+with `undo` pointing back, and the original says *undone*:
+
+| Done | Undo |
+|---|---|
+| Ban / Unban | unban / ban again as it was (not one that has ended since) |
+| Remove from a room / Let back in | let back in / remove again |
+| Strike / Count again | count again / strike again |
+| Close / Reopen, Close all | reopen / close again; reopen every one |
+| Keep a held time | take the keep back (marked *checking* again) |
+| Re-time | the penalty it had |
+| Feature replay / take it off | the featured replay as it was |
+| Dismiss / acted on | reopen the reports |
+
+A removed time is final (they were given the backup scramble), and a deleted message, room or
+account cannot come back: the rules let nobody post in somebody else's name. Their entries keep
+what they were.
+
+The rules make each entry an admin's, in their own name, stamped now, with an action they know,
+and never changed or deleted. They do not make an action carry its entry: every rule that lets an
+admin act would need a pointer to it, and one path missed would refuse moderation outright. The
+console and the timer always send the two together; on rules from before the log, the action alone.
 

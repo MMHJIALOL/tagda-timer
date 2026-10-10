@@ -2568,7 +2568,7 @@ section('admin console — settings and the rules that guard them');
   /* Ad blockers hide elements by name: EasyList has #ad-top, #ad-main, .ad-card,
      .ad-row, .ad-btn and more, and the page's names once started ad-, which left
      only its tab bar for anybody running one. They start ac- now. */
-  const page = (await Promise.all(['admin.html', 'css/admin.css', 'js/admin.js', 'js/admin-mod.js', 'js/admin-ann.js', 'js/admin-live.js', 'js/admin-rooms.js', 'js/admin-health.js', 'js/admin-people.js', 'js/admin-sotd.js']
+  const page = (await Promise.all(['admin.html', 'css/admin.css', 'js/admin.js', 'js/admin-mod.js', 'js/admin-ann.js', 'js/admin-live.js', 'js/admin-rooms.js', 'js/admin-health.js', 'js/admin-people.js', 'js/admin-sotd.js', 'js/admin-modlog.js']
     .map(f => fetch(`./${f}`, { cache: 'no-store' }).then(r => r.text())))).join('\n')
     .replace(/\/\*[\s\S]*?\*\//g, '');   // comments may name them, as admin.css's does
   const adNames = [...new Set(page.match(/(?<![\w-])ad-[a-z0-9]+/g) || [])];
@@ -2576,7 +2576,7 @@ section('admin console — settings and the rules that guard them');
 
   // Every word the admin page shows goes through t(), and Spanish has each one.
   const { es } = await import('./locales/es.js');
-  const src = (await Promise.all(['admin.js', 'admin-mod.js', 'admin-ann.js', 'admin-live.js', 'admin-rooms.js', 'admin-health.js', 'admin-people.js', 'admin-sotd.js'].map(f => fetch(`./js/${f}`).then(r => r.text())))).join(' ');
+  const src = (await Promise.all(['admin.js', 'admin-mod.js', 'admin-ann.js', 'admin-live.js', 'admin-rooms.js', 'admin-health.js', 'admin-people.js', 'admin-sotd.js', 'admin-modlog.js'].map(f => fetch(`./js/${f}`).then(r => r.text())))).join(' ');
   const q = String.raw`'((?:\\'|[^'])*)'`;
   const keys = [
     ...[...src.matchAll(new RegExp(String.raw`\bt\(\s*` + q, 'g'))].map(m => m[1]),
@@ -2625,6 +2625,23 @@ section('admin console — settings and the rules that guard them');
   const rem = Mo.removalUpdate('u1', true, 5);
   check('a SOTD removal is the four writes the rules want together',
     Object.keys(rem).sort().join() === 'progress/u1/submitted,removed/u1,replayClaim/u1,results/u1' && rem['removed/u1'].final === true);
+
+  // Ban scopes (ADMIN.md §5): none stored is everything, as every ban before scopes.
+  check('a ban with a scope holds only for what it names; one without holds for all',
+    A.banActive({ at: 1, scope: 'chat,reports' }, at, 'chat') && A.banActive({ at: 1, scope: 'chat,reports' }, at, 'reports')
+    && !A.banActive({ at: 1, scope: 'chat,reports' }, at, 'sotd') && A.banActive({ at: 1 }, at, 'race')
+    && A.banActive({ at: 1, scope: 'chat' }, at) && !A.banActive({ at: 1, scope: 'chat', until: at }, at, 'chat'));
+  check('the app’s scopes are the rules’ scopes, and every ban check in the rules is notBanned()',
+    A.BAN_SCOPES.join() === R.BAN_SCOPES.join() && R.banChecks(rulesText) === rulesText
+    && rulesText.includes(R.notBanned('duel')) && rulesText.includes(R.notBanned('race')));
+  check('the moderation log’s actions are the rules’ list',
+    rulesText.includes(`newData.val().matches(/^(${Mo.MOD_ACTIONS.join('|')})$/)`));
+  // The word filter (chatFilter.words): whole words, case and accents ignored, * for "and anything after".
+  check('the word filter stops whole words only, ignoring case and accents',
+    Mo.blockedWord('BADWORD!', 'badword') === 'badword' && Mo.blockedWord('Bädword', 'badword') === 'badword'
+    && Mo.blockedWord('badwords', 'badword') === null && Mo.blockedWord('class act', 'ass') === null
+    && Mo.blockedWord('a  bad   phrase', 'bad phrase') === 'bad phrase' && Mo.blockedWord('scammer', 'scam*') === 'scam*'
+    && Mo.blockedWord('anything', '') === null && Mo.blockedWord('anything', ' , *') === null);
 
   const SR = await import('./js/sotd-replays.js');
   const day = 1_791_138_600_000;
