@@ -46,6 +46,10 @@ import { APP_VERSION } from './version.js';
 import { initPhoneShell } from './phoneshell.js';
 // The *.vercel.app "we moved" banner, and the tagdatimer.me end of its data move.
 import './moved.js';
+import { captureErrors, startHealth, noteHeal } from './health.js';
+
+// From the first moment, so an error during boot is caught too (js/health.js sends it once signed in).
+captureErrors();
 /* panels.js, sharedlg.js (which drags in sharecard.js and cubenet.js) and
    stackmat.js are imported where they are first needed, not here — see
    "Lazily loaded modules" below. Between them they were about 82KB of the
@@ -367,6 +371,7 @@ function healMixedDeploy(err) {
     sessionStorage.setItem('healed-mixed-deploy', '1');
   } catch { return false; }
   toast(t('Updating to the latest version…'));
+  noteHeal();
   navigator.serviceWorker.addEventListener('message', (e) => {
     if (e.data?.type === 'dropped') location.reload();
   });
@@ -712,6 +717,8 @@ async function init() {
   // Cloud sync, if this browser was ever signed in. Same shape as the line
   // above: a visitor who has never signed in never downloads any of it.
   startCloudSync().catch(err => console.warn('[sync] not started', err));
+  // The heartbeat and error reports for the admin console's Health tab, once idle, signed in only.
+  startHealth();
   wireAccountButtonOnFirstClick();
   adoptCloudChanges();
 

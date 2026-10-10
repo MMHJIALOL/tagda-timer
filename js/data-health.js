@@ -4,6 +4,7 @@ import { getLocalStatus, onLocalStatus, retryLocalWrites, exportRecovery, export
 import { getSyncStatus, onSyncStatus, retrySync } from './sync.js';
 import { currentUser, signIn } from './sync-auth.js';
 import { toast } from './toast.js';
+import { telemetryOn, setTelemetry } from './health.js';
 
 const EXPORT_KEY = '_dataHealth.export';
 const exportListeners = new Set();
@@ -80,6 +81,20 @@ export function buildDataHealthRow(open) {
   return { row, dispose: () => off.forEach(fn => fn()) };
 }
 
+/* The heartbeat and error reports (js/health.js, ADMIN.md "Health"), said
+   plainly, with this device's switch for both. */
+function sends() {
+  const box = el('input', { type: 'checkbox' });
+  box.checked = telemetryOn();
+  box.addEventListener('change', () => {
+    setTelemetry(box.checked);
+    toast(box.checked ? 'Health reports on for this device' : 'Health reports off for this device');
+  });
+  return el('div', {},
+    el('p', { class: 'sub', text: 'While you are signed in, this timer sends a small health report about once an hour: the app version, your browser family and system (never the full browser string), whether offline mode is on, how many changes are waiting to sync and for how long, and how long scrambles take to make. When something on the page breaks, it sends the error message and where in the code it happened. Never your solves, times, settings or anything you type. Reports are kept for 14 days and only the site’s admins can read them.' }),
+    el('label', { class: 'health-toggle' }, box, el('span', { text: 'Send health reports from this device' })));
+}
+
 export function buildDataHealth({ back, account }) {
   return body => {
     let disposed = false, backup = null;
@@ -122,6 +137,7 @@ export function buildDataHealth({ back, account }) {
         el('p', { class: 'sub', text: 'Check your Downloads folder and keep the file somewhere safe.' })),
       section('Browser storage', usage, persistence, media,
         el('p', { class: 'sub', text: 'Browser estimates for this site include solves, cached app files and any stored media. The allowance is not free disk space.' })),
+      section('What Tagda Timer sends', sends()),
       section('Help', el('p', { class: 'sub', text: 'Local saves keep your solves in this browser. Cloud sync confirms when changes reach your signed-in account. A backup export prepares a file you can keep outside the browser.' }),
         el('button', { class: 'ghost-btn', text: 'Export and import controls', onclick: back })));
     function render() {

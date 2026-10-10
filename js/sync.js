@@ -49,6 +49,8 @@ const outbound = createSyncQueue({ storage: LocalMetadata,
   // The admin console's read-only switch (ADMIN.md §4): changes wait here, none are lost.
   paused: () => getConfig('app', 'readOnly'),
   changed: publishStatus });
+/** The queue's health, for the heartbeat (js/health.js): { pending, oldestAt, dropped, lastErr }. */
+export const syncHealth = () => outbound.health();
 export async function retrySync() {
   if (!_uid) return false;
   if (getSyncStatus().inFlight) return false;

@@ -177,6 +177,18 @@ export const CONFIG = {
         help: 'Empty: “Stackmat input is switched off for now”.' },
     },
   },
+  health: {
+    title: 'Client health',
+    about: 'The heartbeat and error reports a signed-in timer sends, which the Health tab is made of (ADMIN.md, "Health"). Read by the app. Anybody can turn both off for their own device in Data Health.',
+    keys: {
+      enabled: { type: 'bool', def: true, label: 'Heartbeat', where: 'app',
+        help: 'Off: no timer sends its heartbeat. What the Health tab already has stays until it is swept after 14 days.' },
+      beatMin: { type: 'int', def: 60, min: 15, max: 1440, unit: 'min', label: 'A heartbeat at most every', where: 'app',
+        help: 'Per signed-in person and device, and at once when a new version loads. Each is one small database write.' },
+      errorsEnabled: { type: 'bool', def: true, label: 'Error reports', where: 'app',
+        help: 'Off: no timer reports the errors it hits. At most five different ones a page load, each once.' },
+    },
+  },
   support: {
     title: 'Support card',
     about: 'The “Enjoying Tagda Timer?” card that points at the coffee link in About. Read by the app.',

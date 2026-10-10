@@ -598,6 +598,22 @@
         "$other": { ".validate": false }
       },
 
+      "health": {
+        "enabled": {
+          ".write": "(auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true || auth != null && auth.uid === 'tagda-scheduler' && auth.token.firebase.sign_in_provider === 'custom') && newData.parent().parent().parent().child('configMeta/health/enabled/at').val() === now",
+          ".validate": "newData.isBoolean()"
+        },
+        "beatMin": {
+          ".write": "(auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true || auth != null && auth.uid === 'tagda-scheduler' && auth.token.firebase.sign_in_provider === 'custom') && newData.parent().parent().parent().child('configMeta/health/beatMin/at').val() === now",
+          ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 15 && newData.val() <= 1440"
+        },
+        "errorsEnabled": {
+          ".write": "(auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true || auth != null && auth.uid === 'tagda-scheduler' && auth.token.firebase.sign_in_provider === 'custom') && newData.parent().parent().parent().child('configMeta/health/errorsEnabled/at').val() === now",
+          ".validate": "newData.isBoolean()"
+        },
+        "$other": { ".validate": false }
+      },
+
       "support": {
         "enabled": {
           ".write": "(auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true || auth != null && auth.uid === 'tagda-scheduler' && auth.token.firebase.sign_in_provider === 'custom') && newData.parent().parent().parent().child('configMeta/support/enabled/at').val() === now",
@@ -705,6 +721,78 @@
         "at":     { ".validate": "newData.val() === now" },
         "by":     { ".validate": "newData.val() === auth.uid" },
         "name":   { ".validate": "newData.isString() && newData.val().length <= 32" },
+        "$other": { ".validate": false }
+      }
+    },
+
+    "health": {
+      ".read": "auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true",
+      "$dayStart": {
+        ".write": "auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true && !newData.exists() && $dayStart !== '' + (now - ((now + 19800000) % 86400000))",
+        ".validate": "$dayStart.matches(/^[0-9]{13}$/)",
+        "$uid": {
+          ".write": "auth != null && auth.token.firebase.sign_in_provider === 'google.com' && auth.uid === $uid && $dayStart === '' + (now - ((now + 19800000) % 86400000)) && newData.exists() && (!data.exists() || data.child('at').val() <= now - 60000)",
+          ".validate": "newData.hasChildren(['at', 'ver'])",
+          "at": { ".validate": "newData.val() === now" },
+          "ver": { ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 0 && newData.val() <= 100000" },
+          "ua": { ".validate": "newData.isString() && newData.val().matches(/^(firefox|chrome|safari|edge|other)$/)" },
+          "os": { ".validate": "newData.isString() && newData.val().matches(/^(windows|mac|ios|android|linux|other)$/)" },
+          "phone": { ".validate": "newData.isBoolean()" },
+          "q": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1000000" },
+          "qOldestMin": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 10000000" },
+          "dropped": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1000000" },
+          "lastErr": { ".validate": "newData.isString() && newData.val().length <= 40" },
+          "sw": { ".validate": "newData.isString() && newData.val().matches(/^(on|off|unsupported)$/)" },
+          "swHeals": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1000" },
+          "scr": {
+            "$event": { ".validate": "$event.matches(/^[a-z0-9]{2,16}$/) && newData.isNumber() && newData.val() >= 0 && newData.val() <= 600000" }
+          },
+          "lang": { ".validate": "newData.isString() && newData.val().matches(/^(en|es)$/)" },
+          "$other": { ".validate": false }
+        }
+      }
+    },
+
+    "errors": {
+      ".read": "auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true",
+      "$dayStart": {
+        ".write": "auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true && !newData.exists() && $dayStart !== '' + (now - ((now + 19800000) % 86400000))",
+        ".validate": "$dayStart.matches(/^[0-9]{13}$/)",
+        "$hash": {
+          ".validate": "$hash.matches(/^[a-z0-9]{1,16}$/)",
+          "msg": {
+            ".write": "auth != null && auth.token.firebase.sign_in_provider === 'google.com' && $dayStart === '' + (now - ((now + 19800000) % 86400000)) && (!data.exists() || data.val() === newData.val())",
+            ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 200"
+          },
+          "where": {
+            ".write": "auth != null && auth.token.firebase.sign_in_provider === 'google.com' && $dayStart === '' + (now - ((now + 19800000) % 86400000)) && (!data.exists() || data.val() === newData.val())",
+            ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 120"
+          },
+          "u": {
+            "$uid": {
+              ".write": "auth != null && auth.token.firebase.sign_in_provider === 'google.com' && auth.uid === $uid && $dayStart === '' + (now - ((now + 19800000) % 86400000)) && newData.exists()",
+              ".validate": "newData.hasChildren(['n', 'first', 'last', 'ver'])",
+              "n": { ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 1 && newData.val() <= 100000" },
+              "first": { ".validate": "newData.isNumber() && newData.val() <= now" },
+              "last": { ".validate": "newData.val() === now" },
+              "ver": { ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 0 && newData.val() <= 100000" },
+              "ua": { ".validate": "newData.isString() && newData.val().matches(/^(firefox|chrome|safari|edge|other)$/)" },
+              "$other": { ".validate": false }
+            }
+          },
+          "$other": { ".validate": false }
+        }
+      }
+    },
+
+    "errorsKnown": {
+      ".read": "auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true",
+      "$hash": {
+        ".write": "auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true",
+        ".validate": "$hash.matches(/^[a-z0-9]{1,16}$/) && newData.hasChildren(['by', 'at'])",
+        "by": { ".validate": "newData.val() === auth.uid" },
+        "at": { ".validate": "newData.val() === now" },
+        "note": { ".validate": "newData.isString() && newData.val().length <= 200" },
         "$other": { ".validate": false }
       }
     },
@@ -1434,6 +1522,46 @@
             ".write": "(auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true) || (auth != null && auth.uid === 'tagda-scheduler' && auth.token.firebase.sign_in_provider === 'custom' && !newData.exists() && newData.parent().parent().parent().parent().child('configMeta/features/stackmatMessage/at').val() === now && newData.parent().parent().parent().parent().child('configLog/' + newData.parent().parent().parent().parent().child('configMeta/features/stackmatMessage/log').val() + '/sched').val() === $id)",
             ".validate": "$id.matches(/^[A-Za-z0-9_-]{1,32}$/) && newData.hasChildren(['at', 'by', 'createdAt']) && ((newData.hasChild('to') && !newData.hasChild('def')) || (!newData.hasChild('to') && newData.hasChild('def')))",
             "to": { ".validate": "newData.isString() && newData.val().length <= 200" },
+            "def": { ".validate": "newData.val() === true" },
+            "at": { ".validate": "newData.isNumber() && newData.val() > now && newData.val() <= now + 31622400000" },
+            "by": { ".validate": "newData.val() === auth.uid" },
+            "createdAt": { ".validate": "newData.val() === now" },
+            "$other": { ".validate": false }
+          }
+        },
+        "$other": { ".validate": false }
+      },
+
+      "health": {
+        "enabled": {
+          "$id": {
+            ".write": "(auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true) || (auth != null && auth.uid === 'tagda-scheduler' && auth.token.firebase.sign_in_provider === 'custom' && !newData.exists() && newData.parent().parent().parent().parent().child('configMeta/health/enabled/at').val() === now && newData.parent().parent().parent().parent().child('configLog/' + newData.parent().parent().parent().parent().child('configMeta/health/enabled/log').val() + '/sched').val() === $id)",
+            ".validate": "$id.matches(/^[A-Za-z0-9_-]{1,32}$/) && newData.hasChildren(['at', 'by', 'createdAt']) && ((newData.hasChild('to') && !newData.hasChild('def')) || (!newData.hasChild('to') && newData.hasChild('def')))",
+            "to": { ".validate": "newData.isBoolean()" },
+            "def": { ".validate": "newData.val() === true" },
+            "at": { ".validate": "newData.isNumber() && newData.val() > now && newData.val() <= now + 31622400000" },
+            "by": { ".validate": "newData.val() === auth.uid" },
+            "createdAt": { ".validate": "newData.val() === now" },
+            "$other": { ".validate": false }
+          }
+        },
+        "beatMin": {
+          "$id": {
+            ".write": "(auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true) || (auth != null && auth.uid === 'tagda-scheduler' && auth.token.firebase.sign_in_provider === 'custom' && !newData.exists() && newData.parent().parent().parent().parent().child('configMeta/health/beatMin/at').val() === now && newData.parent().parent().parent().parent().child('configLog/' + newData.parent().parent().parent().parent().child('configMeta/health/beatMin/log').val() + '/sched').val() === $id)",
+            ".validate": "$id.matches(/^[A-Za-z0-9_-]{1,32}$/) && newData.hasChildren(['at', 'by', 'createdAt']) && ((newData.hasChild('to') && !newData.hasChild('def')) || (!newData.hasChild('to') && newData.hasChild('def')))",
+            "to": { ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 15 && newData.val() <= 1440" },
+            "def": { ".validate": "newData.val() === true" },
+            "at": { ".validate": "newData.isNumber() && newData.val() > now && newData.val() <= now + 31622400000" },
+            "by": { ".validate": "newData.val() === auth.uid" },
+            "createdAt": { ".validate": "newData.val() === now" },
+            "$other": { ".validate": false }
+          }
+        },
+        "errorsEnabled": {
+          "$id": {
+            ".write": "(auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true) || (auth != null && auth.uid === 'tagda-scheduler' && auth.token.firebase.sign_in_provider === 'custom' && !newData.exists() && newData.parent().parent().parent().parent().child('configMeta/health/errorsEnabled/at').val() === now && newData.parent().parent().parent().parent().child('configLog/' + newData.parent().parent().parent().parent().child('configMeta/health/errorsEnabled/log').val() + '/sched').val() === $id)",
+            ".validate": "$id.matches(/^[A-Za-z0-9_-]{1,32}$/) && newData.hasChildren(['at', 'by', 'createdAt']) && ((newData.hasChild('to') && !newData.hasChild('def')) || (!newData.hasChild('to') && newData.hasChild('def')))",
+            "to": { ".validate": "newData.isBoolean()" },
             "def": { ".validate": "newData.val() === true" },
             "at": { ".validate": "newData.isNumber() && newData.val() > now && newData.val() <= now + 31622400000" },
             "by": { ".validate": "newData.val() === auth.uid" },

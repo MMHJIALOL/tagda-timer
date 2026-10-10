@@ -349,7 +349,37 @@ export function centresSolved444(threeByThree, rounds = 5) {
  * Generate one scramble.
  * @returns {Promise<{scramble:string, caseId?:string, caseName?:string, official:boolean, parts?:string[]}>}
  */
+/* How long each event's official scramble takes to make, the last SPEED_KEEP
+   of them, for the admin console's Health tab (js/health.js sends the p95 in
+   its heartbeat). The sq1 deadlock in Firefox (#162) was a 15 s scramble that
+   only somebody watching the screen noticed. */
+const SPEED_KEEP = 20;
+const speeds = new Map();
+
+/** { event: p95 ms } over the official scrambles made on this page, events with none left out. */
+export function scrambleSpeeds() {
+  const out = {};
+  for (const [ev, list] of speeds) {
+    if (!list.length) continue;
+    const sorted = [...list].sort((a, b) => a - b);
+    out[ev] = Math.round(sorted[Math.max(0, Math.ceil(sorted.length * 0.95) - 1)]);
+  }
+  return out;
+}
+
 export async function generate(eventId, modeId = 'wca', opts = {}) {
+  const t0 = performance.now();
+  const out = await makeScramble(eventId, modeId, opts);
+  if (out?.official && EVENTS[eventId]) {
+    const list = speeds.get(eventId) || [];
+    list.push(performance.now() - t0);
+    if (list.length > SPEED_KEEP) list.shift();
+    speeds.set(eventId, list);
+  }
+  return out;
+}
+
+async function makeScramble(eventId, modeId = 'wca', opts = {}) {
   const mode = MODES[modeId] || MODES.wca;
 
   /* A case set that cannot be fetched falls through to a random-state
