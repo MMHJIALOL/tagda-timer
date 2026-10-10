@@ -190,6 +190,9 @@ rules enforce takes effect at once, whatever any tab has cached.
 | `features.stackmat` | switch | on | | app | Stackmat input: off, a timer on one goes back to the keyboard |
 | `features.stackmatAudience` | choice | everybody | everybody, testers and admins, admins only | app | Who has it while on |
 | `features.stackmatMessage` | text | empty | 200 characters | app | Shown under the input picker while off |
+| `health.enabled` | switch | on | | app | The heartbeat signed-in timers send (§16) |
+| `health.beatMin` | minutes | 60 | 15 to 1440 | app | A heartbeat at most this often, per person and device, and at once on a new version |
+| `health.errorsEnabled` | switch | on | | app | Error reports (§16) |
 | `sandbox.*` | switch, number, text | off, 5, empty | | nothing | Nothing. For trying the page |
 
 The bold end of each range is the **ceiling**: the side that would cost money, storage, or let
@@ -607,6 +610,7 @@ The tab the page opens on: the day so far, by the server's clock (it turns over 
 | Number | Where it comes from |
 |---|---|
 | Every switch, on or off, and the banner (§4) | `config/`, the copy the Settings tab edits |
+| Health: stuck syncs, new errors today, people on an older version, each opening its view (§16) | `health/<today>` (a listener) and the Health tab's read of `errors/` |
 | The 1v1 lobby: the waiting seat, the day's 1v1s and how long one lasts | a listener on the seat, and the Moderate tab's read of the last day's rooms (§6) |
 | The 1v1 relay: logins handed out today, by how many people, the top five | `turnDay/<today>`, read over REST as this admin |
 | Scramble of the Day times, per event, and the day's featured event | the Moderate tab's listeners on today's boards |
@@ -843,6 +847,11 @@ rules do not know yet (every one Phase 4 added, from race tuning to Spotify, and
 is refused when saved, and the page says a new setting needs its rules published; the app keeps
 using its default.
 
+Phase 9 on Phase 8's rules: no timer can send a heartbeat or an error report (both are refused,
+and each stops trying for the rest of the page load). The Health tab says *Publish the rules
+first*, and Today's Health block says the heartbeat needs the rules. The three `health.*` settings
+are refused when saved, like every new setting.
+
 Phase 8 on Phase 7's rules: the inspector, the lobby and history read as before (admins could
 already read `rooms/`), but **Close**, **Remove**, **Strike** and **Delete room** are refused with
 *room actions need this version's firebase.rules.json published*. The app's listener on a
@@ -893,6 +902,12 @@ rules are out. The cron finds nothing to apply.
   custom account, a different value, the schedule left behind, a schedule not due, one by somebody
   no longer an admin, anything but applying); a day ahead's scramble (admins only, changeable until
   the day, today's once by anybody); the featured event.
+- `node tools/verify-health-rules.mjs`: 45 checks. A heartbeat only from its own Google account,
+  today, at most once a minute, every field its type and range and nothing else (no user-agent
+  string); an error report's message and place written once, each person's own entry under it;
+  who reads, who sweeps; errors marked known; and the rules from before this phase.
+- `node --test js/sync-queue.check.mjs` also checks the queue's `health()`: what is waiting, since
+  when, and what was dropped.
 - `node tools/verify-rooms-rules.mjs`: 72 checks. Closing a room (and what it then refuses:
   heartbeats, joining, times, chat; leaving still allowed), removing a player and letting them
   back, striking a time, deleting a room, each against racers, a non-admin Google account and an
@@ -916,3 +931,61 @@ rules are out. The cron finds nothing to apply.
   `node tools/sotd-replay-dev.mjs rules pre-admin` (or `pre-safety`) puts the emulator on the
   rules from before this page (or before its switches), and `rules new` back. `?emu=1` points
   race mode at the emulators too, so a local race test never reaches the real project.
+
+---
+
+## 16. Health
+
+![The Health tab on a phone: a stuck sync and lost writes, Square-1 slow in Firefox, and errors grouped](docs/screenshots/admin-health.webp)
+
+Know that somebody is broken before they say so. The sync freeze (#151/#152), the mixed deploy
+(#124/#125) and Firefox's 15 s Square-1 (#162) were all found by somebody noticing; each of them
+would have shown up here first.
+
+### What a timer sends
+
+Only while signed in with Google, from `js/health.js`, once the page is idle:
+
+```
+health/<dayStart>/<uid>      one record a day per person, rewritten at most every health.beatMin
+  { at, ver, ua: 'firefox' | 'chrome' | 'safari' | 'edge' | 'other', os, phone,
+    q, qOldestMin, dropped, lastErr, sw: 'on' | 'off' | 'unsupported', swHeals,
+    scr: { <event>: p95 ms }, lang }
+
+errors/<dayStart>/<hash>     { msg, where, u: { <uid>: { n, first, last, ver, ua } } }
+errorsKnown/<hash>           { by, at, note? }   an admin's "known"
+```
+
+- **The heartbeat** goes on the first idle moment after signing in, then at most every
+  `health.beatMin` (60 minutes), and at once when a new version loads. `q` and `qOldestMin` are the
+  sync queue's length and its oldest change's age (each queued change now carries the time it was
+  queued); `dropped` and `lastErr` are the writes the queue had to drop today and the last error's
+  code. `swHeals` counts the reloads `main.js` made after finding two deploys mixed in its cache.
+  `scr` is the slowest-in-twenty (p95) of each event's official scrambles made on that page.
+- **Error reports** come from `window.onerror` and unhandled promise rejections: the error's
+  `Name: message` (cut to 200 characters, with any web address cut at its `?`) and the file and
+  line it came from. Errors from extensions and other sites are left out, and so is the noise
+  every site gets (`Script error.`, a ResizeObserver loop, a dropped fetch). At most five
+  different ones a page load, each once. The hash is FNV-1a of message and place, so the same
+  error groups across devices. Each person writes only their own entry under it, so nobody can
+  read or change anybody else's.
+- **Never**: the user-agent string, an IP, a solve, a time, a setting, anything typed.
+- **Off switches**: `health.enabled` and `health.errorsEnabled` for everybody, and **Send health
+  reports from this device** in the app's Data Health, under *What Tagda Timer sends*, which says
+  all of the above in plain words. A refusal (old rules, a switch) stops it for the page load.
+- **Kept 14 days**: the console deletes older days of `health/` and `errors/` when it opens.
+- **Cost**: about 300 bytes a person a heartbeat; at 200 people a day that is well under 1 MB a
+  day, a few MB at the cap.
+
+### The tab
+
+| View | What it shows |
+|---|---|
+| **Sync** | Stuck syncs (changes waiting over an hour), worst first, with the device, version and last error; writes dropped today; and 14 days of the share of people who were stuck, as bars. A jump after a deploy means the deploy broke sync |
+| **Versions** | Today's people by version, newest first. When at least 95% are on a version or newer and it is above `app.minVersion`, **Raise to N…** puts the change on the Settings save bar for the usual review and log. Self-heals per version: heals on a new version mean its `?v=` bump was missed |
+| **Scrambles** | Each event's scramble time per browser family: the middle of the people's p95s, and how many. Over 3 s is in the warning colour |
+| **Errors** | 14 days of errors, grouped, newest first: how many times, how many people, which browsers, the version it was first seen in, the versions it appears in. **Mark known** (with a note) hides one from the list and from Today's count; *Show marked known* brings them back |
+
+The tab reads today live and the 14 days once (and on **Refresh**). Today's tab bar badge on Health
+is the number of stuck syncs.
+

@@ -4870,3 +4870,7 @@ body.ph.has-banner #app { height: calc(100dvh - var(--banner-h, 0px)); }
 /* The banner already stands clear of a phone's notch. */
 body.ph.has-banner #app { padding-top: 8px; }
 body.focus #app-banner { opacity: 0; transition: opacity 220ms var(--ease); }
+
+/* Data Health's switch for the heartbeat and error reports (js/health.js). */
+.health-toggle { display: flex; align-items: center; gap: 10px; margin-top: 8px; font-size: 14px; cursor: pointer; }
+.health-toggle input { width: 18px; height: 18px; accent-color: var(--accent); flex: none; }

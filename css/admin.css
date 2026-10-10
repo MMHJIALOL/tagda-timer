@@ -401,3 +401,16 @@ select.ac-inp { appearance: none; -webkit-appearance: none; background-image: li
 .ac-round-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .ac-entry-actions.ac-start { justify-content: flex-start; margin-top: 10px; }
 .ac-uid.ac-link { min-height: 0; padding: 0; text-align: left; font-weight: 400; color: var(--text-faint); }
+
+/* ---------------- health (js/admin-health.js) ---------------- */
+
+.ac-bars { display: grid; grid-template-columns: repeat(14, 1fr); gap: 4px; align-items: end; height: 110px; padding: 8px 0 0; }
+.ac-bar-col { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 4px; height: 100%; }
+.ac-bar { display: block; width: 100%; max-width: 22px; min-height: 0; border-radius: 4px 4px 0 0; background: color-mix(in srgb, var(--accent) 55%, transparent); }
+.ac-bar.hot { background: var(--warn); }
+.ac-bar-x { font-size: .66rem; color: var(--text-faint); font-variant-numeric: tabular-nums; }
+.ac-chip.hot { border-color: color-mix(in srgb, var(--warn) 60%, var(--border)); color: var(--warn-text); }
+.ac-err-msg { font-family: var(--font-mono); font-size: .84rem; font-weight: 600; overflow-wrap: anywhere; }
+/* Seven tabs across a phone: the words get smaller before they get cut. */
+@media (max-width: 480px) { #ac-tabs { padding-left: 4px; padding-right: 4px; } .ac-tab { font-size: .74rem; letter-spacing: -.01em; } }
+@media (max-width: 380px) { .ac-tab { font-size: .68rem; } }

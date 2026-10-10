@@ -2568,7 +2568,7 @@ section('admin console — settings and the rules that guard them');
   /* Ad blockers hide elements by name: EasyList has #ad-top, #ad-main, .ad-card,
      .ad-row, .ad-btn and more, and the page's names once started ad-, which left
      only its tab bar for anybody running one. They start ac- now. */
-  const page = (await Promise.all(['admin.html', 'css/admin.css', 'js/admin.js', 'js/admin-mod.js', 'js/admin-ann.js', 'js/admin-live.js', 'js/admin-rooms.js']
+  const page = (await Promise.all(['admin.html', 'css/admin.css', 'js/admin.js', 'js/admin-mod.js', 'js/admin-ann.js', 'js/admin-live.js', 'js/admin-rooms.js', 'js/admin-health.js']
     .map(f => fetch(`./${f}`, { cache: 'no-store' }).then(r => r.text())))).join('\n')
     .replace(/\/\*[\s\S]*?\*\//g, '');   // comments may name them, as admin.css's does
   const adNames = [...new Set(page.match(/(?<![\w-])ad-[a-z0-9]+/g) || [])];
@@ -2576,7 +2576,7 @@ section('admin console — settings and the rules that guard them');
 
   // Every word the admin page shows goes through t(), and Spanish has each one.
   const { es } = await import('./locales/es.js');
-  const src = (await Promise.all(['admin.js', 'admin-mod.js', 'admin-ann.js', 'admin-live.js', 'admin-rooms.js'].map(f => fetch(`./js/${f}`).then(r => r.text())))).join(' ');
+  const src = (await Promise.all(['admin.js', 'admin-mod.js', 'admin-ann.js', 'admin-live.js', 'admin-rooms.js', 'admin-health.js'].map(f => fetch(`./js/${f}`).then(r => r.text())))).join(' ');
   const q = String.raw`'((?:\\'|[^'])*)'`;
   const keys = [
     ...[...src.matchAll(new RegExp(String.raw`\bt\(\s*` + q, 'g'))].map(m => m[1]),
