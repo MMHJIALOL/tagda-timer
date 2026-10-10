@@ -34,6 +34,7 @@ const BEAT_KEY = 'tdt-health-beat';   // { uid, ver, day, at } of the last heart
 const HEALS_KEY = 'tdt-heals';        // { day, n }: main.js's self-heals from a mixed deploy (#125)
 const DROPS_KEY = 'tdt-drops';        // { day, n }: sync writes dropped as permanent today
 const ERRS_KEY = 'tdt-errs';          // { day, seen: { hash: { n, first } } }
+const SEEN_KEY = 'tdt-seen';          // { uid, day, ver } of the last seen/ write
 const MAX_ERRORS = 5;
 const DAY_MS = 86_400_000, IST_MS = 19_800_000;
 
@@ -215,6 +216,30 @@ export async function beat({ force = false } = {}) {
 }
 
 /**
+ * seen/<uid> (ADMIN.md §17): the name and Google picture this account already
+ * shows on the boards, when it was first and last seen, its version and
+ * language, so the admin console can find somebody by name. Once a day.
+ */
+async function noteSeen() {
+  if (!sdk || !user || !telemetryOn()) return;
+  const day = today();
+  const last = read(SEEN_KEY);
+  if (last?.uid === user.uid && last?.day === day && last?.ver === APP_VERSION) return;
+  const { KV } = await import('./db.js');
+  const s = await KV.get('settings', {}).catch(() => ({}));
+  const name = String(s?.raceName || user.displayName || '').trim().slice(0, 32) || 'Cuber';
+  const pfp = /^https:\/\/\S+$/.test(user.photoURL || '') && user.photoURL.length <= 300 ? user.photoURL : '';
+  try {
+    await sdk.update(sdk.ref(sdk.db, `seen/${user.uid}`), { name, pfp, provider: 'google', lastAt: sdk.serverTimestamp(), ver: APP_VERSION, lang: lang === 'es' ? 'es' : 'en' });
+    // Written once ever: refused, harmlessly, once it is there.
+    if (last?.uid !== user.uid) await sdk.set(sdk.ref(sdk.db, `seen/${user.uid}/firstAt`), sdk.serverTimestamp()).catch(() => {});
+    write(SEEN_KEY, { uid: user.uid, day, ver: APP_VERSION });
+  } catch (err) {
+    if (!isRefusal(err)) console.warn('[health] seen not written', err?.code || err);
+  }
+}
+
+/**
  * Once the page is idle, and only for somebody already signed in (a visitor
  * who never signed in never loads the Firebase SDK for this): the first
  * heartbeat, the errors caught so far, and a look every few minutes.
@@ -231,6 +256,9 @@ export function startHealth() {
         sdk = sdk || await auth.getDatabaseHandle();
         await beat();
         await flushErrors();
+        await noteSeen();
+        // A reply to a support request from this device (js/support.js) shows in the account menu.
+        import('./support.js').then(m => m.checkReplies()).catch(() => {});
       });
     } catch (err) {
       console.warn('[health] not started', err?.code || err);

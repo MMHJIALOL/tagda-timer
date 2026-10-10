@@ -847,6 +847,11 @@ rules do not know yet (every one Phase 4 added, from race tuning to Spotify, and
 is refused when saved, and the page says a new setting needs its rules published; the app keeps
 using its default.
 
+Phase 10 on Phase 9's rules: no directory entry, support request or deletion request can be
+written (each refused cleanly; Data Health says *not open yet*). Lookup says the directory needs
+the rules and falls back to the names the console can already read; Support and Requests say
+*Publish the rules first*. The person page works from what is already readable.
+
 Phase 9 on Phase 8's rules: no timer can send a heartbeat or an error report (both are refused,
 and each stops trying for the rest of the page load). The Health tab says *Publish the rules
 first*, and Today's Health block says the heartbeat needs the rules. The three `health.*` settings
@@ -902,6 +907,12 @@ rules are out. The cron finds nothing to apply.
   custom account, a different value, the schedule left behind, a schedule not due, one by somebody
   no longer an admin, anything but applying); a day ahead's scramble (admins only, changeable until
   the day, today's once by anybody); the featured event.
+- `node tools/verify-people-rules.mjs`: 50 checks. A directory entry only from its own Google account,
+  `firstAt` written once, no email, nobody but admins reading it; a support request only with its
+  ten-minute stamp, every field typed and capped (a queue entry with a value in it is refused),
+  readable by its sender and admins, a reply only from an admin, read-marked only by the sender;
+  a deletion request once, by its owner; an admin deleting a whole account's synced data and the
+  rest in one update but never reading or writing it; and the rules from before this phase.
 - `node tools/verify-health-rules.mjs`: 45 checks. A heartbeat only from its own Google account,
   today, at most once a minute, every field its type and range and nothing else (no user-agent
   string); an error report's message and place written once, each person's own entry under it;
@@ -988,4 +999,87 @@ errorsKnown/<hash>           { by, at, note? }   an admin's "known"
 
 The tab reads today live and the 14 days once (and on **Refresh**). Today's tab bar badge on Health
 is the number of stuck syncs.
+
+---
+
+## 17. People: the directory, one person, support and deletion requests
+
+![People on a phone: Lookup, one person's page, and a support request with what it sent](docs/screenshots/admin-people.webp)
+
+**People** opens on **Lookup** now, beside **Support**, **Requests**, **Bans** and **Testers**.
+
+### The directory
+
+```
+seen/<uid>   { name, pfp, provider: 'google', firstAt, lastAt, ver, lang }   owner writes, admins read
+```
+
+Written by `js/health.js` once a day after a Google sign-in: the name the account already shows on
+the boards (`settings.raceName`, else the Google name), its Google picture (an https link, or
+nothing), when it was first and last seen, its version and language. Nothing that is not already
+public, and no email. Data Health says so, and the device's *Send health reports* switch stops it
+too. **Lookup** searches it by any part of a name or the start of a uid; on rules from before it,
+it searches the names on today's boards and chats, bans and testers instead.
+
+### One person (`#people/u/<uid>`)
+
+Everything about one uid the console may read, in one place. Admins still cannot read anybody's
+synced data (`users/<uid>`); see Support for the person's own way to show it.
+
+| Block | From |
+|---|---|
+| Name, picture, uid (tap to copy), first and last seen, version, language | `seen/<uid>` |
+| Banned or not, tester or not, relay logins today | `bans/`, `testers/`, `turnDay/` |
+| Support requests | `support/` |
+| Scramble of the Day, the last 7 days, with **Remove time** on today's | `daily/<day>/<event>/results/<uid>` |
+| Race rooms and 1v1s, the last 7 days | the rooms read of §6 |
+| Messages, the last 7 days, on asking, with **Delete all** | every event's day room (indexed on `uid`) and every race room |
+| Health: the last heartbeat, and their error reports | `health/`, `errors/` (§16) |
+| Reports filed by them, and about their times or replays | `reports/` |
+| Announcements they were shown, and what they did | `annStats/` |
+
+Actions: **Ban** / **Unban**, **Make tester** / **Not a tester**, **Remove time** (today's, the
+usual removal: they get the backup), **Delete all** their messages this week in one update.
+
+### Support requests
+
+```
+support/<id>       { uid, at, note, ver, ua, os, queue, counts, competition, health, reply?, replySeen? }
+supportLast/<uid>  the last one's time: one every ten minutes
+```
+
+**Send to support…** in the app's Data Health (under *Help from the site*) asks what went wrong and
+sends it with a snapshot of how the device's data stands, shown in words and in full before it
+goes:
+
+- `queue`: what is waiting to sync, at most 50: the path, the kind of change, how long it has
+  waited. Never the value.
+- `counts`: solves, sessions, Competition sets and discarded ones on the device.
+- `competition`: the 20 newest sets' ids, states, event, size and attempts done.
+- `health`: local and cloud sync state, waiting changes, dropped writes, the last error, online,
+  the service worker.
+
+**People › Support** lists them newest first with what they sent, and **Send reply** writes
+`support/<id>/reply`. The sender sees *Reply from support* in the account menu (and in Data Health)
+the next time the timer looks, and reading it sets `replySeen`, which the console shows. Each
+request is readable by its sender and admins only.
+
+This is the answer to "my Competition set vanished" without giving admins a standing view of
+everybody's data: the person chooses to show what is needed, and sees exactly what.
+
+### Deletion requests
+
+```
+deletion/<uid>   { at, name, doneAt?, doneBy? }
+```
+
+**Delete my cloud data…** in Data Health asks, in plain words, then writes the request and signs
+that device out, so it keeps its own copy. **People › Requests** lists them; **Delete now…**
+removes, in one update: `users/<uid>` (their synced solves, sessions, settings and the rest),
+`seen/<uid>`, 14 days of their heartbeats and error entries, their support requests, and their
+messages from the last week, and marks the request done. Board results stay: they are the day's
+public record. Any other device still signed in to the account loses its copy when it next syncs,
+which the request says before it is sent.
+
+The rules let an admin delete a whole `users/<uid>`, never read it or write into it.
 

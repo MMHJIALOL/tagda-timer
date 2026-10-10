@@ -36,6 +36,7 @@ import { createAnnounce } from './admin-ann.js';
 import { createLive } from './admin-live.js';
 import { createRooms } from './admin-rooms.js';
 import { createHealth } from './admin-health.js';
+import { createPeople } from './admin-people.js';
 import { eventOf } from './events.js';
 
 /** How many log entries the page keeps live. Older ones stay in the database. */
@@ -168,8 +169,10 @@ function route() {
   if (h === '' || h === 'today') return { view: 'today' };
   if (h === 'log') return { view: 'log' };
   if (h === 'bans') return { view: 'people', sub: 'bans' };
-  const people = /^people(?:\/(testers|bans))?$/.exec(h);
-  if (people) return { view: 'people', sub: people[1] || 'bans' };
+  const ppl = /^people(?:\/(testers|bans|lookup|support|requests))?$/.exec(h);
+  if (ppl) return { view: 'people', sub: ppl[1] || 'lookup' };
+  const person = /^people\/u\/([A-Za-z0-9]{1,128})$/.exec(h);
+  if (person) return { view: 'people', sub: 'u', id: person[1] };
   const hl = /^health(?:\/(sync|versions|scrambles|errors))?$/.exec(h);
   if (hl) return { view: 'health', sub: hl[1] || 'sync' };
   const days = /^days(?:\/(\d{13}))?$/.exec(h);
@@ -217,7 +220,7 @@ function view() {
       if (r.view === 'today') return live.viewToday();
       if (r.view === 'days') return live.viewDays(r.sub);
       if (r.view === 'log') return viewLog();
-      if (r.view === 'people') return viewPeople(r.sub);
+      if (r.view === 'people') return viewPeople(r.sub, r.id);
       if (r.view !== 'mod' || r.sub !== 'room') rooms.leaveRoom();
       if (r.view === 'mod') return moderation.view(r.sub, r.id);
       if (r.view === 'ann') return announce.view(r.sub);
@@ -257,7 +260,7 @@ function renderTabs() {
     tab('#settings', 'Settings', r === 'sections' || r === 'section'),
     tab('#mod', 'Moderate', r === 'mod', open),
     tab('#ann', 'Announce', r === 'ann'),
-    tab('#people', 'People', r === 'people'),
+    tab('#people', 'People', r === 'people', people.counts().support + people.counts().requests),
     tab('#health', 'Health', r === 'health', health.summary().stuck),
     tab('#log', 'Log', r === 'log'));
 }
@@ -734,12 +737,19 @@ const banFor = () => [
 ];
 
 /** People: testers (admin-live.js) and bans, as two views of one tab. */
-function viewPeople(sub) {
+function viewPeople(sub, id = null) {
+  const c = people.counts();
+  const on = sub === 'u' ? 'lookup' : sub;
   const nav = el('nav', { class: 'ac-subtabs', 'aria-label': t('People') },
-    ...[['bans', t('Bans'), Object.values(S.bans).filter(b => banActive(b)).length], ['testers', t('Testers'), Object.keys(S.testers || {}).length]]
-      .map(([id, label, n]) => raw('a', { class: `ac-subtab${sub === id ? ' on' : ''}`, href: `#people/${id}`, 'aria-current': sub === id ? 'page' : null },
+    ...[['lookup', t('Lookup'), 0], ['support', t('Support'), c.support], ['requests', t('Requests'), c.requests],
+      ['bans', t('Bans'), Object.values(S.bans).filter(b => banActive(b)).length], ['testers', t('Testers'), Object.keys(S.testers || {}).length]]
+      .map(([key, label, n]) => raw('a', { class: `ac-subtab${on === key ? ' on' : ''}`, href: `#people/${key}`, 'aria-current': on === key ? 'page' : null },
         n ? `${label} · ${n}` : label)));
   const head = [el('h1', { class: 'ac-h1', text: 'People' }), nav];
+  if (sub === 'u' && id) return [...head, ...people.viewPerson(id)];
+  if (sub === 'lookup') return [...head, ...people.viewLookup()];
+  if (sub === 'support') return [...head, ...people.viewSupport()];
+  if (sub === 'requests') return [...head, ...people.viewRequests()];
   return [...head, ...(sub === 'testers' ? live.viewTesters() : viewBans())];
 }
 
@@ -873,6 +883,7 @@ function teardown() {
   moderation.stop();
   rooms.stop();
   health.stop();
+  people.stop();
   announce.stop();
   live.stop();
   for (const off of S.unsubs.splice(0)) off();
@@ -945,6 +956,7 @@ function stage(path, value) {
   render();
 }
 const health = createHealth({ S, scheduleRender, raw, ago, who, openSheet, closeSheet, gate, cfg, moderation, stage });
+const people = createPeople({ S, scheduleRender, raw, ago, who, openSheet, closeSheet, askBan, askUnban, gate, cfg, moderation, rooms, health });
 const live = createLive({ S, scheduleRender, raw, ago, who, openSheet, closeSheet, gate, cfg, moderation, rooms, health, scheduledList, scheduledRow });
 
 window.addEventListener('hashchange', () => { closeSheet(); render(); window.scrollTo(0, 0); });
