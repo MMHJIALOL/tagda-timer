@@ -434,7 +434,8 @@ async function usage(request, env) {
    1v1 itself, and the dashboard shows the month's gigabytes.
 
    The admin console can switch the relay off (config/duel turnEnabled, or
-   camEnabled for the whole cam and mic) and shorten its logins (turnTtlMin),
+   camEnabled for the whole cam and mic), keep it to players linked to a
+   Google account (camSignedIn), and shorten its logins (turnTtlMin),
    never lengthen them past TURN_TTL. Off is a 403, and race-cam.js then
    connects with STUN alone, as it does when this Worker has no key. */
 
@@ -456,12 +457,17 @@ async function turn(request, env) {
   if (typeof room !== 'string' || !ROOM.test(room)) return fail(400, 'bad-room');
   /* rtc/ is readable only by the room's players (firebase.rules.json), so a
      read that succeeds proves both the token and the seat. */
-  const [seat, kind] = await Promise.all([
+  const [seat, kind, linked] = await Promise.all([
     rtdb(env, `rooms/${room}/rtc`, token, {}, { shallow: 'true' }),
     rtdb(env, `rooms/${room}/meta/kind`, token),
+    cfg.camSignedIn ? rtdb(env, `rooms/${room}/acct/${sub}/ok`, token) : null,
   ]);
   if (!seat.ok) return fail(seat.status === 401 ? 401 : 403, 'not-in-room');
   if (!kind.ok || (await kind.json()) !== 'duel') return fail(403, 'not-a-1v1');
+  /* duel.camSignedIn: the seat must be linked to a Google account (acct/,
+     readable by its owner). Refused outright means rules from before the
+     link, which gate nothing, so neither does this. */
+  if (linked?.ok && (await linked.json()) !== true) return fail(403, 'not-signed-in');
   const r = await fetch(`https://rtc.live.cloudflare.com/v1/turn/keys/${encodeURIComponent(env.TURN_KEY_ID)}/credentials/generate-ice-servers`, {
     method: 'POST',
     headers: { authorization: `Bearer ${env.TURN_KEY_TOKEN}`, 'content-type': 'application/json' },

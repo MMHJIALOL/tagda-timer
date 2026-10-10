@@ -3423,9 +3423,19 @@ body.ph[data-tab="times"]:has(#times-race) #panel-race { display: none; }
   border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--border));
 }
 .duel-board-side {
+  position: relative;
   display: flex; flex-direction: column; align-items: center; gap: 3px;
   min-width: 0; text-align: center;
 }
+/* Report the opponent: always there, quiet until it is wanted. */
+.duel-report {
+  position: absolute; right: -2px; top: -4px;
+  width: 22px; height: 22px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 6px;
+  background: none; color: var(--text-faint); cursor: pointer; opacity: .7;
+  transition: opacity var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+}
+.duel-report svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.duel-report:hover, .duel-report:focus-visible { opacity: 1; color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, transparent); }
 .duel-board-av {
   width: 28px; height: 28px; border-radius: 50%;
   display: grid; place-items: center;
@@ -3658,6 +3668,15 @@ body.duel-on #panel-stats > .stats-duel { margin-top: 10px; }
   background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 55%, var(--accent-2)));
 }
 .cam-btn:disabled { opacity: .6; cursor: progress; }
+.cam-bar[hidden] { display: none; }
+/* duel.camSignedIn: why there are no switches, in their place. */
+.cam-gate {
+  display: flex; align-items: center; gap: 8px; min-height: 30px;
+  font-size: .68rem; line-height: 1.35; color: var(--text-dim);
+}
+.cam-gate[hidden] { display: none; }
+.cam-gate span { flex: 1; min-width: 0; }
+.cam-gate .cam-signin { flex: none; height: 26px; padding: 0 10px; font-size: .68rem; }
 
 /* ---------------- the drawer ---------------- */
 .race-hero {

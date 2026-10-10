@@ -166,6 +166,8 @@ await call('PUT', 'rooms/DUELA/players', {
   alice: { name: 'alice', joinedAt: Date.now(), lastSeen: Date.now() },
   bob: { name: 'bob', joinedAt: Date.now(), lastSeen: Date.now() },
 }, 'owner');
+// Both seats linked to a Google account, as duel.camSignedIn wants (tools/verify-duel-signin-rules.mjs).
+await call('PUT', 'rooms/DUELA/acct', { alice: { claim: 'ga', ok: true }, bob: { claim: 'gb', ok: true } }, 'owner');
 const rtc = (uid) => `rooms/DUELA/rtc/${uid}`;
 expect('nothing stored: alice says her camera is on', await call('PUT', `${rtc('alice')}/media`, { cam: true, mic: false }, 'alice'), true);
 expect('…and offers a call', await call('PUT', `${rtc('alice')}/desc`, { sid: 's1', type: 'offer', sdp: 'v=0' }, 'alice'), true);
