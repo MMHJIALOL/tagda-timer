@@ -646,8 +646,7 @@ class FirebaseTransport extends EventTarget {
       (cur) => (cur === next - 1 ? next : undefined));
   }
 
-  async setProgress(patch) {
-    const n = this.snap.round?.no;
+  async setProgress(patch, n = this.snap.round?.no) {
     if (!n) return;
     const S = this._sdk;
     const out = { ...patch };
@@ -658,8 +657,7 @@ class FirebaseTransport extends EventTarget {
     await S.update(this._ref(`${this._base}/rounds/${n}/progress/${this.snap.uid}`), out);
   }
 
-  async submitResult(result) {
-    const n = this.snap.round?.no;
+  async submitResult(result, n = this.snap.round?.no) {
     if (!n) return;
     const S = this._sdk;
     await S.set(this._ref(`${this._base}/rounds/${n}/results/${this.snap.uid}`),
@@ -987,8 +985,7 @@ class LocalTransport extends EventTarget {
     this._mutate((room) => { room.meta = { ...(room.meta || {}), ...patch }; });
   }
 
-  async setProgress(patch) {
-    const n = this.snap.round?.no;
+  async setProgress(patch, n = this.snap.round?.no) {
     if (!n) return;
     this._mutate((room) => {
       room.rounds ||= {}; room.rounds[n] ||= {}; room.rounds[n].progress ||= {};
@@ -1000,8 +997,7 @@ class LocalTransport extends EventTarget {
     });
   }
 
-  async submitResult(result) {
-    const n = this.snap.round?.no;
+  async submitResult(result, n = this.snap.round?.no) {
     if (!n) return;
     this._mutate((room) => {
       room.rounds ||= {}; room.rounds[n] ||= {}; room.rounds[n].results ||= {};

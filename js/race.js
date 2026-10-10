@@ -764,6 +764,14 @@ export class Race extends EventTarget {
     // that happened to land while a race was open.
     if (scrambleHash(solve.scramble) !== r.info.hash) return;
 
+    // Presence retries can outlive a round or a room. Keep the original round
+    // and refuse to send an old result after the user leaves or joins another.
+    const net = this.net, roomId = this.snap.roomId;
+    const send = (fn) => {
+      if (this.net !== net || this.snap?.roomId !== roomId) throw new Error('race-room-changed');
+      return fn();
+    };
+
     this.submittedRound = r.no;
     this._lastStatus = null;
     // Held so the row can open the solve menu on it once the round reveals.
@@ -778,18 +786,21 @@ export class Race extends EventTarget {
     /* Retried, because this one write is what stops the room waiting on you.
        A dropped 'done' means everybody else sits through the full grace period
        for somebody who is sitting right there having finished. */
-    await this._retry(() => this.net.setProgress({ status: 'done' }), 'progress');
+    // A refused presence update must not discard a locally saved result.
+    // Results are separately validated by the transport/database.
+    try { await this._retry(() => send(() => net.setProgress({ status: 'done' }, r.no)), 'progress'); }
+    catch (err) { console.warn('[race] progress refused', err); }
 
     const sent = solve.penalty || 'none';
     let landed = false;
     this._submittingRound = r.no;
     try {
-      await this._retry(() => this.net.submitResult({
+      await this._retry(() => send(() => net.submitResult({
         timeMs: Math.round(solve.timeMs),
         penalty: sent,
         hash: r.info.hash,
         suspect: this._looksSuspect(solve) || null,
-      }), 'result');
+      }, r.no)), 'result');
       landed = true;
     } catch (err) {
       // The rules refusing a write is information, not a crash: it means the
@@ -797,13 +808,14 @@ export class Race extends EventTarget {
       console.warn('[race] result refused', err);
       toast('The room would not accept that time', { kind: 'bad' });
     } finally {
-      this._submittingRound = 0;
+      if (this._submittingRound === r.no) this._submittingRound = 0;
     }
     /* A +2 or DNF pressed while the time was still on its way: the solve
        object is the one the times list edits, so it already says so. */
     if (landed && (solve.penalty || 'none') !== sent) this.onPenalty(solve);
     // Only now does the read of everyone else's times become allowed.
-    this.net.unlockResults();
+    if (this.net !== net || this.snap?.roomId !== roomId) return;
+    if (landed && this.round?.no === r.no) net.unlockResults();
     this._serveScramble();
     this._syncPanel();
   }

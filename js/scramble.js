@@ -361,7 +361,7 @@ export async function generate(eventId, modeId = 'wca', opts = {}) {
   if (mode.kind === 'compose')  return { ...composeLL(), official: false };
   if (mode.kind === 'trigger')  return { ...triggerScramble(mode.depth, mode.maxMoves), official: false };
   if (mode.kind === 'subgroup') return { ...subgroupScramble(mode.pool, mode.depth), official: false };
-  if (mode.kind === 'centres444') return { scramble: centresSolved444(await one(await cubing(), '333')), official: false };
+  if (mode.kind === 'centres444') return { scramble: centresSolved444((await one(await cubing(), '333')).scramble), official: false };
 
   // wca + wca-goal: official random-state scramble
   const ev = EVENTS[eventId] || EVENTS['333'];
@@ -373,7 +373,8 @@ export async function generate(eventId, modeId = 'wca', opts = {}) {
     const count = opts.multiCount || 3;
     const parts = [];
     for (let i = 0; i < count; i++) parts.push(await one(gen, eventId));
-    return { scramble: parts.map((p, i) => `${i + 1}) ${p}`).join('\n'), parts, official: !!gen };
+    return { scramble: parts.map((p, i) => `${i + 1}) ${p.scramble}`).join('\n'),
+      parts: parts.map(p => p.scramble), official: parts.every(p => p.official) };
   }
 
   /* A relay: one scramble per puzzle in the session's list, generated in order.
@@ -391,30 +392,33 @@ export async function generate(eventId, modeId = 'wca', opts = {}) {
     const list = (opts.relay || []).filter(id => EVENTS[id]);
     if (!list.length) return { scramble: '', parts: [], official: false };
     const parts = [];
+    let official = true;
     for (const id of list) {
-      parts.push({ event: id, scramble: await one(gen, id) });
+      const result = await one(gen, id);
+      parts.push({ event: id, scramble: result.scramble });
+      official &&= result.official;
       opts.onProgress?.(parts.length, list.length);
     }
     return {
       scramble: parts.map((part, i) => `${i + 1}) ${part.scramble}`).join('\n'),
       parts,
-      official: !!gen,
+      official,
     };
   }
 
 
-  return { scramble: await one(gen, eventId), official: !!gen };
+  return one(gen, eventId);
 }
 
 async function one(gen, eventId) {
-  if (OWN[eventId]) return OWN[eventId]();
-  if (!gen) return fallbackScramble(eventId);
+  if (OWN[eventId]) return { scramble: await OWN[eventId](), official: true };
+  if (!gen) return { scramble: fallbackScramble(eventId), official: false };
   try {
     const alg = await gen(eventId);
-    return alg.toString();
+    return { scramble: alg.toString(), official: true };
   } catch (err) {
     console.warn('[scramble] generation failed for', eventId, err);
-    return fallbackScramble(eventId);
+    return { scramble: fallbackScramble(eventId), official: false };
   }
 }
 

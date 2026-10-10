@@ -312,6 +312,10 @@ export async function loadSettings() {
 }
 
 let saveTimer = null;
+// DB hooks fire after commit, possibly after a newer choice is already on
+// screen. Keep provenance outside the stored record so that echo cannot undo it.
+const ownSettingsWrites = new WeakSet();
+export const isOwnSettingsWrite = value => ownSettingsWrites.has(value);
 export function saveSettings(s, { immediate = false, replace = false } = {}) {
   clearTimeout(saveTimer);
   const save = async () => {
@@ -319,8 +323,10 @@ export function saveSettings(s, { immediate = false, replace = false } = {}) {
       const snapshot = structuredClone(s);
       const saved = await KV.update('settings', current => {
         const merged = mergeInspection(mergeInspection(current, pendingInspection() || {}), snapshot);
-        return replace ? { ...snapshot, inspection: merged.inspection,
+        const value = replace ? { ...snapshot, inspection: merged.inspection,
           inspectionUpdatedAt: merged.inspectionUpdatedAt } : merged;
+        ownSettingsWrites.add(value);
+        return value;
       });
       inspectionCommitted(saved);
     } catch (error) { console.warn('[db] settings save failed', error); }

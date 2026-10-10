@@ -67,8 +67,10 @@ async function load(ns, text) {
 
 function oldRules() {
   const git = (...a) => execFileSync('git', a, { cwd: ROOT, encoding: 'utf8' });
-  const text = git('show', 'origin/main:firebase.rules.json');
-  if (text.includes('camSignedIn')) throw new Error('origin/main already has the link; nothing to compare with');
+  // Keep the pre-link fixture stable after this feature lands on main.
+  const ref = process.env.TAGDA_LEGACY_RULES_REF || 'dd466c27527bbe2e236aa8c11d16cd0c82b02422';
+  const text = git('show', `${ref}:firebase.rules.json`);
+  if (text.includes('camSignedIn')) throw new Error('Legacy rules fixture already has the account link');
   return text;
 }
 

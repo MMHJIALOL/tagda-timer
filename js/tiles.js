@@ -335,7 +335,12 @@ function placePreview() {
   const cube = document.getElementById('panel-cube');
   if (!cube) return null;
   if (cube.dataset.placed === 'true' || getComputedStyle(cube).display === 'none') {
-    return () => setSide(cube, null);
+    return () => {
+      const changed = setVars(document.documentElement, {
+        '--cube-clear-left': '0px', '--cube-clear-right': '0px',
+      });
+      return setSide(cube, null) || changed;
+    };
   }
 
   const r = cube.getBoundingClientRect();
@@ -368,11 +373,19 @@ function placePreview() {
      parks in and nothing else would move either of them apart. */
   /* So do the digits. On a phone the preview's band is the timer's own, and
      the clock is centred in a column barely wider than the two of them. */
+  // Test the rail before our own reservation shrinks it. Otherwise the next
+  // measurement sees a clear corner, removes the reservation, hits the panel
+  // again and repeats forever. This synchronous measurement is restored before
+  // paint; it never shows the temporary unreserved layout to the user.
+  const root = document.documentElement;
+  const reserved = root.style.getPropertyValue('--cube-clear-right');
+  if (reserved && reserved !== '0px') root.style.setProperty('--cube-clear-right', '0px');
   const boxes = ['panel-times', 'panel-stats', 'panel-spotify', 'panel-race', 'bld-panel', 'timer-core']
     .map(id => document.getElementById(id))
     .filter(n => n && !n.hidden && getComputedStyle(n).display !== 'none' && n.dataset.dock !== 'bottom')
     .map(n => n.getBoundingClientRect())
     .filter(q => q.width > 2 && q.height > 2 && q.bottom > top && q.top < bottom);
+  if (reserved && reserved !== '0px') root.style.setProperty('--cube-clear-right', reserved);
 
   const clashes = (x) => boxes.some(q => !(x + w <= q.left || x >= q.right));
 
@@ -423,12 +436,14 @@ let settlePending = false;
 let settleTimeout = 0;
 
 /**
- * One pass: every reading first, then every write.
+ * One pass: collect placements, then apply them together. placePreview briefly
+ * clears its own rail reservation while measuring, to avoid a feedback loop.
  *
  * Interleaved, these three cost six forced reflows — each write invalidates the
  * page's style and the next getBoundingClientRect() has to lay the whole thing
  * out again, which was a third of the boot on a throttled phone. Taking the
- * readings together costs one.
+ * readings together avoids that churn; measuring an unreserved rail is the
+ * exception when the preview has already made space for itself.
  *
  * The order they used to run in was load-bearing, though: the preview can push
  * the credit chip into the other corner, and the chip has to be measured where

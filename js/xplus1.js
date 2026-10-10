@@ -26,7 +26,7 @@ import { t, lang } from './i18n.js';
    disturb a solve or land anything in your stats.
    =========================================================== */
 
-import { el, copy, fmtLive, tidy } from './util.js';
+import { el, copy, fmtLive, tidy, capitaliseTypedMove } from './util.js';
 import {
   SOLVED, applyAlg, analyse, parse, canonical, toUserFace, IDENTITY_FRAME,
   FACES, CORNER_NAMES, EDGE_NAMES, CORNER_FACELETS, EDGE_FACELETS,
@@ -66,7 +66,7 @@ const TWISTY_SOURCES = [
 ];
 let twistyLoaded = null;
 async function loadTwisty() {
-  if (twistyLoaded !== null) return twistyLoaded;
+  if (customElements.get('twisty-player') || twistyLoaded) return true;
   for (const src of TWISTY_SOURCES) {
     try { await import(/* @vite-ignore */ src); twistyLoaded = true; return true; }
     catch (err) { console.warn('[xp1] could not load', src, err.message); }
@@ -518,10 +518,15 @@ async function mountPlayer() {
   if (player || !ui.cube3d) return;
   if (!await loadTwisty() || !customElements.get('twisty-player')) {
     // A dead box helps nobody; fall back to the view that always works.
-    ui.cube3d.append(el('div', { class: 'xp-nocube', text: t('the 3D cube could not load — showing the flat net') }));
+    if (!ui.cube3d.querySelector('.xp-nocube')) {
+      ui.cube3d.append(el('div', { class: 'xp-nocube', text: t('the 3D cube could not load — showing the flat net') }));
+    }
     setSetting('view', 'net');
     return;
   }
+  // Another caller may have mounted it while the module was loading.
+  if (player) return;
+  ui.cube3d.querySelector('.xp-nocube')?.remove();
   player = document.createElement('twisty-player');
   player.setAttribute('puzzle', '3x3x3');
   player.setAttribute('background', 'none');
@@ -1048,11 +1053,7 @@ function build() {
     e.stopPropagation();
     if (e.key === 'Enter') ui.scrambleBox.blur();
   });
-  ui.scrambleBox.addEventListener('input', () => {
-    const pos = ui.scrambleBox.selectionStart;
-    const up = ui.scrambleBox.value.replace(/[a-z]/g, c => c.toUpperCase());
-    if (up !== ui.scrambleBox.value) { ui.scrambleBox.value = up; ui.scrambleBox.setSelectionRange(pos, pos); }
-  });
+  ui.scrambleBox.addEventListener('input', e => capitaliseTypedMove(ui.scrambleBox, e));
   ui.scrambleBox.addEventListener('change', () => {
     const text = ui.scrambleBox.value.trim();
     if (!text || !setScramble(text)) ui.scrambleBox.value = S.scramble;
@@ -1179,10 +1180,8 @@ function build() {
     placeholder: t('the line you planned…'), 'aria-label': t('The cross + 1 you planned'),
   });
   ui.planBox.addEventListener('keydown', e => e.stopPropagation());
-  ui.planBox.addEventListener('input', () => {
-    const pos = ui.planBox.selectionStart;
-    const up = ui.planBox.value.replace(/[a-z]/g, c => c.toUpperCase());
-    if (up !== ui.planBox.value) { ui.planBox.value = up; ui.planBox.setSelectionRange(pos, pos); }
+  ui.planBox.addEventListener('input', e => {
+    capitaliseTypedMove(ui.planBox, e);
     S.plan = ui.planBox.value;
     renderPlan();
   });
@@ -1888,13 +1887,17 @@ function openOptionsSheet() {
  *   scramble    a scramble to start on, if you have one to hand
  *   timerScramble  () => the scramble on the timer screen right now
  */
+let initTask = null;
+
 export async function openXp1({ scramble = '', timerScramble = null, onExit = null, library: lib = [] } = {}) {
   library = lib;
   if (!host) {
-    loadCss();
-    await loadSettings();
-    build();
-    wireTimer();
+    await (initTask ??= (async () => {
+      loadCss();
+      await loadSettings();
+      build();
+      wireTimer();
+    })().catch(err => { initTask = null; throw err; }));
   }
   onClose = onExit;
   getTimerScramble = timerScramble;
