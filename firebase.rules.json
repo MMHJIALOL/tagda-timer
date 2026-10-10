@@ -6,7 +6,7 @@
     "users": {
       "$uid": {
         ".read": "auth != null && auth.uid === $uid",
-        ".write": "auth != null && auth.uid === $uid",
+        ".write": "(auth != null && auth.uid === $uid) || (auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true && !newData.exists())",
 
         "solves": {
           "$id": {
@@ -325,7 +325,8 @@
             ".read": "auth != null && (root.child('daily/' + $dayStart + '/' + $event + '/results/' + auth.uid).exists() || (auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true))",
             ".write": "auth != null && !newData.exists() && $dayStart !== '' + (now - ((now + 19800000) % 86400000))",
 
-            "m": {
+            "m": {
+              ".indexOn": ["uid"],
               "$msgId": {
                 ".write": "auth != null && ((!data.exists() && newData.exists() && auth.token.firebase.sign_in_provider === 'google.com' && $dayStart === '' + (now - ((now + 19800000) % 86400000)) && root.child('daily/' + $dayStart + '/' + $event + '/results/' + auth.uid).exists() && root.child('config/sotdChat/enabled').val() !== false && (!root.child('config/sotdChat/audience').exists() || root.child('config/sotdChat/audience').val() === 'everyone' || (root.child('config/sotdChat/audience').val() === 'testers' && auth != null && (root.child('testers/' + auth.uid).exists() || (auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true))) || (root.child('config/sotdChat/audience').val() === 'admins' && auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true)) && (!root.child('bans/' + auth.uid).exists() || root.child('bans/' + auth.uid + '/until').val() <= now)) || (data.exists() && !newData.exists() && (data.child('uid').val() === auth.uid || (auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true))))",
                 ".validate": "newData.hasChildren(['uid', 'name', 'text', 'at']) && newData.parent().parent().child('last/' + auth.uid).val() === now",
@@ -725,13 +726,106 @@
       }
     },
 
+    "seen": {
+      ".read": "auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true",
+      "$uid": {
+        ".write": "(auth != null && auth.token.firebase.sign_in_provider === 'google.com' && auth.uid === $uid && newData.exists()) || (auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true && !newData.exists())",
+        ".validate": "newData.hasChildren(['name', 'lastAt'])",
+        "name": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 32" },
+        "pfp": { ".validate": "newData.isString() && newData.val().length <= 300 && (newData.val() === '' || newData.val().matches(/^https:[/][/][^ ]+$/))" },
+        "provider": { ".validate": "newData.val() === 'google'" },
+        "firstAt": { ".validate": "(!data.exists() && newData.val() === now) || newData.val() === data.val()" },
+        "lastAt": { ".validate": "newData.val() === now" },
+        "ver": { ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 0 && newData.val() <= 100000" },
+        "lang": { ".validate": "newData.isString() && newData.val().matches(/^(en|es)$/)" },
+        "$other": { ".validate": false }
+      }
+    },
+
+    "support": {
+      ".read": "auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true",
+      ".indexOn": ["uid"],
+      "$id": {
+        ".read": "auth != null && data.child('uid').val() === auth.uid",
+        ".write": "(auth != null && auth.token.firebase.sign_in_provider === 'google.com' && !data.exists() && newData.child('uid').val() === auth.uid && newData.parent().parent().child('supportLast/' + auth.uid).val() === now) || (auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true)",
+        ".validate": "$id.matches(/^[A-Za-z0-9_-]{1,32}$/) && newData.hasChildren(['uid', 'at', 'note'])",
+        "uid": { ".validate": "newData.isString() && newData.val().length <= 128 && (!data.exists() || newData.val() === data.val())" },
+        "at": { ".validate": "(!data.exists() && newData.val() === now) || newData.val() === data.val()" },
+        "note": { ".validate": "newData.isString() && newData.val().length <= 500" },
+        "ver": { ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 0 && newData.val() <= 100000" },
+        "ua": { ".validate": "newData.isString() && newData.val().matches(/^(firefox|chrome|safari|edge|other)$/)" },
+        "os": { ".validate": "newData.isString() && newData.val().matches(/^(windows|mac|ios|android|linux|other)$/)" },
+        "queue": {
+          "$i": {
+            ".validate": "$i.matches(/^[0-9]{1,2}$/) && newData.hasChildren(['path', 'op'])",
+            "path": { ".validate": "newData.isString() && newData.val().length <= 300" },
+            "op": { ".validate": "newData.isString() && newData.val().matches(/^(set|update|remove)$/)" },
+            "ageMin": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100000000000000" },
+            "$other": { ".validate": false }
+          }
+        },
+        "counts": {
+          "$k": { ".validate": "$k.matches(/^[a-zA-Z]{1,24}$/) && newData.isNumber() && newData.val() >= 0 && newData.val() <= 100000000000000" }
+        },
+        "competition": {
+          "$i": {
+            ".validate": "$i.matches(/^[0-9]{1,2}$/) && newData.hasChildren(['id', 'status'])",
+            "id": { ".validate": "newData.isString() && newData.val().length <= 64" },
+            "status": { ".validate": "newData.isString() && newData.val().length <= 16" },
+            "event": { ".validate": "newData.isString() && newData.val().length <= 24" },
+            "size": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100000000000000" },
+            "done": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100000000000000" },
+            "createdAt": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100000000000000" },
+            "discardedAt": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100000000000000" },
+            "$other": { ".validate": false }
+          }
+        },
+        "health": {
+          "$k": { ".validate": "$k.matches(/^[a-zA-Z]{1,24}$/) && (newData.isString() && newData.val().length <= 200 || newData.isNumber() && newData.val() >= 0 && newData.val() <= 100000000000000 || newData.isBoolean())" }
+        },
+        "reply": {
+          ".validate": "newData.hasChildren(['text', 'by', 'at'])",
+          "text": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 1000" },
+          "by": { ".validate": "newData.val() === auth.uid" },
+          "at": { ".validate": "newData.val() === now" },
+          "$other": { ".validate": false }
+        },
+        "replySeen": {
+          ".write": "auth != null && data.parent().child('uid').val() === auth.uid && data.parent().child('reply').exists()",
+          ".validate": "newData.val() === now"
+        },
+        "$other": { ".validate": false }
+      }
+    },
+
+    "supportLast": {
+      "$uid": {
+        ".write": "auth != null && auth.token.firebase.sign_in_provider === 'google.com' && auth.uid === $uid && newData.exists()",
+        ".validate": "newData.val() === now && (!data.exists() || data.val() <= now - 600000)"
+      }
+    },
+
+    "deletion": {
+      ".read": "auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true",
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "(auth != null && auth.token.firebase.sign_in_provider === 'google.com' && auth.uid === $uid && !data.exists() && newData.exists()) || (auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true)",
+        ".validate": "newData.hasChildren(['at'])",
+        "at": { ".validate": "(!data.exists() && newData.val() === now) || newData.val() === data.val()" },
+        "name": { ".validate": "newData.isString() && newData.val().length <= 32" },
+        "doneAt": { ".validate": "newData.val() === now" },
+        "doneBy": { ".validate": "newData.val() === auth.uid" },
+        "$other": { ".validate": false }
+      }
+    },
+
     "health": {
       ".read": "auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true",
       "$dayStart": {
         ".write": "auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true && !newData.exists() && $dayStart !== '' + (now - ((now + 19800000) % 86400000))",
         ".validate": "$dayStart.matches(/^[0-9]{13}$/)",
         "$uid": {
-          ".write": "auth != null && auth.token.firebase.sign_in_provider === 'google.com' && auth.uid === $uid && $dayStart === '' + (now - ((now + 19800000) % 86400000)) && newData.exists() && (!data.exists() || data.child('at').val() <= now - 60000)",
+          ".write": "(auth != null && auth.token.firebase.sign_in_provider === 'google.com' && auth.uid === $uid && $dayStart === '' + (now - ((now + 19800000) % 86400000)) && newData.exists() && (!data.exists() || data.child('at').val() <= now - 60000)) || (auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true && !newData.exists())",
           ".validate": "newData.hasChildren(['at', 'ver'])",
           "at": { ".validate": "newData.val() === now" },
           "ver": { ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 0 && newData.val() <= 100000" },
@@ -770,7 +864,7 @@
           },
           "u": {
             "$uid": {
-              ".write": "auth != null && auth.token.firebase.sign_in_provider === 'google.com' && auth.uid === $uid && $dayStart === '' + (now - ((now + 19800000) % 86400000)) && newData.exists()",
+              ".write": "(auth != null && auth.token.firebase.sign_in_provider === 'google.com' && auth.uid === $uid && $dayStart === '' + (now - ((now + 19800000) % 86400000)) && newData.exists()) || (auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true && !newData.exists())",
               ".validate": "newData.hasChildren(['n', 'first', 'last', 'ver'])",
               "n": { ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 1 && newData.val() <= 100000" },
               "first": { ".validate": "newData.isNumber() && newData.val() <= now" },

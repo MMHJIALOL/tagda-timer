@@ -449,5 +449,8 @@ export function createModeration(ctx) {
     return [...by].map(([uid, name]) => ({ uid, name }));
   }
 
-  return { view, start, stop, counts, snapshot, people, refreshRooms, offset: () => M.offset };
+  /** Every open report, newest first (the person page filters it). */
+  const reportsList = () => M.reports;
+
+  return { view, start, stop, counts, snapshot, people, refreshRooms, reportsList, takeDown, offset: () => M.offset };
 }

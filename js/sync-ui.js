@@ -15,6 +15,7 @@ import { initSync, syncNow, getSyncStatus, onSyncStatus } from './sync.js';
 import { cloudCopy } from './data-health.js';
 import { KV, onWrite } from './db.js';
 import { safeAvatar } from './faces.js';
+import { unseenReplies, showReplies } from './support.js';
 
 let _initStarted = false;
 
@@ -387,6 +388,7 @@ export function accountMenu() {
     email: _topBarUser.email || '',
     items: [
       ...(getSyncStatus().needsAttention ? [{ label: t('View Data Health'), onSelect: _viewDataHealth }] : []),
+      ...(unseenReplies().length ? [{ label: t('Reply from support'), badge: String(unseenReplies().length), onSelect: () => showReplies() }] : []),
       { label: t('Edit username'), onSelect: () => editUsername(btn, setSetting) },
       { label: t('Change profile picture'), onSelect: () => changeAvatar(btn, setSetting) },
       ..._avatar ? [{ label: t('Remove profile picture'), onSelect: () => saveAvatar(btn, setSetting, '') }] : [],
