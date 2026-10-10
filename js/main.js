@@ -6564,7 +6564,7 @@ function openPaletteWithCommands() {
       nebula: 'Nebula', carbon: 'Carbon', vaporwave: 'Vaporwave', ice: 'Ice',
       terminal: 'Terminal', speedcube: 'Speedcube', paper: 'Paper',
     })) {
-      out.push({ kind: 'theme', label: p, run: () => { app.setSetting('accent', ''); app.setSetting('accent2', ''); app.setSetting('theme', id); toast(t('{name} theme', { name: p })); } });
+      out.push({ kind: 'theme', label: p, run: () => { app.setSetting('accent', ''); app.setSetting('accent2', ''); app.setSetting('textColor', ''); app.setSetting('theme', id); toast(t('{name} theme', { name: p })); } });
     }
     return out;
   });

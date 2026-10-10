@@ -204,6 +204,7 @@ export const DEFAULTS = {
   accent: '',                   // '' = use preset
   accent2: '',
   bg2: '',                      // '' = use preset; set by an album theme
+  textColor: '',                // '' = use preset; the type colour, timer digits included
   // Palettes saved from Spotify covers: [{id, name, artist, art, theme, accent, accent2, bg2}]
   albumThemes: [],
   albumTheme: '',               // id of the album theme last picked, for the card's highlight
@@ -369,6 +370,18 @@ export function applyTheme(s) {
   if (s.accent2) st.setProperty('--accent-2', s.accent2); else st.removeProperty('--accent-2');
   if (s.bg2)     st.setProperty('--bg-2', s.bg2);         else st.removeProperty('--bg-2');
 
+  /* The font colour replaces the theme's whole type ramp, not just --text:
+     the dim and faint tones and the idle digits are separate values in every
+     preset, and leaving them on the theme's tint reads as half applied. They
+     are mixed toward the background so the hierarchy survives any pick. */
+  const TEXT_VARS = ['--text', '--text-dim', '--text-faint', '--t-idle'];
+  if (s.textColor) {
+    st.setProperty('--text', s.textColor);
+    st.setProperty('--text-dim', `color-mix(in srgb, ${s.textColor} 68%, var(--bg))`);
+    st.setProperty('--text-faint', `color-mix(in srgb, ${s.textColor} 42%, var(--bg))`);
+    st.setProperty('--t-idle', s.textColor);
+  } else for (const v of TEXT_VARS) st.removeProperty(v);
+
   // Anything printed *on* an accent — a primary button, a selection, the avatar
   // initial — used to be white no matter what, which is invisible on Carbon's
   // white accent and on any pale colour picked in the appearance editor.
@@ -431,7 +444,7 @@ export function applyTheme(s) {
   // The album tint is an override on top of whatever the theme just wrote, so
   // it has to go back on after every theme application or switching themes
   // (or any settings change at all) would silently drop it.
-  paintAlbumTint(root);
+  paintAlbumTint(root, s);
 
   // Last line on purpose: everything above may have moved the palette, and the
   // accent overrides are written near the end of it.
@@ -448,11 +461,17 @@ export function applyTheme(s) {
    --------------------------------------------------------- */
 let _albumTint = null;
 
-function paintAlbumTint(root) {
+/* A colour picked by hand in Appearance beats the cover: the tint used to
+   repaint over it on every apply, so the pickers looked broken while anything
+   was playing. An album theme's colours are not a hand pick (albumTheme is set),
+   and a theme preset clears them, which hands the accents back to the tint. */
+const pickedByHand = (s, key) => !!s?.[key] && !s.albumTheme;
+
+function paintAlbumTint(root, s) {
   if (!_albumTint) return;
   const st = root.style;
-  if (_albumTint.accent)  st.setProperty('--accent', _albumTint.accent);
-  if (_albumTint.accent2) st.setProperty('--accent-2', _albumTint.accent2);
+  if (_albumTint.accent && !pickedByHand(s, 'accent'))   st.setProperty('--accent', _albumTint.accent);
+  if (_albumTint.accent2 && !pickedByHand(s, 'accent2')) st.setProperty('--accent-2', _albumTint.accent2);
   if (_albumTint.bg2)     st.setProperty('--bg-2', _albumTint.bg2);
   // Type printed on the accent has to follow it, or a pale album colour gets
   // white text on it and disappears.
@@ -481,7 +500,7 @@ export function setAlbumTint(colors, settings) {
     const accent = getComputedStyle(root).getPropertyValue('--accent').trim();
     root.style.setProperty('--on-accent', (hexLuma(accent) ?? 0) > 0.6 ? '#0b0b12' : '#ffffff');
   } else {
-    paintAlbumTint(root);
+    paintAlbumTint(root, settings);
   }
   invalidateThemeColors();
 }
@@ -580,7 +599,7 @@ export async function applyBackground(bg, s) {
    --------------------------------------------------------- */
 
 const THEME_KEYS = [
-  'theme','density','motion','accent','accent2','bg2','timerFont','timerWeight','timerSize','timerGlow',
+  'theme','density','motion','accent','accent2','bg2','textColor','timerFont','timerWeight','timerSize','timerGlow',
   'scrambleFont','uiFont','glass',
   'bgMode','bgShader','bgSpeed','bgAmount','bgBlur','bgDim','bgSat','bgGradient','bgSolid',
   'showStats','showCube','showHistory','cubeView','hintFacelets','autoContrast',

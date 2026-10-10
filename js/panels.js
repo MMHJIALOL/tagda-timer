@@ -7,7 +7,7 @@ import { t, lang, setLang } from './i18n.js';
 
 import { $, el, fmt, fmtResult, fmtDate, download, parseScrambleList, copy } from './util.js';
 import { PRESETS, TIMER_FONTS, SCRAMBLE_FONTS, UI_FONTS, DEFAULTS, exportTheme, importTheme,
-         parseGradient, buildGradient, albumTint, liquidGlassOK } from './theme.js';
+         parseGradient, buildGradient, albumTint, liquidGlassOK, themeColors } from './theme.js';
 import { SHADER_NAMES } from './bg.js';
 import { summarize, byCase, eff, DNF, isMoveResult, bestAvg, bpaWpa, statWindow, bldSummary, relaySummary,
          groupStats, byHourOfDay, bySittingPosition, MIN_GROUP, SITTING_GAP_MS,
@@ -337,7 +337,7 @@ export function buildAppearance(app, searchQuery = '') {
       card.addEventListener('click', () => {
         [...grid.children].forEach(c => c.classList.remove('on'));
         card.classList.add('on');
-        set('accent', ''); set('accent2', ''); set('bg2', ''); set('albumTheme', '');
+        set('accent', ''); set('accent2', ''); set('bg2', ''); set('albumTheme', ''); set('textColor', '');
         set('theme', id);
       });
       grid.append(card);
@@ -496,7 +496,10 @@ export function buildAppearance(app, searchQuery = '') {
       group(t('Theme'), grid,
         el('div', { class: 'color-grid' },
           colorItem('accent', 'accent', '#7c5cff'),
-          colorItem('secondary', 'accent2', '#35e6c5')),
+          colorItem('secondary', 'accent2', '#35e6c5'),
+          // Starts on whatever the theme paints, so opening the picker is not
+          // already a change.
+          colorItem('font', 'textColor', themeColors().text)),
         row(t('Glass'), chips([
           { value: 'off', label: t('Off') },
           { value: 'frosted', label: t('Frosted') },
