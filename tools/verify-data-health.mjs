@@ -86,7 +86,8 @@ try {
   await page.waitForFunction(() => !!window.__changeAuth);
   await page.locator('#btn-account').click();
   await page.waitForFunction(() => window.__cloud && window.tagdatimer);
-  await page.waitForFunction(async () => (await import('/js/sync.js')).getSyncStatus().state === 'up-to-date');
+  await page.evaluate(async () => { window.__qaSync = await import('/js/sync.js'); });
+  await page.waitForFunction(() => window.__qaSync.getSyncStatus().state === 'up-to-date');
   await page.evaluate(async () => {
     window.__statusTrace = [];
     (await import('/js/sync.js')).onSyncStatus(s => window.__statusTrace.push({ state: s.state, pending: s.pending, inFlight: s.inFlight }));
@@ -97,30 +98,35 @@ try {
     const solve = { id: 'health-ui-solve', sessionId: window.tagdatimer.session.id, timeMs: 9999, penalty: 'none', createdAt: Date.now() };
     await Solves.put(solve);
   });
-  await page.waitForFunction(async () => {
-    const status = (await import('/js/sync.js')).getSyncStatus();
-    return status.inFlight && status.state === 'syncing'
-      && document.getElementById('btn-account').getAttribute('aria-label').includes('change');
+  // Resolve the module before polling so each sample reads current state synchronously.
+  // Capture the status and rendered indicator in the same browser task.
+  const indicator = await page.waitForFunction(() => {
+    const status = window.__qaSync.getSyncStatus();
+    const label = document.getElementById('btn-account').getAttribute('aria-label');
+    const dots = document.querySelectorAll('.account-status-dot').length;
+    return status.inFlight && status.state === 'syncing' && label.includes('change') && dots === 1
+      ? { label, dots } : false;
   });
-  assert.equal(await page.locator('.account-status-dot').count(), 1);
-  assert.match(await page.locator('#btn-account').getAttribute('aria-label'), /change/);
+  const observed = await indicator.jsonValue();
+  assert.equal(observed.dots, 1);
+  assert.match(observed.label, /change/);
   await page.locator('#btn-account').click();
   await page.getByRole('button', { name: 'View Data Health', exact: true }).click();
   await page.waitForFunction(() => document.getElementById('drawer-title').textContent === 'Data Health');
   assert.equal(await page.getByRole('button', { name: 'Retry now', exact: true }).isDisabled(), true);
   assert.match(await page.locator('#drawer-body').innerText(), /Syncing [1-9]\d* changes?/);
   await page.evaluate(() => { window.__cloud.gate = false; window.__cloud.waiting.splice(0).forEach(fn => fn()); });
-  await page.waitForFunction(async () => (await import('/js/sync.js')).getSyncStatus().state === 'up-to-date' && !document.querySelector('.account-status-dot'));
+  await page.waitForFunction(() => window.__qaSync.getSyncStatus().state === 'up-to-date' && !document.querySelector('.account-status-dot'));
   await page.evaluate(async () => {
     window.__cloud.fail = true;
     const { Solves } = await import('/js/db.js');
     const s = await Solves.get('health-ui-solve'); s.penalty = '+2'; await Solves.put(s);
   });
-  await page.waitForFunction(async () => (await import('/js/sync.js')).getSyncStatus().state === 'retrying');
+  await page.waitForFunction(() => window.__qaSync.getSyncStatus().state === 'retrying');
   assert.equal(await page.getByRole('button', { name: 'Retry now', exact: true }).isEnabled(), true);
   await page.evaluate(() => { window.__cloud.fail = false; });
   await page.getByRole('button', { name: 'Retry now', exact: true }).click();
-  await page.waitForFunction(async () => (await import('/js/sync.js')).getSyncStatus().state === 'up-to-date');
+  await page.waitForFunction(() => window.__qaSync.getSyncStatus().state === 'up-to-date');
   await page.evaluate(() => window.__changeAuth(null));
   await page.waitForFunction(() => !document.querySelector('.account-status-dot'));
   assert.match(await page.locator('#drawer-body').innerText(), /Cloud sync off/);
