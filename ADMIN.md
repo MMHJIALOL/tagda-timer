@@ -168,6 +168,28 @@ rules enforce takes effect at once, whatever any tab has cached.
 | `spotify.enabled` | switch | on | | app | The built-in Spotify connection: off, Connect is turned off and nothing polls through it. Somebody's own connection is untouched |
 | `spotify.message` | text | empty | 200 characters | app | Shown in the Spotify panel while off |
 | `app.minVersion` | whole number | 0 | 0 to this deploy's version | app | Tabs older than this reload once they are idle (§4) |
+| `app.banner` | text | empty | 200 characters | app | A strip across the top of the timer for everybody (§4) |
+| `app.bannerKind` | choice | information | information, warning, outage | app | The strip's colour |
+| `app.readOnly` | switch | off | | app | Sync holds its changes; races, 1v1s and the Scramble of the Day say so instead of starting (§4) |
+| `duel.enabled` | switch | on | | rules and app | Random 1v1's **Find an opponent**: off, the waiting seat and new 1v1 rooms are refused |
+| `duel.audience` | choice | everybody | everybody, testers and admins, admins only | app | Who sees Random 1v1 and its announcement (§9) |
+| `duel.message` | text | empty | 200 characters | app | Shown in place of **Find an opponent** while off |
+| `duel.searchSec` | seconds | 60 | 15 to 300 | app | How long one search lasts |
+| `duel.refreshSec` | seconds | 10 | 5 to 60 | app | How often the person waiting re-stamps the seat (one write each) |
+| `duel.staleSec` | seconds | 25 | 10 to 120 | app | A seat not re-stamped this long is abandoned; never under two re-stamps |
+| `duel.showupSec` | seconds | 15 | 5 to 60 | app | Matched, but the other person never arrived: search again |
+| `duel.goneSec` | seconds | 10 | 5 to 60 | app | The opponent out of the room this long ends the 1v1 |
+| `duel.camEnabled` | switch | on | | rules, Worker and app | The 1v1's cam and mic: off, no new call is set up and no relay handed out |
+| `duel.turnEnabled` | switch | on | | Worker | The TURN relay, the one part billed by the gigabyte (§4) |
+| `duel.turnTtlMin` | minutes | 240 | 10 to **240** | Worker | How long a relay login lasts |
+| `competition.enabled` | switch | on | | app | Off: no new Competition Mode set. One under way can be finished |
+| `competition.message` | text | empty | 200 characters | app | Shown in place of the setup while off |
+| `features.webcamReplay` | switch | on | | app | Webcam replays: off, nothing records (§4) |
+| `features.webcamReplayAudience` | choice | everybody | everybody, testers and admins, admins only | app | Who has them while on |
+| `features.webcamReplayMessage` | text | empty | 200 characters | app | Shown in the camera panel while off |
+| `features.stackmat` | switch | on | | app | Stackmat input: off, a timer on one goes back to the keyboard |
+| `features.stackmatAudience` | choice | everybody | everybody, testers and admins, admins only | app | Who has it while on |
+| `features.stackmatMessage` | text | empty | 200 characters | app | Shown under the input picker while off |
 | `sandbox.*` | switch, number, text | off, 5, empty | | nothing | Nothing. For trying the page |
 
 The bold end of each range is the **ceiling**: the side that would cost money, storage, or let
@@ -184,6 +206,7 @@ only go *below* them:
 | 1 GB a day | `DAY_BUDGET` in `wrangler.jsonc` | `replays.dayBudgetBytes` |
 | 1000 clips a day | `PER_DAY` in `worker.js` (one page of R2's `list`) | `replays.maxPerDay` |
 | 7 days after the day | `KEEP_DAYS` in `worker.js` (the bucket's lifecycle rule deletes at 8) | `replays.keepDays` |
+| A relay login of 4 hours | `TURN_TTL` in `worker.js` | `duel.turnTtlMin` |
 | Workers Free | `wrangler.jsonc`, the account | none: no setting touches the plan |
 
 Each is enforced three times. The table's range ends at the ceiling, the rules refuse a stored
@@ -272,6 +295,85 @@ While off, the box you type in gives way to the message.
 already open carry on (their next rounds, their phase, people joining by code). The race panel
 says so under **Create a room**, and pressing it, or following an invite to a room that does not
 exist, toasts the message. Local mode (other tabs of your own browser) is not affected.
+
+### Random 1v1 (the rules, the app and the Worker)
+
+![Today's switches with the relay off, Random 1v1's settings, and a banner on a phone](docs/screenshots/admin-switches.webp)
+
+Random 1v1 had no switch before this: turning it off meant a deploy.
+
+- **`duel.enabled: false`** refuses `rooms/_1v1_333/meta/waiting` (the one seat everybody
+  queues through) and a room's `meta/kind` becoming `duel`, so neither a search nor a new 1v1 can
+  start, whatever a cached tab thinks. Clearing the seat is never refused. A 1v1 already running
+  plays on to its end. The app reads the switch too: the drawer's card shows the message where
+  **Find an opponent** was, and the launch announcement (the card on the race flag) is not shown.
+- **`duel.audience`** is the app's alone: an account outside it does not see the card or the
+  announcement. The rules do not check it, so a tester-only 1v1 is a soft launch, not a lock.
+- **The tuning** (`searchSec`, `refreshSec`, `staleSec`, `showupSec`, `goneSec`) replaces the
+  `MATCH_*` constants in `js/raceapp.js`, which are now only its defaults. The app never lets a
+  seat count as abandoned inside two of its own re-stamps, whatever `staleSec` says.
+- **`duel.camEnabled: false`** refuses the call's setup under `rooms/<id>/rtc/<uid>` (deleting
+  your own still works), hides the cam and mic tile in new 1v1s, and makes the Worker's `/turn`
+  answer `403 off`. A call already connected carries on until its 1v1 ends.
+- **`duel.turnEnabled: false`** is the Worker's alone: `/turn` answers `403 off`, and
+  `js/race-cam.js` connects with STUN alone, as it always has when the Worker has no TURN key.
+  Most pairs still connect; two players both behind strict NATs see *Couldn't connect*. It is the
+  only switch here that saves money: Cloudflare's TURN is free for 1,000 GB a month, then
+  $0.05/GB, and nothing else in the site bills by the gigabyte.
+- **`duel.turnTtlMin`** shortens the relay login the Worker asks Cloudflare for, never past 4
+  hours (`TURN_TTL`). The Worker reads `config/duel` like `config/replays`: over REST, kept a
+  minute.
+
+### Competition Mode (the app)
+
+`competition.enabled: false`: **Start Competition Mode** shows the message instead of the setup.
+A set already under way can still be finished (stopping it halfway would lose it), and its
+history still opens. Sets keep syncing as before.
+
+Two things in the plan for this switch were left out on purpose. A rules-side stop for uploading
+sets (`syncEnabled`) would make the database refuse an entry at the front of the sync queue,
+and since the queue is first in, first out (#151) that one refusal would hold back every later
+write on that device, the freeze #152 fixed. And a cap on the X in AoX had no case behind it.
+
+### Features (the app)
+
+One switch, one audience and one message per part of the timer that leans on one browser
+feature, so a part that breaks on one browser can be switched off, or given to testers first,
+without a deploy. `featureOn(name)` in `js/audience.js` answers for the app.
+
+| Switch | Off means |
+|---|---|
+| `features.webcamReplay` | Nothing records: the camera is let go, the camera panel shows the message instead of its switch, the webcam announcement is not shown, and Competition Mode starts with *No replay*. A person's own **Webcam replay** setting is kept, and comes back on with the switch. Replays already on a device can still be watched |
+| `features.stackmat` | The timer cannot use a Stackmat: a timer set to one goes back to the keyboard (once it is idle, never mid-solve) and lets the microphone go, until the switch is back |
+
+These are the two with a real gate: each has one place the app decides whether it runs at all.
+The plan also listed the alg trainer, learn mode, FMC, BLD trace, the solver's hints and the side
+scrambler. They were left out: most are imported with the page, so a switch could only hide a
+button while the code still loads (a module that fails to load fails the whole page either way),
+and the side scrambler is what makes Square-1 and Clock scrambles, so it cannot be switched off.
+
+### Read-only and the banner (the app)
+
+- **`app.banner`** puts a strip across the top of the timer for everybody, in `app.bannerKind`'s
+  colour (the theme's for information, amber for a warning, red for an outage). The app gives up
+  the strip's height, so nothing is covered. It goes when the text is emptied.
+- **`app.readOnly`** is for an outage, or before a risky rules publish. Timing goes on as normal
+  and every solve is saved on the device. Sync **holds**: its queue keeps every change, in order,
+  sends nothing, and sends them all once the switch is off (Data Health says *cloud sync is paused
+  for maintenance*). Joining or making a race room, finding a 1v1 and opening the Scramble of the
+  Day say so instead of starting, with the banner's text, or a plain default when the banner is
+  empty (the strip then shows that default too).
+- It is **not enforced by the rules**, on purpose: a check in every write rule would bloat them
+  and slow every write. A tab with an old cached copy of the settings can still write until it
+  next reads them (within five minutes of being looked at). The real lock is unpublishing rules
+  in the Firebase console.
+
+### The switches on Today
+
+Today's first block lists every on/off switch with its state: **On**, **Off**, **Testers only** or
+**Admins only**, and the banner if one is up. A switch that is not in its usual state (anything
+off, or read-only on) is drawn in the warning colour, so a glance says what is down. Each one
+opens its settings section.
 
 ### A new version (the app)
 
@@ -435,6 +537,7 @@ The tab the page opens on: the day so far, by the server's clock (it turns over 
 
 | Number | Where it comes from |
 |---|---|
+| Every switch, on or off, and the banner (§4) | `config/`, the copy the Settings tab edits |
 | Scramble of the Day times, per event, and the day's featured event | the Moderate tab's listeners on today's boards |
 | Replays: clips against `replays.maxPerDay`, bytes against `replays.dayBudgetBytes` | the Worker's `GET /replay/usage`, admins only: one R2 `list` of today's clips (the same list a share makes), with the limits in force |
 | Chat messages in the day's rooms, and in race rooms | each event's room read with `?shallow=true` over REST, so only the message ids come down; race rooms from the Moderate tab's read |
@@ -669,6 +772,12 @@ rules do not know yet (every one Phase 4 added, from race tuning to Spotify, and
 is refused when saved, and the page says a new setting needs its rules published; the app keeps
 using its default.
 
+Phase 7 on Phase 5's rules: every new setting (`duel`, `competition`, `features`, and `app.banner`,
+`app.bannerKind`, `app.readOnly`) is refused when saved, with the usual *needs its rules published*,
+so the app keeps every default: everything on, no banner, writable. The Worker reads `config/duel`
+as the defaults too, so the relay stays on. Nothing else changes: 1v1, its cam, Competition Mode,
+replays and the Stackmat work as they did.
+
 Phase 5 on Phase 4's rules: **Today** works (its numbers come from rules already out, and from the
 Worker once this version's `worker.js` is deployed). **Days ahead** and **Testers** ask for the newer
 rules, and scheduling is refused, saying so; saving now works as before. The app reads no featured
@@ -706,6 +815,11 @@ rules are out. The cron finds nothing to apply.
   custom account, a different value, the schedule left behind, a schedule not due, one by somebody
   no longer an admin, anything but applying); a day ahead's scramble (admins only, changeable until
   the day, today's once by anybody); the featured event.
+- `node tools/verify-switches-rules.mjs`: phase 7's rules. Random 1v1's seat and 1v1 rooms with
+  `duel.enabled` on, off and missing (clearing the seat always allowed, a running 1v1 untouched);
+  the call's setup with `duel.camEnabled`; the new settings four ways and at their edges.
+- `node --test js/sync-queue.check.mjs`: read-only holds every change in order and sends them all
+  once it is lifted.
 - `node tools/verify-sotd-chat-rules.mjs` and `node tools/verify-sotd-remove-rules.mjs` seed
   `admins/` the way the console would, and still pass.
 - `node tools/config-rules.mjs --check`, and `test.html`'s *admin console* section (the rules

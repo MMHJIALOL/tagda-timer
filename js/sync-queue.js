@@ -1,6 +1,9 @@
 /* Durable outbound operations: entries stay in IndexedDB through acknowledgement.
    Kept independent of Firebase and the DOM so failure paths can be tested. */
-export function createSyncQueue({ storage, online = () => navigator.onLine !== false, changed = () => {}, withAccountLock = (uid, run) => run() }) {
+/* `paused`: the admin console's read-only switch (app.readOnly). Nothing is
+   sent while it holds, nothing is dropped: the queue keeps every entry, in
+   order, and sends them once it is lifted (connectivityChanged). */
+export function createSyncQueue({ storage, online = () => navigator.onLine !== false, paused = () => false, changed = () => {}, withAccountLock = (uid, run) => run() }) {
   let entries = null, lock = Promise.resolve(), active = null, ready = false;
   let running = null, inFlight = null, error = null, lastSync = null, acknowledged = false;
   let problem = null;
@@ -25,7 +28,7 @@ export function createSyncQueue({ storage, online = () => navigator.onLine !== f
     const sending = !!active && inFlight?.session.uid === active.uid;
     let state = 'signed-out';
     if (active) {
-      state = problem ? 'error' : error ? (error === 'upload' ? 'retrying' : 'error')
+      state = problem ? 'error' : pending && paused() ? 'paused' : error ? (error === 'upload' ? 'retrying' : 'error')
         : pending && !online() ? 'pending-offline'
         : sending ? (slow ? 'retrying' : 'syncing')
         : !ready || entries === null ? 'starting'
@@ -104,7 +107,7 @@ export function createSyncQueue({ storage, online = () => navigator.onLine !== f
   }
   function flush() {
     if (running?.session === active) return running.promise;
-    if (!active || !online()) { notify(); return Promise.resolve(false); }
+    if (!active || !online() || paused()) { notify(); return Promise.resolve(false); }
     const session = active;
     const previousRun = accountRuns.get(session.uid);
     const task = { session, promise: null };
@@ -127,7 +130,7 @@ export function createSyncQueue({ storage, online = () => navigator.onLine !== f
         });
         if (active !== session) return false;
         error = null;
-        while (active === session && online()) {
+        while (active === session && online() && !paused()) {
           const entry = mine()[0];
           if (!entry) break;
           inFlight = { session, id: entry.id }; slow = false; notify();

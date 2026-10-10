@@ -201,3 +201,28 @@ test('a write the database refuses outright is dropped instead of blocking the r
   assert.equal(f.queue.snapshot().state, 'up-to-date');
   assert.equal(f.queue.snapshot().needsAttention, false);
 });
+
+test('read-only holds every change in order and sends them once it is lifted', async () => {
+  const data = new Map(), sent = [];
+  let held = true;
+  const storage = {
+    async get(key, fallback) { return structuredClone(data.has(key) ? data.get(key) : fallback); },
+    async set(key, value) { data.set(key, structuredClone(value)); },
+  };
+  const queue = createSyncQueue({ storage, online: () => true, paused: () => held });
+  await queue.activate('a', async e => { sent.push(e.value ?? 'removed'); });
+  await queue.enqueue(entry('one', 1));
+  await queue.enqueue(entry('one', 2));
+  await queue.enqueue({ kind: 'remove', path: 'users/a/solves/two' });
+  assert.equal(await queue.ready(), false);
+  assert.deepEqual(sent, []);
+  assert.equal(queue.snapshot().state, 'paused');
+  assert.equal(queue.snapshot().pending, 3);
+  assert.equal(data.get('_syncQueue').length, 3);
+  held = false;
+  queue.connectivityChanged();
+  await settle(); await settle();
+  assert.equal(await queue.flush(), true);
+  assert.deepEqual(sent, [1, 2, 'removed']);
+  assert.equal(queue.snapshot().state, 'up-to-date');
+});

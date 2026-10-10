@@ -144,6 +144,43 @@ export function createLive(ctx) {
   };
   const block = (title, ...kids) => el('section', { class: 'ac-block' }, el('h2', { class: 'ac-h2', text: title }), ...kids);
 
+  /* Every on/off switch at a glance (ADMIN.md §4): [section, key, its audience key or null, what it is].
+     Read from the same live copy of config/ the Settings tab edits. */
+  const SWITCHES = [
+    ['app', 'readOnly', null, 'Read-only'],
+    ['race', 'enabled', null, 'New race rooms'],
+    ['raceChat', 'enabled', null, 'Race chat'],
+    ['duel', 'enabled', 'audience', 'Random 1v1'],
+    ['duel', 'camEnabled', null, '1v1 cam and mic'],
+    ['duel', 'turnEnabled', null, '1v1 relay (TURN)'],
+    ['sotdChat', 'enabled', 'audience', 'Scramble of the Day chat'],
+    ['replays', 'enabled', 'audience', 'Shared replays'],
+    ['competition', 'enabled', null, 'Competition Mode'],
+    ['features', 'webcamReplay', 'webcamReplayAudience', 'Webcam replays'],
+    ['features', 'stackmat', 'stackmatAudience', 'Stackmat input'],
+    ['spotify', 'enabled', null, 'Built-in Spotify'],
+  ];
+
+  function switchesBlock() {
+    const rows = SWITCHES.map(([s, k, aud, label]) => {
+      const on = ctx.cfg(s, k) === true;
+      const who = on && aud ? ctx.cfg(s, aud) : 'everyone';
+      // Read-only is the one switch whose "on" is the unusual state.
+      const odd = k === 'readOnly' ? on : !on;
+      const state = k === 'readOnly' ? (on ? t('On') : t('Off'))
+        : !on ? t('Off') : who === 'testers' ? t('Testers only') : who === 'admins' ? t('Admins only') : t('On');
+      return el('a', { class: `ac-switch${odd ? ' off' : ''}${on && who !== 'everyone' ? ' some' : ''}`, href: `#settings/${s}` },
+        el('span', { text: t(label) }),
+        el('span', { class: `ac-pill${odd ? ' warn' : ''}`, text: state }));
+    });
+    const banner = String(ctx.cfg('app', 'banner') || '').trim();
+    const offs = SWITCHES.filter(([s, k]) => (k === 'readOnly' ? ctx.cfg(s, k) === true : ctx.cfg(s, k) !== true)).length;
+    return block(t('Switches'),
+      el('p', { class: 'ac-sub', text: offs ? t('{n} not as usual. Tap one to change it.', { n: offs }) : t('Everything is on. Tap one to change it.') }),
+      banner ? raw('p', { class: 'ac-banner-now', dataset: { kind: ctx.cfg('app', 'bannerKind') } }, t('Banner: {text}', { text: banner })) : null,
+      el('div', { class: 'ac-switches' }, ...rows));
+  }
+
   function viewToday() {
     start();
     ctx.moderation.start();
@@ -236,7 +273,7 @@ export function createLive(ctx) {
         el('h1', { class: 'ac-h1', text: 'Today' }),
         el('button', { class: 'ac-btn small', type: 'button', text: 'Refresh', onclick: refresh })),
       raw('p', { class: 'ac-sub' }, t('{day} · resets in {left} (00:00 IST)', { day: dayIdFromServerMs(now), left: formatCountdown(left) })),
-      sotd, replays, chat, race, people, scheduled, blind,
+      switchesBlock(), sotd, replays, chat, race, people, scheduled, blind,
     ];
   }
 

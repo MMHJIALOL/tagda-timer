@@ -21,7 +21,7 @@ import { flash, shockwave, confetti, chime, callout, beep, setCalloutMode } from
 import { mountMetro, metroExternal } from './metro.js';
 import { keepAwake } from './wakelock.js';
 import { initReplay, syncReplay, takeClip, hasReplay, openReplay, replayOpen, replayEnabled,
-         onReplayChange, replayStatus, replaySupported, setStackmatMic } from './replay.js';
+         onReplayChange, replayStatus, replaySupported, replayOff, setStackmatMic } from './replay.js';
 import { summarize, eff, DNF, isMoveResult, bestSingle, bestAvg, trimmedIndices, byCase, sessionBests, rollingSeries, statWindow, STAT_LABELS, goalProgress, bpaWpa } from './stats.js';
 import { renderMiniTrend } from './charts.js';
 import { DEFAULTS, loadSettings, saveSettings, applyTheme, applyBackground, themeColors, setAlbumTint, paintBackgroundColors, liquidGlassOK } from './theme.js';
@@ -40,7 +40,8 @@ import { dayIdFromServerMs, sotdDoneOn, clearSotdDone } from './dayid.js';
 import { openPalette, closePalette, paletteOpen } from './palette.js';
 import { startAnnouncements, announcementModal, announcementShowing, markOpened, reconsider, placeChanged } from './announcer.js';
 import { isPhone } from './phone.js';
-import { getConfig, loadConfig } from './config.js';
+import { getConfig, loadConfig, readOnlyText } from './config.js';
+import { featureOn, featureOff } from './audience.js';
 import { APP_VERSION } from './version.js';
 import { initPhoneShell } from './phoneshell.js';
 // The *.vercel.app "we moved" banner, and the tagdatimer.me end of its data move.
@@ -263,6 +264,8 @@ async function enterSotd() {
     toast(t('No event has a Scramble of the Day right now'), { long: true });
     return;
   }
+  // The admin console's read-only switch: a result could not be kept on the board.
+  if (readOnlyText()) { toast(readOnlyText(), { long: true }); return; }
   if (!mod.cloudAvailable()) {
     toast('No leaderboard is configured on this deployment — see RACE.md', { kind: 'bad', long: true });
     return;
@@ -778,6 +781,43 @@ function wireConfig() {
   check();
   document.addEventListener('visibilitychange', () => { if (!document.hidden) check(); });
   setInterval(() => { if (!document.hidden) check(); }, 30 * 60_000);
+  /* A switch flipped on the admin page reaches an open tab here (the copy
+     cached at boot, then each fetch): the banner, and a Stackmat switched off
+     or back on. Never mid-solve: the input changes once the timer is idle. */
+  const onSwitches = () => {
+    syncBanner();
+    if (document.body.dataset.input && document.body.dataset.input !== inputMode()) {
+      if (timerIdle()) applyInputMode(false);
+      else timer.addEventListener('state', onSwitches, { once: true });
+    }
+  };
+  addEventListener('tdt-config', onSwitches);
+  addEventListener('tdt-roles', onSwitches);
+  syncBanner();
+}
+
+/**
+ * app.banner (ADMIN.md §4): a strip across the top for everybody, in its
+ * colour. Read-only with no banner of its own still says so, since the
+ * buttons it takes away would otherwise just look broken.
+ */
+function syncBanner() {
+  const own = getConfig('app', 'banner').trim();
+  const text = own || readOnlyText() || '';
+  let bar = $('#app-banner');
+  if (!text) {
+    if (bar) { bar.remove(); document.body.classList.remove('has-banner'); }
+    return;
+  }
+  if (!bar) {
+    bar = el('div', { id: 'app-banner', role: 'status' });
+    $('#app').before(bar);
+    // The app is a screen tall: it gives up the banner's height, however many lines that is.
+    new ResizeObserver(() => document.body.style.setProperty('--banner-h', `${bar.offsetHeight}px`)).observe(bar);
+  }
+  bar.dataset.kind = own ? getConfig('app', 'bannerKind') : 'warn';
+  bar.textContent = text;
+  document.body.classList.add('has-banner');
 }
 
 const RELOADED_KEY = 'tdt-reloaded-for';
@@ -1834,7 +1874,7 @@ function wireAnnouncements() {
     open: (id) => ANN_OPEN[id]?.(),
     anchor: (id) => {
       // The camera card means nothing where this browser cannot record.
-      if (id === 'camera' && !replaySupported()) return null;
+      if (id === 'camera' && (!replaySupported() || replayOff())) return null;
       const btn = ANN_BUTTON[id]?.();
       if (btn && btn.getBoundingClientRect().width && !btn.disabled) return btn;
       // Where the top bar's button is folded away (not from the SOTD window): on a phone, the
@@ -1843,7 +1883,7 @@ function wireAnnouncements() {
       const alt = (ANN_PHONE_TAB[id] && $(`.ph-tab[data-tab="${ANN_PHONE_TAB[id]}"]`)) || $('#btn-menu');
       return alt && alt.getBoundingClientRect().width ? alt : null;
     },
-    available: (id) => id !== 'camera' || replaySupported(),
+    available: (id) => id !== 'camera' || (replaySupported() && !replayOff()),
     signedIn: () => signedIn(),
     webcamOn: () => !!app.settings.webcamReplay,
     solves: () => solves,
@@ -4093,7 +4133,8 @@ app.joinRace = async (code) => {
     console.error('[race] join failed:', err);
     toast(err?.message === 'room-full' ? t('That room is full')
       : err?.message === 'race-off' ? (getConfig('race', 'message') || t('New race rooms are switched off for now'))
-        : 'Could not join that room', { kind: 'bad' });
+        : err?.message === 'read-only' ? (readOnlyText() || 'Could not join that room')
+          : 'Could not join that room', { kind: 'bad' });
   }
 };
 
@@ -4160,8 +4201,11 @@ const timerInputLive = () => inputMode() === 'timer' && !movesMode()
    falls back to the spacebar, rather than leaving that event with no way to time. */
 function inputMode() {
   const m = app.settings.inputMode || 'timer';
+  // A Stackmat switched off from the admin console (features.stackmat): the keyboard, until it is back.
+  if (m === 'stackmat' && !featureOn('stackmat')) return 'timer';
   return m === 'virtual' && !virtualSize(app.settings.event) ? 'timer' : m;
 }
+app.stackmatOff = () => featureOff('stackmat', t('Stackmat input is switched off for now'));
 const virtualLive = () => inputMode() === 'virtual';
 
 const VIRTUAL_HINT = 'turn to start &middot; <kbd>space</kbd> inspection &middot; <kbd>esc</kbd> reset';

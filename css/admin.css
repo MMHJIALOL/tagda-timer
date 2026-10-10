@@ -371,3 +371,21 @@ select.ac-inp { appearance: none; -webkit-appearance: none; background-image: li
 .ac-entry.ac-late { border-color: color-mix(in srgb, var(--danger) 50%, var(--border)); }
 .ac-picks:empty { display: none; }
 .ac-picks .ac-chip { gap: 8px; }
+
+/* ---------------- the switches on Today (ADMIN.md §4) ---------------- */
+
+.ac-switches { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 230px), 1fr)); gap: 8px; }
+.ac-switch {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  min-height: 44px; padding: 8px 12px; border-radius: 12px;
+  background: var(--surface); border: 1px solid var(--border); font-size: .88rem;
+}
+.ac-switch:active { background: var(--surface-2); }
+.ac-switch.off { border-color: color-mix(in srgb, var(--warn) 55%, var(--border)); background: color-mix(in srgb, var(--warn) 7%, var(--surface)); }
+.ac-switch.some .ac-pill { color: var(--accent-2); }
+.ac-banner-now {
+  padding: 8px 12px; border-radius: 10px; font-size: .86rem; overflow-wrap: anywhere;
+  background: color-mix(in srgb, var(--accent) 14%, var(--surface)); border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--border));
+}
+.ac-banner-now[data-kind="warn"] { background: color-mix(in srgb, var(--warn) 14%, var(--surface)); border-color: color-mix(in srgb, var(--warn) 45%, var(--border)); }
+.ac-banner-now[data-kind="down"] { background: color-mix(in srgb, var(--danger) 14%, var(--surface)); border-color: color-mix(in srgb, var(--danger) 45%, var(--border)); }

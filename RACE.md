@@ -279,19 +279,22 @@ create is refused by the rule on `meta/round` and simply joins.
 - Somebody who switches event mid-match stops publishing scrambles; the other side takes
   over after the usual six seconds, so a 1v1 never gets a 4x4 scramble.
 
-**No rules change.** The seat sits under `rooms/`, whose `meta` is already readable and
+**No rules change to work.** The seat sits under `rooms/`, whose `meta` is already readable and
 writable by any racer, so this works on the rules already published. The underscores
 keep it out of the room-code box (`normaliseCode` strips them). It has no `createdAt`, so
 the admin console's list of recent rooms never shows it. When the admin console switches
 race rooms off, the search refuses to start, and a pair matched just before that is
-refused its room.
+refused its room. Random 1v1 has its own switch since (`duel.enabled`, ADMIN.md §4): once
+those rules are published they refuse the seat and a room becoming a 1v1 while it is off,
+and a searching tab that is refused reads the settings again and stops, saying so.
 
 **What it does not do.** There is no skill matching: a rating every client reports about
 itself is a rating anybody can fake. There is also no count of how many people are
 looking, because the seat holds at most one. With few people online, most searches
 will end in "couldn't find anyone"; that is the honest answer, not a bug.
 
-Tuning is in `js/raceapp.js` (`MATCH_*`, `DUEL_GONE_MS`).
+Tuning is the admin console's `duel.*` settings (ADMIN.md §4), whose defaults are the `MATCH_*`
+and `DUEL_GONE_MS` constants in `js/raceapp.js`.
 
 **What a 1v1 looks like.**
 - **Race panel:** a head-to-head card replaces the room's status line, rows and standings.

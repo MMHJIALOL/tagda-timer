@@ -28,6 +28,7 @@ import { Solves, Sessions, KV, Tombstones, onWrite, tx, wrap, CompetitionSets, n
 import { createSyncQueue } from './sync-queue.js';
 import { mergeInspection, pendingInspection, inspectionCommitted } from './inspection-setting.js';
 import { onAuthChange, getDatabaseHandle, hasPersistedSession, hasPendingRedirect } from './sync-auth.js';
+import { getConfig } from './config.js';
 
 const statusListeners = new Set();
 let authChecked = !hasPersistedSession() && !hasPendingRedirect(), authUnavailable = false;
@@ -45,6 +46,8 @@ export function onSyncStatus(fn) {
 const outbound = createSyncQueue({ storage: LocalMetadata,
   withAccountLock: (uid, run) => navigator.locks?.request
     ? navigator.locks.request(`tagda-sync:${uid}`, run) : run(),
+  // The admin console's read-only switch (ADMIN.md §4): changes wait here, none are lost.
+  paused: () => getConfig('app', 'readOnly'),
   changed: publishStatus });
 export async function retrySync() {
   if (!_uid) return false;
@@ -55,6 +58,7 @@ export async function retrySync() {
   return outbound.flush();
 }
 window.addEventListener('online', () => outbound.connectivityChanged());
+window.addEventListener('tdt-config', () => outbound.connectivityChanged());
 window.addEventListener('offline', () => outbound.connectivityChanged());
 let _started = false;
 

@@ -19,11 +19,13 @@ export function cloudCopy(status = getSyncStatus()) {
     'signed-out': 'Cloud sync off', starting: 'Connecting to cloud sync…',
     'up-to-date': 'Cloud sync up to date',
     'pending-offline': '{n} changes saved here, waiting for connection',
+    paused: '{n} changes saved here; cloud sync is paused for maintenance',
     syncing: 'Syncing {n} changes…', retrying: '{n} changes waiting to sync',
     error: 'Cloud sync needs attention', unknown: 'Cloud sync status unavailable',
   };
   const singular = {
     'pending-offline': '1 change saved here, waiting for connection',
+    paused: '1 change saved here; cloud sync is paused for maintenance',
     syncing: 'Syncing 1 change…', retrying: '1 change waiting to sync',
   };
   return t(status.pending === 1 && singular[status.state] || messages[status.state], { n: status.pending });

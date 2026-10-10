@@ -94,6 +94,12 @@
           "phase": {
             ".validate": "newData.isString() && newData.val().length <= 12"
           },
+          "kind": {
+            ".validate": "newData.val() !== 'duel' || data.val() === 'duel' || root.child('config/duel/enabled').val() !== false"
+          },
+          "waiting": {
+            ".validate": "root.child('config/duel/enabled').val() !== false"
+          },
           "$other": { ".validate": true }
         },
 
@@ -121,7 +127,7 @@
         "rtc": {
           ".read": "auth != null && root.child('rooms/' + $roomId + '/players/' + auth.uid).exists()",
           "$uid": {
-            ".write": "auth != null && auth.uid === $uid && (!newData.exists() || (root.child('rooms/' + $roomId + '/players/' + auth.uid).exists() && root.child('rooms/' + $roomId + '/meta/kind').val() === 'duel'))",
+            ".write": "auth != null && auth.uid === $uid && (!newData.exists() || (root.child('rooms/' + $roomId + '/players/' + auth.uid).exists() && root.child('rooms/' + $roomId + '/meta/kind').val() === 'duel' && root.child('config/duel/camEnabled').val() !== false))",
             "media": {
               "cam": { ".validate": "newData.isBoolean()" },
               "mic": { ".validate": "newData.isBoolean()" },
@@ -434,6 +440,54 @@
         "$other": { ".validate": false }
       },
 
+      "duel": {
+        "enabled": {
+          ".write": "(auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true || auth != null && auth.uid === 'tagda-scheduler' && auth.token.firebase.sign_in_provider === 'custom') && newData.parent().parent().parent().child('configMeta/duel/enabled/at').val() === now",
+          ".validate": "newData.isBoolean()"
+        },
+        "audience": {
+          ".write": "(auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true || auth != null && auth.uid === 'tagda-scheduler' && auth.token.firebase.sign_in_provider === 'custom') && newData.parent().parent().parent().child('configMeta/duel/audience/at').val() === now",
+          ".validate": "newData.isString() && newData.val().matches(/^(everyone|testers|admins)$/)"
+        },
+        "message": {
+          ".write": "(auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true || auth != null && auth.uid === 'tagda-scheduler' && auth.token.firebase.sign_in_provider === 'custom') && newData.parent().parent().parent().child('configMeta/duel/message/at').val() === now",
+          ".validate": "newData.isString() && newData.val().length <= 200"
+        },
+        "searchSec": {
+          ".write": "(auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true || auth != null && auth.uid === 'tagda-scheduler' && auth.token.firebase.sign_in_provider === 'custom') && newData.parent().parent().parent().child('configMeta/duel/searchSec/at').val() === now",
+          ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 15 && newData.val() <= 300"
+        },
+        "refreshSec": {
+          ".write": "(auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true || auth != null && auth.uid === 'tagda-scheduler' && auth.token.firebase.sign_in_provider === 'custom') && newData.parent().parent().parent().child('configMeta/duel/refreshSec/at').val() === now",
+          ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 5 && newData.val() <= 60"
+        },
+        "staleSec": {
+          ".write": "(auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true || auth != null && auth.uid === 'tagda-scheduler' && auth.token.firebase.sign_in_provider === 'custom') && newData.parent().parent().parent().child('configMeta/duel/staleSec/at').val() === now",
+          ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 10 && newData.val() <= 120"
+        },
+        "showupSec": {
+          ".write": "(auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true || auth != null && auth.uid === 'tagda-scheduler' && auth.token.firebase.sign_in_provider === 'custom') && newData.parent().parent().parent().child('configMeta/duel/showupSec/at').val() === now",
+          ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 5 && newData.val() <= 60"
+        },
+        "goneSec": {
+          ".write": "(auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true || auth != null && auth.uid === 'tagda-scheduler' && auth.token.firebase.sign_in_provider === 'custom') && newData.parent().parent().parent().child('configMeta/duel/goneSec/at').val() === now",
+          ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 5 && newData.val() <= 60"
+        },
+        "camEnabled": {
+          ".write": "(auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true || auth != null && auth.uid === 'tagda-scheduler' && auth.token.firebase.sign_in_provider === 'custom') && newData.parent().parent().parent().child('configMeta/duel/camEnabled/at').val() === now",
+          ".validate": "newData.isBoolean()"
+        },
+        "turnEnabled": {
+          ".write": "(auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true || auth != null && auth.uid === 'tagda-scheduler' && auth.token.firebase.sign_in_provider === 'custom') && newData.parent().parent().parent().child('configMeta/duel/turnEnabled/at').val() === now",
+          ".validate": "newData.isBoolean()"
+        },
+        "turnTtlMin": {
+          ".write": "(auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true || auth != null && auth.uid === 'tagda-scheduler' && auth.token.firebase.sign_in_provider === 'custom') && newData.parent().parent().parent().child('configMeta/duel/turnTtlMin/at').val() === now",
+          ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 10 && newData.val() <= 240"
+        },
+        "$other": { ".validate": false }
+      },
+
       "raceChat": {
         "enabled": {
           ".write": "(auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true || auth != null && auth.uid === 'tagda-scheduler' && auth.token.firebase.sign_in_provider === 'custom') && newData.parent().parent().parent().child('configMeta/raceChat/enabled/at').val() === now",
@@ -470,6 +524,46 @@
         "askMs": {
           ".write": "(auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true || auth != null && auth.uid === 'tagda-scheduler' && auth.token.firebase.sign_in_provider === 'custom') && newData.parent().parent().parent().child('configMeta/sotd/askMs/at').val() === now",
           ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 0 && newData.val() <= 15000"
+        },
+        "$other": { ".validate": false }
+      },
+
+      "competition": {
+        "enabled": {
+          ".write": "(auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true || auth != null && auth.uid === 'tagda-scheduler' && auth.token.firebase.sign_in_provider === 'custom') && newData.parent().parent().parent().child('configMeta/competition/enabled/at').val() === now",
+          ".validate": "newData.isBoolean()"
+        },
+        "message": {
+          ".write": "(auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true || auth != null && auth.uid === 'tagda-scheduler' && auth.token.firebase.sign_in_provider === 'custom') && newData.parent().parent().parent().child('configMeta/competition/message/at').val() === now",
+          ".validate": "newData.isString() && newData.val().length <= 200"
+        },
+        "$other": { ".validate": false }
+      },
+
+      "features": {
+        "webcamReplay": {
+          ".write": "(auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true || auth != null && auth.uid === 'tagda-scheduler' && auth.token.firebase.sign_in_provider === 'custom') && newData.parent().parent().parent().child('configMeta/features/webcamReplay/at').val() === now",
+          ".validate": "newData.isBoolean()"
+        },
+        "webcamReplayAudience": {
+          ".write": "(auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true || auth != null && auth.uid === 'tagda-scheduler' && auth.token.firebase.sign_in_provider === 'custom') && newData.parent().parent().parent().child('configMeta/features/webcamReplayAudience/at').val() === now",
+          ".validate": "newData.isString() && newData.val().matches(/^(everyone|testers|admins)$/)"
+        },
+        "webcamReplayMessage": {
+          ".write": "(auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true || auth != null && auth.uid === 'tagda-scheduler' && auth.token.firebase.sign_in_provider === 'custom') && newData.parent().parent().parent().child('configMeta/features/webcamReplayMessage/at').val() === now",
+          ".validate": "newData.isString() && newData.val().length <= 200"
+        },
+        "stackmat": {
+          ".write": "(auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true || auth != null && auth.uid === 'tagda-scheduler' && auth.token.firebase.sign_in_provider === 'custom') && newData.parent().parent().parent().child('configMeta/features/stackmat/at').val() === now",
+          ".validate": "newData.isBoolean()"
+        },
+        "stackmatAudience": {
+          ".write": "(auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true || auth != null && auth.uid === 'tagda-scheduler' && auth.token.firebase.sign_in_provider === 'custom') && newData.parent().parent().parent().child('configMeta/features/stackmatAudience/at').val() === now",
+          ".validate": "newData.isString() && newData.val().matches(/^(everyone|testers|admins)$/)"
+        },
+        "stackmatMessage": {
+          ".write": "(auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true || auth != null && auth.uid === 'tagda-scheduler' && auth.token.firebase.sign_in_provider === 'custom') && newData.parent().parent().parent().child('configMeta/features/stackmatMessage/at').val() === now",
+          ".validate": "newData.isString() && newData.val().length <= 200"
         },
         "$other": { ".validate": false }
       },
@@ -522,6 +616,18 @@
         "minVersion": {
           ".write": "(auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true || auth != null && auth.uid === 'tagda-scheduler' && auth.token.firebase.sign_in_provider === 'custom') && newData.parent().parent().parent().child('configMeta/app/minVersion/at').val() === now",
           ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 0 && newData.val() <= 100000"
+        },
+        "banner": {
+          ".write": "(auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true || auth != null && auth.uid === 'tagda-scheduler' && auth.token.firebase.sign_in_provider === 'custom') && newData.parent().parent().parent().child('configMeta/app/banner/at').val() === now",
+          ".validate": "newData.isString() && newData.val().length <= 200"
+        },
+        "bannerKind": {
+          ".write": "(auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true || auth != null && auth.uid === 'tagda-scheduler' && auth.token.firebase.sign_in_provider === 'custom') && newData.parent().parent().parent().child('configMeta/app/bannerKind/at').val() === now",
+          ".validate": "newData.isString() && newData.val().matches(/^(info|warn|down)$/)"
+        },
+        "readOnly": {
+          ".write": "(auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true || auth != null && auth.uid === 'tagda-scheduler' && auth.token.firebase.sign_in_provider === 'custom') && newData.parent().parent().parent().child('configMeta/app/readOnly/at').val() === now",
+          ".validate": "newData.isBoolean()"
         },
         "$other": { ".validate": false }
       },
@@ -951,6 +1057,142 @@
         "$other": { ".validate": false }
       },
 
+      "duel": {
+        "enabled": {
+          "$id": {
+            ".write": "(auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true) || (auth != null && auth.uid === 'tagda-scheduler' && auth.token.firebase.sign_in_provider === 'custom' && !newData.exists() && newData.parent().parent().parent().parent().child('configMeta/duel/enabled/at').val() === now && newData.parent().parent().parent().parent().child('configLog/' + newData.parent().parent().parent().parent().child('configMeta/duel/enabled/log').val() + '/sched').val() === $id)",
+            ".validate": "$id.matches(/^[A-Za-z0-9_-]{1,32}$/) && newData.hasChildren(['at', 'by', 'createdAt']) && ((newData.hasChild('to') && !newData.hasChild('def')) || (!newData.hasChild('to') && newData.hasChild('def')))",
+            "to": { ".validate": "newData.isBoolean()" },
+            "def": { ".validate": "newData.val() === true" },
+            "at": { ".validate": "newData.isNumber() && newData.val() > now && newData.val() <= now + 31622400000" },
+            "by": { ".validate": "newData.val() === auth.uid" },
+            "createdAt": { ".validate": "newData.val() === now" },
+            "$other": { ".validate": false }
+          }
+        },
+        "audience": {
+          "$id": {
+            ".write": "(auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true) || (auth != null && auth.uid === 'tagda-scheduler' && auth.token.firebase.sign_in_provider === 'custom' && !newData.exists() && newData.parent().parent().parent().parent().child('configMeta/duel/audience/at').val() === now && newData.parent().parent().parent().parent().child('configLog/' + newData.parent().parent().parent().parent().child('configMeta/duel/audience/log').val() + '/sched').val() === $id)",
+            ".validate": "$id.matches(/^[A-Za-z0-9_-]{1,32}$/) && newData.hasChildren(['at', 'by', 'createdAt']) && ((newData.hasChild('to') && !newData.hasChild('def')) || (!newData.hasChild('to') && newData.hasChild('def')))",
+            "to": { ".validate": "newData.isString() && newData.val().matches(/^(everyone|testers|admins)$/)" },
+            "def": { ".validate": "newData.val() === true" },
+            "at": { ".validate": "newData.isNumber() && newData.val() > now && newData.val() <= now + 31622400000" },
+            "by": { ".validate": "newData.val() === auth.uid" },
+            "createdAt": { ".validate": "newData.val() === now" },
+            "$other": { ".validate": false }
+          }
+        },
+        "message": {
+          "$id": {
+            ".write": "(auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true) || (auth != null && auth.uid === 'tagda-scheduler' && auth.token.firebase.sign_in_provider === 'custom' && !newData.exists() && newData.parent().parent().parent().parent().child('configMeta/duel/message/at').val() === now && newData.parent().parent().parent().parent().child('configLog/' + newData.parent().parent().parent().parent().child('configMeta/duel/message/log').val() + '/sched').val() === $id)",
+            ".validate": "$id.matches(/^[A-Za-z0-9_-]{1,32}$/) && newData.hasChildren(['at', 'by', 'createdAt']) && ((newData.hasChild('to') && !newData.hasChild('def')) || (!newData.hasChild('to') && newData.hasChild('def')))",
+            "to": { ".validate": "newData.isString() && newData.val().length <= 200" },
+            "def": { ".validate": "newData.val() === true" },
+            "at": { ".validate": "newData.isNumber() && newData.val() > now && newData.val() <= now + 31622400000" },
+            "by": { ".validate": "newData.val() === auth.uid" },
+            "createdAt": { ".validate": "newData.val() === now" },
+            "$other": { ".validate": false }
+          }
+        },
+        "searchSec": {
+          "$id": {
+            ".write": "(auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true) || (auth != null && auth.uid === 'tagda-scheduler' && auth.token.firebase.sign_in_provider === 'custom' && !newData.exists() && newData.parent().parent().parent().parent().child('configMeta/duel/searchSec/at').val() === now && newData.parent().parent().parent().parent().child('configLog/' + newData.parent().parent().parent().parent().child('configMeta/duel/searchSec/log').val() + '/sched').val() === $id)",
+            ".validate": "$id.matches(/^[A-Za-z0-9_-]{1,32}$/) && newData.hasChildren(['at', 'by', 'createdAt']) && ((newData.hasChild('to') && !newData.hasChild('def')) || (!newData.hasChild('to') && newData.hasChild('def')))",
+            "to": { ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 15 && newData.val() <= 300" },
+            "def": { ".validate": "newData.val() === true" },
+            "at": { ".validate": "newData.isNumber() && newData.val() > now && newData.val() <= now + 31622400000" },
+            "by": { ".validate": "newData.val() === auth.uid" },
+            "createdAt": { ".validate": "newData.val() === now" },
+            "$other": { ".validate": false }
+          }
+        },
+        "refreshSec": {
+          "$id": {
+            ".write": "(auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true) || (auth != null && auth.uid === 'tagda-scheduler' && auth.token.firebase.sign_in_provider === 'custom' && !newData.exists() && newData.parent().parent().parent().parent().child('configMeta/duel/refreshSec/at').val() === now && newData.parent().parent().parent().parent().child('configLog/' + newData.parent().parent().parent().parent().child('configMeta/duel/refreshSec/log').val() + '/sched').val() === $id)",
+            ".validate": "$id.matches(/^[A-Za-z0-9_-]{1,32}$/) && newData.hasChildren(['at', 'by', 'createdAt']) && ((newData.hasChild('to') && !newData.hasChild('def')) || (!newData.hasChild('to') && newData.hasChild('def')))",
+            "to": { ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 5 && newData.val() <= 60" },
+            "def": { ".validate": "newData.val() === true" },
+            "at": { ".validate": "newData.isNumber() && newData.val() > now && newData.val() <= now + 31622400000" },
+            "by": { ".validate": "newData.val() === auth.uid" },
+            "createdAt": { ".validate": "newData.val() === now" },
+            "$other": { ".validate": false }
+          }
+        },
+        "staleSec": {
+          "$id": {
+            ".write": "(auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true) || (auth != null && auth.uid === 'tagda-scheduler' && auth.token.firebase.sign_in_provider === 'custom' && !newData.exists() && newData.parent().parent().parent().parent().child('configMeta/duel/staleSec/at').val() === now && newData.parent().parent().parent().parent().child('configLog/' + newData.parent().parent().parent().parent().child('configMeta/duel/staleSec/log').val() + '/sched').val() === $id)",
+            ".validate": "$id.matches(/^[A-Za-z0-9_-]{1,32}$/) && newData.hasChildren(['at', 'by', 'createdAt']) && ((newData.hasChild('to') && !newData.hasChild('def')) || (!newData.hasChild('to') && newData.hasChild('def')))",
+            "to": { ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 10 && newData.val() <= 120" },
+            "def": { ".validate": "newData.val() === true" },
+            "at": { ".validate": "newData.isNumber() && newData.val() > now && newData.val() <= now + 31622400000" },
+            "by": { ".validate": "newData.val() === auth.uid" },
+            "createdAt": { ".validate": "newData.val() === now" },
+            "$other": { ".validate": false }
+          }
+        },
+        "showupSec": {
+          "$id": {
+            ".write": "(auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true) || (auth != null && auth.uid === 'tagda-scheduler' && auth.token.firebase.sign_in_provider === 'custom' && !newData.exists() && newData.parent().parent().parent().parent().child('configMeta/duel/showupSec/at').val() === now && newData.parent().parent().parent().parent().child('configLog/' + newData.parent().parent().parent().parent().child('configMeta/duel/showupSec/log').val() + '/sched').val() === $id)",
+            ".validate": "$id.matches(/^[A-Za-z0-9_-]{1,32}$/) && newData.hasChildren(['at', 'by', 'createdAt']) && ((newData.hasChild('to') && !newData.hasChild('def')) || (!newData.hasChild('to') && newData.hasChild('def')))",
+            "to": { ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 5 && newData.val() <= 60" },
+            "def": { ".validate": "newData.val() === true" },
+            "at": { ".validate": "newData.isNumber() && newData.val() > now && newData.val() <= now + 31622400000" },
+            "by": { ".validate": "newData.val() === auth.uid" },
+            "createdAt": { ".validate": "newData.val() === now" },
+            "$other": { ".validate": false }
+          }
+        },
+        "goneSec": {
+          "$id": {
+            ".write": "(auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true) || (auth != null && auth.uid === 'tagda-scheduler' && auth.token.firebase.sign_in_provider === 'custom' && !newData.exists() && newData.parent().parent().parent().parent().child('configMeta/duel/goneSec/at').val() === now && newData.parent().parent().parent().parent().child('configLog/' + newData.parent().parent().parent().parent().child('configMeta/duel/goneSec/log').val() + '/sched').val() === $id)",
+            ".validate": "$id.matches(/^[A-Za-z0-9_-]{1,32}$/) && newData.hasChildren(['at', 'by', 'createdAt']) && ((newData.hasChild('to') && !newData.hasChild('def')) || (!newData.hasChild('to') && newData.hasChild('def')))",
+            "to": { ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 5 && newData.val() <= 60" },
+            "def": { ".validate": "newData.val() === true" },
+            "at": { ".validate": "newData.isNumber() && newData.val() > now && newData.val() <= now + 31622400000" },
+            "by": { ".validate": "newData.val() === auth.uid" },
+            "createdAt": { ".validate": "newData.val() === now" },
+            "$other": { ".validate": false }
+          }
+        },
+        "camEnabled": {
+          "$id": {
+            ".write": "(auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true) || (auth != null && auth.uid === 'tagda-scheduler' && auth.token.firebase.sign_in_provider === 'custom' && !newData.exists() && newData.parent().parent().parent().parent().child('configMeta/duel/camEnabled/at').val() === now && newData.parent().parent().parent().parent().child('configLog/' + newData.parent().parent().parent().parent().child('configMeta/duel/camEnabled/log').val() + '/sched').val() === $id)",
+            ".validate": "$id.matches(/^[A-Za-z0-9_-]{1,32}$/) && newData.hasChildren(['at', 'by', 'createdAt']) && ((newData.hasChild('to') && !newData.hasChild('def')) || (!newData.hasChild('to') && newData.hasChild('def')))",
+            "to": { ".validate": "newData.isBoolean()" },
+            "def": { ".validate": "newData.val() === true" },
+            "at": { ".validate": "newData.isNumber() && newData.val() > now && newData.val() <= now + 31622400000" },
+            "by": { ".validate": "newData.val() === auth.uid" },
+            "createdAt": { ".validate": "newData.val() === now" },
+            "$other": { ".validate": false }
+          }
+        },
+        "turnEnabled": {
+          "$id": {
+            ".write": "(auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true) || (auth != null && auth.uid === 'tagda-scheduler' && auth.token.firebase.sign_in_provider === 'custom' && !newData.exists() && newData.parent().parent().parent().parent().child('configMeta/duel/turnEnabled/at').val() === now && newData.parent().parent().parent().parent().child('configLog/' + newData.parent().parent().parent().parent().child('configMeta/duel/turnEnabled/log').val() + '/sched').val() === $id)",
+            ".validate": "$id.matches(/^[A-Za-z0-9_-]{1,32}$/) && newData.hasChildren(['at', 'by', 'createdAt']) && ((newData.hasChild('to') && !newData.hasChild('def')) || (!newData.hasChild('to') && newData.hasChild('def')))",
+            "to": { ".validate": "newData.isBoolean()" },
+            "def": { ".validate": "newData.val() === true" },
+            "at": { ".validate": "newData.isNumber() && newData.val() > now && newData.val() <= now + 31622400000" },
+            "by": { ".validate": "newData.val() === auth.uid" },
+            "createdAt": { ".validate": "newData.val() === now" },
+            "$other": { ".validate": false }
+          }
+        },
+        "turnTtlMin": {
+          "$id": {
+            ".write": "(auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true) || (auth != null && auth.uid === 'tagda-scheduler' && auth.token.firebase.sign_in_provider === 'custom' && !newData.exists() && newData.parent().parent().parent().parent().child('configMeta/duel/turnTtlMin/at').val() === now && newData.parent().parent().parent().parent().child('configLog/' + newData.parent().parent().parent().parent().child('configMeta/duel/turnTtlMin/log').val() + '/sched').val() === $id)",
+            ".validate": "$id.matches(/^[A-Za-z0-9_-]{1,32}$/) && newData.hasChildren(['at', 'by', 'createdAt']) && ((newData.hasChild('to') && !newData.hasChild('def')) || (!newData.hasChild('to') && newData.hasChild('def')))",
+            "to": { ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 10 && newData.val() <= 240" },
+            "def": { ".validate": "newData.val() === true" },
+            "at": { ".validate": "newData.isNumber() && newData.val() > now && newData.val() <= now + 31622400000" },
+            "by": { ".validate": "newData.val() === auth.uid" },
+            "createdAt": { ".validate": "newData.val() === now" },
+            "$other": { ".validate": false }
+          }
+        },
+        "$other": { ".validate": false }
+      },
+
       "raceChat": {
         "enabled": {
           "$id": {
@@ -1045,6 +1287,110 @@
             ".write": "(auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true) || (auth != null && auth.uid === 'tagda-scheduler' && auth.token.firebase.sign_in_provider === 'custom' && !newData.exists() && newData.parent().parent().parent().parent().child('configMeta/sotd/askMs/at').val() === now && newData.parent().parent().parent().parent().child('configLog/' + newData.parent().parent().parent().parent().child('configMeta/sotd/askMs/log').val() + '/sched').val() === $id)",
             ".validate": "$id.matches(/^[A-Za-z0-9_-]{1,32}$/) && newData.hasChildren(['at', 'by', 'createdAt']) && ((newData.hasChild('to') && !newData.hasChild('def')) || (!newData.hasChild('to') && newData.hasChild('def')))",
             "to": { ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 0 && newData.val() <= 15000" },
+            "def": { ".validate": "newData.val() === true" },
+            "at": { ".validate": "newData.isNumber() && newData.val() > now && newData.val() <= now + 31622400000" },
+            "by": { ".validate": "newData.val() === auth.uid" },
+            "createdAt": { ".validate": "newData.val() === now" },
+            "$other": { ".validate": false }
+          }
+        },
+        "$other": { ".validate": false }
+      },
+
+      "competition": {
+        "enabled": {
+          "$id": {
+            ".write": "(auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true) || (auth != null && auth.uid === 'tagda-scheduler' && auth.token.firebase.sign_in_provider === 'custom' && !newData.exists() && newData.parent().parent().parent().parent().child('configMeta/competition/enabled/at').val() === now && newData.parent().parent().parent().parent().child('configLog/' + newData.parent().parent().parent().parent().child('configMeta/competition/enabled/log').val() + '/sched').val() === $id)",
+            ".validate": "$id.matches(/^[A-Za-z0-9_-]{1,32}$/) && newData.hasChildren(['at', 'by', 'createdAt']) && ((newData.hasChild('to') && !newData.hasChild('def')) || (!newData.hasChild('to') && newData.hasChild('def')))",
+            "to": { ".validate": "newData.isBoolean()" },
+            "def": { ".validate": "newData.val() === true" },
+            "at": { ".validate": "newData.isNumber() && newData.val() > now && newData.val() <= now + 31622400000" },
+            "by": { ".validate": "newData.val() === auth.uid" },
+            "createdAt": { ".validate": "newData.val() === now" },
+            "$other": { ".validate": false }
+          }
+        },
+        "message": {
+          "$id": {
+            ".write": "(auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true) || (auth != null && auth.uid === 'tagda-scheduler' && auth.token.firebase.sign_in_provider === 'custom' && !newData.exists() && newData.parent().parent().parent().parent().child('configMeta/competition/message/at').val() === now && newData.parent().parent().parent().parent().child('configLog/' + newData.parent().parent().parent().parent().child('configMeta/competition/message/log').val() + '/sched').val() === $id)",
+            ".validate": "$id.matches(/^[A-Za-z0-9_-]{1,32}$/) && newData.hasChildren(['at', 'by', 'createdAt']) && ((newData.hasChild('to') && !newData.hasChild('def')) || (!newData.hasChild('to') && newData.hasChild('def')))",
+            "to": { ".validate": "newData.isString() && newData.val().length <= 200" },
+            "def": { ".validate": "newData.val() === true" },
+            "at": { ".validate": "newData.isNumber() && newData.val() > now && newData.val() <= now + 31622400000" },
+            "by": { ".validate": "newData.val() === auth.uid" },
+            "createdAt": { ".validate": "newData.val() === now" },
+            "$other": { ".validate": false }
+          }
+        },
+        "$other": { ".validate": false }
+      },
+
+      "features": {
+        "webcamReplay": {
+          "$id": {
+            ".write": "(auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true) || (auth != null && auth.uid === 'tagda-scheduler' && auth.token.firebase.sign_in_provider === 'custom' && !newData.exists() && newData.parent().parent().parent().parent().child('configMeta/features/webcamReplay/at').val() === now && newData.parent().parent().parent().parent().child('configLog/' + newData.parent().parent().parent().parent().child('configMeta/features/webcamReplay/log').val() + '/sched').val() === $id)",
+            ".validate": "$id.matches(/^[A-Za-z0-9_-]{1,32}$/) && newData.hasChildren(['at', 'by', 'createdAt']) && ((newData.hasChild('to') && !newData.hasChild('def')) || (!newData.hasChild('to') && newData.hasChild('def')))",
+            "to": { ".validate": "newData.isBoolean()" },
+            "def": { ".validate": "newData.val() === true" },
+            "at": { ".validate": "newData.isNumber() && newData.val() > now && newData.val() <= now + 31622400000" },
+            "by": { ".validate": "newData.val() === auth.uid" },
+            "createdAt": { ".validate": "newData.val() === now" },
+            "$other": { ".validate": false }
+          }
+        },
+        "webcamReplayAudience": {
+          "$id": {
+            ".write": "(auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true) || (auth != null && auth.uid === 'tagda-scheduler' && auth.token.firebase.sign_in_provider === 'custom' && !newData.exists() && newData.parent().parent().parent().parent().child('configMeta/features/webcamReplayAudience/at').val() === now && newData.parent().parent().parent().parent().child('configLog/' + newData.parent().parent().parent().parent().child('configMeta/features/webcamReplayAudience/log').val() + '/sched').val() === $id)",
+            ".validate": "$id.matches(/^[A-Za-z0-9_-]{1,32}$/) && newData.hasChildren(['at', 'by', 'createdAt']) && ((newData.hasChild('to') && !newData.hasChild('def')) || (!newData.hasChild('to') && newData.hasChild('def')))",
+            "to": { ".validate": "newData.isString() && newData.val().matches(/^(everyone|testers|admins)$/)" },
+            "def": { ".validate": "newData.val() === true" },
+            "at": { ".validate": "newData.isNumber() && newData.val() > now && newData.val() <= now + 31622400000" },
+            "by": { ".validate": "newData.val() === auth.uid" },
+            "createdAt": { ".validate": "newData.val() === now" },
+            "$other": { ".validate": false }
+          }
+        },
+        "webcamReplayMessage": {
+          "$id": {
+            ".write": "(auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true) || (auth != null && auth.uid === 'tagda-scheduler' && auth.token.firebase.sign_in_provider === 'custom' && !newData.exists() && newData.parent().parent().parent().parent().child('configMeta/features/webcamReplayMessage/at').val() === now && newData.parent().parent().parent().parent().child('configLog/' + newData.parent().parent().parent().parent().child('configMeta/features/webcamReplayMessage/log').val() + '/sched').val() === $id)",
+            ".validate": "$id.matches(/^[A-Za-z0-9_-]{1,32}$/) && newData.hasChildren(['at', 'by', 'createdAt']) && ((newData.hasChild('to') && !newData.hasChild('def')) || (!newData.hasChild('to') && newData.hasChild('def')))",
+            "to": { ".validate": "newData.isString() && newData.val().length <= 200" },
+            "def": { ".validate": "newData.val() === true" },
+            "at": { ".validate": "newData.isNumber() && newData.val() > now && newData.val() <= now + 31622400000" },
+            "by": { ".validate": "newData.val() === auth.uid" },
+            "createdAt": { ".validate": "newData.val() === now" },
+            "$other": { ".validate": false }
+          }
+        },
+        "stackmat": {
+          "$id": {
+            ".write": "(auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true) || (auth != null && auth.uid === 'tagda-scheduler' && auth.token.firebase.sign_in_provider === 'custom' && !newData.exists() && newData.parent().parent().parent().parent().child('configMeta/features/stackmat/at').val() === now && newData.parent().parent().parent().parent().child('configLog/' + newData.parent().parent().parent().parent().child('configMeta/features/stackmat/log').val() + '/sched').val() === $id)",
+            ".validate": "$id.matches(/^[A-Za-z0-9_-]{1,32}$/) && newData.hasChildren(['at', 'by', 'createdAt']) && ((newData.hasChild('to') && !newData.hasChild('def')) || (!newData.hasChild('to') && newData.hasChild('def')))",
+            "to": { ".validate": "newData.isBoolean()" },
+            "def": { ".validate": "newData.val() === true" },
+            "at": { ".validate": "newData.isNumber() && newData.val() > now && newData.val() <= now + 31622400000" },
+            "by": { ".validate": "newData.val() === auth.uid" },
+            "createdAt": { ".validate": "newData.val() === now" },
+            "$other": { ".validate": false }
+          }
+        },
+        "stackmatAudience": {
+          "$id": {
+            ".write": "(auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true) || (auth != null && auth.uid === 'tagda-scheduler' && auth.token.firebase.sign_in_provider === 'custom' && !newData.exists() && newData.parent().parent().parent().parent().child('configMeta/features/stackmatAudience/at').val() === now && newData.parent().parent().parent().parent().child('configLog/' + newData.parent().parent().parent().parent().child('configMeta/features/stackmatAudience/log').val() + '/sched').val() === $id)",
+            ".validate": "$id.matches(/^[A-Za-z0-9_-]{1,32}$/) && newData.hasChildren(['at', 'by', 'createdAt']) && ((newData.hasChild('to') && !newData.hasChild('def')) || (!newData.hasChild('to') && newData.hasChild('def')))",
+            "to": { ".validate": "newData.isString() && newData.val().matches(/^(everyone|testers|admins)$/)" },
+            "def": { ".validate": "newData.val() === true" },
+            "at": { ".validate": "newData.isNumber() && newData.val() > now && newData.val() <= now + 31622400000" },
+            "by": { ".validate": "newData.val() === auth.uid" },
+            "createdAt": { ".validate": "newData.val() === now" },
+            "$other": { ".validate": false }
+          }
+        },
+        "stackmatMessage": {
+          "$id": {
+            ".write": "(auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true) || (auth != null && auth.uid === 'tagda-scheduler' && auth.token.firebase.sign_in_provider === 'custom' && !newData.exists() && newData.parent().parent().parent().parent().child('configMeta/features/stackmatMessage/at').val() === now && newData.parent().parent().parent().parent().child('configLog/' + newData.parent().parent().parent().parent().child('configMeta/features/stackmatMessage/log').val() + '/sched').val() === $id)",
+            ".validate": "$id.matches(/^[A-Za-z0-9_-]{1,32}$/) && newData.hasChildren(['at', 'by', 'createdAt']) && ((newData.hasChild('to') && !newData.hasChild('def')) || (!newData.hasChild('to') && newData.hasChild('def')))",
+            "to": { ".validate": "newData.isString() && newData.val().length <= 200" },
             "def": { ".validate": "newData.val() === true" },
             "at": { ".validate": "newData.isNumber() && newData.val() > now && newData.val() <= now + 31622400000" },
             "by": { ".validate": "newData.val() === auth.uid" },
@@ -1169,6 +1515,42 @@
             ".write": "(auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true) || (auth != null && auth.uid === 'tagda-scheduler' && auth.token.firebase.sign_in_provider === 'custom' && !newData.exists() && newData.parent().parent().parent().parent().child('configMeta/app/minVersion/at').val() === now && newData.parent().parent().parent().parent().child('configLog/' + newData.parent().parent().parent().parent().child('configMeta/app/minVersion/log').val() + '/sched').val() === $id)",
             ".validate": "$id.matches(/^[A-Za-z0-9_-]{1,32}$/) && newData.hasChildren(['at', 'by', 'createdAt']) && ((newData.hasChild('to') && !newData.hasChild('def')) || (!newData.hasChild('to') && newData.hasChild('def')))",
             "to": { ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 0 && newData.val() <= 100000" },
+            "def": { ".validate": "newData.val() === true" },
+            "at": { ".validate": "newData.isNumber() && newData.val() > now && newData.val() <= now + 31622400000" },
+            "by": { ".validate": "newData.val() === auth.uid" },
+            "createdAt": { ".validate": "newData.val() === now" },
+            "$other": { ".validate": false }
+          }
+        },
+        "banner": {
+          "$id": {
+            ".write": "(auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true) || (auth != null && auth.uid === 'tagda-scheduler' && auth.token.firebase.sign_in_provider === 'custom' && !newData.exists() && newData.parent().parent().parent().parent().child('configMeta/app/banner/at').val() === now && newData.parent().parent().parent().parent().child('configLog/' + newData.parent().parent().parent().parent().child('configMeta/app/banner/log').val() + '/sched').val() === $id)",
+            ".validate": "$id.matches(/^[A-Za-z0-9_-]{1,32}$/) && newData.hasChildren(['at', 'by', 'createdAt']) && ((newData.hasChild('to') && !newData.hasChild('def')) || (!newData.hasChild('to') && newData.hasChild('def')))",
+            "to": { ".validate": "newData.isString() && newData.val().length <= 200" },
+            "def": { ".validate": "newData.val() === true" },
+            "at": { ".validate": "newData.isNumber() && newData.val() > now && newData.val() <= now + 31622400000" },
+            "by": { ".validate": "newData.val() === auth.uid" },
+            "createdAt": { ".validate": "newData.val() === now" },
+            "$other": { ".validate": false }
+          }
+        },
+        "bannerKind": {
+          "$id": {
+            ".write": "(auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true) || (auth != null && auth.uid === 'tagda-scheduler' && auth.token.firebase.sign_in_provider === 'custom' && !newData.exists() && newData.parent().parent().parent().parent().child('configMeta/app/bannerKind/at').val() === now && newData.parent().parent().parent().parent().child('configLog/' + newData.parent().parent().parent().parent().child('configMeta/app/bannerKind/log').val() + '/sched').val() === $id)",
+            ".validate": "$id.matches(/^[A-Za-z0-9_-]{1,32}$/) && newData.hasChildren(['at', 'by', 'createdAt']) && ((newData.hasChild('to') && !newData.hasChild('def')) || (!newData.hasChild('to') && newData.hasChild('def')))",
+            "to": { ".validate": "newData.isString() && newData.val().matches(/^(info|warn|down)$/)" },
+            "def": { ".validate": "newData.val() === true" },
+            "at": { ".validate": "newData.isNumber() && newData.val() > now && newData.val() <= now + 31622400000" },
+            "by": { ".validate": "newData.val() === auth.uid" },
+            "createdAt": { ".validate": "newData.val() === now" },
+            "$other": { ".validate": false }
+          }
+        },
+        "readOnly": {
+          "$id": {
+            ".write": "(auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true) || (auth != null && auth.uid === 'tagda-scheduler' && auth.token.firebase.sign_in_provider === 'custom' && !newData.exists() && newData.parent().parent().parent().parent().child('configMeta/app/readOnly/at').val() === now && newData.parent().parent().parent().parent().child('configLog/' + newData.parent().parent().parent().parent().child('configMeta/app/readOnly/log').val() + '/sched').val() === $id)",
+            ".validate": "$id.matches(/^[A-Za-z0-9_-]{1,32}$/) && newData.hasChildren(['at', 'by', 'createdAt']) && ((newData.hasChild('to') && !newData.hasChild('def')) || (!newData.hasChild('to') && newData.hasChild('def')))",
+            "to": { ".validate": "newData.isBoolean()" },
             "def": { ".validate": "newData.val() === true" },
             "at": { ".validate": "newData.isNumber() && newData.val() > now && newData.val() <= now + 31622400000" },
             "by": { ".validate": "newData.val() === auth.uid" },
