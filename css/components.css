@@ -4882,3 +4882,13 @@ body.focus #app-banner { opacity: 0; transition: opacity 220ms var(--ease); }
 .support-reply { border-top: 1px solid var(--border); padding-top: 10px; margin-top: 10px; }
 .support-reply blockquote { margin: 6px 0; padding-left: 10px; border-left: 3px solid var(--border); color: var(--text-dim); }
 .support-reply-text { font-weight: 600; white-space: pre-wrap; }
+
+/* The Scramble of the Day board's admin marks (ADMIN.md §18): a time held for a look, the day's featured replay. */
+.db-flag.db-check {
+  font-size: 10px; font-weight: 700; letter-spacing: .02em; padding: 1px 6px; border-radius: 99px; margin-left: 6px;
+  color: var(--warn); background: color-mix(in srgb, var(--warn) 16%, transparent);
+}
+.db-flag.db-featured {
+  font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 99px; margin-left: 6px;
+  color: var(--gold); background: color-mix(in srgb, var(--gold) 16%, transparent);
+}

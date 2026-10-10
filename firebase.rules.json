@@ -278,6 +278,7 @@
           },
 
           "removed": {
+            ".read": "auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true",
             "$uid": {
               ".read": "auth != null && auth.uid === $uid",
               ".write": "auth != null && (auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true) && newData.exists() && root.child('daily/' + $dayStart + '/' + $event + '/results/' + $uid).exists() && !newData.parent().parent().child('results/' + $uid).exists()",
@@ -304,18 +305,19 @@
             ".read": "auth != null && (data.child(auth.uid).exists() || (auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true))",
 
             "$uid": {
-              ".write": "auth != null && ((auth.uid === $uid && !data.exists() && (!root.child('bans/' + auth.uid).exists() || root.child('bans/' + auth.uid + '/until').val() <= now)) || ((auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true) && data.exists() && !newData.exists() && newData.parent().parent().child('removed/' + $uid + '/at').val() === now))",
+              ".write": "auth != null && ((auth.uid === $uid && !data.exists() && root.child('config/sotd/frozen').val() !== true && (!root.child('bans/' + auth.uid).exists() || root.child('bans/' + auth.uid + '/until').val() <= now)) || ((auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true) && data.exists() && !newData.exists() && newData.parent().parent().child('removed/' + $uid + '/at').val() === now))",
 
               ".validate": "newData.hasChildren(['timeMs']) && (!root.child('daily/' + $dayStart + '/' + $event + '/backupClaim/' + $uid).exists() || newData.child('backup').val() === true) && (!root.child('daily/' + $dayStart + '/' + $event + '/removed/' + $uid).exists() || (root.child('daily/' + $dayStart + '/' + $event + '/removed/' + $uid + '/final').val() !== true && newData.child('backup').val() === true)) && (!root.child('daily/' + $dayStart + '/' + $event + '/progress/' + auth.uid + '/startedAt').exists() || !root.child('daily/' + $dayStart + '/' + $event + '/progress/' + auth.uid + '/finishedAt').exists() || newData.child('timeMs').val() >= (root.child('daily/' + $dayStart + '/' + $event + '/progress/' + auth.uid + '/finishedAt').val() - root.child('daily/' + $dayStart + '/' + $event + '/progress/' + auth.uid + '/startedAt').val()) * 0.75 - 4000)",
 
               "timeMs":      { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 36000000" },
-              "penalty":     { ".write": "auth != null && auth.uid === $uid && data.parent().exists() && (newData.val() === 'DNF' || (newData.val() === '+2' && data.val() !== 'DNF') || (newData.val() === 'none' && data.val() === 'none') || ((newData.val() === '+2' || newData.val() === 'none') && now - data.parent().child('submittedAt').val() <= 15000)) && (!root.child('bans/' + auth.uid).exists() || root.child('bans/' + auth.uid + '/until').val() <= now)", ".validate": "newData.isString() && newData.val().length <= 8" },
+              "penalty":     { ".write": "auth != null && ((auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true && data.parent().exists() && newData.val().matches(/^(none|[+]2|DNF)$/)) || (auth.uid === $uid && data.parent().exists() && (newData.val() === 'DNF' || (newData.val() === '+2' && data.val() !== 'DNF') || (newData.val() === 'none' && data.val() === 'none') || ((newData.val() === '+2' || newData.val() === 'none') && now - data.parent().child('submittedAt').val() <= 15000)) && (!root.child('bans/' + auth.uid).exists() || root.child('bans/' + auth.uid + '/until').val() <= now)))", ".validate": "newData.isString() && newData.val().length <= 8" },
               "name":        { ".validate": "newData.isString() && newData.val().length <= 32" },
               "note":        { ".write": "auth != null && auth.uid === $uid && (!root.child('bans/' + auth.uid).exists() || root.child('bans/' + auth.uid + '/until').val() <= now)", ".validate": "newData.isString() && newData.val().length <= 80" },
               "photo":       { ".validate": "newData.isString() && newData.val().length <= 300 && newData.val().matches(/^https:[/][/]lh[0-9]+[.]googleusercontent[.]com[/]/)" },
               "suspect":     { ".validate": "newData.isBoolean() || !newData.exists()" },
               "backup":      { ".validate": "newData.val() === true && root.child('daily/' + $dayStart + '/' + $event + '/backupClaim/' + $uid).exists()" },
               "replay":      { ".write": "auth != null && (auth.uid === $uid || (!newData.exists() && (auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true)))", ".validate": "newData.isBoolean() && (newData.val() === false || root.child('daily/' + $dayStart + '/' + $event + '/replayClaim/' + $uid).exists())" },
+              "review":      { ".write": "auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true", ".validate": "auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true && newData.hasChildren(['by', 'at', 'keep'])", "by": { ".validate": "newData.val() === auth.uid" }, "at": { ".validate": "newData.val() === now" }, "keep": { ".validate": "newData.isBoolean()" }, "$other": { ".validate": false } },
               "submittedAt": { ".validate": "newData.isNumber()" },
               "$other":      { ".validate": false }
             }
@@ -555,6 +557,18 @@
         "askMs": {
           ".write": "(auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true || auth != null && auth.uid === 'tagda-scheduler' && auth.token.firebase.sign_in_provider === 'custom') && newData.parent().parent().parent().child('configMeta/sotd/askMs/at').val() === now",
           ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 0 && newData.val() <= 15000"
+        },
+        "floors": {
+          ".write": "(auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true || auth != null && auth.uid === 'tagda-scheduler' && auth.token.firebase.sign_in_provider === 'custom') && newData.parent().parent().parent().child('configMeta/sotd/floors/at').val() === now",
+          ".validate": "newData.isString() && newData.val().length <= 400 && newData.val().matches(/^([a-z0-9]{2,12}:[0-9]{1,7}(,[a-z0-9]{2,12}:[0-9]{1,7})*)?$/)"
+        },
+        "frozen": {
+          ".write": "(auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true || auth != null && auth.uid === 'tagda-scheduler' && auth.token.firebase.sign_in_provider === 'custom') && newData.parent().parent().parent().child('configMeta/sotd/frozen/at').val() === now",
+          ".validate": "newData.isBoolean()"
+        },
+        "frozenMessage": {
+          ".write": "(auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true || auth != null && auth.uid === 'tagda-scheduler' && auth.token.firebase.sign_in_provider === 'custom') && newData.parent().parent().parent().child('configMeta/sotd/frozenMessage/at').val() === now",
+          ".validate": "newData.isString() && newData.val().length <= 200"
         },
         "$other": { ".validate": false }
       },
@@ -1519,6 +1533,42 @@
             "$other": { ".validate": false }
           }
         },
+        "floors": {
+          "$id": {
+            ".write": "(auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true) || (auth != null && auth.uid === 'tagda-scheduler' && auth.token.firebase.sign_in_provider === 'custom' && !newData.exists() && newData.parent().parent().parent().parent().child('configMeta/sotd/floors/at').val() === now && newData.parent().parent().parent().parent().child('configLog/' + newData.parent().parent().parent().parent().child('configMeta/sotd/floors/log').val() + '/sched').val() === $id)",
+            ".validate": "$id.matches(/^[A-Za-z0-9_-]{1,32}$/) && newData.hasChildren(['at', 'by', 'createdAt']) && ((newData.hasChild('to') && !newData.hasChild('def')) || (!newData.hasChild('to') && newData.hasChild('def')))",
+            "to": { ".validate": "newData.isString() && newData.val().length <= 400 && newData.val().matches(/^([a-z0-9]{2,12}:[0-9]{1,7}(,[a-z0-9]{2,12}:[0-9]{1,7})*)?$/)" },
+            "def": { ".validate": "newData.val() === true" },
+            "at": { ".validate": "newData.isNumber() && newData.val() > now && newData.val() <= now + 31622400000" },
+            "by": { ".validate": "newData.val() === auth.uid" },
+            "createdAt": { ".validate": "newData.val() === now" },
+            "$other": { ".validate": false }
+          }
+        },
+        "frozen": {
+          "$id": {
+            ".write": "(auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true) || (auth != null && auth.uid === 'tagda-scheduler' && auth.token.firebase.sign_in_provider === 'custom' && !newData.exists() && newData.parent().parent().parent().parent().child('configMeta/sotd/frozen/at').val() === now && newData.parent().parent().parent().parent().child('configLog/' + newData.parent().parent().parent().parent().child('configMeta/sotd/frozen/log').val() + '/sched').val() === $id)",
+            ".validate": "$id.matches(/^[A-Za-z0-9_-]{1,32}$/) && newData.hasChildren(['at', 'by', 'createdAt']) && ((newData.hasChild('to') && !newData.hasChild('def')) || (!newData.hasChild('to') && newData.hasChild('def')))",
+            "to": { ".validate": "newData.isBoolean()" },
+            "def": { ".validate": "newData.val() === true" },
+            "at": { ".validate": "newData.isNumber() && newData.val() > now && newData.val() <= now + 31622400000" },
+            "by": { ".validate": "newData.val() === auth.uid" },
+            "createdAt": { ".validate": "newData.val() === now" },
+            "$other": { ".validate": false }
+          }
+        },
+        "frozenMessage": {
+          "$id": {
+            ".write": "(auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true) || (auth != null && auth.uid === 'tagda-scheduler' && auth.token.firebase.sign_in_provider === 'custom' && !newData.exists() && newData.parent().parent().parent().parent().child('configMeta/sotd/frozenMessage/at').val() === now && newData.parent().parent().parent().parent().child('configLog/' + newData.parent().parent().parent().parent().child('configMeta/sotd/frozenMessage/log').val() + '/sched').val() === $id)",
+            ".validate": "$id.matches(/^[A-Za-z0-9_-]{1,32}$/) && newData.hasChildren(['at', 'by', 'createdAt']) && ((newData.hasChild('to') && !newData.hasChild('def')) || (!newData.hasChild('to') && newData.hasChild('def')))",
+            "to": { ".validate": "newData.isString() && newData.val().length <= 200" },
+            "def": { ".validate": "newData.val() === true" },
+            "at": { ".validate": "newData.isNumber() && newData.val() > now && newData.val() <= now + 31622400000" },
+            "by": { ".validate": "newData.val() === auth.uid" },
+            "createdAt": { ".validate": "newData.val() === now" },
+            "$other": { ".validate": false }
+          }
+        },
         "$other": { ".validate": false }
       },
 
@@ -1867,6 +1917,17 @@
       },
 
       "$other": { ".validate": false }
+    },
+
+    "sotdFeaturedReplay": {
+      ".read": true,
+      "$dayStart": {
+        ".write": "auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true",
+        ".validate": "$dayStart.matches(/^[0-9]{13}$/) && newData.hasChildren(['event', 'uid']) && root.child('daily/' + $dayStart + '/' + newData.child('event').val() + '/results/' + newData.child('uid').val() + '/replay').val() === true",
+        "event": { ".validate": "newData.isString() && newData.val().length <= 12" },
+        "uid": { ".validate": "newData.isString() && newData.val().length <= 128" },
+        "$other": { ".validate": false }
+      }
     },
 
     "sotdFeatured": {

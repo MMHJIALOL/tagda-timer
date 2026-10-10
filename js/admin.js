@@ -37,6 +37,7 @@ import { createLive } from './admin-live.js';
 import { createRooms } from './admin-rooms.js';
 import { createHealth } from './admin-health.js';
 import { createPeople } from './admin-people.js';
+import { createSotd } from './admin-sotd.js';
 import { eventOf } from './events.js';
 
 /** How many log entries the page keeps live. Older ones stay in the database. */
@@ -177,7 +178,7 @@ function route() {
   if (hl) return { view: 'health', sub: hl[1] || 'sync' };
   const days = /^days(?:\/(\d{13}))?$/.exec(h);
   if (days) return { view: 'days', sub: days[1] || null };
-  const mod = /^mod(?:\/(reports|chats|suspect|replays|rooms|history))?$/.exec(h);
+  const mod = /^mod(?:\/(reports|sotd|chats|suspect|replays|rooms|history))?$/.exec(h);
   if (mod) return { view: 'mod', sub: mod[1] || 'reports' };
   const room = /^mod\/room\/([A-Za-z0-9_-]{1,64})$/.exec(h);
   if (room) return { view: 'mod', sub: 'room', id: room[1] };
@@ -254,7 +255,8 @@ function renderTabs() {
   // Seven across a phone: a count is a badge on the tab, not words beside it.
   const tab = (href, label, on, n = 0) => el('a', { class: `ac-tab${on ? ' on' : ''}`, href, 'aria-current': on ? 'page' : null },
     el('span', { text: label }), n ? raw('span', { class: 'ac-tab-n', 'aria-label': t('{n} open', { n }) }, String(n)) : null);
-  const open = moderation.counts().reports;
+  // Open reports and Scramble of the Day times held for a look: what is waiting on an admin.
+  const open = moderation.counts().reports + moderation.counts().sotd;
   $tabs.replaceChildren(
     tab('#today', 'Today', r === 'today' || r === 'days'),
     tab('#settings', 'Settings', r === 'sections' || r === 'section'),
@@ -881,6 +883,7 @@ async function doSignOut() {
 
 function teardown() {
   moderation.stop();
+  sotd.stop();
   rooms.stop();
   health.stop();
   people.stop();
@@ -946,8 +949,9 @@ async function onUser(user) {
   if (S.status === 'admin') { listen(); moderation.start(); }
 }
 
-const moderation = createModeration({ S, scheduleRender, raw, ago, who, openSheet, closeSheet, askBan, gate, rooms: () => rooms });
+const moderation = createModeration({ S, scheduleRender, raw, ago, who, openSheet, closeSheet, askBan, gate, rooms: () => rooms, sotd: () => sotd });
 const rooms = createRooms({ S, scheduleRender, raw, ago, who, openSheet, closeSheet, askBan, gate, cfg, moderation });
+const sotd = createSotd({ S, scheduleRender, raw, ago, who, openSheet, closeSheet, askBan, gate, cfg, moderation });
 const announce = createAnnounce({ S, scheduleRender, raw, ago, who, openSheet, closeSheet, gate, cfg });
 /** Put a setting change on the save bar and open its section, for the usual review (the Health tab's minVersion). */
 function stage(path, value) {

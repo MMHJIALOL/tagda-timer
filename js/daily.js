@@ -30,6 +30,7 @@ import {
   CHAT_GAP_MS,
 } from './daily-net.js';
 import { getConfig, setOf } from './config.js';
+import { floorsOf } from './config-table.js';
 import { hasFeature } from './audience.js';
 import { banActive, banLine, banAccount } from './admins.js';
 
@@ -237,7 +238,7 @@ export class Daily extends EventTarget {
     this.snap = snap;
     /* Banned while an attempt is armed but not started: take it back, since
        the rules would refuse the time. One already under way finishes. */
-    if (this.banned && this.attempting && !this._lastStatus) this.attempting = false;
+    if ((this.banned || this.frozen) && this.attempting && !this._lastStatus) this.attempting = false;
     // A board that reset under you starts your count again from the solves
     // that belong to the new day, rather than carrying yesterday's total.
     if (rolled) this.pushCount();
@@ -544,7 +545,7 @@ export class Daily extends EventTarget {
        had submitted yet and handed out a fresh crack at today's scramble
        even when the account had already spent it. */
     return !!(this.snap?.signedIn && this.snap.scramble && this._resultChecked
-      && !this.submittedToday && !this.attempting && !this.banned
+      && !this.submittedToday && !this.attempting && !this.banned && !this.frozen
       // Removed by an admin: the backup or nothing, never the main scramble again.
       && (!this.removal || (!this.removal.final && this.onBackup)));
   }
@@ -752,6 +753,7 @@ export class Daily extends EventTarget {
     if (!this.snap?.signedIn) return 'signed-out';
     if (this.submittedToday) return 'done';
     if (this.removal?.final && this._resultChecked) return 'removed';
+    if (this.frozen) return 'closed';
     if (!this.snap.scramble) return 'waiting';
     if (this.onBackup) return 'backup';
     if (this.attempting) return 'ready';
@@ -820,6 +822,7 @@ export class Daily extends EventTarget {
     if (this.submittedToday) return t('You have already done today’s scramble — come back after the reset');
     // Banned (bans/, ADMIN.md): the rules would refuse the time, so it is not offered.
     if (this.banned) return banLine(this.snap.ban);
+    if (this.frozen) return getConfig('sotd', 'frozenMessage') || t('Today’s board is closed: no new times are taken until the reset.');
     if (this.snap.readError) {
       return t('Today’s board cannot be read on this deployment — see DAILY.md, firebase.rules.json probably needs republishing.');
     }
@@ -889,6 +892,7 @@ export class Daily extends EventTarget {
     if (!this.engaged) return false;
     if (!this.snap?.signedIn) return true;
     if (this.banned) return true;
+    if (this.frozen) return true;
     if (!this.snap.scramble) return true;
     /* The misfire question is up, the backup is being claimed, or it is still
        on its way: nothing to solve yet. Shut during the question in particular,
@@ -1179,6 +1183,15 @@ export class Daily extends EventTarget {
     return f && sotdEligible(f) ? f : null;
   }
 
+  /** The uid of the day's featured replay on this event's board, if an admin picked one. */
+  get featuredReplay() {
+    const f = this.net?.featuredReplay;
+    return f && f.event === this.eventId ? f.uid : null;
+  }
+
+  /** Closed for the day from the admin console (sotd.frozen, ADMIN.md §18): the board shows, no new result is taken. */
+  get frozen() { return getConfig('sotd', 'frozen') === true; }
+
   /** Whether an admin has banned this account (bans/<uid>), as of the server's clock. */
   get banned() {
     return banActive(this.snap?.ban, this.net?.serverNow?.() ?? Date.now());
@@ -1309,12 +1322,17 @@ export class Daily extends EventTarget {
    * exactly the same rules today's is — the two cannot drift, because there
    * is only one of them.
    */
-  _rank(results, progress) {
+  _rank(results, progress, { today = true } = {}) {
+    /* Under the event's floor (sotd.floors, ADMIN.md §18) and not looked at yet: on today's board,
+       marked "checking", until an admin keeps it (results/<uid>/review) or removes it. Past days are
+       past looking at. */
+    const floor = today ? floorsOf(getConfig('sotd', 'floors'))[this.eventId] : 0;
     return Object.entries(results || {})
       .map(([uid, r]) => ({
         uid, result: r, e: eff(r),
         isMe: uid === this.snap?.uid,
         clockOff: this._clockMismatch(r, progress?.[uid]),
+        checking: !!floor && !r?.review && Number.isFinite(eff(r)) && eff(r) < floor,
       }))
       .sort((a, b) => a.e - b.e);
   }
@@ -1336,7 +1354,7 @@ export class Daily extends EventTarget {
     const out = await this.net.readDay(String(dayStartMs(dayId)), eventId);
     return {
       dayId, eventId, scramble: out.scramble, denied: out.denied,
-      rows: out.denied ? [] : this._rank(out.results, out.progress),
+      rows: out.denied ? [] : this._rank(out.results, out.progress, { today: false }),
     };
   }
 

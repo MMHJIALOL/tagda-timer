@@ -242,6 +242,7 @@ export function createLive(ctx) {
     const people = block(t('Moderation'),
       el('div', { class: 'ac-stats' },
         el('a', { class: 'ac-stat-link', href: '#mod' }, stat(m.reportsRefused ? '—' : m.reports, t('open reports'))),
+        el('a', { class: 'ac-stat-link', href: '#mod/sotd' }, stat(ctx.moderation.counts().sotd, t('times held for a look'))),
         el('a', { class: 'ac-stat-link', href: '#people/bans' }, stat(banned, t('banned'))),
         el('a', { class: 'ac-stat-link', href: '#people/testers' }, stat(Object.keys(S.testers || {}).length, t('testers')))));
 

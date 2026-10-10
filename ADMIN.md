@@ -159,6 +159,9 @@ rules enforce takes effect at once, whatever any tab has cached.
 | `sotd.countBoard` | switch | off | | app | The "most solves today" board (DAILY.md §6) |
 | `sotd.autoDiscardMs` | ms | 2000 | 0 to 5000 | app | A main-scramble solve under this is a misfire, thrown away (DAILY.md §7) |
 | `sotd.askMs` | ms | 5000 | 0 to 15000 | app | Under this, "misfire? Use backup / Keep" |
+| `sotd.floors` | event:ms list | about each world record | 400 characters | app | A time under its event's floor is marked "checking" and held in Moderate › SOTD (§18) |
+| `sotd.frozen` | switch | off | | rules | On: no new result on any event today. The board, its chat and replays stay (§18) |
+| `sotd.frozenMessage` | text | empty | 200 characters | app | Shown in place of today's scramble while the board is closed |
 | `support.enabled` | switch | on | | app | The "Enjoying Tagda Timer?" card at all |
 | `support.oddsPct` | % | 1 | 0 to 100 | app | Page loads that ask, after the first ask and the quiet days |
 | `support.quietDays` | days | 30 | 1 to 365 | app | Quiet after somebody answers it |
@@ -428,14 +431,15 @@ tab's account, so it is little use against somebody determined. The rules apply 
 
 ![The Moderate tab: reports, every chat of the day, flagged times, and a shared replay being watched](docs/screenshots/admin-moderation.webp)
 
-The **Moderate** tab is five views over today, read live on the admin page's one connection.
-The fifth, **Rooms**, has a section of its own below ("Race rooms and 1v1").
+The **Moderate** tab is six views over today, read live on the admin page's one connection.
+**Rooms** has a section of its own below ("Race rooms and 1v1"), and **SOTD** has §18.
 An admin reads all of it without having done the scramble: the read rules on a day's `results`
 and `chat` let an admin through, and `rooms` is readable by admins as a whole.
 
 | View | What is in it | What you can do |
 |---|---|---|
 | **Reports** | open reports, one card per item, however many people reported it | **Dismiss** (the reports go, the item stays), **Delete** it (the reports go too), **Ban** its author |
+| **SOTD** | times held under their event's floor; each event's board today; the last seven days (§18) | **Keep**, **Set to +2**, **Set to DNF**, **Remove**, **Feature replay** |
 | **Chats** | the newest 25 messages of every event's SOTD room today, and of every race room made in the last day, newest first | **Delete**, **Ban** |
 | **Suspect** | today's SOTD times and recent race times flagged ⚑ when they were sent | **Remove time**, **Ban** |
 | **Replays** | today's shared replays | **Watch** (through the Worker, like anybody), **Remove**, **Ban** |
@@ -787,6 +791,7 @@ like any other.
 | `js/admin.js` | Sign-in, the front door, the forms, review, save or schedule, bans, the log, Undo |
 | `js/admin-live.js` | The Today tab, Days ahead, and testers (§8, §9, §11) |
 | `js/admin-mod.js` | The Moderate tab (§6) |
+| `js/admin-sotd.js` | Moderate › SOTD: held times, re-timing, the featured replay, past days (§18) |
 | `js/admin-ann.js` | The Announce tab (§7) |
 | `js/announce.js`, `js/announce-ui.js`, `css/announce.css` | What an announcement is and who sees it, and drawing one: shared with the timer |
 | `js/announcer.js` | The timer's side: when to show one, and what each browser answered |
@@ -846,6 +851,13 @@ already read, and the app's ⚑ is refused with *Couldn't send the report*. A se
 rules do not know yet (every one Phase 4 added, from race tuning to Spotify, and the two audiences)
 is refused when saved, and the page says a new setting needs its rules published; the app keeps
 using its default.
+
+Phase 11 on Phase 10's rules: the three `sotd.*` settings are refused when saved, so the app
+uses the default floors, and a time under one is marked *checking* with no way to keep it
+(**Keep**, **Set to +2/DNF** and **Feature replay** are refused with *these tools need this
+version's firebase.rules.json published*). **Remove** works as before. The app's read of the
+featured replay is refused, which reads as none. Past days shows winners and entries, without the
+removals (admins could not list them).
 
 Phase 10 on Phase 9's rules: no directory entry, support request or deletion request can be
 written (each refused cleanly; Data Health says *not open yet*). Lookup says the directory needs
@@ -907,6 +919,13 @@ rules are out. The cron finds nothing to apply.
   custom account, a different value, the schedule left behind, a schedule not due, one by somebody
   no longer an admin, anything but applying); a day ahead's scramble (admins only, changeable until
   the day, today's once by anybody); the featured event.
+- `node tools/verify-sotd-tools-rules.mjs`: 65 checks. The floors setting and what it refuses; a
+  keep only from an admin (Google), in their own name, now, on a time that is there, and never
+  inside the person's own first write of the row; an admin's +2, DNF or no penalty at any time,
+  and the person's own 15-second rule unchanged; the featured replay, only an admin's, only of a
+  shared replay, readable by anybody; the board closed for the day (no new result on any event,
+  while reading, re-timing and removing carry on); an admin listing a day's removals; and the rules
+  from before this phase.
 - `node tools/verify-people-rules.mjs`: 50 checks. A directory entry only from its own Google account,
   `firstAt` written once, no email, nobody but admins reading it; a support request only with its
   ten-minute stamp, every field typed and capped (a queue entry with a value in it is refused),
@@ -1082,4 +1101,85 @@ public record. Any other device still signed in to the account loses its copy wh
 which the request says before it is sent.
 
 The rules let an admin delete a whole `users/<uid>`, never read it or write into it.
+
+---
+
+## 18. Scramble of the Day tools
+
+![Moderate › SOTD on a phone: times held for a look, today's boards with the featured replay, and past days](docs/screenshots/admin-sotd.webp)
+
+**Moderate › SOTD**, beside Reports. Three blocks, from what the Moderate tab already listens to
+(today's results) plus one small listener (the day's featured replay).
+
+### Held for a look
+
+`sotd.floors` sets a floor per event, in ms, written `event:ms` and comma-separated:
+
+```
+333:3000,222:400,444:15000,555:30000,666:55000,777:90000,333bf:11500,333oh:5500,clock:1800,
+minx:22000,pyram:700,skewb:700,sq1:3000,444bf:50000,555bf:120000,fto:8000
+```
+
+(the default: about each world record single, so a normal time never waits). An event left out is
+never checked; an empty setting checks nothing. A time under its event's floor goes on the board
+as usual, marked **checking**, and waits here, fastest first, until an admin:
+
+- **Keep**: writes `review` on the result. The mark goes for everybody at once.
+- **Set to +2** / **Set to DNF**: re-times it (below). A DNF is no longer under any floor.
+- **Remove**: the usual removal (§6, DAILY.md §10): they get the backup scramble, or that was
+  their day if it was the backup; the replay goes too.
+
+The count is on Today (*times held for a look*), on the Moderate tab's badge with the open reports,
+and on the SOTD sub-tab. Only today's board is marked: a past day's board never shows *checking*.
+
+```
+daily/<day>/<event>/results/<uid>/review   { by, at, keep: true }   admins (Google) only
+```
+
+The rules check it is an admin's, in their own name, stamped now; the person's own first write of
+their row cannot carry one.
+
+### Re-timing
+
+On **Today's boards** (one event at a time, the events somebody played today), any time can be set
+to **+2**, **DNF** or **No penalty**, at any time of the day: for a solve that was real with the
+wrong time on it (a Stackmat glitch, a +2 they forgot). It writes the row's `penalty` (#164's
+child) as an admin; the person's own rule (heavier any time, lighter only in the first 15 s) is
+unchanged. It asks first.
+
+### The featured replay
+
+**Feature replay** on any row with a shared replay picks it for the day:
+
+```
+sotdFeaturedReplay/<day>   { event, uid }   admins write, anybody reads
+```
+
+The rules accept it only for a result that has its replay shared. That event's board shows it with
+**★ Featured** and first on its Replays tab (keeping its rank number). **Unfeature** takes it off.
+The app reads it once when the day opens, so a pick reaches a timer that is already open when it
+next opens the Scramble of the Day. (The plan named it `sotdFeatured/<day>/replay`, but
+`sotdFeatured/<day>` is already the featured event, a string.)
+
+### Closing the board for the day
+
+`sotd.frozen` on: the rules refuse every new result, on every event, until it is turned off. For a
+scramble that leaked or is broken. The app shows `sotd.frozenMessage` (or *Today's board is closed:
+no new times are taken until the reset*) where the scramble goes, and its bar says *closed for today*.
+The board, its chat and its replays stay; admins still re-time and remove. Turn it off after the
+reset (or schedule that, §10).
+
+Not built: *Replace today's scramble*. Today's scramble is write-once in the rules (that is what
+stops anybody planting it ahead), and voiding a day's results to swap it is not a change to make
+from a phone. Closing the board covers the leak; the next day's scramble is new anyway.
+
+Also not built from the plan's list: holding a result whose replay is shorter than its time, or
+one sent within 2 s of the scramble arriving. Neither is in the data today (the clip's length is
+in R2, not the database; the scramble's arrival is not written).
+
+### Past days
+
+**Read the last 7 days** reads each event's results and removals for the seven days before today
+(results and removals are kept; only the chats are swept), once: each day's events with the winner, how many
+took part and how many times were removed. Each person links to their page (§17).
 

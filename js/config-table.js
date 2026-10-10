@@ -25,6 +25,17 @@ const MB = 1024 * 1024;
 /** The events that can have a Scramble of the Day (events.js dailyEligible), written out:
     this file imports nothing, so the Worker can bundle it. test.html checks the two agree. */
 export const SOTD_EVENTS = ['333', '222', '444', '555', '666', '777', '333bf', '333oh', 'clock', 'minx', 'pyram', 'skewb', 'sq1', '444bf', '555bf', 'fto'];
+/** The default floor per event, in ms (sotd.floors): about each world record single, so only a time
+    that would be a record is held for a look. FTO has no WCA record; its floor is the best unofficial times. */
+export const SOTD_FLOORS = '333:3000,222:400,444:15000,555:30000,666:55000,777:90000,333bf:11500,333oh:5500,clock:1800,minx:22000,pyram:700,skewb:700,sq1:3000,444bf:50000,555bf:120000,fto:8000';
+const FLOORS = /^([a-z0-9]{2,12}:[0-9]{1,7}(,[a-z0-9]{2,12}:[0-9]{1,7})*)?$/;
+/** sotd.floors as { event: ms }. */
+export function floorsOf(text) {
+  const out = {};
+  if (typeof text !== 'string' || !FLOORS.test(text)) return out;
+  for (const part of text.split(',').filter(Boolean)) { const [ev, ms] = part.split(':'); out[ev] = Number(ms); }
+  return out;
+}
 /** The latest a time setting can be: 2100. */
 const TIME_MAX = 4102444800000;
 /** Who a feature is on for (ADMIN.md §9): the 'choice' a section's `audience` key holds. */
@@ -149,6 +160,12 @@ export const CONFIG = {
         help: 'A main-scramble solve this short is discarded and the backup comes up. 2x2, Pyraminx, Skewb and Clock never are.' },
       askMs: { type: 'int', def: 5000, min: 0, max: 15000, unit: 'ms', label: 'Misfire: asked under', where: 'app',
         help: 'Under this (and over the line above), “misfire? Use backup / Keep”.' },
+      floors: { type: 'text', def: SOTD_FLOORS, max: 400, pattern: 'floors', label: 'Checked under', where: 'app',
+        help: 'Per event, in ms: a time under its floor stays on the board marked “checking” and waits in Moderate › SOTD until an admin keeps or removes it. Roughly the world record, so a normal time never waits. Written event:ms, comma-separated; an event left out is never checked.' },
+      frozen: { type: 'bool', def: false, label: 'Board closed for today', where: 'rules',
+        help: 'On: no new result is accepted on any event today, whatever the app says. For a scramble that leaked or is broken. The board, its chat and its replays stay.' },
+      frozenMessage: { type: 'text', def: '', max: 200, label: 'Message while closed', where: 'app',
+        help: 'Shown in place of today’s scramble while the board is closed. Empty: “Today’s board is closed: no new times are taken until the reset.”' },
     },
   },
   competition: {
@@ -270,6 +287,7 @@ export function clean(sp, v) {
   if (sp.type === 'text') {
     if (typeof v !== 'string') return undefined;
     if (sp.pattern === 'https' && !HTTPS.test(v)) return undefined;
+    if (sp.pattern === 'floors' && !FLOORS.test(v)) return undefined;
     return v.slice(0, sp.max);
   }
   if (sp.type === 'choice') return sp.options.includes(v) ? v : undefined;
@@ -289,7 +307,7 @@ export function valid(sp, v) {
   if (!sp) return false;
   if (sp.type === 'bool') return typeof v === 'boolean';
   if (sp.type === 'int' || sp.type === 'time') return Number.isInteger(v) && v >= sp.min && v <= sp.max;
-  if (sp.type === 'text') return typeof v === 'string' && v.length <= sp.max && (sp.pattern !== 'https' || HTTPS.test(v));
+  if (sp.type === 'text') return typeof v === 'string' && v.length <= sp.max && (sp.pattern !== 'https' || HTTPS.test(v)) && (sp.pattern !== 'floors' || FLOORS.test(v));
   if (sp.type === 'choice') return sp.options.includes(v);
   if (sp.type === 'set') {
     if (typeof v !== 'string') return false;
