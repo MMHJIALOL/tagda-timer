@@ -49,6 +49,7 @@ export function createLive(ctx) {
     started: false, unsubs: [],
     featured: {}, featuredRefused: false,
     usage: null, usageErr: null, usageAt: 0, usageBusy: false,
+    presence: undefined, stored: null, storedBusy: false,
     chats: null, chatsAt: 0, chatsBusy: false,
     scrambles: new Map(),      // dayKey -> { event: scramble | null } once read
   };
@@ -80,12 +81,37 @@ export function createLive(ctx) {
       L.featuredRefused = false;
       ctx.scheduleRender();
     }, () => { L.featuredRefused = true; ctx.scheduleRender(); }));
+    // Connections now (presence/, js/presence.js): one entry per open connection, gone as it drops.
+    L.unsubs.push(onValue(ref('presence'), (s) => {
+      let conns = 0, race = 0;
+      const people = Object.keys(s.val() || {}).length;
+      for (const per of Object.values(s.val() || {})) {
+        for (const c of Object.values(per || {})) { conns++; if (c?.k === 'race') race++; }
+      }
+      L.presence = { conns, race, people };
+      ctx.scheduleRender();
+    }, () => { L.presence = null; ctx.scheduleRender(); }));
+  }
+
+  /** Everything R2 holds (/replay/usage?all=1): a list per thousand clips, so only on asking. */
+  async function countStored() {
+    if (L.storedBusy) return;
+    L.storedBusy = true;
+    ctx.scheduleRender();
+    try {
+      const token = await S.user.getIdToken();
+      const r = await fetch('/replay/usage?all=1', { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' });
+      const j = r.ok ? await r.json() : null;
+      L.stored = j?.stored || { err: r.ok ? 'old' : 'failed' };
+    } catch { L.stored = { err: 'failed' }; }
+    L.storedBusy = false;
+    ctx.scheduleRender();
   }
 
   function stop() {
     for (const off of L.unsubs.splice(0)) off();
     Object.assign(L, { started: false, featured: {}, featuredRefused: false, usage: null, usageErr: null, usageAt: 0,
-      chats: null, chatsAt: 0, scrambles: new Map() });
+      chats: null, chatsAt: 0, scrambles: new Map(), presence: undefined, stored: null });
   }
 
   /** The Worker's look at today's clips (/replay/usage, admins only). */
@@ -219,6 +245,30 @@ export function createLive(ctx) {
               !u.enabled ? el('span', { class: 'ac-pill warn', text: t('Switched off') }) : null,
               u.audience && u.audience !== 'everyone' ? el('span', { class: 'ac-pill', text: t('On for {who}', { who: audienceLabel(u.audience) }) }) : null));
 
+    // Costs and limits: what the free tiers allow, against what this page can count (ADMIN.md §20).
+    const pr = L.presence;
+    const hs = ctx.health.summary();
+    ctx.rooms.loadRelay();
+    const relay = ctx.rooms.relayTotal?.();
+    const st = L.stored;
+    const R2_FREE = 10 * 1024 * MB;
+    const costs = block(t('Costs and limits'),
+      el('div', { class: 'ac-stack' },
+        pr === null ? el('p', { class: 'ac-sub', text: 'Connections now need this version’s firebase.rules.json published.' })
+          : el('div', { class: 'ac-meter-row' },
+            raw('span', {}, pr === undefined ? t('Connections now: …') : t('{n} of 100 connections now ({r} in race tabs)', { n: pr.conns, r: pr.race })),
+            pr ? meter(pr.conns, 100) : null),
+        st && !st.err ? el('div', { class: 'ac-meter-row' },
+          raw('span', {}, t('{used} of {max} MB of replays stored ({n} clips)', { used: mb(st.bytes), max: mb(R2_FREE), n: st.clips })), meter(st.bytes, R2_FREE))
+          : el('div', { class: 'ac-entry-actions ac-start' },
+            st?.err ? raw('span', { class: 'ac-err' }, st.err === 'old' ? t('The Worker on this deploy is older than this page.') : t('Couldn’t ask the Worker.')) : null,
+            el('button', { class: 'ac-btn small', type: 'button', text: L.storedBusy ? t('Counting…') : t('Count stored replays'), disabled: L.storedBusy, onclick: countStored }))),
+      el('div', { class: 'ac-stats' },
+        stat(hs.loaded ? hs.people : '…', t('signed-in people today'), t('from heartbeats')),
+        stat(relay == null ? '…' : relay, t('relay logins today'), t('1v1 cam and mic'))),
+      el('p', { class: 'ac-sub', text: 'Counted: connections from timers that report (a device with Send health reports off is not), today’s heartbeats, relay logins. Stored replays list the whole bucket, so they are counted on asking.' }),
+      el('a', { class: 'ac-btn small', href: '#health/storage', text: t('Database storage ›') }));
+
     // Chat: the day's rooms (read shallow) and the race rooms (the Moderate tab's read).
     const sotdMsgs = L.chats?.day === day ? Object.values(L.chats.counts).reduce((a, b) => a + b, 0) : null;
     let raceMsgs = 0, open = 0, racers = 0;
@@ -256,8 +306,8 @@ export function createLive(ctx) {
       el('p', { class: 'ac-sub', text: 'None of it is readable from here, so none of it is guessed at.' }),
       el('ul', { class: 'ac-blind' },
         el('li', {},
-          el('b', { text: 'Database connections and downloads' }),
-          el('span', { text: 'The Spark plan allows 100 connections at once and 10 GB of downloads a month.' }),
+          el('b', { text: 'Database downloads' }),
+          el('span', { text: 'The Spark plan allows 10 GB a month. (Connections are counted above.)' }),
           el('a', { href: 'https://console.firebase.google.com/project/tagda-timer/database/tagda-timer-default-rtdb/usage', target: '_blank', rel: 'noopener', text: 'Firebase › Realtime Database › Usage' })),
         el('li', {},
           el('b', { text: 'Worker requests' }),
@@ -275,7 +325,7 @@ export function createLive(ctx) {
         el('h1', { class: 'ac-h1', text: 'Today' }),
         el('button', { class: 'ac-btn small', type: 'button', text: 'Refresh', onclick: refresh })),
       raw('p', { class: 'ac-sub' }, t('{day} · resets in {left} (00:00 IST)', { day: dayIdFromServerMs(now), left: formatCountdown(left) })),
-      switchesBlock(), ctx.health.todayBlock(), sotd, replays, chat, race, ctx.rooms.seatBlock(), ctx.rooms.relayBlock(), people, scheduled, blind,
+      switchesBlock(), ctx.health.todayBlock(), sotd, replays, costs, chat, race, ctx.rooms.seatBlock(), ctx.rooms.relayBlock(), people, scheduled, blind,
     ];
   }
 

@@ -174,7 +174,7 @@ export function createHealth(ctx) {
 
   /* ---------------- views ---------------- */
 
-  const SUBS = () => [['sync', t('Sync')], ['versions', t('Versions')], ['scrambles', t('Scrambles')], ['errors', t('Errors')]];
+  const SUBS = () => [['sync', t('Sync')], ['versions', t('Versions')], ['scrambles', t('Scrambles')], ['errors', t('Errors')], ['storage', t('Storage')]];
   const block = (title, ...kids) => el('section', { class: 'ac-block' }, el('h2', { class: 'ac-h2', text: title }), ...kids);
   const stat = (value, label, sub = null) => el('div', { class: 'ac-stat' },
     raw('b', { class: 'ac-stat-n' }, String(value)), el('span', { class: 'ac-stat-label', text: label }),
@@ -193,6 +193,12 @@ export function createHealth(ctx) {
       ...SUBS().map(([key, label]) => raw('a', {
         class: `ac-subtab${sub === key ? ' on' : ''}`, href: `#health/${key}`, 'aria-current': sub === key ? 'page' : null,
       }, label)));
+    // Five across a phone run off its edge: the one you are on is kept in view (as Moderate's are).
+    requestAnimationFrame(() => {
+      const cur = nav.querySelector('.ac-subtab.on');
+      const over = cur && nav.isConnected ? cur.getBoundingClientRect().right - nav.getBoundingClientRect().right : 0;
+      if (over > 0) nav.scrollLeft += over + 12;
+    });
     const head = [
       el('div', { class: 'ac-head-row' },
         el('h1', { class: 'ac-h1', text: 'Health' }),
@@ -204,6 +210,7 @@ export function createHealth(ctx) {
     if (sub === 'versions') return [...head, ...viewVersions()];
     if (sub === 'scrambles') return [...head, ...viewScrambles()];
     if (sub === 'errors') return [...head, ...viewErrors()];
+    if (sub === 'storage') return [...head, ...ctx.storage().view()];
     return [...head, ...viewSync()];
   }
 

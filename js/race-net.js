@@ -180,6 +180,9 @@ class FirebaseTransport extends EventTarget {
     this._sdk = { ...dbMod, db };
     this._user = cred.user;
     this.snap.uid = cred.user.uid;
+    // This tab's race connection counts itself for the admin console too (js/presence.js).
+    import('./presence.js').then(m => m.trackPresence(this._sdk, () => this.snap.uid, 'race'))
+      .catch(err => console.warn('[presence] not started', err?.message || err));
 
     /* Open the socket now, while nobody is waiting for it.
      *

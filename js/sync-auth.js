@@ -253,6 +253,7 @@ export function hasPersistedSession() {
 }
 
 let _emuDb = false;
+let _presence = false;
 
 export async function getDatabaseHandle() {
   const { appMod, auth } = await ensureSdk();
@@ -261,5 +262,14 @@ export async function getDatabaseHandle() {
   const db = dbMod.getDatabase(app);
   // Once, before anything reads or writes. The namespace comes from databaseURL.
   if (EMULATED && !_emuDb) { _emuDb = true; dbMod.connectDatabaseEmulator(db, '127.0.0.1', 9000); }
-  return { ...dbMod, db, auth };
+  const handle = { ...dbMod, db, auth };
+  // The connection counts itself for the admin console, and lets go when the tab is hidden long (js/presence.js).
+  if (!_presence) {
+    _presence = true;
+    import('./presence.js').then((m) => {
+      const sync = m.trackPresence(handle, () => auth.currentUser?.uid, 'app');
+      onAuthChange(() => sync());
+    }).catch(err => console.warn('[presence] not started', err?.message || err));
+  }
+  return handle;
 }

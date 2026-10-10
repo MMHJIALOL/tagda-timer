@@ -155,6 +155,7 @@ rules enforce takes effect at once, whatever any tab has cached.
 | `race.staleRoomMin` | minutes | 10 | 1 to 1440 | app | How long a player row may sit silent before a join reaps it |
 | `race.rowsBeforeFold` | rows | 6 | 1 to 24 | app | Rows drawn before "+N more" |
 | `race.suspectPct` | % | 45 | 10 to 90 | app | The ⚑ on race and SOTD boards: under this share of the person's own average |
+| `app.idleDisconnectMin` | minutes | 0 (never) | 0 to 240 | app | A tab hidden this long lets its database connections go until it is shown (§20) |
 | `chatFilter.words` | text | empty | 2000 characters | app | Words and phrases neither chat nor a note will send (§19) |
 | `sotd.events` | events | all 16 | any of them | app | Which events have a Scramble of the Day. Data already there stays |
 | `sotd.countBoard` | switch | off | | app | The "most solves today" board (DAILY.md §6) |
@@ -805,6 +806,8 @@ like any other.
 | `js/admin-mod.js` | The Moderate tab (§6) |
 | `js/admin-sotd.js` | Moderate › SOTD: held times, re-timing, the featured replay, past days (§18) |
 | `js/admin-modlog.js` | Log › Moderation, and its Undo (§19) |
+| `js/admin-storage.js` | Health › Storage: counts, sizes, sweeps, the backup (§20) |
+| `js/presence.js` | The timer's side: each connection's presence, and letting a hidden tab go (§20) |
 | `js/admin-ann.js` | The Announce tab (§7) |
 | `js/announce.js`, `js/announce-ui.js`, `css/announce.css` | What an announcement is and who sees it, and drawing one: shared with the timer |
 | `js/announcer.js` | The timer's side: when to show one, and what each browser answered |
@@ -864,6 +867,11 @@ already read, and the app's ⚑ is refused with *Couldn't send the report*. A se
 rules do not know yet (every one Phase 4 added, from race tuning to Spotify, and the two audiences)
 is refused when saved, and the page says a new setting needs its rules published; the app keeps
 using its default.
+
+Phase 13 on Phase 12's rules: no presence can be written (the timer stops trying for the page
+load), so Today says connections need the rules. Counts, sizes and the backup work (they only
+read). The room sweep goes without its log entry; clearing an announcement's stats is refused.
+`app.idleDisconnectMin` is refused when saved, so no tab lets go.
 
 Phase 12 on Phase 11's rules: every moderation action is sent with its log entry, refused, and sent
 again alone, which lands as it always did (unlogged; Log › Moderation says *Publish the rules
@@ -939,6 +947,10 @@ rules are out. The cron finds nothing to apply.
   custom account, a different value, the schedule left behind, a schedule not due, one by somebody
   no longer an admin, anything but applying); a day ahead's scramble (admins only, changeable until
   the day, today's once by anybody); the featured event.
+- `node tools/verify-costs-rules.mjs`: 26 checks. Presence only in one's own name, with a known kind,
+  stamped now, nothing else, readable by admins only (shallow too); an admin clearing an
+  announcement's stats, and nobody else, and never writing them; sweeps logged; and the rules from
+  before this phase.
 - `node tools/verify-mod2-rules.mjs`: 68 checks. The moderation log: every action the console logs
   is one the rules know, by an admin in their own name, now, written once and never changed or
   deleted, an undo pointing at an entry that is there, readable by admins only and by person. Ban
@@ -1292,4 +1304,78 @@ The rules make each entry an admin's, in their own name, stamped now, with an ac
 and never changed or deleted. They do not make an action carry its entry: every rule that lets an
 admin act would need a pointer to it, and one path missed would refuse moderation outright. The
 console and the timer always send the two together; on rules from before the log, the action alone.
+
+---
+
+## 20. Costs, connections and storage
+
+![On a phone: Today's Costs and limits, Health › Storage, and a room sweep's preview](docs/screenshots/admin-costs.webp)
+
+### Costs and limits (Today)
+
+| Line | From | Limit |
+|---|---|---|
+| Connections now (and how many in race tabs) | `presence/` | 100 at once (Spark) |
+| Replays stored, on asking | the Worker's `/replay/usage?all=1`: a list of the whole bucket | 10 GB (R2 free) |
+| Signed-in people today | today's heartbeats (§16) | |
+| Relay logins today | `turnDay/` (§6) | |
+
+Stored replays are counted only when **Count stored replays** is tapped: listing the bucket is a
+class A operation per thousand clips, and Today refreshes every minute. Worker requests and
+database downloads are not readable from here (*What this page can't see* links them).
+
+### Connections
+
+```
+presence/<uid>/<id>   { at, k: 'app' | 'race' }   own entry only; admins read; removed by the server on disconnect
+```
+
+Every database connection the timer opens says it is there (the timer's own, a race tab's), with
+`onDisconnect().remove()`, so it costs no connection of its own and is gone the moment the
+connection drops. Only for a connection with an account (a race tab's is anonymous), and not on
+a device whose *Send health reports* switch is off or with `health.enabled` off: the count is
+"about" for that reason. Data Health says so.
+
+**`app.idleDisconnectMin`** (0, never, by default): a tab hidden that long closes its database
+connections (`goOffline`) and opens them again when shown (`goOnline`); changes made meanwhile
+wait in the SDK and go then, and a race tab that is let go leaves its room as closing it would.
+Raise it from 0 if Today's count gets near 100.
+
+### Health › Storage
+
+One row per top-level node: how many records (the database's own `?shallow`, over REST as this
+admin, ids only, so next to nothing), the oldest (a day key, or the time inside a push id), and
+how it stays bounded. **Size** reads a node whole once and counts against the month's 10 GB of
+downloads. `daily/` and `users/` cannot be read as a whole (by design), and say so.
+
+Two sweeps the rest of the app does not already do, each with a preview of exactly what goes, and
+logged (`modLog`, action `sweep`, §19):
+
+- **Rooms** made over 7 days ago with nobody seen in them for a day (never the 1v1 lobby).
+- **Announcement stats** of an announcement deleted, or ended over 90 days ago (never a built-in's).
+
+Everything else is swept already: heartbeats and errors by the Health tab, relay logins by
+Moderate › Rooms, closed reports by Moderate, old chats and `replayDay/` by the timers. The two
+logs are kept (the moderation log by rule).
+
+### Backup
+
+**Download backup** saves, as one JSON file, everything an admin can read that is not gone in a
+day or two: settings, both logs, scheduled changes, announcements and their stats, bans, testers,
+reports, the directory, support and deletion requests, errors marked known, the featured events
+and replays. Not `users/` (admins cannot read anybody's synced data), rooms or the Scramble of the
+Day. Spark keeps no backups, so take one before a risky change. To restore, import the node you
+need in the Firebase console (Realtime Database › ⋮ › Import JSON at that node).
+
+### Not built
+
+- **Cloudflare's own numbers** (Worker requests, R2 operations): the plan's 13.2 needs an API token
+  you would create (`CF_API_TOKEN`, `CF_ACCOUNT_ID`) and a GraphQL query this rig cannot try
+  against the real API. The dashboards stay linked. Say so if you want it built once the token
+  exists.
+- **A daily backup by the Worker's cron into R2** (13.5 B): it needs the database's service-account
+  key as a Worker secret, to read everything with `?format=export`. The download covers the admin
+  data in the meantime.
+- **Firebase's usage numbers**: they need a Google Cloud service account with monitoring access.
+  Connections and daily people above stand in for them.
 
