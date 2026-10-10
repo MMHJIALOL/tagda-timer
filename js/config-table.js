@@ -118,6 +118,8 @@ export const CONFIG = {
         help: 'Short enough to end a 1v1 somebody quit, long enough for a phone changing network.' },
       camEnabled: { type: 'bool', def: true, label: 'Camera and mic', where: 'rules',
         help: 'Off: the cam and mic buttons are hidden, the rules refuse the call’s setup, and the Worker hands out no relay. Calls already connected carry on until the 1v1 ends.' },
+      camSignedIn: { type: 'bool', def: true, label: 'Cam and mic for signed-in players only', where: 'rules',
+        help: 'On: both players need a Google account signed in to the timer, linked to the 1v1 when it starts; a banned account gets no call. Off: anybody in a 1v1 can turn them on, as before.' },
       turnEnabled: { type: 'bool', def: true, label: 'Relay for strict networks (TURN)', where: 'worker',
         help: 'The only part of the site billed by the gigabyte: 1,000 GB a month free, then $0.05/GB. Off: two players behind strict NATs see “Couldn’t connect”; everybody else connects directly as before.' },
       turnTtlMin: { type: 'int', def: 240, min: 10, max: 240, unit: 'min', label: 'A relay login lasts', where: 'worker',

@@ -273,6 +273,18 @@ class FirebaseTransport extends EventTarget {
 
   async rtcArm() { await this._sdk.onDisconnect(this._rtcRef(this.snap.uid)).remove().catch(() => {}); }
 
+  /* ---- 1v1: seats linked to a Google account (RACE.md §9) ----
+     rooms/<id>/acct/<uid>: `claim` is the account this seat says it is
+     (written by the seat, readable only by it and the admins), `ok` is that
+     account confirming it (written by the account, readable by the room). */
+
+  acctClaim(googleUid) { return this._sdk.set(this._ref(`${this._base}/acct/${this.snap.uid}/claim`), googleUid); }
+
+  /** Whether `uid`'s seat is linked, now and on every change; null when the read is refused. */
+  acctOn(uid, cb) {
+    return this._sdk.onValue(this._ref(`${this._base}/acct/${uid}/ok`), (s) => cb(s.val() === true), () => cb(null));
+  }
+
   /** TURN relay credentials from the Worker (worker.js /turn), or null when it has none. */
   async rtcIceServers() {
     const token = await this._user?.getIdToken();

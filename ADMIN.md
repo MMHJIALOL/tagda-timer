@@ -180,6 +180,7 @@ rules enforce takes effect at once, whatever any tab has cached.
 | `duel.showupSec` | seconds | 15 | 5 to 60 | app | Matched, but the other person never arrived: search again |
 | `duel.goneSec` | seconds | 10 | 5 to 60 | app | The opponent out of the room this long ends the 1v1 |
 | `duel.camEnabled` | switch | on | | rules, Worker and app | The 1v1's cam and mic: off, no new call is set up and no relay handed out |
+| `duel.camSignedIn` | switch | on | | rules, Worker and app | Cam and mic only for seats linked to a Google account that is not banned (RACE.md §9) |
 | `duel.turnEnabled` | switch | on | | Worker | The TURN relay, the one part billed by the gigabyte (§4) |
 | `duel.turnTtlMin` | minutes | 240 | 10 to **240** | Worker | How long a relay login lasts |
 | `competition.enabled` | switch | on | | app | Off: no new Competition Mode set. One under way can be finished |
@@ -315,6 +316,10 @@ Random 1v1 had no switch before this: turning it off meant a deploy.
 - **`duel.camEnabled: false`** refuses the call's setup under `rooms/<id>/rtc/<uid>` (deleting
   your own still works), hides the cam and mic tile in new 1v1s, and makes the Worker's `/turn`
   answer `403 off`. A call already connected carries on until its 1v1 ends.
+- **`duel.camSignedIn`** (on unless switched off) refuses the call's setup from a seat that is
+  not linked to a Google account under `rooms/<id>/acct/<uid>`, or whose account is banned.
+  `/turn` answers `403 not-signed-in` to it. The tile tells a signed-out player to sign in.
+  Off: anybody in a 1v1 can use cam and mic, as before.
 - **`duel.turnEnabled: false`** is the Worker's alone: `/turn` answers `403 off`, and
   `js/race-cam.js` connects with STUN alone, as it always has when the Worker has no TURN key.
   Most pairs still connect; two players both behind strict NATs see *Couldn't connect*. It is the
@@ -449,13 +454,14 @@ again, since rooms are never cleared out of the database and are not watched as 
 ### Reporting
 
 ```
-reports/<pushId>              { by, at, kind: 'chat' | 'raceChat' | 'replay' | 'result', path, text? }
+reports/<pushId>              { by, at, kind: 'chat' | 'raceChat' | 'replay' | 'result' | 'duel', path, text?, room?, from? }
 reportOnce/<uid>/<kind|path>  the report's id: one per account per item, readable by its owner
 ```
 
 A **⚑** sits beside somebody else's message in the day's chat (hover, or always faintly on a
 touch screen), and beside a race chat message when this browser is signed in with Google. A
-shared replay has **Report this replay** under the player's **⋯**. Each asks first, then says
+shared replay has **Report this replay** under the player's **⋯**. A 1v1 opponent has a ⚑ on
+their side of the head-to-head card (RACE.md §9), which asks what happened. Each asks first, then says
 *Reported. An admin will look at it.*, or *You have already reported that*.
 
 The rules ask that the reporter is a Google account and not banned (race mode's anonymous
@@ -466,6 +472,14 @@ the same update. That entry is write-once and never deleted, so a dismissed repo
 filed again by the same person. Reports are readable and deletable by admins only. `result` is
 accepted by the rules for a board row, but nothing in the app offers it yet: a flagged time is
 already in **Suspect**.
+
+A `duel` report points at `rooms/<id>/players/<their seat>` and also names the `room` and the
+reporter's own seat in it (`from`). The rules want that seat linked to the reporter's account
+(`rooms/<id>/acct/<from>`, `claim` and `ok`), in a room whose `meta/kind` is `'duel'`, and not
+the same seat as the target. The seat need not still be there, so a player who quit can still
+be reported. In **Reports** it reads *1v1 opponent · <room>* with what happened. It shows the
+opponent's Google account from their seat's link (*Not signed in: no account to ban* when
+there is none). It has **Open room** in place of a delete button, and **Ban** on that account.
 
 ### Race rooms and 1v1
 

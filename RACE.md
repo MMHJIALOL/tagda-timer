@@ -344,13 +344,38 @@ only carries the call's setup, under `rooms/<id>/rtc/<uid>`:
   tile says it couldn't connect and offers **Retry**.
 - Your own node is removed when you leave, and by `onDisconnect` when the tab goes.
 
+**Signed-in players only** (`duel.camSignedIn`, on by default). Both players need a Google
+account signed in to the timer. A race seat is anonymous (one per tab), so when a 1v1 starts
+the account vouches for it under `rooms/<id>/acct/<uid>`:
+
+| Path | Written by | Read by | What |
+|---|---|---|---|
+| `claim` | the seat, once | the seat, admins | the Google uid this seat says it is |
+| `ok` | that Google account, if not banned | the room's players | `true`: the account confirms the claim |
+
+`linkAccount()` in `js/race.js` writes both. While the switch is on, the rules refuse the call's
+setup from a seat without `ok`, or whose claimed account is banned now. The Worker's `/turn`
+refuses such a seat too. The tile then shows the reason in place of the switches: *Cam and mic
+are for signed-in players* with **Sign in**, *{name} isn't signed in, so there's no cam or mic
+in this 1v1*, or *Cam and mic aren't available on this account* (banned). Signing in mid-1v1
+links the seat straight away. With the switch off, anybody in a 1v1 can use them, as before.
+
+**Reporting the opponent.** A **⚑** sits on the opponent's side of the head-to-head card when
+this browser is signed in. It asks what happened (cam or mic, name or chat, cheating, something
+else) and files a `duel` report (ADMIN.md §6) from this seat's linked account, with the round
+and whether their cam and mic were on. Admins see the opponent's Google account through the
+link, so a ban lands on the account, not a throwaway seat.
+
 **The rules** (`rtc` under `rooms/$roomId`):
 - Each player writes only their own node, and only in a room whose `meta/kind` is `'duel'`.
+- While `duel.camSignedIn` is on, only from a linked seat whose account is not banned.
 - Only players in the room can read it. Connection candidates include IP addresses,
   which no one else should see.
 - **It needs firebase.rules.json published.** Until then the first switch is refused, the
   device goes straight back off, and a toast says to publish the rules. The 1v1 itself
-  is unaffected.
+  is unaffected. On rules from before the link, the seat's claim is refused. The app takes
+  that as "nothing is gated" for a signed-in player, and still shows the sign-in gate to a
+  signed-out one. The opponent report is refused cleanly until the rules are published.
 
 **What it does not do.**
 - **Strict NATs need the TURN relay.** Media goes straight between the two players when
@@ -366,8 +391,9 @@ only carries the call's setup, under `rooms/<id>/rtc/<uid>`:
   keep racing without video.
 - **Peer to peer means the two players can learn each other's IP address.** A relay-only
   TURN setup would hide it.
-- **There is no video moderation.** Video can't be reported, so the safeguards are the
-  covered-until-Show default, the eye button and Quit 1v1.
+- **There is no video moderation.** Nothing is recorded, so a report says what happened but
+  carries no clip. The safeguards are signed-in accounts that can be banned, the report ⚑,
+  the covered-until-Show default, the eye button and Quit 1v1.
 
 The camera and mic are the ones picked for webcam replays in Settings, when one is picked.
 Video is asked for at 640×360 and 24 fps, capped at 600 kbps (`CAM_*` in `js/raceapp.js`).
