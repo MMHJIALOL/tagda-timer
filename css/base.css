@@ -900,7 +900,10 @@ body.inspecting #last-delta, body.focus #last-delta { display: none; }
   /* `height: auto` puts back what the portrait block above reserves: on its
      side the times list is gone, so the figures are the only tile and they are
      as tall as they are. */
-  #sidebar-right { grid-column: 1 / -1; height: auto; max-height: 44vh; }
+  #sidebar-right,
+  #stage:has(#panel-stats[data-collapsed="false"]) #sidebar-right {
+    grid-column: 1 / -1; height: auto; max-height: 44vh;
+  }
   /* min(), not a flat size: --timer-size is written as an inline style from the
      size slider, so it cannot be overridden from a stylesheet at all — and
      should not be. Capping it against the viewport height keeps whatever the

@@ -6,6 +6,15 @@ import { t } from './i18n.js';
 export const $  = (sel, root = document) => root.querySelector(sel);
 export const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
+/** Capitalise a single typed move without rewriting pasted wide-turn notation. */
+export function capitaliseTypedMove(input, event) {
+  if (event.isComposing || event.inputType !== 'insertText' || !/^[a-z]$/.test(event.data || '')) return;
+  const pos = input.selectionStart;
+  if (pos == null || pos < 1 || input.value[pos - 1] !== event.data) return;
+  input.value = input.value.slice(0, pos - 1) + event.data.toUpperCase() + input.value.slice(pos);
+  input.setSelectionRange(pos, pos);
+}
+
 /* Every literal label in the app reaches the page through here, so this is
    where it is translated: text, title, placeholder, aria-label and bare
    string children. t() is an exact lookup, so scrambles, times and names

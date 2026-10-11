@@ -26,7 +26,8 @@ function token(uid, provider = 'google.com') {
     iat: s, exp: s + 3600, auth_time: s, firebase: { sign_in_provider: provider, identities: {} },
   })}.`;
 }
-const users = { admin: token('boss'), ann: token('ann'), bo: token('bo'), cy: token('cy'), anonboss: token('anonboss', 'anonymous') };
+const users = { admin: token('boss'), ann: token('ann'), bo: token('bo'), cy: token('cy'), anonboss: token('anonboss', 'anonymous'),
+  r1: token('r1', 'anonymous'), r2: token('r2', 'anonymous') };
 
 let NS = 'mod2-rules';
 async function call(method, path, body, who, query = '') {
@@ -86,7 +87,8 @@ async function seed() {
   await call('PATCH', '', {
     'rooms/OPEN1': { meta: { createdAt: now, event: '333', mode: 'wca', round: 1 }, rounds: { 1: { info: { scramble: "R U R'", hash: 'h1', startedAt: now } } },
       chat: { m0: { uid: 'cy', name: 'cy', text: 'spam', at: now } } },
-    'rooms/DUEL1': { meta: { createdAt: now, event: '333', mode: 'wca', round: 1, kind: 'duel' } },
+    'rooms/DUEL1': { meta: { createdAt: now, event: '333', mode: 'wca', round: 1, kind: 'duel' },
+      players: { r1: { name: 'r1', joinedAt: now }, r2: { name: 'r2', joinedAt: now } } },
     [`${D}/scramble`]: "R U R'",
   }, 'owner');
   // Everybody already has a 3x3 time (for the day's chat, their note and a share), so only the ban can refuse.
@@ -132,6 +134,8 @@ expect('chat ban: a race time still', await tries.raceTime('bo'), true);
 expect('chat ban: a 1v1 still', await tries.duel('bo'), true);
 expect('chat ban: sharing a replay still', await tries.replays('bo'), true);
 expect('chat ban: reporting still', await tries.reports('bo'), true);
+await call('PUT', 'rooms/DUEL1/acct/r2/claim', 'bo', 'r2');
+expect('chat ban: linking his account to a 1v1 tab for the cam still', await call('PUT', 'rooms/DUEL1/acct/r2/ok', true, 'bo'), true);
 
 // ann: race and reports.
 await setBan('ann', 'race,reports');
@@ -147,6 +151,8 @@ await setBan('cy', 'duel,sotd,replays');
 expect('1v1 ban: no joining a 1v1', await tries.duel('cy'), false);
 expect('1v1 ban: not the waiting seat', await tries.seat('cy'), false);
 expect('…which an admin can still clear', await call('DELETE', 'rooms/_1v1_333/meta/waiting', undefined, 'admin'), true);
+await call('PUT', 'rooms/DUEL1/acct/r1/claim', 'cy', 'r1');
+expect('1v1 ban: not linking an account to a 1v1 tab for the cam either', await call('PUT', 'rooms/DUEL1/acct/r1/ok', true, 'cy'), false);
 expect('1v1 ban: racing still', await tries.race('cy'), true);
 expect('board ban: no Scramble of the Day time', await tries.sotd('cy'), false);
 expect('board ban: no lighter penalty either', await call('PUT', `${D}/results/cy/penalty`, '+2', 'cy'), false);
