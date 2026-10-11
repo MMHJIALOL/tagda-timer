@@ -165,7 +165,9 @@ export function replaysBoard(rows, revealed, replays, { past = false, remove = n
   if (!replayKept(replays.dayKey)) {
     return el('div', { class: 'db-empty', text: t('Replays are kept for {n} days.', { n: keepDays() }) });
   }
-  const shared = rows.map((r, i) => [r, i]).filter(([r]) => canPlay(replays.dayKey, replays.event, r.uid, r.result));
+  const shared = rows.map((r, i) => [r, i]).filter(([r]) => canPlay(replays.dayKey, replays.event, r.uid, r.result))
+    // The day's featured replay first (an admin's pick, sotdFeaturedReplay/), keeping its rank number.
+    .sort((a, b) => (b[0].uid === replays.featured) - (a[0].uid === replays.featured));
   if (!shared.length) {
     return el('div', { class: 'db-empty', text: past
       ? t('Nobody shared a replay that day.')
@@ -307,6 +309,11 @@ function timeRow(r, i, replays = null, remove = null) {
       /* Ranked like any other time; the tag only says which scramble it was. */
       res.backup ? el('span', { class: 'db-flag db-backup', text: t('backup'),
         title: t('Solved on the backup scramble after a misfire') }) : null,
+      // Under the event's floor and not looked at yet (sotd.floors): stays on the board, marked.
+      r.checking ? el('span', { class: 'db-flag db-check', text: t('checking'),
+        title: t('Faster than this event’s record: an admin is having a look') }) : null,
+      replays?.featured && replays.featured === r.uid ? el('span', { class: 'db-flag db-featured', text: t('★ Featured'),
+        title: t('The replay an admin picked for today') }) : null,
       /* Inside the time's cell rather than a column of its own: the grid's
          other optional cell (the ⚑) would shift a sixth column about. */
       replays && canPlay(replays.dayKey, replays.event, r.uid, res)
@@ -589,6 +596,7 @@ const STATE_TEXT = {
   backup: t('backup scramble — final attempt'),
   done: t('attempt submitted'),
   removed: t('time removed — no attempts left today'),
+  closed: t('closed for today — no new times'),
 };
 
 /** The live window, or null. At most one is ever open. */
@@ -692,7 +700,7 @@ export function openSotd(app, ctl, { onExit, solving = () => false } = {}) {
     const rows = past ? [] : ctl.ranked();
     const dayKey = past ? String(dayStartMs(past)) : ctl.net?.target?.().dayKey;
     // No replays for this account at all (their audience, ADMIN.md §9): no tab, no ▶.
-    const replays = dayKey && replaysForMe() ? { dayKey, event: ctl.eventId, onGone: () => { renderBoard(); placeBoard(); }, onBan: replayBan(ctl, ctl.eventId), onReport: replayReport(ctl, dayKey, ctl.eventId) } : null;
+    const replays = dayKey && replaysForMe() ? { dayKey, event: ctl.eventId, featured: past ? null : ctl.featuredReplay, onGone: () => { renderBoard(); placeBoard(); }, onBan: replayBan(ctl, ctl.eventId), onReport: replayReport(ctl, dayKey, ctl.eventId) } : null;
     if (!replays && mode === 'replays') mode = 'times';
     // Today's rows only: a past day's picker builds its own (it has to drop the row itself).
     const opts = { remove: past ? null : adminRemover(ctl, { dayKey }), locked: lockText(ctl) };

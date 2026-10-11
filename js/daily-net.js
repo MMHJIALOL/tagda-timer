@@ -271,9 +271,17 @@ export class DailyTransport extends EventTarget {
     if (this._featuredDay === dayKey) return;
     this._featuredDay = dayKey;
     this.featured = null;
+    this.featuredReplay = null;
     this._sdk.get(this._ref(`sotdFeatured/${dayKey}`)).then((s) => {
       if (this._featuredDay !== dayKey) return;
       this.featured = typeof s.val() === 'string' ? s.val() : null;
+      this._emit();
+    }, () => {});
+    // And the day's featured replay (sotdFeaturedReplay/<dayKey>, ADMIN.md §18): { event, uid }, shown first on its board.
+    this._sdk.get(this._ref(`sotdFeaturedReplay/${dayKey}`)).then((s) => {
+      if (this._featuredDay !== dayKey) return;
+      const v = s.val();
+      this.featuredReplay = v && typeof v.event === 'string' && typeof v.uid === 'string' ? { event: v.event, uid: v.uid } : null;
       this._emit();
     }, () => {});
   }

@@ -51,7 +51,8 @@ export function validateFor(sp) {
   if (sp.type === 'int' || sp.type === 'time') return `newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= ${sp.min} && newData.val() <= ${sp.max}`;
   if (sp.type === 'text') {
     const https = sp.pattern === 'https' ? ` && newData.val().matches(/^https:[/][/][^ ]+$/)` : '';
-    return `newData.isString() && newData.val().length <= ${sp.max}${https}`;
+    const floors = sp.pattern === 'floors' ? ` && newData.val().matches(/^([a-z0-9]{2,12}:[0-9]{1,7}(,[a-z0-9]{2,12}:[0-9]{1,7})*)?$/)` : '';
+    return `newData.isString() && newData.val().length <= ${sp.max}${https}${floors}`;
   }
   if (sp.type === 'choice') return `newData.isString() && newData.val().matches(/^(${sp.options.join('|')})$/)`;
   if (sp.type === 'set') {
