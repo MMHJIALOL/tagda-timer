@@ -43,6 +43,32 @@ function readCache() {
 
 const unknown = new Set();
 
+/* The admin console's Preview in the app (ADMIN.md §22): with ?cfgPreview, the unsaved settings the
+   console left in this browser's storage (same origin) win over the database's, in this tab only.
+   Nothing is written anywhere, and the rules still hold every write to the real values; it is the
+   same as editing this browser's own copy, which anybody can do to their own browser. */
+export const PREVIEW_KEY = 'tdt-cfg-preview';
+const PREVIEW_DEFAULT = '__default__';
+const preview = (() => {
+  try {
+    if (typeof location === 'undefined' || !new URLSearchParams(location.search).has('cfgPreview')) return null;
+    const v = JSON.parse(localStorage.getItem(PREVIEW_KEY) || 'null');
+    return v?.values && typeof v.values === 'object' ? v.values : null;
+  } catch { return null; }
+})();
+/** Whether this tab is showing unsaved settings (the strip across it says so). */
+export const previewing = () => !!preview;
+if (preview && typeof document !== 'undefined') {
+  const strip = () => {
+    const n = Object.keys(preview).length;
+    const b = document.createElement('div');
+    b.className = 'cfg-preview-strip';
+    b.textContent = n === 1 ? 'Preview: 1 unsaved setting, in this tab only' : `Preview: ${n} unsaved settings, in this tab only`;
+    document.body.append(b);
+  };
+  if (document.body) strip(); else addEventListener('DOMContentLoaded', strip, { once: true });
+}
+
 /**
  * The setting's value: the database's, clipped to its range, or the default.
  *
@@ -60,6 +86,12 @@ export function getConfig(section, key) {
       console.warn(`[config] no such setting: ${section}.${key}`);
     }
     return undefined;
+  }
+  const path = `${section}/${key}`;
+  if (preview && path in preview) {
+    if (preview[path] === PREVIEW_DEFAULT) return sp.def;
+    const pv = clean(sp, preview[path]);
+    return pv === undefined ? sp.def : pv;
   }
   const v = clean(sp, live?.[section]?.[key]);
   return v === undefined ? sp.def : v;

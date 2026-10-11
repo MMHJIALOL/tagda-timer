@@ -20,6 +20,13 @@ import { adminStatus, testerStatus } from './admins.js';
 const KEY = 'tdt-roles';
 const asked = new Map();
 
+/* The admin console's Preview in the app, as somebody else (ADMIN.md §22): ?cfgPreview&as=everyone
+   shows what an account that is neither tester nor admin gets; as=tester, a tester's. This tab only. */
+const AS = (() => {
+  try { const q = new URLSearchParams(location.search); return q.has('cfgPreview') && ['everyone', 'tester'].includes(q.get('as')) ? q.get('as') : null; }
+  catch { return null; }
+})();
+
 let me = (() => {
   try {
     const got = JSON.parse(localStorage.getItem(KEY) || 'null');
@@ -29,7 +36,7 @@ let me = (() => {
 })();
 
 /** The signed-in account's roles as last read: { uid, tester, admin }. */
-export const roles = () => ({ ...me });
+export const roles = () => (AS === 'everyone' ? { ...me, tester: false, admin: false } : AS === 'tester' ? { ...me, tester: true, admin: false } : { ...me });
 
 /** Record what an account is (daily-net reads it too) and tell whoever draws a feature. */
 export function setRoles(uid, { tester = false, admin = false } = {}) {
@@ -65,8 +72,9 @@ export function loadRoles(sdk, user) {
 function inAudience(a, uid) {
   if (!a || a === 'everyone') return true;
   if (!uid || uid !== me.uid) return false;
-  if (a === 'testers') return me.tester || me.admin;
-  return a === 'admins' && me.admin;
+  const r = roles();
+  if (a === 'testers') return r.tester || r.admin;
+  return a === 'admins' && r.admin;
 }
 
 /** Whether this account has the feature `section` stands for, by its audience. Nothing set: everybody. */
