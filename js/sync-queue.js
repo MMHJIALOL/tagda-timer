@@ -8,6 +8,8 @@ export function createSyncQueue({ storage, online = () => navigator.onLine !== f
   let running = null, inFlight = null, error = null, lastSync = null, acknowledged = false;
   let problem = null;
   let revision = 0, acknowledgedRevision = 0, slow = false;
+  // For the admin console's Health tab (js/health.js): writes dropped as permanent, and the last error's code.
+  let dropped = 0, lastErr = null;
   const adding = new Map();
   const accountRuns = new Map();
   const unpersisted = new Map(), removedIds = new Set();
@@ -85,6 +87,8 @@ export function createSyncQueue({ storage, online = () => navigator.onLine !== f
   async function enqueue(entry) {
     const uid = owner(entry);
     if (!uid) return;
+    // When it was queued, so a queue that stops moving can say how long it has been stuck.
+    entry = { ...entry, at: Date.now() };
     const id = crypto.randomUUID();
     adding.set(id, entry);
     if (uid === active?.uid) { revision++; notify(); }
@@ -143,12 +147,15 @@ export function createSyncQueue({ storage, online = () => navigator.onLine !== f
             // behind it. Drop it; the change is still saved on this device.
             if (!e?.permanent || active !== session) {
               if (active === session) {
+                lastErr = String(e?.code || e?.name || 'upload').slice(0, 40);
                 error = /permission|auth|token|credential/i.test(e?.code || '') ? 'permission' : 'upload';
                 console.warn('[sync] upload failed', e?.code || e);
               }
               return false;
             }
             refused = true;
+            dropped++;
+            lastErr = String(e?.code || e?.name || 'refused').slice(0, 40);
             console.warn('[sync] dropped a change the database cannot store', entry.path || Object.keys(entry.updates || {})[0], e);
           } finally { clearTimeout(timer); }
           // Remove only this acknowledged operation, including during account switches.
@@ -204,6 +211,12 @@ export function createSyncQueue({ storage, online = () => navigator.onLine !== f
     ready() { ready = true; notify(); return flush(); },
     problem(reason = 'start') { if (active) { problem = reason; notify(); } },
     connectivityChanged() { notify(); if (online() && ready) void flush(); },
+    /** For the Health tab: what is waiting, since when, and what went wrong. Counts are since the page loaded. */
+    health() {
+      const list = [...mine(), ...waiting()];
+      const oldest = list.reduce((m, e) => (typeof e.at === 'number' && e.at < m ? e.at : m), Infinity);
+      return { pending: list.length, oldestAt: Number.isFinite(oldest) ? oldest : null, dropped, lastErr };
+    },
     // Receiving a stale cloud echo must not overwrite a queued local edit/delete.
     protects(path) { return [...mine(), ...waiting()].some(e => e.kind === 'update' ? path in e.updates : e.path === path); },
   };

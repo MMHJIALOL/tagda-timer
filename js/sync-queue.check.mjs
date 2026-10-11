@@ -226,3 +226,23 @@ test('read-only holds every change in order and sends them once it is lifted', a
   assert.deepEqual(sent, [1, 2, 'removed']);
   assert.equal(queue.snapshot().state, 'up-to-date');
 });
+
+test('health() says what is waiting since when, and counts what was dropped', async () => {
+  const f = fixture(); f.offline(true);
+  await f.queue.activate('a', async e => { if (e.value === 'bad') { const err = new Error('invalid key'); err.permanent = true; err.code = 'invalid-key'; throw err; } });
+  const before = Date.now();
+  await f.queue.enqueue(entry('one', 1));
+  await f.queue.enqueue(entry('two', 'bad'));
+  await f.queue.ready();
+  let h = f.queue.health();
+  assert.equal(h.pending, 2);
+  assert.ok(h.oldestAt >= before && h.oldestAt <= Date.now());
+  assert.equal(h.dropped, 0);
+  f.offline(false);
+  assert.equal(await f.queue.flush(), true);
+  h = f.queue.health();
+  assert.equal(h.pending, 0);
+  assert.equal(h.oldestAt, null);
+  assert.equal(h.dropped, 1);
+  assert.equal(h.lastErr, 'invalid-key');
+});

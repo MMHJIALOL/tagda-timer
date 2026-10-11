@@ -6,10 +6,11 @@ import { t, translateDOM } from './i18n.js';
    use it is admins/<uid> in the database (js/admins.js); what the settings
    are is js/config.js; ADMIN.md has the rest.
 
-   Six tabs: Today (js/admin-live.js: the day's numbers, and the days
+   Seven tabs: Today (js/admin-live.js: the day's numbers, and the days
    ahead), Settings, Moderate (js/admin-mod.js: reports, every chat, flagged
-   times, shared replays), Announce (js/admin-ann.js), People (testers/ and
-   bans/) and the Log.
+   times, shared replays; js/admin-rooms.js: race rooms and 1v1), Announce
+   (js/admin-ann.js), People (testers/ and bans/), Health (js/admin-health.js:
+   what signed-in timers report about themselves) and the Log.
 
    Every Save is one multi-path update: the value, its configMeta pointer and
    a configLog entry saying who changed what from what to what. The rules
@@ -34,6 +35,7 @@ import { createModeration } from './admin-mod.js';
 import { createAnnounce } from './admin-ann.js';
 import { createLive } from './admin-live.js';
 import { createRooms } from './admin-rooms.js';
+import { createHealth } from './admin-health.js';
 import { eventOf } from './events.js';
 
 /** How many log entries the page keeps live. Older ones stay in the database. */
@@ -168,6 +170,8 @@ function route() {
   if (h === 'bans') return { view: 'people', sub: 'bans' };
   const people = /^people(?:\/(testers|bans))?$/.exec(h);
   if (people) return { view: 'people', sub: people[1] || 'bans' };
+  const hl = /^health(?:\/(sync|versions|scrambles|errors))?$/.exec(h);
+  if (hl) return { view: 'health', sub: hl[1] || 'sync' };
   const days = /^days(?:\/(\d{13}))?$/.exec(h);
   if (days) return { view: 'days', sub: days[1] || null };
   const mod = /^mod(?:\/(reports|chats|suspect|replays|rooms|history))?$/.exec(h);
@@ -217,6 +221,7 @@ function view() {
       if (r.view !== 'mod' || r.sub !== 'room') rooms.leaveRoom();
       if (r.view === 'mod') return moderation.view(r.sub, r.id);
       if (r.view === 'ann') return announce.view(r.sub);
+      if (r.view === 'health') return health.view(r.sub);
       if (r.view === 'section') return viewSection(r.section);
       return viewSections();
     }
@@ -243,7 +248,7 @@ function renderAccount() {
 
 function renderTabs() {
   const r = route().view;
-  // Six across a phone: a count is a badge on the tab, not words beside it.
+  // Seven across a phone: a count is a badge on the tab, not words beside it.
   const tab = (href, label, on, n = 0) => el('a', { class: `ac-tab${on ? ' on' : ''}`, href, 'aria-current': on ? 'page' : null },
     el('span', { text: label }), n ? raw('span', { class: 'ac-tab-n', 'aria-label': t('{n} open', { n }) }, String(n)) : null);
   const open = moderation.counts().reports;
@@ -253,6 +258,7 @@ function renderTabs() {
     tab('#mod', 'Moderate', r === 'mod', open),
     tab('#ann', 'Announce', r === 'ann'),
     tab('#people', 'People', r === 'people'),
+    tab('#health', 'Health', r === 'health', health.summary().stuck),
     tab('#log', 'Log', r === 'log'));
 }
 
@@ -866,6 +872,7 @@ async function doSignOut() {
 function teardown() {
   moderation.stop();
   rooms.stop();
+  health.stop();
   announce.stop();
   live.stop();
   for (const off of S.unsubs.splice(0)) off();
@@ -931,7 +938,14 @@ async function onUser(user) {
 const moderation = createModeration({ S, scheduleRender, raw, ago, who, openSheet, closeSheet, askBan, gate, rooms: () => rooms });
 const rooms = createRooms({ S, scheduleRender, raw, ago, who, openSheet, closeSheet, askBan, gate, cfg, moderation });
 const announce = createAnnounce({ S, scheduleRender, raw, ago, who, openSheet, closeSheet, gate, cfg });
-const live = createLive({ S, scheduleRender, raw, ago, who, openSheet, closeSheet, gate, cfg, moderation, rooms, scheduledList, scheduledRow });
+/** Put a setting change on the save bar and open its section, for the usual review (the Health tab's minVersion). */
+function stage(path, value) {
+  S.edits.set(path, value);
+  location.hash = `#settings/${path.split('/')[0]}`;
+  render();
+}
+const health = createHealth({ S, scheduleRender, raw, ago, who, openSheet, closeSheet, gate, cfg, moderation, stage });
+const live = createLive({ S, scheduleRender, raw, ago, who, openSheet, closeSheet, gate, cfg, moderation, rooms, health, scheduledList, scheduledRow });
 
 window.addEventListener('hashchange', () => { closeSheet(); render(); window.scrollTo(0, 0); });
 window.addEventListener('beforeunload', (e) => { if (S.edits.size) e.preventDefault(); });
