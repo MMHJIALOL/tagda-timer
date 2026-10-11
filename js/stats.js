@@ -11,6 +11,9 @@ export const DNF = Infinity;
 /** Does this solve's result count in moves rather than in milliseconds? */
 export const isMoveResult = (s) => Number.isFinite(s?.fmcMoves);
 
+/** A session can contain both kinds after changing event; never average their units together. */
+export const resultsFor = (solves, moves) => solves.filter(s => isMoveResult(s) === !!moves);
+
 /**
  * Effective (penalty-applied) result. Infinity means DNF.
  *
@@ -448,6 +451,9 @@ export function sessionBests(solves) {
 export function trimmedIndices(solves, n) {
   if (solves.length < n) return { best: new Set(), worst: new Set() };
   const start = solves.length - n;
+  if (solves.slice(start).some(s => isMoveResult(s) !== isMoveResult(solves[start]))) {
+    return { best: new Set(), worst: new Set() };
+  }
   const window = solves.slice(start).map((s, i) => ({ i: start + i, v: eff(s) }));
   const t = trimCount(n);
   const sorted = [...window].sort((a, b) => a.v - b.v);
@@ -461,8 +467,10 @@ export function trimmedIndices(solves, n) {
 export function rollingSeries(solves, n) {
   const e = solves.map(eff);
   const out = new Array(solves.length);
+  let sameUnitFrom = 0;
   for (let i = 0; i < solves.length; i++) {
-    if (i + 1 < n) { out[i] = null; continue; }
+    if (i && isMoveResult(solves[i]) !== isMoveResult(solves[i - 1])) sameUnitFrom = i;
+    if (i + 1 - sameUnitFrom < n) { out[i] = null; continue; }
     const a = averageOfRange(e, i + 1 - n, i + 1);
     out[i] = (a === null || a === DNF) ? null : a;
   }
@@ -619,7 +627,8 @@ export function statWindow(solves, kind) {
     const n = Number(at[1]), end = Number(at[2]);
     const label = t('Average of {n} · to solve #{i}', { n, i: end + 1 });
     const start = end - n + 1;
-    if (start < 0 || end >= solves.length) return { ...base, label };
+    if (start < 0 || end >= solves.length
+        || solves.slice(start, end + 1).some(s => isMoveResult(s) !== isMoveResult(solves[end]))) return { ...base, label };
     return {
       ...base,
       label,
