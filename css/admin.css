@@ -436,3 +436,23 @@ select.ac-inp { appearance: none; -webkit-appearance: none; background-image: li
 .ac-scope { border: 0; padding: 0; margin: 0; min-width: 0; }
 .ac-scope legend { padding: 0; margin-bottom: 6px; }
 
+/* ---------------- announcements and feedback, round two (ADMIN.md §21) ---------------- */
+
+/* Each version's funnel: acted on, dismissed, still open, as one bar. */
+.ac-funnel { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
+.ac-funnel-row { display: grid; grid-template-columns: 34px 1fr; align-items: center; column-gap: 8px; row-gap: 2px; }
+.ac-funnel-v { font-size: .78rem; color: var(--text-faint); font-weight: 700; }
+.ac-funnel-bars { display: flex; height: 8px; border-radius: 99px; overflow: hidden; background: var(--bg-2); }
+.ac-funnel-n { grid-column: 2; font-size: .78rem; color: var(--text-faint); }
+.ac-fbar.clicked { background: var(--accent); }
+.ac-fbar.dismissed { background: color-mix(in srgb, var(--text-faint) 70%, transparent); }
+.ac-fbar.open { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+/* Preview in the app: the timer at a device's size, scaled to fit. */
+.ac-frame-box { position: relative; width: 100%; overflow: hidden; border-radius: 14px; border: 1px solid var(--border); background: var(--bg-2); }
+.ac-frame { position: absolute; top: 0; left: 0; border: 0; transform-origin: 0 0; background: var(--bg); }
+.ac-frame-said { min-height: 1.4em; }
+.ac-frame-said.ac-warn { color: var(--warn-text); }
+/* People › Feedback. */
+.ac-stars { color: var(--warn-text); letter-spacing: 1px; font-size: .9rem; }
+.ac-pre { white-space: pre-wrap; }
+

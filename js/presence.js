@@ -36,7 +36,7 @@ let refused = false;
 export function trackPresence(sdk, uidOf, kind) {
   const rec = { sdk, offline: false };
   dbs.push(rec);
-  let up = false, key = null, keyUid = null;
+  let up = false, key = null, keyUid = null, denials = 0;
   const at = (uid, id) => sdk.ref(sdk.db, `presence/${uid}/${id}`);
   async function sync() {
     const uid = uidOf() || null;
@@ -55,9 +55,13 @@ export function trackPresence(sdk, uidOf, kind) {
       await sdk.onDisconnect(r).remove();
       await sdk.set(r, { at: sdk.serverTimestamp(), k: kind });
     } catch (err) {
-      // Rules from before presence: not asked again this page load.
-      if (/permission/i.test(String(err?.code || err?.message || err))) refused = true;
       key = null;
+      if (!/permission/i.test(String(err?.code || err?.message || err))) return;
+      /* A write the moment the connection comes up can reach the server before the sign-in has:
+         refused once is asked again shortly; refused twice is rules from before presence, and
+         not asked again this page load. */
+      if (++denials >= 2) refused = true;
+      else setTimeout(sync, 3000);
     }
   }
   sdk.onValue(sdk.ref(sdk.db, '.info/connected'), (s) => {

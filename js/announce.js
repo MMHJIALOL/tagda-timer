@@ -7,7 +7,11 @@
      { title, text, button?: { label, action: 'link' | 'panel', target },
        style: 'popup' | 'card' | 'pill',
        audience: 'everyone' | 'signedIn' | 'webcamOff' | 'notOpened' | 'newUsers' | 'returningUsers',
-       startAt, endAt?, maxShows, version, log, by, updatedAt }
+       startAt, endAt?, maxShows, version, log, by, updatedAt,
+       and, all optional, on top of the audience (ADMIN.md §21):
+       minVer?, maxVer?             only app versions in this range
+       platform?: 'phone' | 'desktop', lang?: 'en' | 'es', signedInOnly?
+       es?: { title, text, label }  Spanish words; what is missing stays English }
 
    Three are built in (BUILT_IN): the two the app used to hand-write, and the
    random 1v1 launch, so they behave with no database at all, and so they can
@@ -26,6 +30,9 @@ export const ANN_PANELS = ['camera', 'sotd', 'race', 'stats', 'appearance', 'set
 export const NEW_USER_SOLVES = 50;
 export const ANN_ID = /^[a-z0-9-]{1,40}$/;
 export const LIMITS = { title: 80, text: 400, label: 30, target: 300, maxShows: 100 };
+export const ANN_PLATFORMS = ['phone', 'desktop'];
+export const ANN_LANGS = ['en', 'es'];
+const VER_MAX = 100000;
 const HTTPS = /^https:\/\/[^\s]+$/;
 
 /**
@@ -76,6 +83,13 @@ export function normalise(a) {
     version: Math.max(1, num(a.version)),
     reminder: a.reminder === true,
     button: null,
+    // Targeting on top of the audience: 0 or '' is "any".
+    minVer: Math.min(VER_MAX, num(a.minVer)), maxVer: Math.min(VER_MAX, num(a.maxVer)),
+    platform: ANN_PLATFORMS.includes(a.platform) ? a.platform : '',
+    lang: ANN_LANGS.includes(a.lang) ? a.lang : '',
+    signedInOnly: a.signedInOnly === true,
+    es: a.es && typeof a.es === 'object'
+      ? { title: str(a.es.title, LIMITS.title), text: str(a.es.text, LIMITS.text), label: str(a.es.label, LIMITS.label) } : null,
   };
   const b = a.button;
   if (b && typeof b === 'object' && str(b.label, LIMITS.label)) {
@@ -101,6 +115,8 @@ export function allAnnouncements(stored, getConfig) {
     if (id === 'feedback' && getConfig) {
       rec.button.target = getConfig('feedback', 'url');
       rec.endAt = getConfig('feedback', 'endAt');
+      // Inbox only: the button opens About, where Send feedback is (js/send-feedback.js).
+      if (getConfig('feedback', 'mode') === 'inbox') rec.button = { label: 'Write to us', action: 'panel', target: 'about' };
     }
     const n = normalise(rec);
     if (n) out[id] = { ...n, id, builtIn: true };
@@ -113,14 +129,30 @@ export function allAnnouncements(stored, getConfig) {
   return out;
 }
 
+/**
+ * The record in `lang`: its Spanish title, text and button label where it has
+ * them (each on its own), English where it does not.
+ */
+export function localized(a, lang) {
+  if (lang !== 'es' || !a?.es) return a;
+  const out = { ...a, title: a.es.title || a.title, text: a.es.text || a.text };
+  if (a.button && a.es.label) out.button = { ...a.button, label: a.es.label };
+  return out;
+}
+
 /** Between its start and its end. An end of 0 is none. */
 export const isLive = (a, now = Date.now()) => now >= (a.startAt || 0) && (!a.endAt || now < a.endAt);
 
 /**
- * Whether `who` is in the announcement's audience.
- * @param who  { signedIn, webcamOn, solves, opened: Set of panel ids }
+ * Whether `who` is in the announcement's audience, and inside its targeting.
+ * @param who  { signedIn, webcamOn, solves, opened: Set of panel ids, ver, phone, lang }
  */
 export function inAudience(a, who) {
+  if (a.signedInOnly && !who.signedIn) return false;
+  if (a.minVer && !((who.ver ?? 0) >= a.minVer)) return false;
+  if (a.maxVer && !((who.ver ?? Infinity) <= a.maxVer)) return false;
+  if (a.platform && who.phone !== undefined && (a.platform === 'phone') !== !!who.phone) return false;
+  if (a.lang && who.lang && a.lang !== who.lang) return false;
   switch (a.audience) {
     case 'signedIn': return !!who.signedIn;
     case 'webcamOff': return !who.webcamOn;

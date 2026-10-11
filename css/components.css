@@ -4908,3 +4908,28 @@ body.focus #app-banner { opacity: 0; transition: opacity 220ms var(--ease); }
   font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 99px; margin-left: 6px;
   color: var(--gold); background: color-mix(in srgb, var(--gold) 16%, transparent);
 }
+
+/* What's new and Send feedback in About (js/news.js, js/send-feedback.js; ADMIN.md §21). */
+#btn-about { position: relative; }
+#btn-about.has-news::after {
+  content: ''; position: absolute; top: 5px; right: 5px; width: 8px; height: 8px; border-radius: 50%;
+  background: var(--accent); box-shadow: 0 0 0 2px var(--bg);
+}
+.news-list { display: flex; flex-direction: column; gap: 10px; }
+.news-item { padding: 10px 12px; border-radius: 12px; background: var(--surface); border: 1px solid var(--border); }
+.news-item.is-new { border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); }
+.news-head { display: flex; align-items: center; gap: 8px; }
+.news-title { font-size: .95rem; }
+.news-new { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; padding: 1px 6px; border-radius: 99px;
+  color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, transparent); }
+.news-meta { font-size: .78rem; color: var(--text-faint); margin-top: 2px; }
+.news-text { margin: 6px 0 0; font-size: .88rem; color: var(--text-dim); white-space: pre-wrap; }
+.feedback-box .btn-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.feedback-dialog textarea { width: 100%; min-height: 120px; resize: vertical; }
+.fb-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 8px 0; }
+.fb-stars { display: flex; gap: 2px; }
+.fb-star { font-size: 22px; line-height: 1; padding: 2px 3px; color: var(--text-faint); background: none; border: 0; cursor: pointer; }
+.fb-star.on { color: var(--gold, var(--accent)); }
+.fb-check { display: flex; align-items: flex-start; gap: 8px; font-size: .88rem; margin: 6px 0; }
+.ph-news { font-size: 11px; font-weight: 700; color: var(--accent); }
+

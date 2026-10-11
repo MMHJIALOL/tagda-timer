@@ -48,6 +48,7 @@ import { initPhoneShell } from './phoneshell.js';
 import './moved.js';
 import { captureErrors, startHealth, noteHeal } from './health.js';
 import { startIdleDisconnect } from './presence.js';
+import { startNews } from './news.js';
 
 // From the first moment, so an error during boot is caught too (js/health.js sends it once signed in).
 captureErrors();
@@ -726,6 +727,8 @@ async function init() {
   startHealth();
   // A tab hidden for app.idleDisconnectMin lets its database connections go (Spark allows 100 at once).
   startIdleDisconnect();
+  // What's new, read once idle, for the dot on About (js/news.js).
+  startNews();
   wireAccountButtonOnFirstClick();
   adoptCloudChanges();
 

@@ -170,6 +170,7 @@ rules enforce takes effect at once, whatever any tab has cached.
 | `support.shows` | times | 2 | 0 to 10 | app | Times it may come back on one page load |
 | `feedback.url` | https link | the current form | 300 characters | app | The built-in feedback announcement's button (§7) |
 | `feedback.endAt` | date and time | 1 Oct 2026 | | app | When that announcement stops |
+| `feedback.mode` | choice | form | form, inbox, both | app | Where About sends feedback: the form, Send feedback (People › Feedback), or both (§21) |
 | `spotify.enabled` | switch | on | | app | The built-in Spotify connection: off, Connect is turned off and nothing polls through it. Somebody's own connection is untouched |
 | `spotify.message` | text | empty | 200 characters | app | Shown in the Spotify panel while off |
 | `app.minVersion` | whole number | 0 | 0 to this deploy's version | app | Tabs older than this reload once they are idle (§4) |
@@ -822,6 +823,8 @@ like any other.
 | `js/admin-modlog.js` | Log › Moderation, and its Undo (§19) |
 | `js/admin-storage.js` | Health › Storage: counts, sizes, sweeps, the backup (§20) |
 | `js/presence.js` | The timer's side: each connection's presence, and letting a hidden tab go (§20) |
+| `js/admin-feedback.js` | People › Feedback, the inbox (§21) |
+| `js/news.js`, `js/send-feedback.js` | The timer's What's new and Send feedback, in About (§21) |
 | `js/admin-ann.js` | The Announce tab (§7) |
 | `js/announce.js`, `js/announce-ui.js`, `css/announce.css` | What an announcement is and who sees it, and drawing one: shared with the timer |
 | `js/announcer.js` | The timer's side: when to show one, and what each browser answered |
@@ -881,6 +884,11 @@ already read, and the app's ⚑ is refused with *Couldn't send the report*. A se
 rules do not know yet (every one Phase 4 added, from race tuning to Spotify, and the two audiences)
 is refused when saved, and the page says a new setting needs its rules published; the app keeps
 using its default.
+
+Phase 14 on Phase 13's rules: an announcement saves as before until it is given targeting or
+Spanish words (then refused). `feedback.mode` is refused when saved, so About keeps the form, and
+People › Feedback and Announce › What's new say *Publish the rules first*. The timer reads no
+What's new (refused reads as none): no dot.
 
 Phase 13 on Phase 12's rules: no presence can be written (the timer stops trying for the page
 load), so Today says connections need the rules. Counts, sizes and the backup work (they only
@@ -961,6 +969,12 @@ rules are out. The cron finds nothing to apply.
   custom account, a different value, the schedule left behind, a schedule not due, one by somebody
   no longer an admin, anything but applying); a day ahead's scramble (admins only, changeable until
   the day, today's once by anybody); the featured event.
+- `node tools/verify-ann2-rules.mjs`: 52 checks. Targeting and Spanish on an announcement, each
+  value checked; feedback only from a Google account with its hourly stamp, typed and capped, never
+  arriving already read, starred or replied to; readable by its sender (with their account on it)
+  and admins; read, star, reply (only to a message with an account) and delete by admins; the
+  reply marked seen only by its sender; When a sender last wrote readable by nobody; What's new
+  public to read, admins to write, each field checked; and the rules from before this phase.
 - `node tools/verify-costs-rules.mjs`: 26 checks. Presence only in one's own name, with a known kind,
   stamped now, nothing else, readable by admins only (shallow too); an admin clearing an
   announcement's stats, and nobody else, and never writing them; sweeps logged; and the rules from
@@ -1392,4 +1406,73 @@ need in the Firebase console (Realtime Database › ⋮ › Import JSON at that 
   data in the meantime.
 - **Firebase's usage numbers**: they need a Google Cloud service account with monitoring access.
   Connections and daily people above stand in for them.
+
+---
+
+## 21. Announcements and feedback, round two
+
+![On a phone: an announcement's targeting and funnel, Preview in the app, and People › Feedback](docs/screenshots/admin-ann2.webp)
+
+### Targeting and Spanish
+
+On top of **Who sees it**, an announcement can be narrowed (all optional, empty is anybody):
+
+```
+minVer, maxVer       only app versions in this range (tell an old version something, or announce a feature to versions that have it)
+platform             'phone' | 'desktop'
+lang                 'en' | 'es'
+signedInOnly         true
+es: { title, text, label }   the Spanish words; each one missing stays English
+```
+
+The editor has them under *Only some of them* and *In Spanish (optional)*, and its preview switches
+between English and Spanish. The card lists what narrows it. A record with none of these saves
+exactly as before, so old rules take it.
+
+### Preview in the app
+
+**In the app…** (on a card, and in the editor) opens the real timer in a frame of a phone's, a
+tablet's or a computer's size, in English or Spanish, showing that announcement at once
+(`index.html?annPreview`: the console leaves the draft in this browser's storage, and the frame
+shows it whoever it is, remembering and counting nothing). The frame says where it went: *A card
+pointing at the Race button*, or *No Race button on this screen: the card sits in the corner
+instead*, which is the thing to check before publishing a card about a feature's button.
+
+### Results
+
+Each card draws every version's funnel, newest first: shown, then clicked, dismissed or still
+unanswered, from `annStats/` (signed-in people only, as before).
+
+### The feedback inbox
+
+```
+feedback/<id>        { at, text, rating?, ver, ua, page, uid?, name?, read?, star?, reply?, replySeen? }
+feedbackLast/<uid>   when that account last sent one: one an hour; readable by nobody
+```
+
+`feedback.mode` decides what the timer's About offers: **form** (the link, as before, the
+default), **inbox** (*Send feedback…*, straight to the console), or **both**. Send feedback needs
+a Google sign-in (the rules need an account to hold to one an hour; a signed-out visitor is
+offered the form, or asked to sign in). It sends the message, an optional 1–5 rating, the app
+version and the browser family. *Let the admins reply* (on by default) keeps the account with it;
+off, the message carries no account at all. With feedback.mode on inbox, the built-in *Help shape
+Tagda Timer* ask opens About instead of the form.
+
+**People › Feedback** lists them newest first (All, Unread, Starred) with **Read**, **Star**,
+**Reply** (to a message with an account: the reply shows under *Reply from support* in the timer's
+account menu, and its reading is marked) and **Delete**. The People tab's badge counts the unread.
+
+Not built: *turn into a report*. Reports point at something on the boards; feedback is already in
+an admin's inbox.
+
+### What's new
+
+```
+changelog/<id>   { at, ver?, title, text?, es?: { title, text }, by }   public to read, admins write
+```
+
+**Announce › What's new** (`#news`) adds, edits and deletes entries. The timer reads the newest 20
+once a page load, once idle (one small public read), shows them at the top of About, and puts a dot
+on the About button (and *N new* on a phone's About row) until that device has seen the newest. A
+history rather than a popup: nobody is interrupted.
 

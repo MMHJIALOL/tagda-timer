@@ -30,6 +30,8 @@ import { DEFAULT_SPEFFZ_MAP, DEFAULT_BLD, CORNER_STICKER_KEYS, EDGE_STICKER_KEYS
          pieceName, samePiece, diagnose } from './bldtrace.js';
 import { FACES } from './cube3.js';
 import { mountSettingsSearch } from './settings-search.js';
+import { newsSection } from './news.js';
+import { feedbackSection } from './send-feedback.js';
 import { enableReplay, enableSound, requestCamera, attachPreview, onCamerasChanged, listCameras, listMics, cameraName,
          replayUsage, clearReplays, hasReplay, openReplay, keepCount, replaySupported, replayOff, fullHdSupport } from './replay.js';
 
@@ -2630,7 +2632,11 @@ export function buildAbout(app) {
         el('a', { class: 'btn upi-open', href: UPI_URI, text: t('Open UPI app') })),
     );
 
+    // What's new and Feedback first (ADMIN.md §21): the admin console's words, then the owner's page.
+    const feedback = feedbackSection();
     body.append(
+      group(t('What’s new'), newsSection()),
+      ...(feedback ? [group(t('Feedback'), feedback)] : []),
       group(t('Support the timer'),
         el('div', { class: 'support-card' },
           el('div', { class: 'support-pitch', text:

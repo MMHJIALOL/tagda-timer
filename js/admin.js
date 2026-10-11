@@ -40,6 +40,7 @@ import { createPeople } from './admin-people.js';
 import { createSotd } from './admin-sotd.js';
 import { createModLog } from './admin-modlog.js';
 import { createStorage } from './admin-storage.js';
+import { createFeedback } from './admin-feedback.js';
 import { eventOf } from './events.js';
 
 /** How many log entries the page keeps live. Older ones stay in the database. */
@@ -173,7 +174,7 @@ function route() {
   if (h === 'log' || h === 'log/settings') return { view: 'log', sub: 'settings' };
   if (h === 'log/mod') return { view: 'log', sub: 'mod' };
   if (h === 'bans') return { view: 'people', sub: 'bans' };
-  const ppl = /^people(?:\/(testers|bans|lookup|support|requests))?$/.exec(h);
+  const ppl = /^people(?:\/(testers|bans|lookup|support|requests|feedback))?$/.exec(h);
   if (ppl) return { view: 'people', sub: ppl[1] || 'lookup' };
   const person = /^people\/u\/([A-Za-z0-9]{1,128})$/.exec(h);
   if (person) return { view: 'people', sub: 'u', id: person[1] };
@@ -185,6 +186,7 @@ function route() {
   if (mod) return { view: 'mod', sub: mod[1] || 'reports' };
   const room = /^mod\/room\/([A-Za-z0-9_-]{1,64})$/.exec(h);
   if (room) return { view: 'mod', sub: 'room', id: room[1] };
+  if (h === 'news') return { view: 'ann', sub: ':news' };
   const ann = /^ann(?:\/(new|[a-z0-9-]{1,40}))?$/.exec(h);
   if (ann) return { view: 'ann', sub: ann[1] || null };
   const m = /^settings\/([a-zA-Z]+)$/.exec(h);
@@ -265,7 +267,7 @@ function renderTabs() {
     tab('#settings', 'Settings', r === 'sections' || r === 'section'),
     tab('#mod', 'Moderate', r === 'mod', open),
     tab('#ann', 'Announce', r === 'ann'),
-    tab('#people', 'People', r === 'people', people.counts().support + people.counts().requests),
+    tab('#people', 'People', r === 'people', people.counts().support + people.counts().requests + fb.counts().unread),
     tab('#health', 'Health', r === 'health', health.summary().stuck),
     tab('#log', 'Log', r === 'log'));
 }
@@ -756,15 +758,22 @@ function viewPeople(sub, id = null) {
   const c = people.counts();
   const on = sub === 'u' ? 'lookup' : sub;
   const nav = el('nav', { class: 'ac-subtabs', 'aria-label': t('People') },
-    ...[['lookup', t('Lookup'), 0], ['support', t('Support'), c.support], ['requests', t('Requests'), c.requests],
+    ...[['lookup', t('Lookup'), 0], ['support', t('Support'), c.support], ['feedback', t('Feedback'), fb.counts().unread], ['requests', t('Requests'), c.requests],
       ['bans', t('Bans'), Object.values(S.bans).filter(b => banActive(b)).length], ['testers', t('Testers'), Object.keys(S.testers || {}).length]]
       .map(([key, label, n]) => raw('a', { class: `ac-subtab${on === key ? ' on' : ''}`, href: `#people/${key}`, 'aria-current': on === key ? 'page' : null },
         n ? `${label} · ${n}` : label)));
+  // Six across a phone run off its edge: the one you are on is kept in view (as Moderate's are).
+  requestAnimationFrame(() => {
+    const cur = nav.querySelector('.ac-subtab.on');
+    const over = cur && nav.isConnected ? cur.getBoundingClientRect().right - nav.getBoundingClientRect().right : 0;
+    if (over > 0) nav.scrollLeft += over + 12;
+  });
   const head = [el('h1', { class: 'ac-h1', text: 'People' }), nav];
   if (sub === 'u' && id) return [...head, ...people.viewPerson(id)];
   if (sub === 'lookup') return [...head, ...people.viewLookup()];
   if (sub === 'support') return [...head, ...people.viewSupport()];
   if (sub === 'requests') return [...head, ...people.viewRequests()];
+  if (sub === 'feedback') return [...head, ...fb.view()];
   return [...head, ...(sub === 'testers' ? live.viewTesters() : viewBans())];
 }
 
@@ -920,6 +929,7 @@ function teardown() {
   rooms.stop();
   health.stop();
   people.stop();
+  fb.stop();
   announce.stop();
   live.stop();
   for (const off of S.unsubs.splice(0)) off();
@@ -979,7 +989,7 @@ async function onUser(user) {
     S.status = 'error';
   }
   render();
-  if (S.status === 'admin') { listen(); moderation.start(); }
+  if (S.status === 'admin') { listen(); moderation.start(); fb.start(); }
 }
 
 /** A name for a uid, from whatever the console has read: the directory, today's boards, bans. */
@@ -988,6 +998,7 @@ const moderation = createModeration({ S, scheduleRender, raw, ago, who, openShee
 const modlog = createModLog({ S, scheduleRender, raw, ago, who, openSheet, closeSheet, gate, nameOf });
 const rooms = createRooms({ S, scheduleRender, raw, ago, who, openSheet, closeSheet, askBan, gate, cfg, moderation });
 const sotd = createSotd({ S, scheduleRender, raw, ago, who, openSheet, closeSheet, askBan, gate, cfg, moderation });
+const fb = createFeedback({ S, scheduleRender, raw, ago, who, openSheet, closeSheet, gate, cfg });
 const announce = createAnnounce({ S, scheduleRender, raw, ago, who, openSheet, closeSheet, gate, cfg });
 /** Put a setting change on the save bar and open its section, for the usual review (the Health tab's minVersion). */
 function stage(path, value) {
