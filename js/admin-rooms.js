@@ -587,6 +587,8 @@ export function createRooms(ctx) {
   }
   /** Relay logins today for one person, or null when unknown. */
   const relayOf = (uid) => (R.relay?.day === today() ? R.relay.counts?.[uid] ?? 0 : null);
+  /** Relay logins today, everybody's (Today's Costs card), or null before the first read. */
+  const relayTotal = () => (R.relay?.day === today() ? Object.values(R.relay.counts || {}).reduce((a, b) => a + (Number(b) || 0), 0) : null);
 
-  return { start, stop, viewRooms, viewHistory, viewRoom, leaveRoom, seatBlock, relayBlock, loadRelay, roomsOf, relayOf, nameOf, timeText };
+  return { start, stop, viewRooms, viewHistory, viewRoom, leaveRoom, seatBlock, relayBlock, loadRelay, roomsOf, relayOf, relayTotal, nameOf, timeText, rest };
 }

@@ -415,10 +415,36 @@ async function usage(request, env) {
     byEvent[ev].bytes += o.size;
     bytes += o.size;
   }
+  // ?all=1 (the console's Costs card, on asking): everything the bucket holds, by day. A list per
+  // thousand clips, so only when asked, never on every look at Today.
+  const stored = new URL(request.url).searchParams.get('all') === '1' ? await storedAll(env) : undefined;
   return json(200, {
     day, clips: listed.objects.length, more: listed.truncated, bytes, byEvent,
     perDay: lim.perDay, budget: lim.budget, clipMax: lim.clipMax, enabled: cfg.enabled, audience: cfg.audience,
+    ...(stored ? { stored } : {}),
   });
+}
+
+/** Every clip in the bucket (r/<day>/<event>/<uid>), by day: { clips, bytes, more, days: { <day>: { clips, bytes } } }. */
+async function storedAll(env, pages = 20) {
+  const days = {};
+  let clips = 0, bytes = 0, cursor, more = false;
+  for (let i = 0; i < pages; i++) {
+    const page = await env.REPLAYS.list({ prefix: 'r/', limit: 1000, ...(cursor ? { cursor } : {}) });
+    log('list', 'r/', { n: page.objects.length, usage: 'all' });
+    for (const o of page.objects) {
+      const d = o.key.split('/')[1];
+      days[d] = days[d] || { clips: 0, bytes: 0 };
+      days[d].clips++;
+      days[d].bytes += o.size;
+      clips++;
+      bytes += o.size;
+    }
+    if (!page.truncated) { more = false; break; }
+    cursor = page.cursor;
+    more = true;
+  }
+  return { clips, bytes, more, days };
 }
 
 /* ---------------- TURN for 1v1 cam and mic (RACE.md §9) ----------------

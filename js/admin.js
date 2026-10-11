@@ -39,6 +39,7 @@ import { createHealth } from './admin-health.js';
 import { createPeople } from './admin-people.js';
 import { createSotd } from './admin-sotd.js';
 import { createModLog } from './admin-modlog.js';
+import { createStorage } from './admin-storage.js';
 import { eventOf } from './events.js';
 
 /** How many log entries the page keeps live. Older ones stay in the database. */
@@ -176,7 +177,7 @@ function route() {
   if (ppl) return { view: 'people', sub: ppl[1] || 'lookup' };
   const person = /^people\/u\/([A-Za-z0-9]{1,128})$/.exec(h);
   if (person) return { view: 'people', sub: 'u', id: person[1] };
-  const hl = /^health(?:\/(sync|versions|scrambles|errors))?$/.exec(h);
+  const hl = /^health(?:\/(sync|versions|scrambles|errors|storage))?$/.exec(h);
   if (hl) return { view: 'health', sub: hl[1] || 'sync' };
   const days = /^days(?:\/(\d{13}))?$/.exec(h);
   if (days) return { view: 'days', sub: days[1] || null };
@@ -994,7 +995,8 @@ function stage(path, value) {
   location.hash = `#settings/${path.split('/')[0]}`;
   render();
 }
-const health = createHealth({ S, scheduleRender, raw, ago, who, openSheet, closeSheet, gate, cfg, moderation, stage });
+const storage = createStorage({ S, scheduleRender, raw, ago, openSheet, closeSheet, rooms, moderation });
+const health = createHealth({ S, scheduleRender, raw, ago, who, openSheet, closeSheet, gate, cfg, moderation, stage, storage: () => storage });
 const people = createPeople({ S, scheduleRender, raw, ago, who, openSheet, closeSheet, askBan, askUnban, gate, cfg, moderation, rooms, health, modLabel: (a) => modlog.label(a) });
 const live = createLive({ S, scheduleRender, raw, ago, who, openSheet, closeSheet, gate, cfg, moderation, rooms, health, scheduledList, scheduledRow });
 
