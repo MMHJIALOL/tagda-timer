@@ -50,6 +50,9 @@
   --timer-weight:  700;
   --timer-track:   -0.045em;
   --timer-glow:    0px;                 /* px blur of accent glow behind digits */
+  /* Appearance → Text → Shadow. A no-op shadow rather than `none` so the timer
+     can list it after its glow. */
+  --text-shadow:   0 0 0 transparent;
 
   /* --- background layer --- */
   --bg-blur:       0px;

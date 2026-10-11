@@ -7,7 +7,7 @@ import { t, lang, setLang } from './i18n.js';
 
 import { $, el, fmt, fmtResult, fmtDate, download, parseScrambleList, copy } from './util.js';
 import { PRESETS, TIMER_FONTS, SCRAMBLE_FONTS, UI_FONTS, DEFAULTS, exportTheme, importTheme,
-         parseGradient, buildGradient, albumTint, liquidGlassOK, themeColors } from './theme.js';
+         parseGradient, buildGradient, albumTint, liquidGlassOK, themeColors, TEXT_COLOR_KEYS } from './theme.js';
 import { SHADER_NAMES } from './bg.js';
 import { summarize, byCase, eff, DNF, isMoveResult, bestAvg, bpaWpa, statWindow, bldSummary, relaySummary,
          groupStats, byHourOfDay, bySittingPosition, MIN_GROUP, SITTING_GAP_MS,
@@ -339,8 +339,10 @@ export function buildAppearance(app, searchQuery = '') {
       card.addEventListener('click', () => {
         [...grid.children].forEach(c => c.classList.remove('on'));
         card.classList.add('on');
-        set('accent', ''); set('accent2', ''); set('bg2', ''); set('albumTheme', ''); set('textColor', '');
+        set('accent', ''); set('accent2', ''); set('bg2', ''); set('albumTheme', '');
+        for (const k of TEXT_COLOR_KEYS) set(k, '');
         set('theme', id);
+        renderText();
       });
       grid.append(card);
     }
@@ -492,16 +494,59 @@ export function buildAppearance(app, searchQuery = '') {
     }
     renderBgExtra();
 
+    /* text: one colour for everything, then the areas that can differ from it,
+       then a shadow under all of it. Rebuilt whole by its own reset and by a
+       theme preset, so an unset picker always shows what is on screen now. */
+    const textBlock = el('div', { class: 'group text-block' });
+    const TEXT_DEFAULTS = { textShadow: 0, textShadowBlur: 4, textShadowY: 1, textShadowColor: '#000000' };
+    const shown = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    function renderText() {
+      const cur = app.settings;
+      // Each picker starts on what that area paints now, so opening it is not
+      // already a change; × hands the area back to the colour above it.
+      const colourRow = (label, key, fallback, sub) => {
+        const inp = el('input', { class: 'inp', type: 'color', value: cur[key] || fallback(), 'aria-label': label });
+        const clear = el('button', { class: 'ghost-btn sm', type: 'button', text: '×',
+          title: t('Back to the default'), 'aria-label': t('Back to the default'), hidden: !cur[key] });
+        inp.addEventListener('input', () => { set(key, inp.value); clear.hidden = false; });
+        clear.addEventListener('click', () => { set(key, ''); renderText(); });
+        return row(label, el('div', { class: 'text-colour' }, clear, inp), sub);
+      };
+      const base = () => cur.textColor || themeColors().text;
+      const shadowOn = cur.textShadow > 0;
+      textBlock.replaceChildren(
+        el('h3', { text: t('Text') }),
+        colourRow(t('All text'), 'textColor', () => themeColors().text, t('overrides the theme’s font colour')),
+        colourRow(t('Timer digits'), 'timerColor', () => cur.textColor || shown('--t-idle') || base()),
+        colourRow(t('Scramble'), 'scrambleColor', base),
+        colourRow(t('Solve list'), 'timesColor', base),
+        colourRow(t('Statistics'), 'statsColor', base),
+        row(t('Shadow'), slider(cur.textShadow, 0, 100, 5, v => {
+          set('textShadow', v);
+          if ((v > 0) !== shadowOn) renderText();
+        }, v => v ? v + '%' : t('Off')), t('a shadow under all text, for reading over a busy background')),
+        shadowOn ? row(t('Shadow blur'), slider(cur.textShadowBlur, 0, 30, 1, v => set('textShadowBlur', v), v => v + 'px')) : null,
+        shadowOn ? row(t('Shadow distance'), slider(cur.textShadowY, -10, 10, 1, v => set('textShadowY', v), v => v + 'px')) : null,
+        shadowOn ? colourRow(t('Shadow colour'), 'textShadowColor', () => '#000000') : null,
+        el('div', { class: 'row' },
+          el('div', { class: 'lbl' }, el('span', { text: t('Reset text') }),
+            el('span', { class: 'sub', text: t('the theme’s colours and no shadow') })),
+          el('button', { class: 'ghost-btn', type: 'button', text: t('reset'), onclick: () => {
+            for (const k of TEXT_COLOR_KEYS) set(k, '');
+            for (const [k, v] of Object.entries(TEXT_DEFAULTS)) set(k, v);
+            renderText();
+          } })),
+      );
+    }
+    renderText();
+
     const glassLiquid = liquidGlassOK();
 
     body.append(
       group(t('Theme'), grid,
         el('div', { class: 'color-grid' },
           colorItem('accent', 'accent', '#7c5cff'),
-          colorItem('secondary', 'accent2', '#35e6c5'),
-          // Starts on whatever the theme paints, so opening the picker is not
-          // already a change.
-          colorItem('font', 'textColor', themeColors().text)),
+          colorItem('secondary', 'accent2', '#35e6c5')),
         row(t('Glass'), chips([
           { value: 'off', label: t('Off') },
           { value: 'frosted', label: t('Frosted') },
@@ -509,6 +554,8 @@ export function buildAppearance(app, searchQuery = '') {
         ], S.glass || 'off', v => set('glass', v)),
           t('see-through panels that bend the background. Reduce effects turns it off.')),
       ),
+
+      textBlock,
 
       group(t('Background'),
         row('Source', chips([
@@ -532,6 +579,10 @@ export function buildAppearance(app, searchQuery = '') {
           t('fixed-width faces only, so the moves line up')),
         row(t('Interface'), select(Object.keys(UI_FONTS).map(n => ({ value: n, label: n })), S.uiFont, v => set('uiFont', v)),
           t('the top bar, the panels and the stats')),
+        row(t('Solve list'), select([{ value: '', label: t('Default') }, ...Object.keys(TIMER_FONTS).map(n => ({ value: n, label: n }))],
+          S.timesFont || '', v => set('timesFont', v)), t('the times and averages')),
+        row(t('Statistics'), select([{ value: '', label: t('Default') }, ...Object.keys(TIMER_FONTS).map(n => ({ value: n, label: n }))],
+          S.statsFont || '', v => set('statsFont', v)), t('the numbers in the stats panel')),
       ),
 
       group(t('Timer'),

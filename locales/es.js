@@ -1,6 +1,20 @@
 /* Spanish for Tagda Timer. Keys are the English source text exactly as it is
    written in js/ and in the HTML; {name} placeholders are filled by t(). */
 export const es = {
+  // Appearance → Text
+  "All text": "Todo el texto",
+  "overrides the theme’s font colour": "sustituye el color de letra del tema",
+  "Shadow": "Sombra",
+  "Shadow blur": "Desenfoque de la sombra",
+  "Shadow distance": "Distancia de la sombra",
+  "Shadow colour": "Color de la sombra",
+  "a shadow under all text, for reading over a busy background": "una sombra bajo todo el texto, para leer sobre un fondo cargado",
+  "Reset text": "Restablecer texto",
+  "the theme’s colours and no shadow": "los colores del tema y sin sombra",
+  "Back to the default": "Volver al predeterminado",
+  "Default": "Predeterminada",
+  "the times and averages": "los tiempos y las medias",
+  "the numbers in the stats panel": "los números del panel de estadísticas",
   "Search settings…": "Buscar ajustes…",
   "Search settings": "Buscar ajustes",
   "Focus settings search": "Ir a la búsqueda de ajustes",
