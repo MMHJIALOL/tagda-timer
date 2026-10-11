@@ -174,6 +174,16 @@ export function createModeration(ctx) {
       const m = item(path);
       return { where: t('Chat · {event}', { event: evName(seg[2]) }), author: m ? { uid: m.uid, name: m.name } : null, text: m?.text, gone: m === null };
     }
+    if (kind === 'duel') {
+      /* A 1v1 opponent: the seat is anonymous, so the person is the Google
+         account it was linked to (rooms/<id>/acct/<uid>, RACE.md §9). Nothing
+         to take down; the room has the rest. */
+      const acct = item(`rooms/${seg[1]}/acct/${seg[3]}`);
+      const name = String(M.reports.find(r => r.path === path)?.text || '').split(' · ')[1] || '';
+      return { where: t('1v1 opponent · {room}', { room: seg[1] }), room: seg[1],
+        author: acct?.ok === true && acct.claim ? { uid: acct.claim, name } : null,
+        unlinked: acct !== undefined && !(acct?.ok === true), text: '', gone: false };
+    }
     const row = item(path);
     const where = kind === 'replay' ? t('Shared replay · {event}', { event: evName(seg[2]) }) : t('Time · {event}', { event: evName(seg[2]) });
     return { where, author: { uid: seg[4], name: row?.name }, text: row ? timeText(row) : '', gone: row === null || (kind === 'replay' && row && row.replay !== true), row };
@@ -419,13 +429,13 @@ export function createModeration(ctx) {
     if (!gs.length) {
       return el('div', {}, pick, el('p', { class: 'ac-note', text: closed
         ? 'Nothing closed in the last 30 days.'
-        : 'No open reports. People report a chat message or a shared replay from the ⚑ beside it.' }));
+        : 'No open reports. People report a chat message, a shared replay or their 1v1 opponent from the ⚑ beside it.' }));
     }
     return el('div', {}, pick, el('ol', { class: 'ac-log' }, ...gs.map((g) => {
       const d = describe(g.kind, g.path);
       const newest = g.reports[0];
       const reason = g.kind === 'chat' || g.kind === 'raceChat'
-        ? `${d.where}: "${String(d.text || newest.text || '').slice(0, 120)}"` : `${d.where} ${d.text || ''}`.trim();
+        ? `${d.where}: "${String(d.text || newest.text || '').slice(0, 120)}"` : `${d.where} ${d.text || newest.text || ''}`.trim();
       const st = newest.status;
       const how = !st ? '' : ' · ' + (st.s === 'actioned'
         ? t('acted on {when} by {who}', { when: ago(st.at), who: who(st.by) })
@@ -435,12 +445,14 @@ export function createModeration(ctx) {
           raw('b', {}, d.where),
           raw('span', { class: 'ac-reason' }, d.gone ? t('(already gone) {text}', { text: newest.text || '' }) : (d.text || newest.text || '…')),
           d.author ? raw('span', { class: 'ac-uid' }, `${d.author.name || 'Cuber'} · ${d.author.uid || ''}`) : null,
+          d.unlinked ? raw('span', { class: 'ac-uid' }, t('Not signed in: no account to ban')) : null,
           raw('span', { class: 'ac-entry-meta', title: newest.at ? new Date(newest.at).toLocaleString() : '' },
             (g.reports.length > 1 ? t('{n} reports', { n: g.reports.length }) : t('1 report')) + ' · ' + t('latest {when}', { when: ago(newest.at) }) + how),
           el('div', { class: 'ac-reporters' }, ...reportedBy(g, rec))),
         closed ? actions(small(t('Reopen'), () => reopen(g.path))) : actions(
           small(t('Dismiss'), () => resolve(g.path).then(() => toast(t('Dismissed')))),
-          d.gone ? null : small(deleteLabel(g.kind), () => askDelete({ kind: g.kind, path: g.path, row: d.row, author: d.author, where: d.where, text: d.text, reason })),
+          d.room ? small(t('Open room'), () => { location.hash = `#mod/room/${d.room}`; }) : null,
+          d.gone || !deleteLabel(g.kind) ? null : small(deleteLabel(g.kind), () => askDelete({ kind: g.kind, path: g.path, row: d.row, author: d.author, where: d.where, text: d.text, reason })),
           d.author?.uid ? small(t('Ban'), () => ctx.askBan({ uid: d.author.uid, name: d.author.name || '', reason, then: () => resolve(g.path, 'actioned') }), 'danger') : null));
     })));
   }
