@@ -234,6 +234,8 @@ export const CONFIG = {
       url: { type: 'text', def: 'https://docs.google.com/forms/d/e/1FAIpQLScQ9uZRzZke7bBtlw3lkCW41-UXi9cZ-DksEKKliibsM5UCPQ/viewform',
         max: 300, pattern: 'https', label: 'Form link', where: 'app' },
       endAt: { type: 'time', def: Date.parse('2026-10-01T12:22:00Z'), min: 0, max: TIME_MAX, label: 'Ends', where: 'app' },
+      mode: { type: 'choice', def: 'form', options: ['form', 'inbox', 'both'], label: 'Where feedback goes', where: 'app',
+        help: 'Form: the link above, as before. Inbox: Send feedback in the timer’s About, straight to People › Feedback (signed-in people; replies reach them). Both: About offers each.' },
     },
   },
   spotify: {

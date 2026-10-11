@@ -21,6 +21,7 @@ import { t, lang } from './i18n.js';
 
 import { $, $$, el, fmt, fmtResult } from './util.js';
 import { isPhone, onPhoneChange } from './phone.js';
+import { newsUnread } from './news.js';
 import { openSheet, sheetRows, closeAllSheets } from './sheet.js';
 import { EVENTS, EVENT_ORDER, eventOf, modeOf, modesForEvent } from './events.js';
 import { eff, DNF, isMoveResult, resultsFor, averageOfRange, summarize, bestMean } from './stats.js';
@@ -879,7 +880,7 @@ function renderMore() {
       row(I.download, t('Import and export'), null, () => openSettingsAt(t('Data'))),
       row(I.globe, t('Language'), lang === 'es' ? 'Español' : 'English', () => openSettingsAt(t('Language'))),
       hasKeyboard ? row(I.keyboard, t('Keyboard shortcuts'), null, () => X.openPanel(t('Keyboard shortcuts'), 'buildShortcuts', { wide: true })) : null,
-      row(I.info, t('About'), null, () => X.click('#btn-about'))));
+      row(I.info, t('About'), newsUnread() ? el('span', { class: 'ph-news', text: t('{n} new', { n: newsUnread() }) }) : null, () => X.click('#btn-about'))));
 }
 
 /** Signed in: the account menu the top bar's button opens, as a sheet. */

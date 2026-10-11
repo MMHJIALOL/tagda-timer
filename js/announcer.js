@@ -21,10 +21,13 @@
    signed in with Google, on the connection cloud sync already has.
    =========================================================== */
 
-import { allAnnouncements, pick, memoryFor, inAudience } from './announce.js';
+import { allAnnouncements, pick, memoryFor, inAudience, localized, normalise } from './announce.js';
 import { annNode } from './announce-ui.js';
 import { getConfig, storedAnnouncements } from './config.js';
 import { loadRoles, roles, hasFeature } from './audience.js';
+import { lang } from './i18n.js';
+import { isPhone } from './phone.js';
+import { APP_VERSION } from './version.js';
 
 /* A built-in announcement of a feature switched off from the admin console,
    or not on for this account yet, is no announcement at all (ADMIN.md §4). */
@@ -42,6 +45,9 @@ let host = null;
 let current = null;            // { a, as, node, target }
 const appeared = new Map();    // id -> appearances this page load
 let answered = false;          // one was answered on this page load: no other until the next
+/** The admin console's Preview in the app (ADMIN.md §21): one draft, shown at once, nothing remembered or counted. */
+let previewing = false;
+export const PREVIEW_KEY = 'tdt-ann-preview';
 
 const readJson = (k) => { try { return JSON.parse(localStorage.getItem(k) || '{}') || {}; } catch { return {}; } };
 const writeJson = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* private window: asked again next visit */ } };
@@ -60,6 +66,7 @@ export function markOpened(id) {
 }
 
 function remember(a, patch) {
+  if (previewing) return;
   const mem = readJson(MEM_KEY);
   const m = memoryFor(a, mem);
   mem[a.id] = { v: a.version, answer: m.answer, shows: m.shows, ...patch };
@@ -68,7 +75,7 @@ function remember(a, patch) {
 
 /** annStats/<id>/<version>/<uid>: signed in with Google only, one record each (the rules). */
 async function stat(a, what) {
-  if (!host.signedIn()) return;
+  if (previewing || !host.signedIn()) return;
   try {
     const sdk = await (await import('./sync-auth.js')).getDatabaseHandle();
     // Straight after a load the session is still being restored from storage.
@@ -142,7 +149,7 @@ function show(a, as) {
     close: () => answer(a, 'dismissed'),
     later: () => answer(a, 'later'),
   };
-  const node = annNode(a, as, on);
+  const node = annNode(localized(a, previewing?.lang || lang), as, on);
   // Its buttons take Space and Enter themselves; the timer behind does not get them.
   node.addEventListener('keydown', (e) => e.stopPropagation());
   if (as === 'pill') {
@@ -161,6 +168,7 @@ function show(a, as) {
     node.querySelector('.an-dlg-card')?.focus();
   }
   if (as === 'card') { place(); addEventListener('resize', place); }
+  if (previewing) { tellPreview(); return; }
   if (!current) return;            // a card with nowhere to go in the SOTD window
   const n = appeared.get(a.id) || 0;
   appeared.set(a.id, n + 1);
@@ -192,11 +200,12 @@ async function askRoles() {
 function who() {
   const r = rolesKnown && host.signedIn() ? roles() : {};
   return { signedIn: host.signedIn(), webcamOn: host.webcamOn(), solves: host.solves(), opened: new Set(Object.keys(readJson(OPENED_KEY))),
-    tester: !!r.tester, admin: !!r.admin };
+    tester: !!r.tester, admin: !!r.admin, ver: APP_VERSION, phone: isPhone(), lang };
 }
 
 /** Look for something to show, if nothing is going on. */
 function tick() {
+  if (previewing) return;
   if (!host || current || answered) return;
   if (document.hidden || !host.idle() || host.blocked()) return;
   const anns = allAnnouncements(storedAnnouncements(), getConfig);
@@ -247,6 +256,7 @@ async function migrate() {
  */
 export async function startAnnouncements(h) {
   host = h;
+  if (startPreview()) return;
   await migrate();
   // An attempt starting puts it away; the end of one is a gap to look again.
   h.onTimerState((idle) => { if (!idle) hide(); else setTimeout(tick, 1500); });
@@ -254,6 +264,39 @@ export async function startAnnouncements(h) {
   document.addEventListener('visibilitychange', () => { if (!document.hidden) setTimeout(tick, 1500); });
   setTimeout(tick, 2500);
   setInterval(tick, 4000);
+}
+
+/* ---------------- Preview in the app (ADMIN.md §21) ---------------- */
+
+/**
+ * ?annPreview: this page is in the console's preview frame. The draft the
+ * console left in localStorage (same origin) is shown as soon as the timer is
+ * idle, whoever this is and whatever was answered before; nothing is
+ * remembered or counted. Returns whether this is a preview.
+ */
+function startPreview() {
+  const q = new URLSearchParams(location.search);
+  if (!q.has('annPreview')) return false;
+  let draft = null;
+  try { draft = JSON.parse(localStorage.getItem(PREVIEW_KEY) || 'null'); } catch { /* none */ }
+  const a = normalise(draft);
+  if (!a) { post({ error: 'no-draft' }); return true; }
+  previewing = { lang: q.get('lang') === 'es' ? 'es' : 'en' };
+  const go = () => (host.idle() && !host.blocked() ? show({ ...a, id: 'preview', version: 1 }, a.style) : setTimeout(go, 400));
+  setTimeout(go, 800);
+  return true;
+}
+
+function post(msg) {
+  try { if (parent !== window) parent.postMessage({ annPreview: msg }, location.origin); } catch { /* not framed */ }
+}
+
+/** Where it ended up: a card says whether its button was on this screen to point at. */
+function tellPreview() {
+  if (!current) return;
+  const { a, as } = current;
+  const panel = a.button?.action === 'panel' ? a.button.target : null;
+  post({ shown: as, panel, anchored: as === 'card' && panel ? !!current.target : null, width: innerWidth });
 }
 
 /** The SOTD window opened or closed: what is on screen may no longer belong. */

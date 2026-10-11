@@ -2577,7 +2577,7 @@ section('admin console — settings and the rules that guard them');
   /* Ad blockers hide elements by name: EasyList has #ad-top, #ad-main, .ad-card,
      .ad-row, .ad-btn and more, and the page's names once started ad-, which left
      only its tab bar for anybody running one. They start ac- now. */
-  const page = (await Promise.all(['admin.html', 'css/admin.css', 'js/admin.js', 'js/admin-mod.js', 'js/admin-ann.js', 'js/admin-live.js', 'js/admin-rooms.js', 'js/admin-health.js', 'js/admin-people.js', 'js/admin-sotd.js', 'js/admin-modlog.js', 'js/admin-storage.js']
+  const page = (await Promise.all(['admin.html', 'css/admin.css', 'js/admin.js', 'js/admin-mod.js', 'js/admin-ann.js', 'js/admin-live.js', 'js/admin-rooms.js', 'js/admin-health.js', 'js/admin-people.js', 'js/admin-sotd.js', 'js/admin-modlog.js', 'js/admin-storage.js', 'js/admin-feedback.js']
     .map(f => fetch(`./${f}`, { cache: 'no-store' }).then(r => r.text())))).join('\n')
     .replace(/\/\*[\s\S]*?\*\//g, '');   // comments may name them, as admin.css's does
   const adNames = [...new Set(page.match(/(?<![\w-])ad-[a-z0-9]+/g) || [])];
@@ -2585,7 +2585,7 @@ section('admin console — settings and the rules that guard them');
 
   // Every word the admin page shows goes through t(), and Spanish has each one.
   const { es } = await import('./locales/es.js');
-  const src = (await Promise.all(['admin.js', 'admin-mod.js', 'admin-ann.js', 'admin-live.js', 'admin-rooms.js', 'admin-health.js', 'admin-people.js', 'admin-sotd.js', 'admin-modlog.js', 'admin-storage.js'].map(f => fetch(`./js/${f}`).then(r => r.text())))).join(' ');
+  const src = (await Promise.all(['admin.js', 'admin-mod.js', 'admin-ann.js', 'admin-live.js', 'admin-rooms.js', 'admin-health.js', 'admin-people.js', 'admin-sotd.js', 'admin-modlog.js', 'admin-storage.js', 'admin-feedback.js'].map(f => fetch(`./js/${f}`).then(r => r.text())))).join(' ');
   const q = String.raw`'((?:\\'|[^'])*)'`;
   const keys = [
     ...[...src.matchAll(new RegExp(String.raw`\bt\(\s*` + q, 'g'))].map(m => m[1]),
@@ -2768,6 +2768,19 @@ section('admin console — testers, audiences, schedules and days ahead');
     N.inAudience({ audience: 'testers' }, { tester: true }) && N.inAudience({ audience: 'testers' }, { admin: true })
     && !N.inAudience({ audience: 'testers' }, {}) && N.inAudience({ audience: 'admins' }, { admin: true })
     && !N.inAudience({ audience: 'admins' }, { tester: true }));
+  // Targeting on top of the audience (ADMIN.md §21): versions, phone or computer, a language, signed in only.
+  const TA = N.normalise({ title: 'x', style: 'card', audience: 'everyone', minVer: 120, maxVer: 130, platform: 'phone', lang: 'es', signedInOnly: true, es: { title: 'Hola' } });
+  const me = { ver: 125, phone: true, lang: 'es', signedIn: true };
+  check('targeting narrows the audience: each field on its own, and nothing set is everybody',
+    N.inAudience(TA, me) && !N.inAudience(TA, { ...me, ver: 119 }) && !N.inAudience(TA, { ...me, ver: 131 })
+    && !N.inAudience(TA, { ...me, phone: false }) && !N.inAudience(TA, { ...me, lang: 'en' }) && !N.inAudience(TA, { ...me, signedIn: false })
+    && N.inAudience(N.normalise({ title: 'x', style: 'card', audience: 'everyone' }), { ver: 1, phone: false, lang: 'en' })
+    && N.normalise({ title: 'x', style: 'card', platform: 'tv', lang: 'fr', minVer: -3 }).platform === '' );
+  check('Spanish words where there are some, English where there are none',
+    N.localized(TA, 'es').title === 'Hola' && N.localized(TA, 'es').text === TA.text && N.localized(TA, 'en').title === 'x');
+  const fbInbox = N.allAnnouncements({}, (s, k) => ({ 'feedback.url': 'https://forms.example/x', 'feedback.endAt': 9e12, 'feedback.mode': 'inbox' })[`${s}.${k}`]);
+  check('feedback.mode inbox: the built-in ask opens About (Send feedback) instead of the form',
+    fbInbox.feedback?.button?.action === 'panel' && fbInbox.feedback.button.target === 'about');
 
   check('testers/ is an admin’s to write, and each account reads only its own',
     rules.testers.$uid['.write'] === R.ADMIN && rules.testers.$uid['.read'] === 'auth != null && auth.uid === $uid');

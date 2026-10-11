@@ -30,6 +30,7 @@ import { family, osOf } from './health.js';
 
 const TICKETS_KEY = 'tdt-support';   // [{ id, at, note }] sent from this device, newest first
 const SEEN_KEY = 'tdt-support-seen'; // ids whose reply was shown
+const FEEDBACK_KEY = 'tdt-feedback';  // [{ id, at }] feedback sent with a reply allowed (js/send-feedback.js SENT_KEY)
 const KEEP = 10;
 const QUEUE_MAX = 50, SETS_MAX = 20;
 
@@ -154,15 +155,17 @@ export async function openSupport() {
 /** Look for replies to this device's requests (each one readable by its sender). */
 export async function checkReplies() {
   const mine = read(TICKETS_KEY, []);
-  if (!mine.length) return [];
+  const sent = read(FEEDBACK_KEY, []);
+  if (!mine.length && !sent.length) return [];
   const who = await signedIn().catch(() => null);
   if (!who) return [];
   const { sdk } = who;
   const next = new Map();
-  await Promise.all(mine.map(async (tk) => {
+  // Support requests, and feedback sent with a reply allowed (feedback/<id>, ADMIN.md §21): one list of replies.
+  await Promise.all([...mine.map(tk => ({ key: tk.id, path: `support/${tk.id}` })), ...sent.map(f => ({ key: `f:${f.id}`, path: `feedback/${f.id}` }))].map(async ({ key, path }) => {
     try {
-      const v = (await sdk.get(sdk.ref(sdk.db, `support/${tk.id}`))).val();
-      if (v?.reply?.text) next.set(tk.id, { note: v.note, at: v.at, reply: v.reply });
+      const v = (await sdk.get(sdk.ref(sdk.db, path))).val();
+      if (v?.reply?.text) next.set(key, { note: v.note ?? v.text, at: v.at, reply: v.reply, path });
     } catch { /* gone, or not this account's */ }
   }));
   replies = next;
@@ -184,7 +187,8 @@ export async function showReplies() {
   for (const [id] of list) {
     if (seen.has(id)) continue;
     seen.add(id);
-    if (who) who.sdk.set(who.sdk.ref(who.sdk.db, `support/${id}/replySeen`), who.sdk.serverTimestamp()).catch(() => {});
+    const r = replies.get(id);
+    if (who) who.sdk.set(who.sdk.ref(who.sdk.db, `${r?.path || `support/${id}`}/replySeen`), who.sdk.serverTimestamp()).catch(() => {});
   }
   write(SEEN_KEY, [...seen].slice(-50));
   if (typeof dispatchEvent === 'function') dispatchEvent(new CustomEvent('tdt-support'));
