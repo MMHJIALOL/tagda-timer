@@ -23,7 +23,7 @@ import { $, $$, el, fmt, fmtResult } from './util.js';
 import { isPhone, onPhoneChange } from './phone.js';
 import { openSheet, sheetRows, closeAllSheets } from './sheet.js';
 import { EVENTS, EVENT_ORDER, eventOf, modeOf, modesForEvent } from './events.js';
-import { eff, DNF, isMoveResult, averageOfRange, summarize, bestMean } from './stats.js';
+import { eff, DNF, isMoveResult, resultsFor, averageOfRange, summarize, bestMean } from './stats.js';
 import { CubeView } from './cube.js';
 import { renderDotTrend } from './charts.js';
 import { setFor } from './scramble.js';
@@ -410,7 +410,8 @@ function openEventSheet() {
       ...A.sessions.map((s) => {
         const on = s.id === A.session.id;
         const n = on ? A.solves.length : (counts.get(s.id) || 0);
-        const ao = on ? { ao12: summarize(A.solves).ao12, moves: A.solves.some(isMoveResult) } : otherAo12(s.id, n, refresh);
+        const moves = !!eventOf(s.event).fmc;
+        const ao = on ? { ao12: summarize(resultsFor(A.solves, moves)).ao12, moves } : otherAo12(s.id, n, refresh);
         const sub = t(n === 1 ? '{n} solve' : '{n} solves', { n })
           + (ao?.ao12 != null ? ` · ao12 ${fmtResult(ao.ao12, ao.moves)}` : '');
         return { label: s.name, sub, check: on, keep: true,
@@ -433,11 +434,12 @@ function openEventSheet() {
 const aoCache = new Map();
 function otherAo12(id, n, done) {
   const hit = aoCache.get(id);
-  if (hit && hit.n === n) return hit.ready ? hit : null;
+  const moves = !!eventOf(A.sessions.find(s => s.id === id)?.event).fmc;
+  if (hit && hit.n === n && hit.moves === moves) return hit.ready ? hit : null;
   if (n < 12) return null;
-  aoCache.set(id, { n, ready: false });
+  aoCache.set(id, { n, moves, ready: false });
   X.sessionSolves(id).then((list) => {
-    aoCache.set(id, { n, ready: true, ao12: summarize(list).ao12, moves: list.some(isMoveResult) });
+    aoCache.set(id, { n, ready: true, ao12: summarize(resultsFor(list, moves)).ao12, moves });
     done();
   }).catch(() => aoCache.delete(id));
   return null;
@@ -510,7 +512,8 @@ export function openSolveSheet(solve, { focusNote = false } = {}) {
     if (i < 0) return [el('p', { class: 'ph-note', text: t('That solve is gone.') })];
     const moves = isMoveResult(solve);
     const e = solves.map(eff);
-    const ao = (n) => (i + 1 >= n ? averageOfRange(e, i + 1 - n, i + 1) : null);
+    const ao = (n) => (i + 1 >= n && solves.slice(i + 1 - n, i + 1).every(s => isMoveResult(s) === moves)
+      ? averageOfRange(e, i + 1 - n, i + 1) : null);
     const fa = (v) => (v == null ? '—' : fmtResult(v, moves));
     const time = fmtSolve(solve) + (solve.penalty === '+2' && !moves ? '+' : '');
 
@@ -673,14 +676,14 @@ function openTimesMenu() {
 }
 
 function renderTimes() {
-  const solves = A.solves || [];
-  const moves = solves.some(isMoveResult);
   const ev = eventOf(A.settings.event);
+  const moves = !!ev.fmc;
+  const solves = resultsFor(A.solves || [], moves);
   ui.timesCtxText.textContent = `${ev.short} · ${A.session?.name || ''}`;
   ui.timesCtx.setAttribute('aria-label', t('Event and session: {event}, {session}', { event: ev.short, session: A.session?.name || '' }));
 
   const st = summarize(solves);
-  const f = (v) => (v == null || !isFinite(v) ? '—' : fmtResult(v, moves));
+  const f = (v) => fmtResult(v, moves);
   const card = (label, value, { best = false, sub = '' } = {}) => el('div', { class: 'ph-card' + (best ? ' is-best' : '') },
     el('div', { class: 'ph-card-k' }, el('span', { text: label }), best ? el('span', { class: 'ph-best', text: t('best') }) : null),
     el('div', { class: 'ph-card-v', text: f(value) }),
@@ -694,7 +697,7 @@ function renderTimes() {
     return card(label, cur, { best: isBest, sub });
   };
   let bestAt = -1;
-  if (st.best != null) for (let i = solves.length - 1; i >= 0; i--) if (eff(solves[i]) === st.best) { bestAt = i; break; }
+  if (st.best != null) for (let i = solves.length - 1; i >= 0; i--) if (eff(solves[i]) === st.best) { bestAt = A.solves.indexOf(solves[i]); break; }
   ui.timesCards.replaceChildren(
     // Fewest Moves is scored by mean of three, and its averages say so.
     moves ? avg('mo3', 3, st.mo3, bestMean(solves, 3)) : avg('ao5', 5, st.ao5, st.bestAo5),

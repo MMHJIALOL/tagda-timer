@@ -13,7 +13,7 @@ import { t, lang } from './i18n.js';
    what it cost.
    =========================================================== */
 
-import { el, copy } from './util.js';
+import { el, copy, capitaliseTypedMove } from './util.js';
 import { SOLVED, applyAlg, analyse, analyseRoux, parse, canonical, IDENTITY_FRAME } from './cube3.js';
 import { suggest, slotLabel, lastLayerCase } from './solver.js';
 import { toast } from './toast.js';
@@ -47,7 +47,7 @@ function loadCss() {
 
 let twistyLoaded = null;
 async function loadTwisty() {
-  if (twistyLoaded !== null) return twistyLoaded;
+  if (customElements.get('twisty-player') || twistyLoaded) return true;
   for (const src of SOURCES) {
     try { await import(/* @vite-ignore */ src); twistyLoaded = true; return true; }
     catch (err) { console.warn('[recon] could not load', src, err.message); }
@@ -873,11 +873,8 @@ function wireInput(input) {
     }
   };
 
-  input.addEventListener('input', () => {
-    const pos = input.selectionStart;
-    // Caps as you type, so no shift key stands between you and a move.
-    const up = input.value.replace(/[a-z]/g, c => c.toUpperCase());
-    if (up !== input.value) { input.value = up; input.setSelectionRange(pos, pos); }
+  input.addEventListener('input', e => {
+    capitaliseTypedMove(input, e);
     input.classList.remove('bad');
     if (/\s$/.test(input.value)) flush(false);
   });
@@ -1952,9 +1949,12 @@ function wireScrub() {
 async function mountPlayer() {
   if (player) return;
   if (!await loadTwisty() || !customElements.get('twisty-player')) {
-    ui.stage.append(el('div', { class: 'rc-nocube', text: t('cube preview unavailable') }));
+    if (!ui.stage.querySelector('.rc-nocube')) ui.stage.append(el('div', { class: 'rc-nocube', text: t('cube preview unavailable') }));
     return;
   }
+  // Reopening while cubing.js loads must reuse the first renderer.
+  if (player) return;
+  ui.stage.querySelector('.rc-nocube')?.remove();
   player = document.createElement('twisty-player');
   player.setAttribute('puzzle', '3x3x3');
   player.setAttribute('background', 'none');

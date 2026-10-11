@@ -792,16 +792,15 @@ export function openSotd(app, ctl, { onExit, solving = () => false } = {}) {
     if (window.innerWidth < 861) {
       root.style.removeProperty('--sotd-board-top');
       root.style.removeProperty('--sotd-chat-bottom');
-      /* The chat's sheet grows with the room, and at the board's 46vh it
-         reached up over the digits on a tall phone. Capped at the room below
-         them instead, but never so short that it stops being a chat. */
-      const digits = document.getElementById('timer-display')?.getBoundingClientRect();
-      if (digits?.height) {
-        root.style.setProperty('--sotd-chat-max', `${Math.max(220, Math.round(window.innerHeight - digits.bottom - 12))}px`);
+      /* Both sheets share the space below the timer and its controls. A fixed
+         vh cap (or a minimum taller than that space) covers short-phone clocks. */
+      const core = document.getElementById('timer-core')?.getBoundingClientRect();
+      if (core?.height) {
+        root.style.setProperty('--sotd-sheet-max', `${Math.max(0, Math.floor(window.innerHeight - core.bottom - 12))}px`);
       }
       return;
     }
-    root.style.removeProperty('--sotd-chat-max');
+    root.style.removeProperty('--sotd-sheet-max');
     const zone = document.getElementById('scramble-zone');
     if (!zone) return;
     root.style.setProperty('--sotd-board-top', `${Math.round(zone.getBoundingClientRect().bottom + 14)}px`);
@@ -838,7 +837,7 @@ export function openSotd(app, ctl, { onExit, solving = () => false } = {}) {
     clearInterval(state.timer);
     document.documentElement.style.removeProperty('--sotd-board-top');
     document.documentElement.style.removeProperty('--sotd-chat-bottom');
-    document.documentElement.style.removeProperty('--sotd-chat-max');
+    document.documentElement.style.removeProperty('--sotd-sheet-max');
     window.removeEventListener('resize', placeBoard);
     shareEl?.dispose();
     ctl.removeEventListener('change', onChange);
