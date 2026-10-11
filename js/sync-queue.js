@@ -211,6 +211,13 @@ export function createSyncQueue({ storage, online = () => navigator.onLine !== f
     ready() { ready = true; notify(); return flush(); },
     problem(reason = 'start') { if (active) { problem = reason; notify(); } },
     connectivityChanged() { notify(); if (online() && ready) void flush(); },
+    /** What is waiting, for a support snapshot (js/support.js): where and what, never the values. */
+    entries() {
+      return [...mine(), ...waiting()].map((e) => {
+        const paths = e.kind === 'update' ? Object.keys(e.updates || {}) : [e.path];
+        return { path: paths[0] + (paths.length > 1 ? ` (+${paths.length - 1})` : ''), op: e.kind, at: e.at ?? null };
+      });
+    },
     /** For the Health tab: what is waiting, since when, and what went wrong. Counts are since the page loaded. */
     health() {
       const list = [...mine(), ...waiting()];

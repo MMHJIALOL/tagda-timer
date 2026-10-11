@@ -377,5 +377,23 @@ export function createHealth(ctx) {
           link('#health/versions', s.loaded ? s.old : '…', t('people on an older version'))));
   }
 
-  return { view, start, stop, todayBlock, summary };
+  /** One person's error groups over the kept days (null while loading), and the paths of their own entries. */
+  function errorsOf(uid) {
+    start();
+    if (!H.errors) return null;
+    const out = [];
+    for (const [day, hashes] of Object.entries(H.errors)) {
+      for (const [hash, e] of Object.entries(hashes || {})) if (e?.u?.[uid]) out.push({ day: Number(day), hash, msg: e.msg, where: e.where, n: e.u[uid].n, path: `errors/${day}/${hash}/u/${uid}` });
+    }
+    return out.sort((a, b) => b.day - a.day);
+  }
+  /** One person's heartbeats over the kept days: [[day, record]], newest first, or null while loading. */
+  function beatsOf(uid) {
+    start();
+    if (!H.days) return null;
+    const all = { ...H.days, ...(H.today ? { [H.today.day]: H.today.recs } : {}) };
+    return Object.entries(all).filter(([, recs]) => recs?.[uid]).map(([d, recs]) => [Number(d), recs[uid]]).sort((a, b) => b[0] - a[0]);
+  }
+
+  return { view, start, stop, todayBlock, summary, errorsOf, beatsOf };
 }

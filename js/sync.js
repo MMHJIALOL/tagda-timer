@@ -51,6 +51,8 @@ const outbound = createSyncQueue({ storage: LocalMetadata,
   changed: publishStatus });
 /** The queue's health, for the heartbeat (js/health.js): { pending, oldestAt, dropped, lastErr }. */
 export const syncHealth = () => outbound.health();
+/** What is waiting to sync, values stripped, for a support snapshot (js/support.js). */
+export const syncQueueEntries = () => outbound.entries();
 export async function retrySync() {
   if (!_uid) return false;
   if (getSyncStatus().inFlight) return false;

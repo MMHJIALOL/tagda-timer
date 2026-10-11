@@ -385,11 +385,28 @@ export function createRooms(ctx) {
 
   function viewHistory() {
     if (!R.history && !R.historyBusy && !R.historyRefused) loadHistory();
-    const q = R.filter.trim().toLowerCase();
     const input = el('input', { class: 'ac-inp', type: 'search', value: R.filter, autocomplete: 'off',
       placeholder: t('A uid, or part of a name'), 'aria-label': t('Filter by person') });
-    input.addEventListener('input', () => { R.filter = input.value; ctx.scheduleRender(); });
-    input.addEventListener('blur', () => ctx.scheduleRender());
+    // Repainted in place while typing: a full redraw waits for the box to lose focus, which would
+    // replace the room being tapped.
+    const results = el('div');
+    const paint = () => results.replaceChildren(historyList(R.filter));
+    input.addEventListener('input', () => { R.filter = input.value; paint(); });
+    paint();
+    return [
+      el('a', { class: 'ac-back', href: '#mod/rooms', text: t('‹ Rooms') }),
+      el('section', { class: 'ac-block' },
+        el('div', { class: 'ac-head-row' },
+          el('h2', { class: 'ac-h2', text: t('Rooms, the last {n} days', { n: HISTORY_DAYS }) }),
+          el('button', { class: 'ac-btn small', type: 'button', text: 'Look again', onclick: () => loadHistory() })),
+        el('p', { class: 'ac-sub', text: 'Every room made in the last week that is still in the database, newest first. A uid finds every room that person raced, posted or sat in.' }),
+        el('div', { class: 'ac-text' }, input),
+        results),
+    ];
+  }
+
+  function historyList(filter) {
+    const q = filter.trim().toLowerCase();
     let body;
     if (R.historyRefused) body = el('p', { class: 'ac-err', text: 'Race rooms need the newer rules published.' });
     else if (!R.history) body = el('p', { class: 'ac-note', text: 'Loading…' });
@@ -402,16 +419,7 @@ export function createRooms(ctx) {
       body = list.length ? el('div', { class: 'ac-list' }, ...list.map(([id, room]) => roomRow(id, room)))
         : el('p', { class: 'ac-note', text: q ? t('Nobody by that in the last {n} days.', { n: HISTORY_DAYS }) : t('No race rooms in the last {n} days.', { n: HISTORY_DAYS }) });
     }
-    return [
-      el('a', { class: 'ac-back', href: '#mod/rooms', text: t('‹ Rooms') }),
-      el('section', { class: 'ac-block' },
-        el('div', { class: 'ac-head-row' },
-          el('h2', { class: 'ac-h2', text: t('Rooms, the last {n} days', { n: HISTORY_DAYS }) }),
-          el('button', { class: 'ac-btn small', type: 'button', text: 'Look again', onclick: () => loadHistory() })),
-        el('p', { class: 'ac-sub', text: 'Every room made in the last week that is still in the database, newest first. A uid finds every room that person raced, posted or sat in.' }),
-        el('div', { class: 'ac-text' }, input),
-        body),
-    ];
+    return body;
   }
 
   /* ---------------- the inspector ---------------- */
@@ -546,5 +554,15 @@ export function createRooms(ctx) {
     R.room = null;
   }
 
-  return { start, stop, viewRooms, viewHistory, viewRoom, leaveRoom, seatBlock, relayBlock, loadRelay };
+  /** A person's rooms over the week (the history read, started if it is not): [[id, room]], or null while loading. */
+  function roomsOf(uid) {
+    start();
+    if (!R.history && !R.historyBusy && !R.historyRefused) loadHistory();
+    if (!R.history) return null;
+    return sortRooms(R.history).filter(([, room]) => everyone(room).has(uid));
+  }
+  /** Relay logins today for one person, or null when unknown. */
+  const relayOf = (uid) => (R.relay?.day === today() ? R.relay.counts?.[uid] ?? 0 : null);
+
+  return { start, stop, viewRooms, viewHistory, viewRoom, leaveRoom, seatBlock, relayBlock, loadRelay, roomsOf, relayOf, nameOf, timeText };
 }
