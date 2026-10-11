@@ -405,8 +405,8 @@ function noteComposer(ctl) {
      server's copy is only adopted while the field is not being used. */
   box.refresh = () => {
     // Banned (bans/, ADMIN.md): the rules refuse the note, so the field says so rather than taking one.
-    input.disabled = ctl.banned;
-    input.placeholder = ctl.banned ? t('Notes are off for this account') : t('Say one line about it…');
+    input.disabled = ctl.bannedFor('chat');
+    input.placeholder = ctl.bannedFor('chat') ? t('Notes are off for this account') : t('Say one line about it…');
     const live = ctl.myNote;
     if (live === current) return;
     current = live;

@@ -27,7 +27,7 @@ import { t, translateDOM } from './i18n.js';
 import { el } from './util.js';
 import { toast } from './toast.js';
 import { onAuthChange, signIn, signOutUser, getDatabaseHandle, preloadAuth, takeRedirectError } from './sync-auth.js';
-import { adminStatus, banAccount, unbanAccount, banActive } from './admins.js';
+import { adminStatus, banAccount, unbanAccount, banActive, banScopes, BAN_SCOPES } from './admins.js';
 import { CONFIG, spec, clean, valid } from './config.js';
 import { SCHEDULER_UID, SCHEDULE_AHEAD_MS } from './config-rules.js';
 import { APP_VERSION } from './version.js';
@@ -38,6 +38,7 @@ import { createRooms } from './admin-rooms.js';
 import { createHealth } from './admin-health.js';
 import { createPeople } from './admin-people.js';
 import { createSotd } from './admin-sotd.js';
+import { createModLog } from './admin-modlog.js';
 import { eventOf } from './events.js';
 
 /** How many log entries the page keeps live. Older ones stay in the database. */
@@ -168,7 +169,8 @@ function scheduleRender() {
 function route() {
   const h = location.hash.replace(/^#/, '');
   if (h === '' || h === 'today') return { view: 'today' };
-  if (h === 'log') return { view: 'log' };
+  if (h === 'log' || h === 'log/settings') return { view: 'log', sub: 'settings' };
+  if (h === 'log/mod') return { view: 'log', sub: 'mod' };
   if (h === 'bans') return { view: 'people', sub: 'bans' };
   const ppl = /^people(?:\/(testers|bans|lookup|support|requests))?$/.exec(h);
   if (ppl) return { view: 'people', sub: ppl[1] || 'lookup' };
@@ -220,7 +222,7 @@ function view() {
       const r = route();
       if (r.view === 'today') return live.viewToday();
       if (r.view === 'days') return live.viewDays(r.sub);
-      if (r.view === 'log') return viewLog();
+      if (r.view === 'log') return viewLog(r.sub);
       if (r.view === 'people') return viewPeople(r.sub, r.id);
       if (r.view !== 'mod' || r.sub !== 'room') rooms.leaveRoom();
       if (r.view === 'mod') return moderation.view(r.sub, r.id);
@@ -661,9 +663,19 @@ async function write(changes, { undo = null } = {}) {
 
 /* ---------------- the change log ---------------- */
 
-function viewLog() {
+function viewLog(sub = 'settings') {
+  const nav = el('nav', { class: 'ac-subtabs', 'aria-label': t('Log') },
+    ...[['settings', t('Settings')], ['mod', t('Moderation')]].map(([key, label]) => raw('a', {
+      class: `ac-subtab${sub === key ? ' on' : ''}`, href: key === 'settings' ? '#log' : '#log/mod', 'aria-current': sub === key ? 'page' : null }, label)));
+  if (sub === 'mod') {
+    return [
+      el('h1', { class: 'ac-h1', text: 'Change log' }), nav,
+      el('p', { class: 'ac-sub', text: 'Every moderation action, from this page and from an admin’s buttons in the timer, newest first. Undo, where it can be undone, is an action of its own.' }),
+      ...modlog.view(),
+    ];
+  }
   const head = [
-    el('h1', { class: 'ac-h1', text: 'Change log' }),
+    el('h1', { class: 'ac-h1', text: 'Change log' }), nav,
     el('p', { class: 'ac-sub', text: 'Every change made here, newest first. Undo puts a setting back to what it was before that change, as a new change of its own.' }),
   ];
   if (!S.loaded.log) return [...head, el('p', { class: 'ac-note', text: 'Loading…' })];
@@ -755,21 +767,38 @@ function viewPeople(sub, id = null) {
   return [...head, ...(sub === 'testers' ? live.viewTesters() : viewBans())];
 }
 
+/** What each ban scope is called on the ban form and in the list. */
+const SCOPE_NAMES = () => ({ chat: t('Chat and notes'), sotd: t('Scramble of the Day times'), race: t('Race rooms'),
+  duel: t('1v1s'), replays: t('Sharing replays'), reports: t('Reporting') });
+
+/** Ticks for a ban's scope: none ticked is everything. Returns { node, value() }. */
+function scopeTicks(pre = []) {
+  const boxes = BAN_SCOPES.map(s => el('input', { type: 'checkbox', value: s, checked: pre.includes(s) }));
+  const node = el('fieldset', { class: 'ac-field ac-scope' },
+    el('legend', { class: 'ac-label', text: t('Only from (none ticked: everything)') }),
+    el('div', { class: 'ac-chips ac-picks' }, ...boxes.map((b, i) => el('label', { class: 'ac-chip' }, b, raw('span', {}, SCOPE_NAMES()[BAN_SCOPES[i]])))));
+  return { node, value: () => boxes.filter(b => b.checked).map(b => b.value) };
+}
+
+const scopeText = (b) => { const l = banScopes(b); return l ? t('only: {what}', { what: l.map(s => SCOPE_NAMES()[s]).join(', ') }) : t('everything'); };
+
 function viewBans() {
   const head = [
-    el('p', { class: 'ac-sub', text: 'A banned account cannot post in either chat, share a replay, or put a time or a note on the Scramble of the Day board. Its timer and its own synced solves are untouched. The database rules and the Worker enforce it. In the timer, an admin can also ban from a chat message, a board row or a shared replay.' }),
+    el('p', { class: 'ac-sub', text: 'A ban stops an account posting in either chat or writing a note, putting a time on the Scramble of the Day, racing, playing 1v1s, sharing replays and reporting: all of it, or only what is ticked. Its timer and its own synced solves are untouched. The database rules and the Worker enforce it. In the timer, an admin can also ban from a chat message, a board row or a shared replay.' }),
   ];
   const field = (label, input) => el('label', { class: 'ac-field' }, el('span', { class: 'ac-label', text: label }), input);
   const uid = el('input', { class: 'ac-inp', autocomplete: 'off', spellcheck: 'false', autocapitalize: 'off', maxlength: 128 });
   const name = el('input', { class: 'ac-inp', autocomplete: 'off', maxlength: 32 });
   const reason = el('input', { class: 'ac-inp', autocomplete: 'off', maxlength: 200 });
   const len = el('select', { class: 'ac-inp' }, ...banFor().map((b, i) => raw('option', { value: String(i) }, b.label)));
+  const ticks = scopeTicks();
   const form = el('form', { class: 'ac-row ac-ban-form' },
     el('b', { text: 'Ban an account' }),
     field(t('Account id (uid)'), uid),
     field(t('Name, for this list'), name),
     field(t('Reason, which they are shown'), reason),
     field(t('For'), len),
+    ticks.node,
     el('div', { class: 'ac-sheet-actions' }, el('button', { class: 'ac-btn primary', type: 'submit', text: 'Ban…' })));
   form.addEventListener('submit', (e) => {
     e.preventDefault();
@@ -777,7 +806,7 @@ function viewBans() {
     if (!UID_RE.test(id)) { toast(t('That is not an account id: letters and digits only'), { kind: 'bad', long: true }); return; }
     if (id === S.user?.uid) { toast(t('That is your own account'), { kind: 'bad', long: true }); return; }
     const pick = banFor()[Number(len.value)] || banFor()[0];
-    askBan({ uid: id, name: name.value.trim(), reason: reason.value.trim(), ms: pick.ms });
+    askBan({ uid: id, name: name.value.trim(), reason: reason.value.trim(), ms: pick.ms, scope: ticks.value() });
   });
   if (S.bansRefused) {
     return [...head, gate('Publish the rules first', 'Bans need the firebase.rules.json from this version of the page. Publish it in the Firebase console and reload.')];
@@ -800,7 +829,7 @@ function banRow(id, b) {
       raw('span', { class: 'ac-uid' }, id),
       raw('span', { class: 'ac-reason' }, b?.reason || '—'),
       raw('span', { class: 'ac-entry-meta', title: b?.at ? new Date(b.at).toLocaleString() : '' },
-        [ago(b?.at), b?.by ? t('by {who}', { who: who(b.by) }) : '', until].filter(Boolean).join(' · '))),
+        [ago(b?.at), b?.by ? t('by {who}', { who: who(b.by) }) : '', until, scopeText(b)].filter(Boolean).join(' · '))),
     el('button', { class: 'ac-btn small', text: live ? t('Unban') : t('Clear'), onclick: () => askUnban(id, b) }));
 }
 
@@ -809,19 +838,20 @@ function banRow(id, b) {
  * length can still be changed. `then` runs after it lands (the Moderate tab
  * resolves the reports about it).
  */
-function askBan({ uid, name = '', reason = '', ms = 0, then = null }) {
+function askBan({ uid, name = '', reason = '', ms = 0, then = null, scope = [] }) {
   if (uid === S.user?.uid) { toast(t('That is your own account'), { kind: 'bad', long: true }); return; }
   const why = el('input', { class: 'ac-inp', autocomplete: 'off', maxlength: 200 });
   why.value = String(reason).slice(0, 200);
   const choices = banFor();
   const len = el('select', { class: 'ac-inp' }, ...choices.map((b, i) => raw('option', { value: String(i) }, b.label)));
   len.value = String(Math.max(0, choices.findIndex(b => b.ms === ms)));
+  const ticks = scopeTicks(scope);
   const go = el('button', { class: 'ac-btn primary', text: 'Ban' });
   go.addEventListener('click', async () => {
     go.disabled = true;
     const pick = choices[Number(len.value)] || choices[0];
     try {
-      await banAccount(S.sdk, { uid, name, reason: why.value.trim(), until: pick.ms ? Date.now() + pick.ms : null });
+      await banAccount(S.sdk, { uid, name, reason: why.value.trim(), until: pick.ms ? Date.now() + pick.ms : null, scope: ticks.value(), before: S.bans?.[uid] || null });
       closeSheet();
       toast(t('Banned. They can still use the timer.'), { kind: 'good', long: true });
       await then?.();
@@ -837,7 +867,8 @@ function askBan({ uid, name = '', reason = '', ms = 0, then = null }) {
     raw('span', { class: 'ac-uid' }, uid),
     field(t('Reason, which they are shown'), why),
     field(t('For'), len),
-    el('p', { class: 'ac-sub', text: 'Until it ends or you unban them: no chat messages, no shared replays, nothing on the Scramble of the Day board. A race account is a throwaway, so a ban on one lasts only as long as that tab’s account.' }),
+    ticks.node,
+    el('p', { class: 'ac-sub', text: 'Until it ends or you unban them, whatever is ticked, or all of it: chat and notes, Scramble of the Day times, race rooms, 1v1s, sharing replays, reporting. A race account is a throwaway, so a ban on one lasts only as long as that tab’s account.' }),
     el('div', { class: 'ac-sheet-actions' },
       el('button', { class: 'ac-btn', text: 'Back', onclick: closeSheet }),
       go));
@@ -848,7 +879,7 @@ function askUnban(id, b) {
   go.addEventListener('click', async () => {
     go.disabled = true;
     try {
-      await unbanAccount(S.sdk, id);
+      await unbanAccount(S.sdk, id, b || null);
       closeSheet();
       toast(t('Unbanned'), { kind: 'good' });
     } catch (err) {
@@ -884,6 +915,7 @@ async function doSignOut() {
 function teardown() {
   moderation.stop();
   sotd.stop();
+  modlog.stop();
   rooms.stop();
   health.stop();
   people.stop();
@@ -949,7 +981,10 @@ async function onUser(user) {
   if (S.status === 'admin') { listen(); moderation.start(); }
 }
 
-const moderation = createModeration({ S, scheduleRender, raw, ago, who, openSheet, closeSheet, askBan, gate, rooms: () => rooms, sotd: () => sotd });
+/** A name for a uid, from whatever the console has read: the directory, today's boards, bans. */
+const nameOf = (uid) => { people.start(); return people.nameOf(uid) || S.bans?.[uid]?.name || ''; };
+const moderation = createModeration({ S, scheduleRender, raw, ago, who, openSheet, closeSheet, askBan, gate, nameOf, rooms: () => rooms, sotd: () => sotd });
+const modlog = createModLog({ S, scheduleRender, raw, ago, who, openSheet, closeSheet, gate, nameOf });
 const rooms = createRooms({ S, scheduleRender, raw, ago, who, openSheet, closeSheet, askBan, gate, cfg, moderation });
 const sotd = createSotd({ S, scheduleRender, raw, ago, who, openSheet, closeSheet, askBan, gate, cfg, moderation });
 const announce = createAnnounce({ S, scheduleRender, raw, ago, who, openSheet, closeSheet, gate, cfg });
@@ -960,7 +995,7 @@ function stage(path, value) {
   render();
 }
 const health = createHealth({ S, scheduleRender, raw, ago, who, openSheet, closeSheet, gate, cfg, moderation, stage });
-const people = createPeople({ S, scheduleRender, raw, ago, who, openSheet, closeSheet, askBan, askUnban, gate, cfg, moderation, rooms, health });
+const people = createPeople({ S, scheduleRender, raw, ago, who, openSheet, closeSheet, askBan, askUnban, gate, cfg, moderation, rooms, health, modLabel: (a) => modlog.label(a) });
 const live = createLive({ S, scheduleRender, raw, ago, who, openSheet, closeSheet, gate, cfg, moderation, rooms, health, scheduledList, scheduledRow });
 
 window.addEventListener('hashchange', () => { closeSheet(); render(); window.scrollTo(0, 0); });

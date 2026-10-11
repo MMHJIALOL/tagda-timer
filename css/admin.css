@@ -425,3 +425,14 @@ select.ac-inp { appearance: none; -webkit-appearance: none; background-image: li
 .ac-reply { margin-top: 6px; padding: 8px 10px; border-radius: 10px; background: color-mix(in srgb, var(--accent) 12%, var(--surface)); font-size: .88rem; white-space: pre-wrap; }
 .ac-entry-actions.ac-col { flex-direction: column; align-items: stretch; }
 .ac-ticket details summary { cursor: pointer; color: var(--accent-2); font-size: .84rem; font-weight: 600; margin-top: 4px; }
+
+/* ---------------- moderation, round two (ADMIN.md §19) ---------------- */
+
+/* Who reported it, each with their record. */
+.ac-reporters { display: flex; flex-direction: column; gap: 4px; margin-top: 4px; }
+.ac-reporter { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: .84rem; }
+.ac-reporter .ac-btn { margin-left: auto; }
+/* A ban's scope: ticks, none ticked is everything. */
+.ac-scope { border: 0; padding: 0; margin: 0; min-width: 0; }
+.ac-scope legend { padding: 0; margin-bottom: 6px; }
+

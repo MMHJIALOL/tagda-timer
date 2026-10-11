@@ -212,7 +212,7 @@ export async function shareReplay(ctl, at, solveId, { quiet = false } = {}) {
     // The admin console's switches first: off, or banned, and nothing else is worth doing.
     await loadConfig();
     if (!replaysOn()) { if (!quiet && replaysForMe()) toast(offText(), { long: true }); return false; }
-    if (ctl.banned) { if (!quiet) toast(banLine(ctl.snap?.ban), { kind: 'bad', long: true }); return false; }
+    if (ctl.bannedFor('replays')) { if (!quiet) toast(banLine(ctl.snap?.ban, 'replays'), { kind: 'bad', long: true }); return false; }
     /* One read before any work: rules not published yet, or today's share
        already used, is known without encoding or uploading anything. */
     const claimed = await ctl.net?.hasReplayClaim?.(at);
@@ -285,7 +285,7 @@ export async function shareReplay(ctl, at, solveId, { quiet = false } = {}) {
     if (res.status === 503) off.add(key);
     const msg = res.status === 403
       ? (res.body?.error === 'not-google' ? t('Only Google accounts can share replays')
-        : res.body?.error === 'banned' ? (ctl.snap?.ban ? banLine(ctl.snap.ban) : t('This account can’t share replays'))
+        : res.body?.error === 'banned' ? (ctl.snap?.ban ? banLine(ctl.snap.ban, 'replays') : t('This account can’t share replays'))
           : t('Submit today’s attempt first'))
       : (SHARE_ERRORS[res.status] || (() => t('Couldn’t share the replay, try later')))();
     toast(msg, { kind: 'bad', long: true });
@@ -411,8 +411,8 @@ export function shareBox(ctl) {
       kids = [];
     } else if (!replaysOn() && local) {
       kids = [el('div', { class: 'db-share-row' }, el('span', { class: 'db-share-note', text: offText() }))];
-    } else if (ctl.banned && local) {
-      kids = [el('div', { class: 'db-share-row' }, el('span', { class: 'db-share-note', text: banLine(ctl.snap?.ban) }))];
+    } else if (ctl.bannedFor('replays') && local) {
+      kids = [el('div', { class: 'db-share-row' }, el('span', { class: 'db-share-note', text: banLine(ctl.snap?.ban, 'replays') }))];
     } else if (off.has(key)) {
       kids = [el('div', { class: 'db-share-row' },
         el('span', { class: 'db-share-note', text: t('Sharing replays isn’t switched on yet') }))];

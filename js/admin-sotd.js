@@ -21,6 +21,7 @@ import { eventOf } from './events.js';
 import { setOf } from './config.js';
 import { SOTD_EVENTS, floorsOf } from './config-table.js';
 import { pastDayKeys } from './dayid.js';
+import { logged } from './moderation.js';
 
 const IST_MS = 19_800_000;
 const PAST_DAYS = 7;
@@ -75,9 +76,10 @@ export function createSotd(ctx) {
 
   /* ---------------- the actions ---------------- */
 
-  async function write(updates, done) {
+  /** One update, logged in the moderation log (ADMIN.md §19). */
+  async function write(updates, done, entry) {
     try {
-      await sdk().update(sdk().ref(sdk().db), updates);
+      await logged(sdk(), updates, entry);
       ctx.closeSheet();
       if (done) toast(done, { kind: 'good' });
       return true;
@@ -89,11 +91,15 @@ export function createSotd(ctx) {
   }
 
   const base = (ev, uid) => `daily/${today()}/${ev}/results/${uid}`;
-  const keep = (ev, uid) => write({ [`${base(ev, uid)}/review`]: { by: S.user.uid, at: sdk().serverTimestamp(), keep: true } }, t('Kept: the mark is gone'));
-  const retime = (ev, uid, penalty) => write({ [`${base(ev, uid)}/penalty`]: penalty },
-    penalty === 'none' ? t('Penalty cleared') : t('Set to {p}', { p: penalty }));
-  const feature = (ev, uid) => write({ [`sotdFeaturedReplay/${today()}`]: { event: ev, uid } }, t('Featured'));
-  const unfeature = () => write({ [`sotdFeaturedReplay/${today()}`]: null }, t('No featured replay'));
+  const keep = (ev, uid, row) => write({ [`${base(ev, uid)}/review`]: { by: S.user.uid, at: sdk().serverTimestamp(), keep: true } }, t('Kept: the mark is gone'),
+    { action: 'keep', path: base(ev, uid), uid, note: timeText(row) });
+  const retime = (ev, uid, penalty, row) => write({ [`${base(ev, uid)}/penalty`]: penalty },
+    penalty === 'none' ? t('Penalty cleared') : t('Set to {p}', { p: penalty }),
+    { action: 'retime', path: base(ev, uid), uid, before: row?.penalty || 'none', note: penalty });
+  const feature = (ev, uid) => write({ [`sotdFeaturedReplay/${today()}`]: { event: ev, uid } }, t('Featured'),
+    { action: 'feature', path: `sotdFeaturedReplay/${today()}`, uid, before: Q.featured || null, note: evName(ev) });
+  const unfeature = () => write({ [`sotdFeaturedReplay/${today()}`]: null }, t('No featured replay'),
+    { action: 'unfeature', path: `sotdFeaturedReplay/${today()}`, uid: Q.featured?.uid || '', before: Q.featured || null });
 
   function askRetime(ev, uid, row, penalty) {
     ctx.openSheet(
@@ -102,7 +108,7 @@ export function createSotd(ctx) {
       el('p', { class: 'ac-sub', text: t('{time} now. For a solve that was real with the wrong time on it: a Stackmat glitch, a +2 they forgot. It moves on the board at once.', { time: timeText(row) }) }),
       el('div', { class: 'ac-sheet-actions' },
         el('button', { class: 'ac-btn', text: 'Back', onclick: ctx.closeSheet }),
-        el('button', { class: 'ac-btn primary', text: penalty === 'none' ? t('Clear it') : t('Set to {p}', { p: penalty }), onclick: () => retime(ev, uid, penalty) })));
+        el('button', { class: 'ac-btn primary', text: penalty === 'none' ? t('Clear it') : t('Set to {p}', { p: penalty }), onclick: () => retime(ev, uid, penalty, row) })));
   }
 
   function askRemove(ev, uid, row) {
@@ -147,7 +153,7 @@ export function createSotd(ctx) {
       frozen ? el('p', { class: 'ac-flag', text: t('Today’s board is closed (sotd.frozen): no new result is accepted.') }) : null,
       el('p', { class: 'ac-sub', text: t('Times under their event’s floor (Settings › Scramble of the Day › Checked under). They stay on the board marked “checking” until you keep or remove them.') }),
       list.length ? el('ol', { class: 'ac-log ac-tight' }, ...list.map(({ ev, uid, row, floor }) => resultEntry(ev, uid, row, { floor, extra: [
-        small(t('Keep'), () => keep(ev, uid), 'primary'),
+        small(t('Keep'), () => keep(ev, uid, row), 'primary'),
         small('+2', () => askRetime(ev, uid, row, '+2')),
         small('DNF', () => askRetime(ev, uid, row, 'DNF')),
         small(t('Remove'), () => askRemove(ev, uid, row), 'danger'),

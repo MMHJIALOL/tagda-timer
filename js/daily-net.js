@@ -55,7 +55,7 @@ import { t } from './i18n.js';
 import { getDatabaseHandle } from './sync-auth.js';
 import { loadRoles } from './audience.js';
 import { getConfig } from './config.js';
-import { removalUpdate, sendReport } from './moderation.js';
+import { removalUpdate, sendReport, logged } from './moderation.js';
 import { CLOCK_SLACK_MS, CLOCK_SLACK_RATIO, CHAT_HISTORY } from './raceapp.js';
 import { cleanChat } from './race-net.js';
 
@@ -620,10 +620,13 @@ export class DailyTransport extends EventTarget {
    *   progress/<uid>/submitted  gone, so "n people have done it" drops by one
    *   replayClaim/<uid>         gone, so a replay of the backup solve can be shared
    */
-  async removeResult({ dayKey, event, uid, final }) {
+  async removeResult({ dayKey, event, uid, final, row = null }) {
     if (!dayKey || !event || !uid) throw new Error('nothing-to-remove');
     const S = this._sdk;
-    await S.update(this._ref(`daily/${dayKey}/${event}`), removalUpdate(uid, final, S.serverTimestamp()));
+    const base = `daily/${dayKey}/${event}`;
+    const up = Object.fromEntries(Object.entries(removalUpdate(uid, final, S.serverTimestamp())).map(([k, v]) => [`${base}/${k}`, v]));
+    // In the moderation log too (ADMIN.md §19), in the same update.
+    await logged(S, up, { action: 'removeTime', path: `${base}/results/${uid}`, uid, before: row });
   }
 
   /** Report a message in the watched room (moderation.js): 'sent' or 'already'. */
@@ -842,10 +845,17 @@ export class DailyTransport extends EventTarget {
   }
 
   /** Take a message down: your own, or anybody's for an admin. The rules decide which. */
-  async deleteChat(id) {
+  async deleteChat(id, m = null) {
     const { dayKey, event } = this.target();
     if (!dayKey || !event || !id) return;
-    await this._sdk.remove(this._ref(`daily/${dayKey}/${event}/chat/m/${id}`));
+    const path = `daily/${dayKey}/${event}/chat/m/${id}`;
+    // Somebody else's (an admin's delete): logged, with what it said (ADMIN.md §19).
+    if (m?.uid && m.uid !== this.snap?.uid) {
+      await logged(this._sdk, { [path]: null }, { action: 'deleteMessage', path, uid: m.uid,
+        before: { uid: m.uid, name: m.name || '', text: m.text || '', at: m.at || 0 } });
+      return;
+    }
+    await this._sdk.remove(this._ref(path));
   }
 
   /**

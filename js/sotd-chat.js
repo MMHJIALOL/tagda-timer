@@ -111,7 +111,7 @@ export function mountChat(ctl, { avatar, onBack } = {}) {
       if (out === 'slow') {
         input.value = body;
         toast(t('Slow down a little: one message every {s} seconds', { s: Math.round(ctl.chatGapMs / 100) / 10 }));
-      } else if (out === 'closed') {
+      } else if (out === 'closed' || out === 'blocked') {
         input.value = body;
       }
     } catch (err) {
@@ -148,7 +148,7 @@ export function mountChat(ctl, { avatar, onBack } = {}) {
         [{ label: t('Delete'), value: 'delete' }, { label: t('Delete and ban'), value: 'ban' }]);
     if (!how) return;
     try {
-      await ctl.deleteChat(m.id);
+      await ctl.deleteChat(m.id, m);
       toast(t('Message deleted'));
     } catch (err) {
       console.warn('[daily] chat delete refused', err?.code || err);

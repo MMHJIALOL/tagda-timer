@@ -9,6 +9,8 @@ import { t } from './i18n.js';
    admin's buttons, and who gets past the admin page's front door.
    =========================================================== */
 
+import { logged } from './moderation.js';
+
 /**
  * The admin before admins/ existed, as the old firebase.rules.json and
  * ADMIN_UIDS in wrangler.jsonc hard-code it. Asked only while the database
@@ -73,43 +75,76 @@ export function removeTester(sdk, uid) {
    Bans
    ---------------------------------------------------------
 
-   bans/<uid>: { at, by, reason, name?, until? }, written by an admin only,
-   readable by admins and by the account itself. A banned account cannot
-   post in either chat, share a replay, or put a time or a note on the
-   Scramble of the Day board; the timer and its own synced data are
-   untouched. firebase.rules.json and worker.js enforce it; what follows only
-   writes it and explains it.
+   bans/<uid>: { at, by, reason, name?, until?, scope? }, written by an admin
+   only, readable by admins and by the account itself. Without a scope a
+   banned account cannot post in either chat, share a replay, report, race,
+   play a 1v1 or put a time or a note on the Scramble of the Day board; with
+   one ("chat,reports"), only those (ADMIN.md §5). The timer and its own
+   synced data are untouched. firebase.rules.json and worker.js enforce it;
+   what follows only writes it and explains it.
    --------------------------------------------------------- */
 
-/** Whether a stored ban is in force at `now`: no end date, or one still ahead. */
-export function banActive(ban, now = Date.now()) {
-  return !!ban && !(typeof ban.until === 'number' && ban.until <= now);
+/** What a ban can be limited to; the same list as js/config-rules.js BAN_SCOPES. */
+export const BAN_SCOPES = ['chat', 'sotd', 'race', 'duel', 'replays', 'reports'];
+
+/** A ban's scopes, or null for "everything" (no scope stored, as every ban before scopes). */
+export function banScopes(ban) {
+  if (typeof ban?.scope !== 'string' || !ban.scope) return null;
+  const list = ban.scope.split(',').filter(s => BAN_SCOPES.includes(s));
+  return list.length ? list : null;
 }
 
-/** What a banned account is told, wherever it is stopped. */
-export function banLine(ban) {
+/**
+ * Whether a stored ban is in force at `now`: no end date, or one still ahead.
+ * With `scope`, whether it is in force for that: a ban with no scope covers all.
+ */
+export function banActive(ban, now = Date.now(), scope = null) {
+  if (!ban || (typeof ban.until === 'number' && ban.until <= now)) return false;
+  const list = banScopes(ban);
+  return !scope || !list || list.includes(scope);
+}
+
+/** What each scope stops, as the end of "This account can’t …". */
+const CANT = () => ({
+  chat: t('chat or write notes'), sotd: t('put times on the Scramble of the Day'), race: t('race'),
+  duel: t('play 1v1s'), replays: t('share replays'), reports: t('report'),
+});
+
+/** What a banned account is told, wherever it is stopped: about `scope` there, else everything it covers. */
+export function banLine(ban, scope = null) {
   const reason = String(ban?.reason || '').trim() || '—';
-  return typeof ban?.until === 'number'
-    ? t('This account can’t post, share replays or submit until {when}. Reason: {reason}',
-      { when: new Date(ban.until).toLocaleString(), reason })
-    : t('This account can’t post, share replays or submit. Reason: {reason}', { reason });
+  const list = banScopes(ban);
+  const until = typeof ban?.until === 'number' ? new Date(ban.until).toLocaleString() : null;
+  if (!list && !scope) {
+    return until
+      ? t('This account can’t post, share replays or submit until {when}. Reason: {reason}', { when: until, reason })
+      : t('This account can’t post, share replays or submit. Reason: {reason}', { reason });
+  }
+  const what = (scope ? [scope] : list).map(s => CANT()[s]).join(', ');
+  return until
+    ? t('This account can’t {what} until {when}. Reason: {reason}', { what, when: until, reason })
+    : t('This account can’t {what}. Reason: {reason}', { what, reason });
 }
 
 /**
  * Ban an account. `until` (ms) is optional: without it the ban lasts until an
- * admin lifts it. The rules want `at` to be the server's clock and `by` the
- * admin's own uid.
+ * admin lifts it. `scope` (a list of BAN_SCOPES) limits it; empty is all of
+ * them. The rules want `at` to be the server's clock and `by` the admin's own
+ * uid. Logged (modLog/, ADMIN.md §19) in the same update.
  *
- * @param sdk  getDatabaseHandle()'s { set, ref, db, auth, serverTimestamp }
+ * @param sdk  getDatabaseHandle()'s { update, push, ref, db, auth, serverTimestamp }
  */
-export async function banAccount(sdk, { uid, name = '', reason = '', until = null }) {
+export async function banAccount(sdk, { uid, name = '', reason = '', until = null, scope = [], before = null, undo = '' }) {
   if (!uid) throw new Error('no-uid');
   const rec = { at: sdk.serverTimestamp(), by: sdk.auth.currentUser?.uid, reason: String(reason).slice(0, 200) };
   if (name) rec.name = String(name).slice(0, 32);
   if (until) rec.until = Math.round(until);
-  await sdk.set(sdk.ref(sdk.db, `bans/${uid}`), rec);
+  const list = BAN_SCOPES.filter(s => scope.includes(s));
+  if (list.length && list.length < BAN_SCOPES.length) rec.scope = list.join(',');
+  return logged(sdk, { [`bans/${uid}`]: rec }, { action: 'ban', path: `bans/${uid}`, uid, before, note: rec.reason, undo });
 }
 
-export async function unbanAccount(sdk, uid) {
-  await sdk.remove(sdk.ref(sdk.db, `bans/${uid}`));
+/** Lift a ban; `before` (the ban as it was) goes in the log, so Undo can put it back. `undo`: the log entry this undoes. */
+export async function unbanAccount(sdk, uid, before = null, undo = '') {
+  return logged(sdk, { [`bans/${uid}`]: null }, { action: 'unban', path: `bans/${uid}`, uid, before, undo });
 }

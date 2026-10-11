@@ -28,6 +28,7 @@ import { dayKeyFromServerMs } from './dayid.js';
 import { eventOf } from './events.js';
 import { MATCH_LOBBY, FIREBASE_CONFIG } from './raceapp.js';
 import { EMULATED } from './sync-auth.js';
+import { logged } from './moderation.js';
 
 const DAY_MS = 86_400_000;
 const HISTORY_DAYS = 7;
@@ -178,10 +179,10 @@ export function createRooms(ctx) {
   /* ---------------- the actions ---------------- */
 
   const TS = () => sdk().serverTimestamp();
-  /** One multi-path update at the root; a refusal says the rules are older than this page. */
-  async function write(updates, done) {
+  /** One multi-path update at the root, with its moderation log entry (ADMIN.md §19); a refusal says the rules are older than this page. */
+  async function write(updates, done, entry) {
     try {
-      await sdk().update(root(), updates);
+      await logged(sdk(), updates, entry);
       ctx.closeSheet();
       if (done) toast(done, { kind: 'good' });
       return true;
@@ -204,14 +205,15 @@ export function createRooms(ctx) {
 
   const askClose = (id) => confirm(t('Close room {id}?', { id }),
     [t('Everybody in it is told a moderator closed it and leaves. Nobody can join it, post in it or send a time to it until it is reopened. Its rounds and chat stay for you to look at.')],
-    t('Close room'), () => write({ [`rooms/${id}/mod/closed`]: { at: TS(), by: me() } }, t('Room closed')));
+    t('Close room'), () => write({ [`rooms/${id}/mod/closed`]: { at: TS(), by: me() } }, t('Room closed'), { action: 'close', path: `rooms/${id}` }));
   const askReopen = (id) => confirm(t('Reopen room {id}?', { id }),
-    [t('People can join it by its code again.')], t('Reopen'), () => write({ [`rooms/${id}/mod/closed`]: null }, t('Room reopened')));
+    [t('People can join it by its code again.')], t('Reopen'), () => write({ [`rooms/${id}/mod/closed`]: null }, t('Room reopened'), { action: 'reopen', path: `rooms/${id}` }));
   const askKick = (id, uid, name) => confirm(t('Remove {name} from room {id}?', { name, id }),
     [t('Their tab is told a moderator removed them, and leaves. They cannot come back into this room, post in it or send a time to it; other rooms are not affected. To keep them out of everything, ban them instead.')],
-    t('Remove'), () => write({ [`rooms/${id}/mod/kicked/${uid}`]: TS(), [`rooms/${id}/players/${uid}`]: null }, t('Removed')));
+    t('Remove'), () => write({ [`rooms/${id}/mod/kicked/${uid}`]: TS(), [`rooms/${id}/players/${uid}`]: null }, t('Removed'),
+      { action: 'kick', path: `rooms/${id}`, uid, note: name }));
   const askUnkick = (id, uid, name) => confirm(t('Let {name} back into room {id}?', { name, id }),
-    [], t('Let back in'), () => write({ [`rooms/${id}/mod/kicked/${uid}`]: null }, t('They can join again')));
+    [], t('Let back in'), () => write({ [`rooms/${id}/mod/kicked/${uid}`]: null }, t('They can join again'), { action: 'letBack', path: `rooms/${id}`, uid, note: name }));
 
   function askStrike(id, n, uid, name, res) {
     const reason = el('input', { class: 'ac-inp', maxlength: 200, placeholder: t('Why (optional, kept with it)') });
@@ -219,16 +221,21 @@ export function createRooms(ctx) {
       [t('It stops counting: out of the round, the standings and Race stats, on every screen in the room. They see it was removed by a moderator. The time itself stays in the database, so this can be undone.')],
       t('Strike'), () => write({
         [`rooms/${id}/mod/struck/${n}/${uid}`]: { at: TS(), by: me(), ...(reason.value.trim() ? { reason: reason.value.trim().slice(0, 200) } : {}) },
-      }, t('Struck')), { extra: el('div', { class: 'ac-text' }, reason) });
+      }, t('Struck'), { action: 'strike', path: `rooms/${id}/rounds/${n}/results/${uid}`, uid, before: res || null, note: reason.value.trim() }),
+      { extra: el('div', { class: 'ac-text' }, reason) });
   }
   const askUnstrike = (id, n, uid, name) => confirm(t('Count {name}’s time in round {n} again?', { name, n }),
-    [], t('Count it again'), () => write({ [`rooms/${id}/mod/struck/${n}/${uid}`]: null }, t('Counted again')));
+    [], t('Count it again'), () => write({ [`rooms/${id}/mod/struck/${n}/${uid}`]: null }, t('Counted again'),
+      { action: 'unstrike', path: `rooms/${id}/rounds/${n}/results/${uid}`, uid }));
 
   function askDelete(id, room) {
     const box = el('input', { class: 'ac-inp', autocomplete: 'off', placeholder: id, 'aria-label': t('Room code') });
     const go = el('button', { class: 'ac-btn primary danger', text: t('Delete room'), disabled: true,
       onclick: async () => {
-        try { await sdk().remove(ref(`rooms/${id}`)); }
+        try {
+          await logged(sdk(), { [`rooms/${id}`]: null }, { action: 'deleteRoom', path: `rooms/${id}`,
+            before: { meta: room?.meta || null, rounds: roundNos(room).length, messages: Object.keys(room?.chat || {}).length } });
+        }
         catch (err) {
           console.warn('[admin] delete room refused', err?.code || err);
           toast(t('Refused: room actions need this version’s firebase.rules.json published'), { kind: 'bad', hold: true });
@@ -249,7 +256,8 @@ export function createRooms(ctx) {
 
   function askDeleteMessage(id, mid, m) {
     confirm(t('Delete this message?'), [raw('p', { class: 'ac-reason' }, `${m.name || 'Cuber'}: ${m.text || ''}`)],
-      t('Delete message'), () => write({ [`rooms/${id}/chat/${mid}`]: null }, t('Deleted')));
+      t('Delete message'), () => write({ [`rooms/${id}/chat/${mid}`]: null }, t('Deleted'),
+        { action: 'deleteMessage', path: `rooms/${id}/chat/${mid}`, uid: m.uid || '', before: { uid: m.uid || '', name: m.name || '', text: m.text || '', at: m.at || 0 } }));
   }
 
   /** Empty the waiting seat, but only if it still holds what this page showed: never a claim made since. */
@@ -366,15 +374,31 @@ export function createRooms(ctx) {
   const sortRooms = (rooms) => Object.entries(rooms || {}).filter(([id]) => id !== MATCH_LOBBY)
     .sort((a, b) => lastSeen(b[1]) - lastSeen(a[1]));
 
+  /** The last day's rooms with somebody in them and not closed: what Close all closes. */
+  const openRooms = () => sortRooms(ctx.moderation.snapshot().rooms)
+    .filter(([, room]) => !room?.mod?.closed && Object.values(room?.players || {}).some(p => now() - (p?.lastSeen || 0) < staleMs()));
+
+  function askCloseAll() {
+    const list = openRooms();
+    confirm(t('Close all {n} open rooms?', { n: list.length }),
+      [t('For an emergency. Everybody in them is told a moderator closed the room, and leaves; nobody can join, post or send a time until each is reopened. New rooms can still be made: to stop those, switch race rooms off in Settings.'),
+        raw('p', { class: 'ac-entry-meta' }, list.map(([id]) => id).join(', '))],
+      t('Close all'), () => write(Object.fromEntries(list.map(([id]) => [`rooms/${id}/mod/closed`, { at: TS(), by: me() }])),
+        t('{n} rooms closed', { n: list.length }), { action: 'closeAll', path: 'rooms', before: list.map(([id]) => id) }), { danger: true });
+  }
+
   function viewRooms() {
     const m = ctx.moderation.snapshot();
     const list = sortRooms(m.rooms);
+    const open = m.roomsLoaded ? openRooms().length : 0;
     return [
       seatBlock(),
       el('section', { class: 'ac-block' },
         el('div', { class: 'ac-head-row' },
           el('h2', { class: 'ac-h2', text: t('Rooms made in the last day') }),
           el('button', { class: 'ac-btn small', type: 'button', text: 'Look again', onclick: () => ctx.moderation.refreshRooms() })),
+        open > 1 ? el('div', { class: 'ac-entry-actions ac-start' },
+          el('button', { class: 'ac-btn small danger', type: 'button', text: t('Close all {n} open rooms…', { n: open }), onclick: askCloseAll })) : null,
         m.roomsRefused ? el('p', { class: 'ac-err', text: 'Race rooms need the newer rules published.' })
           : !m.roomsLoaded ? el('p', { class: 'ac-note', text: 'Loading…' })
             : !list.length ? el('p', { class: 'ac-note', text: 'No race rooms in the last day.' })
