@@ -38,6 +38,8 @@ export function floorsOf(text) {
 }
 /** The latest a time setting can be: 2100. */
 const TIME_MAX = 4102444800000;
+/* `danger: true` on a setting (a whole feature's switch, the oldest version allowed, read-only, the
+   board closed): Review asks for the section's name typed before it saves (ADMIN.md §22). */
 /** Who a feature is on for (ADMIN.md §9): the 'choice' a section's `audience` key holds. */
 export const AUDIENCES = ['everyone', 'testers', 'admins'];
 
@@ -56,7 +58,7 @@ export const CONFIG = {
     title: 'Shared replays',
     about: 'Scramble of the Day clips in R2. The Worker reads these, about once a minute, and refuses past them. The money ceilings stay in the code.',
     keys: {
-      enabled: { type: 'bool', def: true, label: 'Sharing and watching', where: 'worker',
+      enabled: { type: 'bool', danger: true, def: true, label: 'Sharing and watching', where: 'worker',
         help: 'Off: nobody can share or watch a replay. The clips stay, and come back when this is on.' },
       audience: { type: 'choice', def: 'everyone', options: AUDIENCES, label: 'Who has it', where: 'worker',
         help: 'While it is on: everybody, only testers and admins, or only admins. The Worker checks the account.' },
@@ -76,7 +78,7 @@ export const CONFIG = {
     title: 'Scramble of the Day chat',
     about: 'The day’s room for each event. The database rules read these: a message past them is refused whatever the app says.',
     keys: {
-      enabled: { type: 'bool', def: true, label: 'Posting', where: 'rules',
+      enabled: { type: 'bool', danger: true, def: true, label: 'Posting', where: 'rules',
         help: 'Off: nobody can post. The room can still be read and messages deleted.' },
       audience: { type: 'choice', def: 'everyone', options: AUDIENCES, label: 'Who has it', where: 'rules',
         help: 'While it is on: everybody, only testers and admins, or only admins. Everybody else sees no chat at all.' },
@@ -91,7 +93,7 @@ export const CONFIG = {
     title: 'Race rooms',
     about: 'Live rooms between people, on anonymous accounts. The switch is in the database rules; the tuning is read by the app.',
     keys: {
-      enabled: { type: 'bool', def: true, label: 'New rooms', where: 'rules',
+      enabled: { type: 'bool', danger: true, def: true, label: 'New rooms', where: 'rules',
         help: 'Off: no new rooms. Rooms already open carry on until everybody leaves.' },
       message: { type: 'text', def: '', max: 200, label: 'Message while off', where: 'app',
         help: 'Shown in the race panel. Empty: “New race rooms are switched off for now”.' },
@@ -112,7 +114,7 @@ export const CONFIG = {
     title: 'Random 1v1',
     about: 'Matching strangers on 3x3 (RACE.md §8) and the 1v1’s cam and mic (§9). The switches are in the database rules as well as the app; the relay is the Worker’s.',
     keys: {
-      enabled: { type: 'bool', def: true, label: 'Find an opponent', where: 'rules',
+      enabled: { type: 'bool', danger: true, def: true, label: 'Find an opponent', where: 'rules',
         help: 'Off: the button shows the message instead of searching, and the rules refuse the waiting seat and new 1v1 rooms. A 1v1 already running plays on.' },
       audience: { type: 'choice', def: 'everyone', options: AUDIENCES, label: 'Who has it', where: 'app',
         help: 'While it is on: everybody, only testers and admins, or only admins. Everybody else does not see Random 1v1 or its announcement.' },
@@ -141,7 +143,7 @@ export const CONFIG = {
     title: 'Race chat',
     about: 'The chat inside a race room. Read by the database rules.',
     keys: {
-      enabled: { type: 'bool', def: true, label: 'Posting', where: 'rules',
+      enabled: { type: 'bool', danger: true, def: true, label: 'Posting', where: 'rules',
         help: 'Off: nobody can post in any room.' },
       message: { type: 'text', def: '', max: 200, label: 'Message while off', where: 'app',
         help: 'Shown in place of the box you type in. Empty: “Room chat is switched off for now”.' },
@@ -172,7 +174,7 @@ export const CONFIG = {
         help: 'Under this (and over the line above), “misfire? Use backup / Keep”.' },
       floors: { type: 'text', def: SOTD_FLOORS, max: 400, pattern: 'floors', label: 'Checked under', where: 'app',
         help: 'Per event, in ms: a time under its floor stays on the board marked “checking” and waits in Moderate › SOTD until an admin keeps or removes it. Roughly the world record, so a normal time never waits. Written event:ms, comma-separated; an event left out is never checked.' },
-      frozen: { type: 'bool', def: false, label: 'Board closed for today', where: 'rules',
+      frozen: { type: 'bool', danger: true, def: false, label: 'Board closed for today', where: 'rules',
         help: 'On: no new result is accepted on any event today, whatever the app says. For a scramble that leaked or is broken. The board, its chat and its replays stay.' },
       frozenMessage: { type: 'text', def: '', max: 200, label: 'Message while closed', where: 'app',
         help: 'Shown in place of today’s scramble while the board is closed. Empty: “Today’s board is closed: no new times are taken until the reset.”' },
@@ -182,7 +184,7 @@ export const CONFIG = {
     title: 'Competition Mode',
     about: 'Averages timed the way a competition runs them (Ao5, Ao12, any AoX). Read by the app.',
     keys: {
-      enabled: { type: 'bool', def: true, label: 'Starting a new set', where: 'app',
+      enabled: { type: 'bool', danger: true, def: true, label: 'Starting a new set', where: 'app',
         help: 'Off: Start Competition Mode shows the message. A set already under way can still be finished, and history still opens.' },
       message: { type: 'text', def: '', max: 200, label: 'Message while off', where: 'app',
         help: 'Empty: “Competition Mode is switched off for now”.' },
@@ -252,12 +254,12 @@ export const CONFIG = {
     title: 'The app',
     about: 'Read by the timer when a page loads, and again when a tab comes back into view.',
     keys: {
-      minVersion: { type: 'int', def: 0, min: 0, max: 100000, label: 'Oldest version allowed', where: 'app', deployed: true,
+      minVersion: { type: 'int', danger: true, def: 0, min: 0, max: 100000, label: 'Oldest version allowed', where: 'app', deployed: true,
         help: 'An open tab older than this says a new version is ready and reloads, once its timer is idle. Never mid-solve.' },
       banner: { type: 'text', def: '', max: 200, label: 'Banner', where: 'app',
         help: 'A thin strip across the top of the timer, for everybody. Empty: none, unless the timer is read-only.' },
       bannerKind: { type: 'choice', def: 'info', options: ['info', 'warn', 'down'], label: 'Banner colour', where: 'app' },
-      readOnly: { type: 'bool', def: false, label: 'Read-only', where: 'app',
+      readOnly: { type: 'bool', danger: true, def: false, label: 'Read-only', where: 'app',
         help: 'For an outage, or before a risky rules publish. Timing works and every solve is kept on the device; sync holds its changes and sends them when this is off again. Races, 1v1s and the Scramble of the Day show the banner instead of their buttons. Not enforced by the rules: a cached old tab can still write.' },
       idleDisconnectMin: { type: 'int', def: 0, min: 0, max: 240, unit: 'minutes', label: 'Let a hidden tab go after', where: 'app',
         help: 'A tab hidden this long closes its database connections and opens them again when it is shown; what changed meanwhile goes then. 0: never. The Spark plan allows 100 connections at once: Today shows how many there are now.' },

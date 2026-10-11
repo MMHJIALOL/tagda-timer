@@ -143,6 +143,19 @@ async function isAdmin(env, who, sub, token) {
   return String(env.ADMIN_UIDS || '').split(',').map(s => s.trim()).includes(sub);
 }
 
+/**
+ * Whether this account moderates `scope` (mods/<uid>/can, ADMIN.md §22): a
+ * Google sign-in whose list has it. Readable by its owner; refused (rules
+ * from before moderators) is no.
+ */
+async function isMod(env, who, sub, token, scope) {
+  if (who?.firebase?.sign_in_provider !== 'google.com') return false;
+  const r = await rtdb(env, `mods/${sub}/can`, token).catch(() => null);
+  if (!r?.ok) return false;
+  const can = await r.json();
+  return typeof can === 'string' && can.split(',').includes(scope);
+}
+
 /* ---------------- settings (ADMIN.md) ---------------- */
 
 const settings = new Map();           // section -> { at, data }
@@ -329,9 +342,10 @@ async function get(request, env, { dayKey, event, uid }) {
   if (!sub) return fail(401, 'bad-token');
 
   // Allowed only if the viewer has a row on this board; non-null only if the target does.
+  // An admin, or a moderator of the board (they watch what is reported), without a row of their own.
   const [r, admin] = await Promise.all([
     rtdb(env, `daily/${dayKey}/${event}/results/${uid}`, token),
-    isAdmin(env, who, sub, token),
+    isAdmin(env, who, sub, token).then(a => a || isMod(env, who, sub, token, 'sotd')),
   ]);
   if (r.status === 401) return (await tokenOk(env, sub, token)) ? fail(403, 'not-submitted') : fail(401, 'bad-token');
   if (!r.ok) return fail(502, 'db');
@@ -370,7 +384,7 @@ async function del(request, env, { dayKey, event, uid }) {
   const sub = typeof who?.sub === 'string' && UID.test(who.sub) ? who.sub : null;
   if (!sub) return fail(401, 'bad-token');
   const owner = sub === uid;
-  if (!owner && !(await isAdmin(env, who, sub, token))) return fail(403, 'not-yours');
+  if (!owner && !(await isAdmin(env, who, sub, token)) && !(await isMod(env, who, sub, token, 'sotd'))) return fail(403, 'not-yours');
   // After the admin check too: a forged token falls back to ADMIN_UIDS above.
   if (!(await tokenOk(env, sub, token))) return fail(401, 'bad-token');
   if (owner) {

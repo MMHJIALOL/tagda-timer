@@ -35,7 +35,7 @@ const SHOWN = 300;
  */
 export function createModLog(ctx) {
   const { S, raw, ago } = ctx;
-  const L = { started: false, off: null, list: [], loaded: false, refused: false };
+  const L = { started: false, off: null, list: [], loaded: false, refused: false, action: '', by: '' };
   const sdk = () => S.sdk;
   const ref = (path) => sdk().ref(sdk().db, path);
   const TS = () => sdk().serverTimestamp();
@@ -68,7 +68,7 @@ export function createModLog(ctx) {
     close: t('Closed a room'), reopen: t('Reopened a room'), closeAll: t('Closed every open room'), deleteRoom: t('Deleted a room'),
     keep: t('Kept a held time'), unkeep: t('Took a keep back'), retime: t('Re-timed'), feature: t('Featured a replay'),
     unfeature: t('Took the featured replay off'), dismiss: t('Dismissed reports'), actioned: t('Closed reports as acted on'),
-    reopenReport: t('Reopened reports'), deleteAccount: t('Deleted an account’s cloud data'), sweep: t('Swept old data'),
+    reopenReport: t('Reopened reports'), deleteAccount: t('Deleted an account’s cloud data'), sweep: t('Swept old data'), addMod: t('Made a moderator'), removeMod: t('Removed a moderator'),
   })[action] || action;
 
   /* ---------------- undo ---------------- */
@@ -183,7 +183,25 @@ export function createModLog(ctx) {
     if (!L.list.length) return [el('p', { class: 'ac-note', text: 'Nothing done yet. Every ban, removal, deleted message and room action lands here, from this page and from the timer.' })];
     const undone = new Map();
     for (const e of L.list) if (e.undo && !undone.has(e.undo)) undone.set(e.undo, e);
-    return [el('ol', { class: 'ac-log' }, ...L.list.map(e => row(e, undone.get(e.id))))];
+    const list = L.list.filter(e => (!L.action || e.action === L.action) && (!L.by || e.by === L.by));
+    const pick = (value, options, onPick, label) => {
+      const s = el('select', { class: 'ac-inp', 'aria-label': label }, ...options.map(([v, l]) => raw('option', { value: v }, l)));
+      s.value = value;
+      s.addEventListener('change', () => { onPick(s.value); ctx.scheduleRender(); });
+      return s;
+    };
+    const field = (label, input) => el('label', { class: 'ac-field' }, el('span', { class: 'ac-label', text: label }), input);
+    const actions = [...new Set(L.list.map(e => e.action))];
+    const people = [...new Set(L.list.map(e => e.by).filter(Boolean))];
+    const filters = el('div', { class: 'ac-row ac-log-filters' },
+      field(t('What'), pick(L.action, [['', t('Everything')], ...actions.map(a => [a, label(a)])], (v) => { L.action = v; }, t('What'))),
+      field(t('By'), pick(L.by, [['', t('Everybody')], ...people.map(u => [u, ctx.who(u)])], (v) => { L.by = v; }, t('By'))),
+      el('div', { class: 'ac-entry-actions ac-start' },
+        el('button', { class: 'ac-btn small', type: 'button', text: t('Export CSV'), onclick: () => ctx.downloadCsv?.(`tagda-moderation-log-${new Date().toISOString().slice(0, 10)}.csv`,
+          [['at', 'who', 'by', 'action', 'about', 'path', 'note', 'before', 'undo'],
+            ...list.map(e => [new Date(e.at || 0).toISOString(), ctx.who(e.by), e.by, e.action, e.uid || '', e.path, e.note || '', e.before ?? '', e.undo || ''])]) })));
+    return [filters, list.length ? el('ol', { class: 'ac-log' }, ...list.map(e => row(e, undone.get(e.id))))
+      : el('p', { class: 'ac-note', text: 'Nothing like that.' })];
   }
 
   return { start, stop, view, label };

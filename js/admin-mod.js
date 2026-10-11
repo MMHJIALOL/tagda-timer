@@ -307,13 +307,17 @@ export function createModeration(ctx) {
       kind === 'raceResult' ? el('p', { class: 'ac-sub', text: 'The time leaves that round’s board. They could submit for the round again; race rooms are not a competition.' }) : null,
       el('div', { class: 'ac-sheet-actions ac-wrap' },
         el('button', { class: 'ac-btn', text: 'Back', onclick: ctx.closeSheet }),
-        author?.uid ? el('button', { class: 'ac-btn', text: t('…and ban'), onclick: go(true) }) : null,
+        author?.uid && ctx.isAdmin?.() !== false ? el('button', { class: 'ac-btn', text: t('…and ban'), onclick: go(true) }) : null,
         el('button', { class: 'ac-btn primary', text: deleteLabel(kind), onclick: go(false) })));
   }
 
   /* ---------------- views ---------------- */
 
-  const SUBS = () => [['reports', t('Reports')], ['sotd', t('SOTD')], ['chats', t('Chats')], ['suspect', t('Suspect')], ['replays', t('Replays')], ['rooms', t('Rooms')]];
+  /** Which scope each sub-tab needs (a moderator's mods/<uid>/can, ADMIN.md §22). */
+  const NEEDS = { reports: ['reports'], sotd: ['sotd'], chats: ['chat'], suspect: ['sotd', 'race'], replays: ['sotd'], rooms: ['race'] };
+  const allowed = (key) => (NEEDS[key] || []).some(s => ctx.may?.(s) ?? true);
+  const SUBS = () => [['reports', t('Reports')], ['sotd', t('SOTD')], ['chats', t('Chats')], ['suspect', t('Suspect')], ['replays', t('Replays')], ['rooms', t('Rooms')]]
+    .filter(([key]) => allowed(key));
 
   /** Report groups: one per item, newest report first. The open ones, or (`closed`) the closed ones. */
   function groups(closed = false) {
@@ -376,7 +380,9 @@ export function createModeration(ctx) {
     start();
     const c = counts();
     // Rooms, a room and the week's history are one sub-tab (js/admin-rooms.js).
-    const on = ['room', 'history'].includes(sub) ? 'rooms' : sub;
+    let on = ['room', 'history'].includes(sub) ? 'rooms' : sub;
+    // Somewhere this person may not go (a moderator), or nowhere: the first sub-tab they have.
+    if (!on || !allowed(on)) { on = SUBS()[0]?.[0] || 'reports'; sub = on; }
     const nav = el('nav', { class: 'ac-subtabs', 'aria-label': t('Moderation') },
       ...SUBS().map(([key, label]) => raw('a', {
         class: `ac-subtab${on === key ? ' on' : ''}`, href: `#mod/${key}`, 'aria-current': on === key ? 'page' : null,
@@ -399,6 +405,8 @@ export function createModeration(ctx) {
   }
 
   const actions = (...btns) => el('div', { class: 'ac-entry-actions' }, ...btns);
+  /** Ban: admins only (a moderator takes things down and asks one). */
+  const banBtn = (fn, cls) => (ctx.isAdmin?.() === false ? null : small(t('Ban'), fn, cls));
   const small = (text, onclick, cls = '') => el('button', { class: `ac-btn small ${cls}`, text, onclick });
 
   /** Who reported it, each with their record: "3 of 5 acted on, 1 dismissed". */
@@ -410,7 +418,7 @@ export function createModeration(ctx) {
         el('a', { class: 'ac-link', href: `#people/u/${uid}`, text: ctx.nameOf?.(uid) || uid.slice(0, 8) }),
         raw('span', { class: 'ac-entry-meta' }, ' ' + t('{a} of {n} acted on, {d} dismissed', { a: q.actioned, n: q.n, d: q.dismissed })),
         // Somebody whose reports keep being dismissed: ban them from reporting, and nothing else (ADMIN.md §5).
-        q.dismissed >= 3 && !q.actioned ? el('button', { class: 'ac-btn small', text: t('Stop their reports…'),
+        q.dismissed >= 3 && !q.actioned && ctx.isAdmin?.() !== false ? el('button', { class: 'ac-btn small', text: t('Stop their reports…'),
           onclick: () => ctx.askBan({ uid, name: ctx.nameOf?.(uid) || '', reason: t('Reports that keep being dismissed'), scope: ['reports'] }) }) : null);
     });
   }
@@ -453,7 +461,7 @@ export function createModeration(ctx) {
           small(t('Dismiss'), () => resolve(g.path).then(() => toast(t('Dismissed')))),
           d.room ? small(t('Open room'), () => { location.hash = `#mod/room/${d.room}`; }) : null,
           d.gone || !deleteLabel(g.kind) ? null : small(deleteLabel(g.kind), () => askDelete({ kind: g.kind, path: g.path, row: d.row, author: d.author, where: d.where, text: d.text, reason })),
-          d.author?.uid ? small(t('Ban'), () => ctx.askBan({ uid: d.author.uid, name: d.author.name || '', reason, then: () => resolve(g.path, 'actioned') }), 'danger') : null));
+          d.author?.uid ? banBtn(() => ctx.askBan({ uid: d.author.uid, name: d.author.name || '', reason, then: () => resolve(g.path, 'actioned') }), 'danger') : null));
     })));
   }
 
@@ -475,7 +483,7 @@ export function createModeration(ctx) {
           raw('span', { class: 'ac-entry-meta', title: m.at ? new Date(m.at).toLocaleString() : '' }, `${ago(m.at)} · ${m.uid || ''}`)),
         actions(
           small(t('Delete'), () => askDelete({ kind, path, row: m, author, where, text: m.text, reason })),
-          small(t('Ban'), () => ctx.askBan({ uid: m.uid, name: m.name || '', reason }), 'danger')));
+          banBtn(() => ctx.askBan({ uid: m.uid, name: m.name || '', reason }), 'danger')));
     })), foot);
   }
 
@@ -493,7 +501,7 @@ export function createModeration(ctx) {
           raw('span', { class: 'ac-entry-meta' }, `${ago(x.at)} · ${x.uid}`)),
         actions(
           small(t('Remove time'), () => askDelete({ kind: x.kind, path: x.path, row: x.row, author, where: x.where, text: timeText(x.row), reason })),
-          small(t('Ban'), () => ctx.askBan({ uid: x.uid, name: x.name || '', reason }), 'danger')));
+          banBtn(() => ctx.askBan({ uid: x.uid, name: x.name || '', reason }), 'danger')));
     })), note);
   }
 
@@ -513,7 +521,7 @@ export function createModeration(ctx) {
         actions(
           small(t('Watch'), () => watch(e, uid, row)),
           small(t('Remove'), () => askDelete({ kind: 'replay', path, row, author, where, text: timeText(row), reason })),
-          small(t('Ban'), () => ctx.askBan({ uid, name: row.name || '', reason }), 'danger')));
+          banBtn(() => ctx.askBan({ uid, name: row.name || '', reason }), 'danger')));
     }));
   }
 

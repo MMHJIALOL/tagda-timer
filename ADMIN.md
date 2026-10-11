@@ -824,6 +824,8 @@ like any other.
 | `js/admin-storage.js` | Health › Storage: counts, sizes, sweeps, the backup (§20) |
 | `js/presence.js` | The timer's side: each connection's presence, and letting a hidden tab go (§20) |
 | `js/admin-feedback.js` | People › Feedback, the inbox (§21) |
+| `js/admin-team.js` | People › Team: admins, moderators, when each was last here (§22) |
+| `js/admin-command.js` | The command bar, Ctrl+K (§22) |
 | `js/news.js`, `js/send-feedback.js` | The timer's What's new and Send feedback, in About (§21) |
 | `js/admin-ann.js` | The Announce tab (§7) |
 | `js/announce.js`, `js/announce-ui.js`, `css/announce.css` | What an announcement is and who sees it, and drawing one: shared with the timer |
@@ -884,6 +886,11 @@ already read, and the app's ⚑ is refused with *Couldn't send the report*. A se
 rules do not know yet (every one Phase 4 added, from race tuning to Spotify, and the two audiences)
 is refused when saved, and the page says a new setting needs its rules published; the app keeps
 using its default.
+
+Phase 15 on Phase 14's rules: nobody can be made a moderator (People › Team says *Publish the
+rules first*) and nobody is one, so the page works as before for admins. `adminSeen` is refused
+quietly. The command bar, the Log's filters and CSV, the typed confirmation and Preview in the app
+need nothing from the rules.
 
 Phase 14 on Phase 13's rules: an announcement saves as before until it is given targeting or
 Spanish words (then refused). `feedback.mode` is refused when saved, so About keeps the form, and
@@ -969,6 +976,12 @@ rules are out. The cron finds nothing to apply.
   custom account, a different value, the schedule left behind, a schedule not due, one by somebody
   no longer an admin, anything but applying); a day ahead's scramble (admins only, changeable until
   the day, today's once by anybody); the featured event.
+- `node tools/verify-roles-rules.mjs`: 54 checks. Moderators made and read only by admins, a scope
+  only from the list; `adminSeen` only by an admin or moderator, for themselves; a moderator of
+  chats and the board doing exactly that (and logging it, without reading the log), one of race
+  rooms and reports doing exactly that; no moderator touching settings, bans, testers, the
+  directory, feedback or What's new; an anonymous account listed as one doing nothing; a removed
+  moderator refused at once; and the rules from before this phase.
 - `node tools/verify-ann2-rules.mjs`: 52 checks. Targeting and Spanish on an announcement, each
   value checked; feedback only from a Google account with its hourly stamp, typed and capped, never
   arriving already read, starred or replied to; readable by its sender (with their account on it)
@@ -1475,4 +1488,72 @@ changelog/<id>   { at, ver?, title, text?, es?: { title, text }, by }   public t
 once a page load, once idle (one small public read), shows them at the top of About, and puts a dot
 on the About button (and *N new* on a phone's About row) until that device has seen the newest. A
 history rather than a popup: nobody is interrupted.
+
+---
+
+## 22. Roles, and the console's quality of life
+
+![On a phone: People › Team with a moderator, a moderator's console, and the command bar](docs/screenshots/admin-roles.webp)
+
+### Moderators
+
+```
+mods/<uid>        { at, by, name?, can: 'chat,sotd,race,reports' }   admins write; the moderator reads their own
+adminSeen/<uid>   { at, role: 'admin' | 'mod', ver, ua }              the console writes it on every load; admins read
+```
+
+`admins/` is unchanged: an admin has all of it. A moderator signs in to this page with their Google
+account and sees only **Moderate**, and only the parts their `can` lists:
+
+| Scope | Sub-tabs | What the rules let them do |
+|---|---|---|
+| `chat` | Chats | read the day's chats; delete a message there or in a race room |
+| `sotd` | SOTD, Suspect, Replays | read the day's board; keep, re-time, remove a time; take a replay down (the Worker too) and feature one |
+| `race` | Rooms, Suspect | read the rooms; close, reopen, remove a racer, strike a time, remove a race time, delete a room |
+| `reports` | Reports | read and close reports (and read the board an open report points at) |
+
+Every rule that lets an admin moderate (rooms, the day's board and chat, reports, the featured
+replay) is rewritten from one table to also accept a moderator of that scope; settings,
+announcements, bans, testers, people, health, feedback and the rest stay admins only, and banning is
+one of them: a moderator takes the thing down and asks an admin. Every moderator action goes in the
+moderation log in their name; reading the log stays with admins.
+
+**People › Team** lists the admins and the moderators, each with when they last opened this page
+(`adminSeen`), its version and browser. **Add a moderator…** takes a uid, a name and ticks;
+**Change** and **Remove** are there for each. Both are logged. A removed moderator's next action is
+refused, and the page shows them the door when they next open it.
+
+### The command bar
+
+**Ctrl+K** (⌘K), or **/** when not typing, or the magnifier beside the account on a phone: one box
+for a page or sub-tab, any setting (the timer's own settings search: aliases, typos), a person in
+the directory, a race room (a code typed whole goes straight to it) or an open report. A moderator
+gets the parts of Moderate they have.
+
+### The Log: filters, CSV, word by word
+
+The settings log filters by section, by who, and by a span of days; **Export CSV** saves what the
+filters leave. A text setting that changed shows what went and what came, word by word. The
+moderation log filters by what was done and by whom, with its own CSV.
+
+### Typed confirmation
+
+A setting marked `danger` in `js/config-table.js` asks for the section's name typed in Review before
+it saves or schedules: every feature's whole switch (replays, both chats, race rooms, 1v1, Competition
+Mode), the board closed for the day, the oldest version allowed, and read-only.
+
+### Preview in the app, for settings
+
+**Preview** on the save bar opens the real timer in a phone, tablet or computer frame with the
+unsaved changes applied in that frame only (`?cfgPreview`: the console leaves them in this browser's
+storage; nothing is written, and a strip across the frame says it is a preview), **as you**, **as a
+tester** or **as everybody** (`&as=`, so a feature on for testers can be seen with and without). The
+same as editing this browser's own copy of the settings, which anybody can do to their own browser:
+the rules still hold every write to the real values.
+
+### The installed console's badge
+
+Installed to a home screen (`admin.webmanifest`), the console's icon shows a count where the system
+has badges (`navigator.setAppBadge`): open reports and held times, and for an admin unread feedback
+and stuck syncs. Real notifications are phase 6.
 

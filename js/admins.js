@@ -39,6 +39,24 @@ export async function adminStatus(sdk, user) {
   }
 }
 
+/** What a moderator can moderate (mods/<uid>/can, ADMIN.md §22); the rules' list. */
+export const MOD_SCOPES = ['chat', 'sotd', 'race', 'reports'];
+
+/**
+ * The scopes `user` moderates, or null for none. A moderator reads their own
+ * mods/<uid>; refused (rules from before moderators) or anonymous is none.
+ */
+export async function modStatus(sdk, user) {
+  if (!user || !google(user)) return null;
+  try {
+    const can = (await sdk.get(sdk.ref(sdk.db, `mods/${user.uid}/can`))).val();
+    const list = typeof can === 'string' ? can.split(',').filter(s => MOD_SCOPES.includes(s)) : [];
+    return list.length ? list : null;
+  } catch {
+    return null;
+  }
+}
+
 /* ---------------------------------------------------------
    Testers
    ---------------------------------------------------------

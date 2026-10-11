@@ -27,7 +27,7 @@ import { t, translateDOM } from './i18n.js';
 import { el } from './util.js';
 import { toast } from './toast.js';
 import { onAuthChange, signIn, signOutUser, getDatabaseHandle, preloadAuth, takeRedirectError } from './sync-auth.js';
-import { adminStatus, banAccount, unbanAccount, banActive, banScopes, BAN_SCOPES } from './admins.js';
+import { adminStatus, modStatus, MOD_SCOPES, banAccount, unbanAccount, banActive, banScopes, BAN_SCOPES } from './admins.js';
 import { CONFIG, spec, clean, valid } from './config.js';
 import { SCHEDULER_UID, SCHEDULE_AHEAD_MS } from './config-rules.js';
 import { APP_VERSION } from './version.js';
@@ -41,6 +41,8 @@ import { createSotd } from './admin-sotd.js';
 import { createModLog } from './admin-modlog.js';
 import { createStorage } from './admin-storage.js';
 import { createFeedback } from './admin-feedback.js';
+import { createTeam } from './admin-team.js';
+import { createCommand } from './admin-command.js';
 import { eventOf } from './events.js';
 
 /** How many log entries the page keeps live. Older ones stay in the database. */
@@ -64,6 +66,10 @@ const $sheet = document.getElementById('ac-sheet');
 const S = {
   /** 'loading' | 'signed-out' | 'checking' | 'not-admin' | 'old-rules' | 'admin' | 'error' */
   status: 'loading',
+  /** 'admin', or 'mod' for a moderator (mods/<uid>, ADMIN.md §22): status 'admin' lets either in. */
+  role: null,
+  /** What a moderator may moderate (an admin: everything). */
+  can: new Set(),
   user: null,
   sdk: null,
   config: {},
@@ -174,7 +180,7 @@ function route() {
   if (h === 'log' || h === 'log/settings') return { view: 'log', sub: 'settings' };
   if (h === 'log/mod') return { view: 'log', sub: 'mod' };
   if (h === 'bans') return { view: 'people', sub: 'bans' };
-  const ppl = /^people(?:\/(testers|bans|lookup|support|requests|feedback))?$/.exec(h);
+  const ppl = /^people(?:\/(testers|bans|lookup|support|requests|feedback|team))?$/.exec(h);
   if (ppl) return { view: 'people', sub: ppl[1] || 'lookup' };
   const person = /^people\/u\/([A-Za-z0-9]{1,128})$/.exec(h);
   if (person) return { view: 'people', sub: 'u', id: person[1] };
@@ -223,6 +229,8 @@ function view() {
       el('button', { class: 'ac-btn', text: 'Try again', onclick: () => onUser(S.user) }))];
     default: {
       const r = route();
+      // A moderator has Moderate, and only the parts they moderate (the rules have the final say).
+      if (S.role === 'mod') return moderation.view(r.view === 'mod' ? r.sub : null, r.id);
       if (r.view === 'today') return live.viewToday();
       if (r.view === 'days') return live.viewDays(r.sub);
       if (r.view === 'log') return viewLog(r.sub);
@@ -250,8 +258,12 @@ function renderAccount() {
   const face = u.photoURL
     ? el('img', { class: 'ac-face', src: u.photoURL, alt: '', referrerpolicy: 'no-referrer', width: 28, height: 28 })
     : raw('span', { class: 'ac-face ac-face-letter', 'aria-hidden': 'true' }, (u.displayName || u.email || '?')[0].toUpperCase());
-  $account.replaceChildren(face,
-    raw('span', { class: 'ac-name' }, u.displayName || u.email || ''),
+  // The command bar (Ctrl+K, "/"): the magnifier is the way in without a keyboard.
+  const go = S.status === 'admin' ? el('button', { class: 'ac-cmd-btn', type: 'button', title: t('Go to (Ctrl+K)'), 'aria-label': t('Go to'),
+    html: '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="11" cy="11" r="6.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M16 16l4.5 4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
+    onclick: () => cmd.open() }) : null;
+  $account.replaceChildren(...[go, face,
+    raw('span', { class: 'ac-name' }, u.displayName || u.email || '')].filter(Boolean),
     el('button', { class: 'ac-link', text: 'Sign out', onclick: doSignOut }));
 }
 
@@ -262,6 +274,8 @@ function renderTabs() {
     el('span', { text: label }), n ? raw('span', { class: 'ac-tab-n', 'aria-label': t('{n} open', { n }) }, String(n)) : null);
   // Open reports and Scramble of the Day times held for a look: what is waiting on an admin.
   const open = moderation.counts().reports + moderation.counts().sotd;
+  badge();
+  if (S.role === 'mod') { $tabs.replaceChildren(tab('#mod', 'Moderate', true, open)); return; }
   $tabs.replaceChildren(
     tab('#today', 'Today', r === 'today' || r === 'days'),
     tab('#settings', 'Settings', r === 'sections' || r === 'section'),
@@ -474,7 +488,42 @@ function renderSavebar() {
     raw('span', { class: 'ac-savebar-text' }, bad ? t('Fix the highlighted setting first')
       : list.length === 1 ? t('1 unsaved change') : t('{n} unsaved changes', { n: list.length })),
     el('button', { class: 'ac-btn', text: 'Discard', onclick: () => { S.edits.clear(); render(); } }),
+    el('button', { class: 'ac-btn', text: t('Preview'), disabled: bad, onclick: previewSettings }),
     el('button', { class: 'ac-btn primary', text: 'Review', disabled: bad || S.saving, onclick: review }));
+}
+
+/**
+ * The unsaved settings in the real timer (ADMIN.md §22): a phone, tablet or computer frame, as you,
+ * as a tester or as everybody else (?cfgPreview, js/config.js). They stay unsaved: the frame reads
+ * them from this browser's storage, and nothing is written.
+ */
+function previewSettings() {
+  const values = Object.fromEntries(pendingChanges().map(c => [c.path, c.to === DEFAULT ? '__default__' : c.to]));
+  try { localStorage.setItem('tdt-cfg-preview', JSON.stringify({ values, at: Date.now() })); } catch { /* private window: nothing to show */ }
+  const P = { device: 'phone', as: 'me' };
+  const DEV = { phone: [390, 844], tablet: [820, 1180], desktop: [1280, 800] };
+  const box = el('div', { class: 'ac-frame-box' });
+  const chips = el('div', { class: 'ac-chips' });
+  const load = () => {
+    const [w, h] = DEV[P.device];
+    const scale = Math.min(1, Math.min(box.clientWidth || 340, 560) / w);
+    const emu = new URLSearchParams(location.search).has('emu') ? '&emu=1' : '';
+    box.style.height = `${Math.round(h * scale)}px`;
+    box.replaceChildren(el('iframe', { class: 'ac-frame', title: t('The timer, with these settings'),
+      src: `/index.html?cfgPreview=1${P.as === 'me' ? '' : `&as=${P.as}`}${emu}`, style: `width:${w}px;height:${h}px;transform:scale(${scale})` }));
+    paint();
+  };
+  const paint = () => chips.replaceChildren(
+    ...[['phone', t('Phone')], ['tablet', t('Tablet')], ['desktop', t('Computer')]].map(([d, l]) =>
+      el('button', { class: `ac-chip${P.device === d ? ' on' : ''}`, type: 'button', onclick: () => { P.device = d; load(); } }, raw('span', {}, l))),
+    ...[['me', t('As you')], ['tester', t('As a tester')], ['everyone', t('As everybody')]].map(([a, l]) =>
+      el('button', { class: `ac-chip${P.as === a ? ' on' : ''}`, type: 'button', onclick: () => { P.as = a; load(); } }, raw('span', {}, l))));
+  openSheet(
+    el('h2', { class: 'ac-h2', text: t('Preview in the app') }),
+    el('p', { class: 'ac-sub', text: t('The timer with {n} unsaved change(s), in this frame only. Nothing is saved until you Review and save.', { n: Object.keys(values).length }) }),
+    chips, box,
+    el('div', { class: 'ac-sheet-actions' }, el('button', { class: 'ac-btn', text: 'Close', onclick: closeSheet })));
+  requestAnimationFrame(load);
 }
 
 function closeSheet() {
@@ -526,7 +575,16 @@ function review() {
     el('span', { class: 'ac-help', text: 'Applied by the Worker within a minute of it, and logged then, as the scheduler’s change on your behalf.' }));
   const save = el('button', { class: 'ac-btn primary', text: label() });
   when.addEventListener('change', () => { atField.hidden = when.value !== 'later'; save.textContent = label(); });
+  /* A dangerous one (`danger` in the table: a whole feature, the oldest version allowed, read-only):
+     the section's name typed first, so a slip of the thumb on a phone cannot switch the site off. */
+  const risky = [...new Set(list.filter(c => c.sp?.danger).map(c => String(c.path).split('/')[0]))];
+  const word = risky.join(' ');
+  const typed = el('input', { class: 'ac-inp', autocomplete: 'off', spellcheck: 'false', autocapitalize: 'off', placeholder: word });
+  const sure = () => !risky.length || typed.value.trim().toLowerCase() === word.toLowerCase();
+  typed.addEventListener('input', () => { save.disabled = !sure(); });
+  save.disabled = !sure();
   save.addEventListener('click', async () => {
+    if (!sure()) return;
     const changes = list.map(c => ({ path: c.path, to: c.to }));
     if (when.value === 'later') {
       const ms = at.value ? new Date(at.value).getTime() : NaN;
@@ -551,6 +609,8 @@ function review() {
     el('ul', { class: 'ac-diffs' }, ...list.map(c => diffRow(labelOf(c.path), c.sp, c.from, c.to))),
     el('label', { class: 'ac-field' }, el('span', { class: 'ac-label', text: 'When' }), when),
     atField,
+    risky.length ? el('label', { class: 'ac-field ac-danger-confirm' },
+      el('span', { class: 'ac-label', text: t('This can switch part of the site off for everybody. Type {word} to confirm.', { word }) }), typed) : null,
     el('div', { class: 'ac-sheet-actions' },
       el('button', { class: 'ac-btn', text: 'Back', onclick: closeSheet }),
       save));
@@ -684,7 +744,84 @@ function viewLog(sub = 'settings') {
   if (!S.loaded.log) return [...head, el('p', { class: 'ac-note', text: 'Loading…' })];
   if (!S.log.length) return [...head, el('p', { class: 'ac-note', text: 'Nothing has been changed yet.' })];
   const byId = new Map(S.log.map(e => [e.id, e]));
-  return [...head, el('ol', { class: 'ac-log' }, ...S.log.map(e => logRow(e, byId)))];
+  const list = logFiltered();
+  return [...head, logFilters(), list.length
+    ? el('ol', { class: 'ac-log' }, ...list.map(e => logRow(e, byId)))
+    : el('p', { class: 'ac-note', text: 'Nothing changed like that.' })];
+}
+
+/* The Log's filters (ADMIN.md §22): a section, an admin, a span of days; and the CSV of what they leave. */
+S.logFilter = { section: '', by: '', from: '', to: '' };
+const dayMs = (v, end = false) => (v ? new Date(`${v}T${end ? '23:59:59.999' : '00:00:00'}`).getTime() : null);
+const sectionOfPath = (p) => String(p || '').split('/')[0];
+
+function logFiltered() {
+  const f = S.logFilter, from = dayMs(f.from), to = dayMs(f.to, true);
+  return S.log.filter(e => (!f.section || sectionOfPath(e.path) === f.section)
+    && (!f.by || (e.sched ? e.by : e.uid) === f.by)
+    && (from == null || (e.at || 0) >= from) && (to == null || (e.at || 0) <= to));
+}
+
+function logFilters() {
+  const f = S.logFilter;
+  const sections = [...new Set(S.log.map(e => sectionOfPath(e.path)))].sort();
+  const people = [...new Set(S.log.map(e => (e.sched ? e.by : e.uid)).filter(Boolean))];
+  const pick = (value, options, onPick, label) => {
+    const s = el('select', { class: 'ac-inp', 'aria-label': label }, ...options.map(([v, l]) => raw('option', { value: v }, l)));
+    s.value = value;
+    s.addEventListener('change', () => { onPick(s.value); render(); });
+    return s;
+  };
+  const date = (key, label) => {
+    const i = el('input', { class: 'ac-inp', type: 'date', 'aria-label': label, value: f[key] });
+    i.addEventListener('change', () => { f[key] = i.value; render(); });
+    return i;
+  };
+  const field = (label, input) => el('label', { class: 'ac-field' }, el('span', { class: 'ac-label', text: label }), input);
+  return el('div', { class: 'ac-row ac-log-filters' },
+    field(t('Section'), pick(f.section, [['', t('Every section')], ...sections.map(s => [s, s === 'ann' ? t('Announcements') : t(CONFIG[s]?.title || s)])], (v) => { f.section = v; }, t('Section'))),
+    field(t('By'), pick(f.by, [['', t('Everybody')], ...people.map(u => [u, who(u)])], (v) => { f.by = v; }, t('By'))),
+    field(t('From'), date('from', t('From'))),
+    field(t('To'), date('to', t('To'))),
+    el('div', { class: 'ac-entry-actions ac-start' },
+      el('button', { class: 'ac-btn small', type: 'button', text: t('Export CSV'), onclick: () => exportLog() }),
+      f.section || f.by || f.from || f.to ? el('button', { class: 'ac-btn small', type: 'button', text: t('Clear filters'),
+        onclick: () => { S.logFilter = { section: '', by: '', from: '', to: '' }; render(); } }) : null));
+}
+
+/** Rows as a CSV file, saved. The first row is the header. */
+function downloadCsv(name, rows) {
+  const cell = (v) => { const s = v == null ? '' : typeof v === 'object' ? JSON.stringify(v) : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+  const blob = new Blob(['\ufeff' + rows.map(r => r.map(cell).join(',')).join('\r\n')], { type: 'text/csv;charset=utf-8' });
+  const a = el('a', { href: URL.createObjectURL(blob), download: name });
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
+}
+
+function exportLog() {
+  const rows = logFiltered().map(e => [new Date(e.at || 0).toISOString(), who(e.sched ? e.by : e.uid), e.sched ? e.by : e.uid, e.path, labelOf(e.path),
+    e.action || (e.sched ? 'scheduled' : e.undo ? 'undo' : 'change'), e.from, e.to]);
+  downloadCsv(`tagda-settings-log-${new Date().toISOString().slice(0, 10)}.csv`, [['at', 'who', 'uid', 'path', 'setting', 'kind', 'from', 'to'], ...rows]);
+}
+
+/** Two texts word by word: what went (struck) and what came (marked), the rest as it was. */
+function wordDiff(a, b) {
+  const x = String(a).split(/(\s+)/), y = String(b).split(/(\s+)/);
+  if (x.length * y.length > 40000) return null;
+  const L = Array.from({ length: x.length + 1 }, () => new Array(y.length + 1).fill(0));
+  for (let i = x.length - 1; i >= 0; i--) for (let j = y.length - 1; j >= 0; j--) L[i][j] = x[i] === y[j] ? L[i + 1][j + 1] + 1 : Math.max(L[i + 1][j], L[i][j + 1]);
+  const out = [];
+  let i = 0, j = 0;
+  while (i < x.length && j < y.length) {
+    if (x[i] === y[j]) { out.push(raw('span', {}, x[i])); i++; j++; }
+    else if (L[i + 1][j] >= L[i][j + 1]) out.push(raw('del', { class: 'ac-del' }, x[i++]));
+    else out.push(raw('ins', { class: 'ac-ins' }, y[j++]));
+  }
+  while (i < x.length) out.push(raw('del', { class: 'ac-del' }, x[i++]));
+  while (j < y.length) out.push(raw('ins', { class: 'ac-ins' }, y[j++]));
+  return el('div', { class: 'ac-worddiff' }, ...out);
 }
 
 function logRow(e, byId) {
@@ -710,6 +847,8 @@ function logRow(e, byId) {
         raw('span', { class: 'ac-from' }, show(sp, e.from)),
         raw('span', { class: 'ac-arrow', 'aria-hidden': 'true' }, '→'),
         raw('span', { class: 'ac-to' }, show(sp, e.to))),
+      // A text changed, not swapped: what went and what came, word by word.
+      sp?.type === 'text' && typeof e.from === 'string' && typeof e.to === 'string' && e.from && e.to ? wordDiff(e.from, e.to) : null,
       raw('span', { class: 'ac-entry-meta', title: e.at ? new Date(e.at).toLocaleString() : '' },
         [e.sched ? t('scheduled by {who}', { who: who(e.by) }) : who(e.uid), ago(e.at), e.undo ? (undone ? t('undid the change from {when}', { when: ago(undone.at) }) : t('an undo')) : '']
           .filter(Boolean).join(' · '))),
@@ -759,7 +898,7 @@ function viewPeople(sub, id = null) {
   const on = sub === 'u' ? 'lookup' : sub;
   const nav = el('nav', { class: 'ac-subtabs', 'aria-label': t('People') },
     ...[['lookup', t('Lookup'), 0], ['support', t('Support'), c.support], ['feedback', t('Feedback'), fb.counts().unread], ['requests', t('Requests'), c.requests],
-      ['bans', t('Bans'), Object.values(S.bans).filter(b => banActive(b)).length], ['testers', t('Testers'), Object.keys(S.testers || {}).length]]
+      ['bans', t('Bans'), Object.values(S.bans).filter(b => banActive(b)).length], ['testers', t('Testers'), Object.keys(S.testers || {}).length], ['team', t('Team'), 0]]
       .map(([key, label, n]) => raw('a', { class: `ac-subtab${on === key ? ' on' : ''}`, href: `#people/${key}`, 'aria-current': on === key ? 'page' : null },
         n ? `${label} · ${n}` : label)));
   // Six across a phone run off its edge: the one you are on is kept in view (as Moderate's are).
@@ -774,6 +913,7 @@ function viewPeople(sub, id = null) {
   if (sub === 'support') return [...head, ...people.viewSupport()];
   if (sub === 'requests') return [...head, ...people.viewRequests()];
   if (sub === 'feedback') return [...head, ...fb.view()];
+  if (sub === 'team') return [...head, ...team.view()];
   return [...head, ...(sub === 'testers' ? live.viewTesters() : viewBans())];
 }
 
@@ -849,6 +989,7 @@ function banRow(id, b) {
  * resolves the reports about it).
  */
 function askBan({ uid, name = '', reason = '', ms = 0, then = null, scope = [] }) {
+  if (S.role !== 'admin') { toast(t('Only an admin can ban. Take the thing down, and ask one.'), { kind: 'bad', long: true }); return; }
   if (uid === S.user?.uid) { toast(t('That is your own account'), { kind: 'bad', long: true }); return; }
   const why = el('input', { class: 'ac-inp', autocomplete: 'off', maxlength: 200 });
   why.value = String(reason).slice(0, 200);
@@ -930,6 +1071,7 @@ function teardown() {
   health.stop();
   people.stop();
   fb.stop();
+  team.stop();
   announce.stop();
   live.stop();
   for (const off of S.unsubs.splice(0)) off();
@@ -948,6 +1090,10 @@ function lost(err) {
 
 function listen() {
   const { db, ref, onValue, query, orderByKey, limitToLast } = S.sdk;
+  if (S.role !== 'admin') {
+    S.unsubs.push(onValue(ref(db, 'config'), (s) => { S.config = s.val() || {}; S.loaded.config = true; scheduleRender(); }, lost));
+    return;
+  }
   S.unsubs.push(
     onValue(ref(db, 'config'), (s) => { S.config = s.val() || {}; S.loaded.config = true; scheduleRender(); }, lost),
     onValue(ref(db, 'configMeta'), (s) => { S.meta = s.val() || {}; scheduleRender(); }, lost),
@@ -971,6 +1117,23 @@ function listen() {
 
 let checking = 0;
 
+/** The browser family, as the timer's heartbeat says it (never the whole user agent). */
+const family = (ua = navigator.userAgent) => (/Firefox\//.test(ua) ? 'firefox' : /Edg\//.test(ua) ? 'edge' : /OPR\//.test(ua) ? 'opera'
+  : /Chrome\//.test(ua) ? 'chrome' : /Safari\//.test(ua) ? 'safari' : 'other');
+
+/** adminSeen/<uid> (ADMIN.md §22): when each admin and moderator last opened this page. Refused (older rules): nothing. */
+function noteSeen() {
+  const { db, ref, set, serverTimestamp } = S.sdk;
+  set(ref(db, `adminSeen/${S.user.uid}`), { at: serverTimestamp(), role: S.role, ver: APP_VERSION, ua: family() }).catch(() => {});
+}
+
+/** The installed console's badge (where the system has one): what is waiting on somebody here. */
+function badge() {
+  if (!('setAppBadge' in navigator)) return;
+  const n = moderation.counts().reports + moderation.counts().sotd + (S.role === 'admin' ? fb.counts().unread + (health.summary().stuck || 0) : 0);
+  (n ? navigator.setAppBadge(n) : navigator.clearAppBadge?.())?.catch?.(() => {});
+}
+
 async function onUser(user) {
   const mine = ++checking;
   teardown();
@@ -981,24 +1144,39 @@ async function onUser(user) {
   try {
     S.sdk = S.sdk || await getDatabaseHandle();
     const { admin, rules } = await adminStatus(S.sdk, user);
+    // Not an admin: maybe a moderator (mods/<uid>, which they may read themselves).
+    const mod = !admin && rules === 'new' ? await modStatus(S.sdk, user) : null;
     if (mine !== checking) return;
-    S.status = !admin ? 'not-admin' : rules === 'old' ? 'old-rules' : 'admin';
+    S.role = admin ? 'admin' : mod ? 'mod' : null;
+    S.can = new Set(admin ? MOD_SCOPES : mod || []);
+    S.status = !S.role ? 'not-admin' : rules === 'old' ? 'old-rules' : 'admin';
   } catch (err) {
     if (mine !== checking) return;
     console.warn('[admin] could not check the account', err?.code || err);
     S.status = 'error';
   }
   render();
-  if (S.status === 'admin') { listen(); moderation.start(); fb.start(); }
+  if (S.status === 'admin') {
+    listen();
+    moderation.start();
+    if (S.role === 'admin') fb.start();
+    noteSeen();
+  }
 }
 
 /** A name for a uid, from whatever the console has read: the directory, today's boards, bans. */
 const nameOf = (uid) => { people.start(); return people.nameOf(uid) || S.bans?.[uid]?.name || ''; };
-const moderation = createModeration({ S, scheduleRender, raw, ago, who, openSheet, closeSheet, askBan, gate, nameOf, rooms: () => rooms, sotd: () => sotd });
-const modlog = createModLog({ S, scheduleRender, raw, ago, who, openSheet, closeSheet, gate, nameOf });
+/** Whether this person may use a part of Moderate: an admin all of it, a moderator what their `can` lists. */
+const may = (scope) => S.role === 'admin' || S.can.has(scope);
+const moderation = createModeration({ S, scheduleRender, raw, ago, who, openSheet, closeSheet, askBan, gate, nameOf, may, isAdmin: () => S.role === 'admin', rooms: () => rooms, sotd: () => sotd });
+const modlog = createModLog({ S, scheduleRender, raw, ago, who, openSheet, closeSheet, gate, nameOf, downloadCsv });
 const rooms = createRooms({ S, scheduleRender, raw, ago, who, openSheet, closeSheet, askBan, gate, cfg, moderation });
 const sotd = createSotd({ S, scheduleRender, raw, ago, who, openSheet, closeSheet, askBan, gate, cfg, moderation });
 const fb = createFeedback({ S, scheduleRender, raw, ago, who, openSheet, closeSheet, gate, cfg });
+const team = createTeam({ S, scheduleRender, raw, ago, who, openSheet, closeSheet, gate, nameOf });
+const cmd = createCommand({ S, raw, CONFIG, get people() { return people; }, moderation, may, isAdmin: () => S.role === 'admin',
+  navigate: (hash) => { if (location.hash === hash) render(); else location.hash = hash; } });
+cmd.wire();
 const announce = createAnnounce({ S, scheduleRender, raw, ago, who, openSheet, closeSheet, gate, cfg });
 /** Put a setting change on the save bar and open its section, for the usual review (the Health tab's minVersion). */
 function stage(path, value) {

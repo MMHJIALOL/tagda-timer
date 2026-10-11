@@ -432,5 +432,5 @@ export function createPeople(ctx) {
     };
   }
 
-  return { start, stop, viewLookup, viewPerson, viewSupport, viewRequests, counts, nameOf };
+  return { start, stop, viewLookup, viewPerson, viewSupport, viewRequests, counts, nameOf, directory: () => { start(); return directory(); } };
 }

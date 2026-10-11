@@ -4933,3 +4933,10 @@ body.focus #app-banner { opacity: 0; transition: opacity 220ms var(--ease); }
 .fb-check { display: flex; align-items: flex-start; gap: 8px; font-size: .88rem; margin: 6px 0; }
 .ph-news { font-size: 11px; font-weight: 700; color: var(--accent); }
 
+/* The admin console's Preview in the app (?cfgPreview, js/config.js; ADMIN.md §22): which tab is not the real thing. */
+.cfg-preview-strip {
+  position: fixed; left: 50%; bottom: 10px; transform: translateX(-50%); z-index: 9999; pointer-events: none;
+  padding: 6px 12px; border-radius: 99px; font-size: 12px; font-weight: 700;
+  color: var(--bg); background: var(--warn, #f0a03c); box-shadow: 0 4px 16px rgb(0 0 0 / .3);
+}
+
