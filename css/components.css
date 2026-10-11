@@ -4940,3 +4940,7 @@ body.focus #app-banner { opacity: 0; transition: opacity 220ms var(--ease); }
   color: var(--bg); background: var(--warn, #f0a03c); box-shadow: 0 4px 16px rgb(0 0 0 / .3);
 }
 
+
+/* Appearance → Text: the × sits before the picker so the pickers line up. */
+.text-colour { display: flex; align-items: center; gap: 6px; }
+.text-colour .ghost-btn[hidden] { display: none; }

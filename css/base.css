@@ -16,6 +16,7 @@ body {
   font-family: var(--font-ui);
   background: var(--bg);
   color: var(--text);
+  text-shadow: var(--text-shadow);
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
@@ -543,7 +544,7 @@ body[data-input="virtual"] #timer-display { font-size: min(var(--timer-size), 5.
   color: var(--t-idle);
   transition: color 120ms linear, transform 200ms var(--ease-back), opacity var(--dur);
   will-change: transform;
-  text-shadow: 0 0 var(--timer-glow) color-mix(in srgb, var(--accent) 65%, transparent);
+  text-shadow: 0 0 var(--timer-glow) color-mix(in srgb, var(--accent) 65%, transparent), var(--text-shadow);
 }
 #timer-display.state-holding { color: var(--t-holding); transform: scale(.972); }
 #timer-display.state-ready   { color: var(--t-ready);   transform: scale(1.03); }

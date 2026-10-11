@@ -205,6 +205,18 @@ export const DEFAULTS = {
   accent2: '',
   bg2: '',                      // '' = use preset; set by an album theme
   textColor: '',                // '' = use preset; the type colour, timer digits included
+  /* The Text block in Appearance. Each area colour is '' = follow textColor
+     (or the theme); a shadow strength of 0 is no shadow at all. */
+  timerColor: '',
+  scrambleColor: '',
+  timesColor: '',
+  statsColor: '',
+  textShadow: 0,                // % strength; 0 = off
+  textShadowBlur: 4,            // px
+  textShadowY: 1,               // px, downwards
+  textShadowColor: '#000000',
+  timesFont: '',                // '' = the interface's own mono face
+  statsFont: '',
   // Palettes saved from Spotify covers: [{id, name, artist, art, theme, accent, accent2, bg2}]
   albumThemes: [],
   albumTheme: '',               // id of the album theme last picked, for the card's highlight
@@ -382,6 +394,8 @@ export function applyTheme(s) {
     st.setProperty('--t-idle', s.textColor);
   } else for (const v of TEXT_VARS) st.removeProperty(v);
 
+  paintTextAreas(s);
+
   // Anything printed *on* an accent — a primary button, a selection, the avatar
   // initial — used to be white no matter what, which is invisible on Carbon's
   // white accent and on any pale colour picked in the appearance editor.
@@ -450,6 +464,54 @@ export function applyTheme(s) {
   // accent overrides are written near the end of it.
   invalidateThemeColors();
 }
+
+/* The Text block: per-area colours and fonts, written as one stylesheet
+   because they are scoped to a widget rather than to <html>. Overriding the
+   type variables on the widget itself carries into everything inside it, so no
+   rule in components.css has to know this exists. Values come from synced
+   settings, so only a plain #rrggbb and a known font name ever reach the CSS. */
+const HEX = /^#[0-9a-f]{6}$/i;
+const TEXT_AREAS = [
+  ['scrambleColor', '#scramble-zone', null],
+  ['timesColor', '#panel-times', 'timesFont'],
+  ['statsColor', '#panel-stats', 'statsFont'],
+];
+const typeRamp = (c) =>
+  `--text:${c};--text-dim:color-mix(in srgb, ${c} 68%, var(--bg));--text-faint:color-mix(in srgb, ${c} 42%, var(--bg));`;
+
+function paintTextAreas(s) {
+  const st = document.documentElement.style;
+  // After the global colour, so a timer colour of its own wins over it.
+  if (HEX.test(s.timerColor || '')) st.setProperty('--t-idle', s.timerColor);
+  else if (!s.textColor) st.removeProperty('--t-idle');
+
+  const pct = Math.max(0, Math.min(100, Number(s.textShadow) || 0));
+  if (pct) {
+    const colour = HEX.test(s.textShadowColor || '') ? s.textShadowColor : '#000000';
+    const y = Math.max(-10, Math.min(10, Number(s.textShadowY) || 0));
+    const blur = Math.max(0, Math.min(30, Number(s.textShadowBlur) || 0));
+    st.setProperty('--text-shadow', `0 ${y}px ${blur}px color-mix(in srgb, ${colour} ${pct}%, transparent)`);
+  } else st.removeProperty('--text-shadow');
+
+  let css = '';
+  for (const [colorKey, sel, fontKey] of TEXT_AREAS) {
+    let rule = '';
+    if (HEX.test(s[colorKey] || '')) rule += typeRamp(s[colorKey]);
+    if (fontKey && TIMER_FONTS[s[fontKey]]) rule += `--font-mono:${TIMER_FONTS[s[fontKey]]};`;
+    if (rule) css += `${sel}{${rule}}\n`;
+  }
+  let tag = document.getElementById('text-areas-style');
+  if (!css) { tag?.remove(); return; }
+  if (!tag) {
+    tag = document.createElement('style');
+    tag.id = 'text-areas-style';
+    document.head.append(tag);
+  }
+  if (tag.textContent !== css) tag.textContent = css;
+}
+
+/** Every setting the Text block owns, for its reset and for a theme preset. */
+export const TEXT_COLOR_KEYS = ['textColor', 'timerColor', 'scrambleColor', 'timesColor', 'statsColor'];
 
 /* ---------------------------------------------------------
    Album tint
@@ -599,7 +661,9 @@ export async function applyBackground(bg, s) {
    --------------------------------------------------------- */
 
 const THEME_KEYS = [
-  'theme','density','motion','accent','accent2','bg2','textColor','timerFont','timerWeight','timerSize','timerGlow',
+  'theme','density','motion','accent','accent2','bg2','textColor',
+  'timerColor','scrambleColor','timesColor','statsColor','textShadow','textShadowBlur','textShadowY',
+  'textShadowColor','timesFont','statsFont','timerFont','timerWeight','timerSize','timerGlow',
   'scrambleFont','uiFont','glass',
   'bgMode','bgShader','bgSpeed','bgAmount','bgBlur','bgDim','bgSat','bgGradient','bgSolid',
   'showStats','showCube','showHistory','cubeView','hintFacelets','autoContrast',

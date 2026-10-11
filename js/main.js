@@ -24,7 +24,7 @@ import { initReplay, syncReplay, takeClip, hasReplay, openReplay, replayOpen, re
          onReplayChange, replayStatus, replaySupported, replayOff, setStackmatMic } from './replay.js';
 import { summarize, eff, DNF, isMoveResult, resultsFor, bestSingle, bestAvg, trimmedIndices, byCase, sessionBests, rollingSeries, statWindow, STAT_LABELS, goalProgress, bpaWpa } from './stats.js';
 import { renderMiniTrend } from './charts.js';
-import { DEFAULTS, loadSettings, saveSettings, isOwnSettingsWrite, applyTheme, applyBackground, themeColors, setAlbumTint, paintBackgroundColors, liquidGlassOK } from './theme.js';
+import { DEFAULTS, loadSettings, saveSettings, isOwnSettingsWrite, applyTheme, applyBackground, themeColors, setAlbumTint, paintBackgroundColors, liquidGlassOK, TEXT_COLOR_KEYS } from './theme.js';
 import { chooseInspection, mergeInspection } from './inspection-setting.js';
 import { loadLibraryPrefs } from './alglibrary.js';
 import { initTiles, applyTiles, measureLayout } from './tiles.js';
@@ -6578,7 +6578,7 @@ function openPaletteWithCommands() {
       nebula: 'Nebula', carbon: 'Carbon', vaporwave: 'Vaporwave', ice: 'Ice',
       terminal: 'Terminal', speedcube: 'Speedcube', paper: 'Paper',
     })) {
-      out.push({ kind: 'theme', label: p, run: () => { app.setSetting('accent', ''); app.setSetting('accent2', ''); app.setSetting('textColor', ''); app.setSetting('theme', id); toast(t('{name} theme', { name: p })); } });
+      out.push({ kind: 'theme', label: p, run: () => { app.setSetting('accent', ''); app.setSetting('accent2', ''); for (const k of TEXT_COLOR_KEYS) app.setSetting(k, ''); app.setSetting('theme', id); toast(t('{name} theme', { name: p })); } });
     }
     return out;
   });
