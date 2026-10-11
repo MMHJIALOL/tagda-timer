@@ -16,7 +16,7 @@ import { t } from './i18n.js';
    =========================================================== */
 
 import { $, el, fmt } from './util.js';
-import { toast, confirmToast } from './toast.js';
+import { toast, confirmToast, choiceToast } from './toast.js';
 import { eventOf } from './events.js';
 import { bestAvg, summarize } from './stats.js';
 import { shockwave, confetti, flash, chime } from './fx.js';
@@ -764,6 +764,14 @@ export class Race extends EventTarget {
     // that happened to land while a race was open.
     if (scrambleHash(solve.scramble) !== r.info.hash) return;
 
+    // Presence retries can outlive a round or a room. Keep the original round
+    // and refuse to send an old result after the user leaves or joins another.
+    const net = this.net, roomId = this.snap.roomId;
+    const send = (fn) => {
+      if (this.net !== net || this.snap?.roomId !== roomId) throw new Error('race-room-changed');
+      return fn();
+    };
+
     this.submittedRound = r.no;
     this._lastStatus = null;
     // Held so the row can open the solve menu on it once the round reveals.
@@ -778,18 +786,21 @@ export class Race extends EventTarget {
     /* Retried, because this one write is what stops the room waiting on you.
        A dropped 'done' means everybody else sits through the full grace period
        for somebody who is sitting right there having finished. */
-    await this._retry(() => this.net.setProgress({ status: 'done' }), 'progress');
+    // A refused presence update must not discard a locally saved result.
+    // Results are separately validated by the transport/database.
+    try { await this._retry(() => send(() => net.setProgress({ status: 'done' }, r.no)), 'progress'); }
+    catch (err) { console.warn('[race] progress refused', err); }
 
     const sent = solve.penalty || 'none';
     let landed = false;
     this._submittingRound = r.no;
     try {
-      await this._retry(() => this.net.submitResult({
+      await this._retry(() => send(() => net.submitResult({
         timeMs: Math.round(solve.timeMs),
         penalty: sent,
         hash: r.info.hash,
         suspect: this._looksSuspect(solve) || null,
-      }), 'result');
+      }, r.no)), 'result');
       landed = true;
     } catch (err) {
       // The rules refusing a write is information, not a crash: it means the
@@ -797,13 +808,14 @@ export class Race extends EventTarget {
       console.warn('[race] result refused', err);
       toast('The room would not accept that time', { kind: 'bad' });
     } finally {
-      this._submittingRound = 0;
+      if (this._submittingRound === r.no) this._submittingRound = 0;
     }
     /* A +2 or DNF pressed while the time was still on its way: the solve
        object is the one the times list edits, so it already says so. */
     if (landed && (solve.penalty || 'none') !== sent) this.onPenalty(solve);
     // Only now does the read of everyone else's times become allowed.
-    this.net.unlockResults();
+    if (this.net !== net || this.snap?.roomId !== roomId) return;
+    if (landed && this.round?.no === r.no) net.unlockResults();
     this._serveScramble();
     this._syncPanel();
   }
@@ -1188,6 +1200,7 @@ export class Race extends EventTarget {
     if (opp) {
       d.opp = { uid: opp[0], name: opp[1].name || 'Cuber' };
       d.goneAt = 0;
+      this.linkAccount();
       this._ensureCam(d.opp);
       // Both sides write it; the same value twice is harmless.
       if (this.phase === 'lobby' && !d.started) {
@@ -1205,6 +1218,88 @@ export class Race extends EventTarget {
       if (Date.now() - d.goneAt >= duelMs('goneSec')) this._duelOver('left');
     } else if (Date.now() - d.since >= duelMs('showupSec')) {
       this._duelOver('noshow');
+    }
+  }
+
+  /**
+   * This tab's 1v1 seat tied to the Google account signed in to the timer
+   * (rooms/<id>/acct/<uid>, RACE.md §9). A race seat is anonymous, one per
+   * tab, so the account vouches for it: the seat claims the account, then the
+   * account confirms the claim. Cam and mic need it while duel.camSignedIn is
+   * on, and a report on the opponent is sent from it. Once per room unless
+   * `again` (just signed in).
+   *
+   * Resolves 'linked'; 'signed-out'; 'refused' (the account may not: a ban);
+   * or 'old-rules' (the claim itself refused: rules from before the link,
+   * which gate nothing, so the app does not either).
+   */
+  linkAccount(again = false) {
+    const room = this.snap.roomId;
+    if (!again && this._link?.room === room) return this._link.p;
+    const p = (async () => {
+      if (!hasPersistedSession()) return 'signed-out';
+      try {
+        const { getDatabaseHandle } = await import('./sync-auth.js');
+        const sdk = await getDatabaseHandle();
+        await sdk.auth.authStateReady?.();
+        const user = sdk.auth.currentUser;
+        if (!user) return 'signed-out';
+        try { await this.net.acctClaim(user.uid); } catch (err) {
+          console.warn('[race] link claim refused', err?.code || err?.message || err);
+          return 'old-rules';
+        }
+        try { await sdk.set(sdk.ref(sdk.db, `rooms/${room}/acct/${this.uid}/ok`), true); } catch (err) {
+          console.warn('[race] link refused', err?.code || err?.message || err);
+          return 'refused';
+        }
+        return 'linked';
+      } catch (err) {
+        console.warn('[race] link', err);
+        return 'old-rules';
+      }
+    })();
+    this._link = { room, p, state: 'pending' };
+    p.then((state) => {
+      if (this._link?.p !== p) return;
+      this._link.state = state;
+      this._cam?.redraw();
+    });
+    return p;
+  }
+
+  /** linkAccount's answer for this room so far: 'pending' until it has one. */
+  get linkState() { return this._link?.room === this.snap.roomId ? this._link.state : 'pending'; }
+
+  /**
+   * Report the opponent to the admins (reports/, kind 'duel'), as the Google
+   * account linked to this seat: for something wrong on their cam or mic, an
+   * offensive name or chat, or times that cannot be real. The rules want the
+   * reporter's own linked seat in the same room, so only a player can.
+   */
+  async _reportOpponent() {
+    const opp = this.opponent;
+    const room = this.snap.roomId;
+    if (!opp || !room) return;
+    const reason = await choiceToast(t('Report {name} to the admins? What happened?', { name: opp.name || 'Cuber' }), [
+      { label: t('Cam or mic'), value: 'Cam or mic' },
+      { label: t('Name or chat'), value: 'Name or chat' },
+      { label: t('Cheating'), value: 'Cheating' },
+      { label: t('Something else'), value: 'Something else' },
+    ], { timeout: 15000 });
+    if (!reason) return;
+    try {
+      if ((await this.linkAccount()) !== 'linked') throw new Error('not-linked');
+      const [{ getDatabaseHandle }, { sendReport }] = await Promise.all([import('./sync-auth.js'), import('./moderation.js')]);
+      const sdk = await getDatabaseHandle();
+      // In English for the admins, with what was going on when it was sent.
+      const media = this._cam?.remoteMedia || {};
+      const text = [reason, opp.name || 'Cuber', `round ${this.round?.no ?? 1}`,
+        media.cam ? 'their cam on' : null, media.mic ? 'their mic on' : null].filter(Boolean).join(' · ');
+      const out = await sendReport(sdk, { kind: 'duel', path: `rooms/${room}/players/${opp.uid}`, text, room, from: this.uid });
+      toast(out === 'already' ? t('You have already reported them') : t('Reported. An admin will look at it.'));
+    } catch (err) {
+      console.warn('[race] duel report refused', err?.code || err?.message || err);
+      toast(t('Couldn’t send the report'), { kind: 'bad' });
     }
   }
 
@@ -1541,8 +1636,15 @@ export class Race extends EventTarget {
         : row.status === 'done' ? 'locked' : row.status;
       const label = state === 'time' || state === 'dnf' ? Race.resText(row.result)
         : { locked: t('finished'), solving: t('solving…'), inspecting: t('inspecting'), waiting: t('ready') }[state] || t('ready');
+      /* Reports need a Google account (reports/, ADMIN.md §6), and a race
+         seat is anonymous: so only with the timer's own sign-in. */
+      const flag = who === 'them' && row && hasPersistedSession() ? el('button', {
+        class: 'duel-report', type: 'button', html: FLAG_SVG,
+        title: t('Report {name}', { name }), 'aria-label': t('Report {name}', { name }),
+        onclick: () => this._reportOpponent(),
+      }) : null;
       return el('div', { class: 'duel-board-side', dataset: { who, state, lead: String(lead === who) } },
-        av,
+        av, flag,
         el('span', { class: 'duel-board-name', text: who === 'me' ? t('You') : name, title: name }),
         el('span', { class: 'duel-board-val', text: label,
           title: state === 'locked' ? t('They are done. You will see the time when you are.') : '' }),

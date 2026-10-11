@@ -273,6 +273,18 @@ class FirebaseTransport extends EventTarget {
 
   async rtcArm() { await this._sdk.onDisconnect(this._rtcRef(this.snap.uid)).remove().catch(() => {}); }
 
+  /* ---- 1v1: seats linked to a Google account (RACE.md §9) ----
+     rooms/<id>/acct/<uid>: `claim` is the account this seat says it is
+     (written by the seat, readable only by it and the admins), `ok` is that
+     account confirming it (written by the account, readable by the room). */
+
+  acctClaim(googleUid) { return this._sdk.set(this._ref(`${this._base}/acct/${this.snap.uid}/claim`), googleUid); }
+
+  /** Whether `uid`'s seat is linked, now and on every change; null when the read is refused. */
+  acctOn(uid, cb) {
+    return this._sdk.onValue(this._ref(`${this._base}/acct/${uid}/ok`), (s) => cb(s.val() === true), () => cb(null));
+  }
+
   /** TURN relay credentials from the Worker (worker.js /turn), or null when it has none. */
   async rtcIceServers() {
     const token = await this._user?.getIdToken();
@@ -634,8 +646,7 @@ class FirebaseTransport extends EventTarget {
       (cur) => (cur === next - 1 ? next : undefined));
   }
 
-  async setProgress(patch) {
-    const n = this.snap.round?.no;
+  async setProgress(patch, n = this.snap.round?.no) {
     if (!n) return;
     const S = this._sdk;
     const out = { ...patch };
@@ -646,8 +657,7 @@ class FirebaseTransport extends EventTarget {
     await S.update(this._ref(`${this._base}/rounds/${n}/progress/${this.snap.uid}`), out);
   }
 
-  async submitResult(result) {
-    const n = this.snap.round?.no;
+  async submitResult(result, n = this.snap.round?.no) {
     if (!n) return;
     const S = this._sdk;
     await S.set(this._ref(`${this._base}/rounds/${n}/results/${this.snap.uid}`),
@@ -975,8 +985,7 @@ class LocalTransport extends EventTarget {
     this._mutate((room) => { room.meta = { ...(room.meta || {}), ...patch }; });
   }
 
-  async setProgress(patch) {
-    const n = this.snap.round?.no;
+  async setProgress(patch, n = this.snap.round?.no) {
     if (!n) return;
     this._mutate((room) => {
       room.rounds ||= {}; room.rounds[n] ||= {}; room.rounds[n].progress ||= {};
@@ -988,8 +997,7 @@ class LocalTransport extends EventTarget {
     });
   }
 
-  async submitResult(result) {
-    const n = this.snap.round?.no;
+  async submitResult(result, n = this.snap.round?.no) {
     if (!n) return;
     this._mutate((room) => {
       room.rounds ||= {}; room.rounds[n] ||= {}; room.rounds[n].results ||= {};
