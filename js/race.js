@@ -360,12 +360,14 @@ export class Race extends EventTarget {
     // After a reload too: the last round you raced can still take a late penalty.
     if (this.history.length) this._watchKept(this.history.at(-1));
 
-    /* A race is timed on the app's own clock or it is not a race. Switching
-       the input source is a smaller surprise than silently letting somebody
-       type their times in while other people are actually solving. */
-    if (this.app.settings.inputMode !== 'timer') {
-      this.app.setSetting('inputMode', 'timer');
-      toast('Switched to the spacebar timer for the race', { long: true });
+    /* A race is timed on the app's own clock or it is not a race: the
+       spacebar, or a Stackmat from the panel's Stackmat button (raceInput).
+       main.js's inputMode() says so while you are in a room, without saving
+       anything over your usual input, which comes back when you leave. */
+    this.app.syncInputMode?.();
+    const usual = this.app.settings.inputMode;
+    if (this.app.inputMode?.() === 'timer' && (usual === 'manual' || usual === 'virtual')) {
+      toast(t('Races are timed on the spacebar, or on a Stackmat with the Stackmat button. Your usual input is back when you leave.'), { long: true });
     }
 
     this.app.setSetting('raceLastRoom', roomId);
@@ -412,6 +414,7 @@ export class Race extends EventTarget {
     this._duel = null;
     this._resetChat();
     this._syncPanel();
+    this.app.syncInputMode?.();
     // Back to the session you were in, and to the app's own scrambles. The
     // session switch already pulls a fresh one, so only ask when it did not.
     const moved = await this.app.leaveRaceSession?.();
@@ -440,7 +443,9 @@ export class Race extends EventTarget {
        pointer moves, the snapshot only holds the new round, and the old one's
        progress is what a round this tab never got to settle is kept from. */
     const prevObj = this._roundObj;
+    const wasIn = this.inRoom;
     this.snap = snap;
+    if (this.inRoom !== wasIn) this.app.syncInputMode?.();
     this._prevRound = this.round?.no;
     this._prevPhase = this.phase;
     this._roundObj = this.round;
@@ -2108,6 +2113,13 @@ export class Race extends EventTarget {
   _actions(host) {
     if (!host) return;
     host.innerHTML = '';
+
+    /* Spacebar or a Stackmat for races, and which input the mat is on: the
+       panel main.js opens for it. Lit and labelled by app.syncStackmatButtons. */
+    const sm = el('button', { class: 'btn race-stackmat', type: 'button', 'aria-pressed': 'false', text: t('Stackmat') });
+    sm.addEventListener('click', () => this.app.openRaceStackmat?.(sm));
+    host.append(sm);
+    queueMicrotask(() => this.app.syncStackmatButtons?.());
 
     /* A 1v1 has no lobby to go back to — it starts itself and ends when one
        of you goes — so End race would only strand both of you in it. */

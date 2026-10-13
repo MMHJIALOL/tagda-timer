@@ -447,6 +447,8 @@ const denied = (err) => err?.name === 'NotAllowedError' || err?.name === 'Permis
 
 /** main.js: where the Stackmat is listening, while it is the input. */
 export function setStackmatMic(fn) { stackmatMic = fn; }
+/** The Stackmat's input ({ deviceId, groupId }) while it is the one timing, else null — for any other mic to keep off. */
+export const stackmatInput = () => stackmatMic();
 
 /* What the open mic was chosen against: when any of it changes, it is chosen again. */
 const micKey = () => {

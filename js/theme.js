@@ -180,6 +180,8 @@ export const DEFAULTS = {
   metroPos: null,
   mouseTimer: false,            // click-to-time; off so a stray click cannot start a solve
   inputMode: 'timer',           // timer = spacebar/touch | manual = typed | stackmat = aux jack | virtual = keyboard cube
+  stackmatMic: '',              // the input the Stackmat's cable is in; '' = the system default
+  stackmatMicLabel: '',         // its name, for finding it again when the id changes
   sotdInput: '',                // the Scramble of the Day's own: '' = follow inputMode | 'stackmat' | 'timer'
   virtualReturnSession: null,   // the session to go back to when the virtual cube is switched off
   /* 0/1 = off. 2-6 splits every solve into that many phases: the split key

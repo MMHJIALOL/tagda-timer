@@ -1,6 +1,26 @@
 /* Spanish for Tagda Timer. Keys are the English source text exactly as it is
    written in js/ and in the HTML; {name} placeholders are filled by t(). */
 export const es = {
+  // Races: the Stackmat button
+  "Race on a Stackmat": "Competir con un Stackmat",
+  "Racing on a Stackmat": "Compitiendo con un Stackmat",
+  "Race on a Stackmat plugged into a mic socket.": "Compite con un Stackmat conectado a una entrada de micrófono.",
+  "for races. Off, it is the spacebar": "para las carreras. Desactivado, se usa la barra espaciadora",
+  "Racing on the spacebar": "Compitiendo con la barra espaciadora",
+  "Races are timed on the spacebar, or on a Stackmat with the Stackmat button. Your usual input is back when you leave.": "Las carreras se cronometran con la barra espaciadora, o con un Stackmat usando el botón Stackmat. Tu entrada habitual vuelve al salir.",
+  "Your mic is off: the only microphone input is the one your Stackmat is plugged into.": "Tu micrófono está apagado: la única entrada de micrófono es la del Stackmat.",
+  // Stackmat input picker
+  "System default": "Predeterminada del sistema",
+  "Input": "Entrada",
+  "the mic socket the timer’s cable is in. Names show once the microphone is allowed": "la entrada de micrófono donde está el cable del cronómetro. Los nombres aparecen al permitir el micrófono",
+  "Use a Stackmat": "Usar un Stackmat",
+  "for today’s scramble. Off, it is the spacebar": "para el scramble de hoy. Desactivado, se usa la barra espaciadora",
+  "Time today’s scramble on a Stackmat plugged into a mic socket.": "Cronometra el scramble de hoy con un Stackmat conectado a una entrada de micrófono.",
+  "Timing today’s scramble on a Stackmat": "Cronometrando el scramble de hoy con un Stackmat",
+  "Listening on {name}": "Escuchando en {name}",
+  "{name} is not connected — listening on the default input": "{name} no está conectado: escuchando en la entrada predeterminada",
+  "The Stackmat’s input": "La entrada del Stackmat",
+  "the Stackmat settings": "los ajustes del Stackmat",
   // Scramble of the Day → Stackmat pill
   "Stackmat": "Stackmat",
   "Stackmat on": "Stackmat activado",

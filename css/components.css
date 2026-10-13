@@ -3404,6 +3404,12 @@ body.ph[data-tab="times"]:has(#times-race) #panel-race { display: none; }
   flex: 1; min-width: 0; height: 28px; padding: 0 8px;
   font-size: .7rem; border-radius: 8px;
 }
+/* Lit like the SOTD bar's Stackmat pill while races are timed on a mat. */
+.race-actions .race-stackmat.on {
+  color: var(--accent); border-color: color-mix(in srgb, var(--accent) 65%, transparent);
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+}
+.race-actions .race-stackmat[disabled] { opacity: .45; pointer-events: none; }
 
 /* ---------------- a 1v1's own view ----------------
    One head-to-head card where a room has its status line, rows and
