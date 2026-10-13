@@ -22,7 +22,7 @@ import { mountMetro, metroExternal } from './metro.js';
 import { keepAwake } from './wakelock.js';
 import { initReplay, syncReplay, takeClip, hasReplay, openReplay, replayOpen, replayEnabled,
          onReplayChange, replayStatus, replaySupported, replayOff, setStackmatMic } from './replay.js';
-import { summarize, eff, DNF, isMoveResult, resultsFor, bestSingle, bestAvg, trimmedIndices, byCase, sessionBests, rollingSeries, statWindow, STAT_LABELS, goalProgress, bpaWpa } from './stats.js';
+import { summarize, eff, DNF, isMoveResult, resultsFor, bestSingle, bestAvg, currentAvg, trimmedIndices, byCase, sessionBests, rollingSeries, statWindow, STAT_LABELS, goalProgress, bpaWpa } from './stats.js';
 import { renderMiniTrend } from './charts.js';
 import { DEFAULTS, loadSettings, saveSettings, isOwnSettingsWrite, applyTheme, applyBackground, themeColors, setAlbumTint, paintBackgroundColors, liquidGlassOK, TEXT_COLOR_KEYS } from './theme.js';
 import { chooseInspection, mergeInspection } from './inspection-setting.js';
@@ -2057,7 +2057,7 @@ function resetBgColors() {
 /* ---------------- pace ghost ---------------- */
 function startPace(pace, fill) {
   const ref = app.settings.paceRef === 'ao5'
-    ? summarize(statsSolves()).ao5
+    ? currentAvg(statsSolves(), 5)
     : bestSingle(statsSolves());
   if (!ref || ref === DNF) { pace.hidden = true; return; }
   pace.hidden = false;

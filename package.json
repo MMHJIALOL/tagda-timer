@@ -6,6 +6,7 @@
     "test:settings-search": "node --test js/settings-search.check.mjs",
     "test:stats-session": "node --test js/stats-session.check.mjs",
     "test:stats-units": "node --test js/stats-units.check.mjs",
+    "test:stats-cache": "node --test js/stats-cache.check.mjs",
     "test:site": "node tools/verify-site.cjs"
   },
   "devDependencies": {
