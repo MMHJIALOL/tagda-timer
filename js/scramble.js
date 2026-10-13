@@ -54,8 +54,8 @@ export const cubingAvailable = () => !_cubingFailed;
 cubing().catch(() => { /* the fallback generator covers this */ });
 /* The square-1 tables take a couple of seconds to build. They build on their
    own thread, so start now: by the time anyone picks square-1 they are there.
-   ponytail: every visit pays ~2 s of one background core and ~11 MB for this;
-   build on first use instead if that ever matters on low-end phones. */
+   Every visit pays ~2 s of one background core for this; the ~11 MB goes
+   again once the worker has sat idle for SQ1_IDLE_MS. */
 setTimeout(() => sq1(true), 0);
 
 /* ---------------------------------------------------------
@@ -76,6 +76,21 @@ let sq1Seq = 0;
    good. The table build is ~2 s, so a request unanswered for this long means
    the worker is not coming. */
 const SQ1_SILENT_MS = 10000;
+/* Its ~11 MB of tables are let go after this long with nothing asked of it.
+   Long, because a cold start is the slow part, and the queue's stash already
+   holds one square-1 made while warming (WARM below), so the first scramble
+   after a switch back is instant while a fresh worker builds behind it. */
+const SQ1_IDLE_MS = 5 * 60000;
+let sq1Idle = 0;
+
+function restSq1() {
+  clearTimeout(sq1Idle);
+  sq1Idle = setTimeout(() => {
+    if (!sq1Worker || sq1Waiting.size) return;
+    sq1Worker.terminate();
+    sq1Worker = null;               // the next square-1 starts a fresh one
+  }, SQ1_IDLE_MS);
+}
 
 /** Stop using the worker; everything it owes, and every later square-1, is made on the page. */
 function abandonSq1(why) {
@@ -94,14 +109,16 @@ function sq1(warmOnly = false) {
         clearTimeout(sq1Waiting.get(data.id)?.timer);
         sq1Waiting.get(data.id)?.resolve(data.scramble);
         sq1Waiting.delete(data.id);
+        if (!sq1Waiting.size) restSq1();
       };
       sq1Worker.onerror = (err) => abandonSq1(`failed (${err.message})`);
     } catch {
       sq1Worker = false;          // no module workers: the page makes them
     }
   }
-  if (warmOnly) { if (sq1Worker) sq1Worker.postMessage({ warm: true }); return null; }
+  if (warmOnly) { if (sq1Worker) { sq1Worker.postMessage({ warm: true }); restSq1(); } return null; }
   if (!sq1Worker) return import('./sidescramble.js').then(m => m.sq1Scramble());
+  clearTimeout(sq1Idle);
   return new Promise((resolve) => {
     const id = ++sq1Seq;
     const timer = setTimeout(() => { if (sq1Waiting.has(id)) abandonSq1('never answered'); }, SQ1_SILENT_MS);

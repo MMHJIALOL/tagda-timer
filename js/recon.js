@@ -1,4 +1,5 @@
-import { t, lang } from './i18n.js';
+import { t } from './i18n.js';
+import { askWorker, warmSolver, restSolver, solverDead } from './solver-client.js';
 /* ===========================================================
    Tagda Timer — the reconstruction workbench
 
@@ -648,49 +649,17 @@ let pending = 0;
    keeps the pruning tables warm between questions. If module workers are not
    available the search still runs, just inline, which is what the app did
    before and is only ever noticeable on the hardest positions. */
-let worker = null;
-let workerDead = false;
-let workerJobs = new Map();
-let workerSeq = 0;
-
-function getWorker() {
-  if (worker || workerDead) return worker;
-  try {
-    worker = new Worker(new URL(`./solver.worker.js?lang=${lang}`, import.meta.url), { type: 'module' });
-    worker.onmessage = (e) => {
-      const { id, result, error } = e.data || {};
-      const job = workerJobs.get(id);
-      if (!job) return;
-      workerJobs.delete(id);
-      if (error) job.reject(new Error(error)); else job.resolve(result);
-    };
-    worker.onerror = (e) => {
-      console.warn('[recon] solver worker failed, falling back', e.message);
-      workerDead = true;
-      worker = null;
-      for (const job of workerJobs.values()) job.reject(new Error('worker died'));
-      workerJobs.clear();
-    };
-  } catch (err) {
-    console.warn('[recon] no module workers here, solving inline', err.message);
-    workerDead = true;
-  }
-  return worker;
-}
-
+/* The worker itself, shared with Cross + 1 and let go when idle, is in
+   solver-client.js. */
 function askSolver(state, frame, analysis, opts) {
-  const w = getWorker();
-  if (!w) {
+  // A copy, because the panel keeps using this position while the search runs.
+  const job = askWorker({ state: state.slice().buffer, frame, analysis, opts });
+  if (!job) {
     // Inline, but after a paint, so "thinking…" is on screen before it blocks.
     return new Promise((resolve) => setTimeout(() => resolve(suggest(state, frame, analysis, opts)), 16));
   }
-  const id = ++workerSeq;
-  return new Promise((resolve, reject) => {
-    workerJobs.set(id, { resolve, reject });
-    // A copy, because the panel keeps using this position while the search runs.
-    w.postMessage({ id, state: state.slice().buffer, frame, analysis, opts });
-  }).catch((err) => {
-    if (workerDead) return suggest(state, frame, analysis, opts);
+  return job.catch((err) => {
+    if (solverDead()) return suggest(state, frame, analysis, opts);
     throw err;
   });
 }
@@ -2011,7 +1980,7 @@ export async function openRecon({ scramble = '', title = 'Reconstruct', moves = 
   commit();
   // Get the worker (and its module graph) loading now, alongside the cube,
   // rather than on the first question asked of it.
-  setTimeout(() => { try { getWorker(); } catch { /* ignore */ } }, 0);
+  setTimeout(() => { try { warmSolver(); } catch { /* ignore */ } }, 0);
   // A phone's keyboard would cover the cube; it types on the pad instead.
   if (!isPhone()) ui.input.focus();
 }
@@ -2023,6 +1992,7 @@ export function closeRecon() {
   resetPhone();
   host.hidden = true;
   document.body.classList.remove('recon-open');
+  restSolver();
   onClose?.();
   return true;
 }
