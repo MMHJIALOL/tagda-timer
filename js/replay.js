@@ -180,6 +180,65 @@ function rdb() {
   });
 }
 
+/* An attempt's footage, written as it is filmed (CHUNK_MS at a time) rather
+   than held in memory until the stop: a ten-minute multi-blind clip at Full
+   HD was ~375 MB of page memory before. Its own database, not a store in the
+   one above, for the reason in the header: no version bump. Keyed
+   [recording, index]; `at` is when the recording started, so chunks a
+   reloaded or crashed tab left behind can be told from another tab's live
+   ones (orphanChunks). */
+const CHUNK_MS = 2000;
+let chunkDbP = null;
+function chunkDb() {
+  return chunkDbP ??= new Promise((resolve, reject) => {
+    const q = indexedDB.open('tagdatimer-replay-chunks', 1);
+    q.onupgradeneeded = () => q.result.createObjectStore('chunks');
+    q.onsuccess = () => {
+      const db = q.result;
+      db.onversionchange = () => { db.close(); chunkDbP = null; };
+      resolve(db);
+    };
+    q.onerror = () => { chunkDbP = null; reject(q.error); };
+  });
+}
+const chunkRange = (key) => IDBKeyRange.bound([key, 0], [key, Infinity]);
+
+async function putChunk(key, index, at, blob) {
+  const tr = (await chunkDb()).transaction('chunks', 'readwrite');
+  tr.objectStore('chunks').put({ blob, at }, [key, index]);
+  await settled(tr);
+}
+
+/** index -> Blob for one recording. Blobs read back are on disk, not in memory. */
+async function readChunks(key) {
+  const tr = (await chunkDb()).transaction('chunks');
+  const [keys, values] = await Promise.all([
+    wrap(tr.objectStore('chunks').getAllKeys(chunkRange(key))),
+    wrap(tr.objectStore('chunks').getAll(chunkRange(key))),
+  ]);
+  return new Map(keys.map((k, i) => [k[1], values[i].blob]));
+}
+
+async function dropChunks(key) {
+  const tr = (await chunkDb()).transaction('chunks', 'readwrite');
+  tr.objectStore('chunks').delete(chunkRange(key));
+  await settled(tr);
+}
+
+/** Chunks from a recording that started longer ago than any clip can run: a tab reloaded mid-attempt. */
+async function orphanChunks() {
+  const tr = (await chunkDb()).transaction('chunks', 'readwrite');
+  const before = Date.now() - MAX_MS - 5 * 60000;
+  const req = tr.objectStore('chunks').openCursor();
+  req.onsuccess = () => {
+    const c = req.result;
+    if (!c) return;
+    if (!(c.value?.at > before)) c.delete();
+    c.continue();
+  };
+  await settled(tr);
+}
+
 async function txn(mode = 'readonly') {
   return (await rdb()).transaction(['meta', 'video'], mode);
 }
@@ -903,20 +962,55 @@ function startRecorder(r, c) {
   }
   r.sound = !!audio;
   r.mic = audio ? c.mic.label : '';
-  const chunks = [];
-  mr.ondataavailable = (e) => { if (e.data?.size) chunks.push(e.data); };
+  /* Each chunk goes to IndexedDB as it arrives, one write after another so
+     they land in order and never hold up the timer. A chunk stays in `held`
+     only until its write lands, or for good if the write fails (storage
+     full), so nothing is lost either way. */
+  const key = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, at = Date.now();
+  const held = [];
+  let count = 0, chain = Promise.resolve();
+  mr.ondataavailable = (e) => {
+    if (!e.data?.size) return;
+    const i = count++;
+    held[i] = e.data;
+    if (r.dropped) return;
+    chain = chain.then(() => putChunk(key, i, at, e.data)).then(() => { held[i] = null; }, (err) => {
+      if (!r.chunkFailed) console.warn('[replay] keeping the clip in memory, could not write it', err);
+      r.chunkFailed = true;
+    });
+  };
+  // On disk, a clip is put back together from Blobs that point at it, so
+  // even a long one is never read into memory to be saved.
+  const assemble = async () => {
+    await chain;
+    if (r.dropped || !count) return null;
+    const stored = held.some((b, i) => i < count && !b) ? await readChunks(key) : new Map();
+    const parts = [];
+    for (let i = 0; i < count; i++) {
+      const b = held[i] || stored.get(i);
+      if (!b) throw new Error(`chunk ${i} of ${count} missing`);
+      parts.push(b);
+    }
+    return new Blob(parts, { type: mr.mimeType || MIME });
+  };
   mr.onstop = () => {
     clearTimeout(r.cap);
     active = Math.max(0, active - 1);
     emit({ type: 'state' });
-    r.resolve(r.dropped || !chunks.length ? null : new Blob(chunks, { type: mr.mimeType || MIME }));
+    assemble().then(r.resolve, (err) => {
+      console.warn('[replay] could not put the clip together', err);
+      r.resolve(null);
+    }).finally(() => {
+      // The Blob keeps what it needs alive; the rows themselves can go now.
+      chain.then(() => dropChunks(key)).catch(() => {});
+    });
     rest();                                 // the clip is filmed: the camera can go
   };
   mr.onerror = (e) => console.warn('[replay] recorder', e.error || e);
   r.cam = c;
   // Video time 0, on the timer's clock. See the header for why this and not 'start'.
   r.t0 = performance.now() - c.lat - 500 / c.fps;
-  try { mr.start(); } catch (err) { r.resolve(null); return failed(err); }
+  try { mr.start(CHUNK_MS); } catch (err) { r.resolve(null); return failed(err); }
   r.mr = mr;
   active++;
   emit({ type: 'state' });
@@ -1082,6 +1176,8 @@ export function initReplay(appRef, tm) {
       // clip a closed tab never got round to converting joins the queue.
       setTimeout(async () => {
         await sweep().catch(err => console.warn('[replay] sweep', err));
+        // Only where replays have been used: nobody else needs the database made.
+        if (keys.length || S().webcamReplay) await orphanChunks().catch(err => console.warn('[replay] leftover chunks', err));
         const all = await txn().then(tr => wrap(tr.objectStore('meta').getAll())).catch(() => []);
         all.filter(m => !m.conv).sort((a, b) => b.at - a.at).forEach(m => queueFinish(m.id, false));
       }, 8000);
