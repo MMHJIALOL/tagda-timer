@@ -300,6 +300,12 @@ export const Tombstones = {
 };
 
 /* ---------------- solves ---------------- */
+/** The stored copies of a few journalled solves, in one read transaction. */
+async function savedRows(entries) {
+  const store = await tx('solves');
+  return Promise.all(entries.map(r => wrap(store.get(r.id))));
+}
+
 export const Solves = {
   async put(solve)      {
     const r = await atomic(['solves', 'competitionSets'], async tr => {
@@ -358,6 +364,65 @@ export const Solves = {
   async all() {
     const list = await wrap((await tx('solves')).getAll());
     return overlay('solves', list).sort((a, b) => a.createdAt - b.createdAt);
+  },
+  /* How many solves each session holds, without reading a single solve. The
+     session badges used to come from all(), which on a big profile built
+     every solve on record just to count them. This walks the bySession index
+     one distinct key at a time and lets IndexedDB count each one. The few
+     rows in the recovery journal are then applied by hand, the same way
+     overlay() applies them to a list. */
+  async countsBySession() {
+    const store = await tx('solves'), index = store.index('bySession');
+    const counts = new Map();
+    await new Promise((resolve, reject) => {
+      const req = index.openKeyCursor(null, 'nextunique');
+      req.onerror = () => reject(req.error);
+      req.onsuccess = () => {
+        const c = req.result;
+        if (!c) return resolve();
+        const key = c.key;
+        index.count(key).onsuccess = (e) => counts.set(key, e.target.result);
+        c.continue();
+      };
+    });
+    const pending = [...recovery.values()].filter(r => r.store === 'solves');
+    if (!pending.length) return counts;
+    const bump = (id, n) => { if (id != null) counts.set(id, (counts.get(id) || 0) + n); };
+    const rows = await savedRows(pending);
+    pending.forEach((r, i) => {
+      if (rows[i]) bump(rows[i].sessionId, -1);
+      if (r.value) bump(r.value.sessionId, 1);
+    });
+    return counts;
+  },
+  /* When each solve from `since` onwards was done, oldest first — all the
+     practice heatmap needs. Reads the byCreated index keys only, so no solve
+     object is built; recovery rows are applied as in countsBySession(). */
+  async createdTimes(since = 0) {
+    const index = (await tx('solves')).index('byCreated');
+    const times = [];
+    await new Promise((resolve, reject) => {
+      const req = index.openKeyCursor(IDBKeyRange.lowerBound(since));
+      req.onerror = () => reject(req.error);
+      req.onsuccess = () => {
+        const c = req.result;
+        if (!c) return resolve();
+        times.push(c.key);
+        c.continue();
+      };
+    });
+    const pending = [...recovery.values()].filter(r => r.store === 'solves');
+    if (!pending.length) return times;
+    const rows = await savedRows(pending);
+    pending.forEach((r, i) => {
+      const row = rows[i];
+      if (row && row.createdAt >= since) {
+        const i = times.indexOf(row.createdAt);
+        if (i >= 0) times.splice(i, 1);
+      }
+      if (r.value && r.value.createdAt >= since) times.push(r.value.createdAt);
+    });
+    return times.sort((a, b) => a - b);
   },
   async clearSession(sessionId) {
     for (const set of (await CompetitionSets.all()).filter(s => s.sessionId === sessionId)) await CompetitionSets.delete(set.id);
