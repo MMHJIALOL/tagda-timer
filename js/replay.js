@@ -40,8 +40,10 @@ import { t } from './i18n.js';
    a keyframe interval; Firefox ignores it. So once a clip is saved, and only
    while the timer is idle, it is converted (replay-media.js, Mediabunny) to a
    WebM with a keyframe every half second and a seek index, its frame times
-   read back out of the result. Starting an attempt cancels a conversion in
-   flight; it starts over when you are idle.
+   read back out of the result. Starting an attempt pauses a conversion in
+   flight; it carries on when you are idle. A clip whose keyframes are
+   already that close (Chrome's, seeksWell) is kept as it is, with its frame
+   times noted, since converting it changed nothing you could see.
 
    The camera is any video input the browser can see (a phone connected as a
    webcam included), picked in Settings and remembered by id and by name. It
@@ -427,6 +429,14 @@ async function runFinish() {
       // itself Mediabunny picks about 7.3 Mbps there, a third bigger than the
       // recording for no difference you can see (33.98 against 33.91 dB, a
       // 15 s clip 13.2 MB against 9.1). Others get what they always have.
+      // Already seekable (Chrome): keep the recording, just note its frame times.
+      const frames = await (await media()).seeksWell(got.blob).catch(() => null);
+      if (frames) {
+        await patchMeta(id, { conv: 'keys', frames });
+        done();
+        emit({ type: 'converted', id });
+        return;
+      }
       const fhd = isFullHd(got.meta.w || 0, got.meta.h || 0);
       const job = await (await media()).prepareFinish(got.blob, undefined, fhd ? QUALITY.fhd.bps : undefined);
       if (!job) { await patchMeta(id, { conv: 'skip' }); done(); return; }   // nothing here can encode it: the original stays

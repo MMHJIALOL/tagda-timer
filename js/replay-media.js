@@ -170,6 +170,43 @@ async function run(conv, signal, onProgress) {
 
 const input = (blob) => new MB.Input({ source: new MB.BlobSource(blob), formats: MB.ALL_FORMATS });
 
+/* Where an encoded file is written. BufferTarget grows one ArrayBuffer
+   (doubling as it goes) that was then copied whole into a Blob: up to three
+   copies of a clip at the peak, all of them page memory. This takes
+   Mediabunny's writes as they come, a few MB at a time, as Blob pieces,
+   which the browser keeps outside the page and can page to disk. A write
+   over bytes already written (a WebM's sizes and seek index are filled in
+   at the end) replaces just those bytes, by slicing the pieces around it. */
+const SINK_CHUNK = 4 * 1024 * 1024;
+function blobSink() {
+  let parts = [];                        // { at, blob }, in order, never overlapping
+  const put = (at, data) => {
+    const end = at + data.byteLength;
+    const next = [];
+    for (const q of parts) {
+      const qEnd = q.at + q.blob.size;
+      if (qEnd <= at || q.at >= end) { next.push(q); continue; }
+      if (q.at < at) next.push({ at: q.at, blob: q.blob.slice(0, at - q.at) });
+      if (qEnd > end) next.push({ at: end, blob: q.blob.slice(end - q.at) });
+    }
+    next.push({ at, blob: new Blob([data]) });
+    parts = next.sort((a, b) => a.at - b.at);
+  };
+  const stream = new WritableStream({ write(c) { if (c.type === 'write') put(c.position, c.data); } });
+  return {
+    target: new MB.StreamTarget(stream, { chunked: true, chunkSize: SINK_CHUNK }),
+    get size() { return parts.length ? parts.at(-1).at + parts.at(-1).blob.size : 0; },
+    blob(type) {
+      let at = 0;
+      for (const q of parts) {
+        if (q.at !== at) throw new Error(`the file has a gap at byte ${at}`);
+        at += q.blob.size;
+      }
+      return new Blob(parts.map(q => q.blob), { type });
+    },
+  };
+}
+
 /** The best codec this browser can encode at this size, and the file it goes in. */
 async function encoder(width, height, order = ['avc', 'vp9', 'vp8'], bitrate) {
   // With the bitrate the conversion will ask for, its own check finds this answer
@@ -201,6 +238,31 @@ async function packetTimes(blob) {
   return out.sort((a, b) => a - b);
 }
 
+/* Chrome's recorder already puts a keyframe every half second
+   (videoKeyFrameIntervalDuration in replay.js), and its clip seeks as
+   quickly as the re-encoded copy (measured: 52 against 54 ms median on a
+   12 s 720p clip). Re-encoding it anyway cost a few seconds of decoding and
+   encoding between solves, with the decoded frames and the new file in
+   memory, for nothing. This reads the packets (no decoding) and says
+   whether every frame is within KEY_REACH of the keyframe before it; if so
+   the clip is kept as it is, with these frame times. Firefox ignores the
+   interval (two keyframes in 12 s), so its clips still convert. */
+const KEY_REACH = 0.75;
+export async function seeksWell(blob) {
+  const track = await input(blob).getPrimaryVideoTrack();
+  if (!track) return null;
+  const frames = [];
+  let key = null, reach = 0;
+  for await (const p of new MB.EncodedPacketSink(track).packets()) {
+    if (p.type === 'key') key = p.timestamp;
+    if (key === null) return null;
+    reach = Math.max(reach, p.timestamp - key);
+    if (reach > KEY_REACH) return null;
+    frames.push(p.timestamp);
+  }
+  return frames.length > 1 ? frames.sort((a, b) => a - b) : null;
+}
+
 /**
  * The clip again, with a keyframe every half second and the same frame times,
  * as a job that can be paused (an attempt has started) and picked up again
@@ -215,7 +277,8 @@ export async function prepareFinish(blob, order = STORE_CODECS, bitrate) {
   if (!track) return null;
   const enc = await encoder(even(track.displayWidth), even(track.displayHeight), order, bitrate);
   if (!enc) return null;
-  const output = new MB.Output({ format: enc.format, target: new MB.BufferTarget() });
+  const sink = blobSink();
+  const output = new MB.Output({ format: enc.format, target: sink.target });
   const conv = await MB.Conversion.init({
     input: inp, output,
     video: { codec: enc.codec, keyFrameInterval: 0.5, forceTranscode: true, ...(bitrate ? { bitrate } : {}) },
@@ -229,7 +292,7 @@ export async function prepareFinish(blob, order = STORE_CODECS, bitrate) {
       return conv.state === 'done';
     },
     async result() {
-      const out = new Blob([output.target.buffer], { type: enc.mime });
+      const out = sink.blob(enc.mime);
       return { blob: out, frames: await packetTimes(out) };
     },
     cancel: () => conv.cancel().catch(() => {}),
@@ -308,7 +371,8 @@ async function encodeForShare(blob, { sound = false, maxBytes, signal, onProgres
   const enc = await encoder(w, h, STORE_CODECS, Math.round(bps));
   if (!enc) return remuxForShare(blob, { sound: !!audio, maxBytes, signal });
   for (const scale of [1, 0.7]) {
-    const output = new MB.Output({ format: enc.format, target: new MB.BufferTarget() });
+    const sink = blobSink();
+    const output = new MB.Output({ format: enc.format, target: sink.target });
     const conv = await MB.Conversion.init({
       input: input(blob), output,
       video: {
@@ -319,7 +383,7 @@ async function encodeForShare(blob, { sound = false, maxBytes, signal, onProgres
     });
     if (!conv.isValid) return remuxForShare(blob, { sound: !!audio, maxBytes, signal });
     await run(conv, signal, onProgress);
-    const out = new Blob([output.target.buffer], { type: enc.mime });
+    const out = sink.blob(enc.mime);
     if (out.size <= maxBytes) {
       return { blob: out, mime: enc.mime, w, h, fps: 30, sound: conv.utilizedTracks.some(tr => tr.isAudioTrack()) };
     }
@@ -333,9 +397,10 @@ async function remuxForShare(blob, { sound, maxBytes, signal }) {
   const webm = /webm/.test(blob.type);
   const track = await input(blob).getPrimaryVideoTrack();
   if (!track) throw new ShareError('cannot');
+  const sink = blobSink();
   const output = new MB.Output({
     format: webm ? new MB.WebMOutputFormat() : new MB.Mp4OutputFormat({ fastStart: 'in-memory' }),
-    target: new MB.BufferTarget(),
+    target: sink.target,
   });
   const conv = await MB.Conversion.init({
     input: input(blob), output,
@@ -345,7 +410,7 @@ async function remuxForShare(blob, { sound, maxBytes, signal }) {
   if (!conv.isValid) throw new ShareError('cannot');
   await run(conv, signal);
   const mime = webm ? 'video/webm' : 'video/mp4';
-  const out = new Blob([output.target.buffer], { type: mime });
+  const out = sink.blob(mime);
   if (out.size > maxBytes) throw new ShareError('too-big');
   // fps 0: the frames are as filmed, at whatever rate the camera ran.
   return { blob: out, mime, w: track.displayWidth, h: track.displayHeight, fps: 0,
@@ -593,7 +658,8 @@ async function viaWebCodecs({ blob, L, crop, clockFor, onProgress, signal }, fre
   if (!enc) throw new Error(t('no video encoder for {w}x{h}', { w: L.W, h: L.H }));
   const out = canvas(L.W, L.H);
   const g = out.getContext('2d');
-  const output = new MB.Output({ format: enc.format, target: new MB.BufferTarget() });
+  const sink = blobSink();
+  const output = new MB.Output({ format: enc.format, target: sink.target });
   const inp = input(blob);
   const audio = await exportAudio(inp, enc.ext === 'mp4');
   const conv = await MB.Conversion.init({
@@ -613,9 +679,9 @@ async function viaWebCodecs({ blob, L, crop, clockFor, onProgress, signal }, fre
     throw new Error(t('the clip could not be converted ({why})', { why: conv.discardedTracks.map(d => d.reason).join(', ') || '?' }));
   }
   await run(conv, signal, onProgress);
-  if (!output.target.buffer?.byteLength) throw new Error(t('the encoder produced nothing'));
+  if (!sink.size) throw new Error(t('the encoder produced nothing'));
   return {
-    blob: new Blob([output.target.buffer], { type: enc.mime }), ext: enc.ext, mime: enc.mime,
+    blob: sink.blob(enc.mime), ext: enc.ext, mime: enc.mime,
     // A clip with sound whose sound did not make it: the player says so.
     silent: !!audio && !conv.utilizedTracks.some(tr => tr.isAudioTrack()),
   };
