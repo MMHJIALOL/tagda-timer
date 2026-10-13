@@ -314,9 +314,18 @@ function show({ id, m, blob, sv, timeMs, pen, camName, adj, shared = null, compe
      Paused, 'seeked' says which frame is up. */
   const rvfc = 'requestVideoFrameCallback' in HTMLVideoElement.prototype;
   let vfc = 0, raf = 0, sawFrame = false;
+  /* Firefox now and then reports a mediaTime about a third of a second
+     ahead of the frame on screen (presentedFrames skips by ten), then the
+     right one on the next frame: the clock and the slider leapt forward and
+     back several times a second, worst while inspection counts down. A time
+     more than a couple of frames past where the video says it is gets the
+     video's own time instead. */
   const onFrame = (now, md) => {
     sawFrame = true;
-    if (!(frames && video.paused)) render(md.mediaTime);
+    if (!(frames && video.paused)) {
+      const ahead = md.mediaTime - video.currentTime > 2.5 / fps;
+      render(ahead ? video.currentTime : md.mediaTime);
+    }
     vfc = video.requestVideoFrameCallback(onFrame);
   };
   const loop = () => { render(video.currentTime); if (!video.paused) raf = requestAnimationFrame(loop); };
