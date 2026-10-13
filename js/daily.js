@@ -555,10 +555,9 @@ export class Daily extends EventTarget {
     if (!this.canAttempt()) return;
     this.attempting = true;
     this._lastStatus = null;
-    if (this.app.settings.inputMode !== 'timer') {
-      this.app.setSetting('inputMode', 'timer');
-      toast('Switched to the spacebar timer for today’s scramble', { long: true });
-    }
+    /* No input switch here any more: while the window is engaged main.js
+       times on the spacebar or a Stackmat whatever inputMode says (see
+       inputMode() there), and puts your usual one back on the way out. */
     this.app.nextScramble?.();
     this._changed();
   }

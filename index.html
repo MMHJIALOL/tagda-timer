@@ -32,15 +32,15 @@
      import hint in Settings over a main.js that has never heard of CubeDesk.
      vercel.json also serves /css/ as `max-age=31536000, immutable`, so a
      stylesheet there will not even be asked about for a year without it. -->
-<link rel="modulepreload" href="js/main.js?v=129">
-<link rel="stylesheet" href="css/fonts.css?v=129">
-<link rel="stylesheet" href="css/tokens.css?v=129">
-<link rel="stylesheet" href="css/base.css?v=129">
-<link rel="stylesheet" href="css/components.css?v=129">
-<link rel="stylesheet" href="css/announce.css?v=129">
+<link rel="modulepreload" href="js/main.js?v=130">
+<link rel="stylesheet" href="css/fonts.css?v=130">
+<link rel="stylesheet" href="css/tokens.css?v=130">
+<link rel="stylesheet" href="css/base.css?v=130">
+<link rel="stylesheet" href="css/components.css?v=130">
+<link rel="stylesheet" href="css/announce.css?v=130">
 <!-- Phones only: the same query as js/phone.js. A desktop or tablet never
      applies a rule from it, and does not wait on it to paint. -->
-<link rel="stylesheet" href="css/phone.css?v=129" media="(max-width: 640px)">
+<link rel="stylesheet" href="css/phone.css?v=130" media="(max-width: 640px)">
 <link rel="icon" href="assets/favicon.ico" sizes="any">
 <link rel="icon" type="image/png" href="assets/logo-192.png">
 <link rel="apple-touch-icon" href="assets/logo-180.png">
@@ -739,6 +739,14 @@
     <span class="rec-dot" aria-hidden="true"></span>
     <span class="sotd-cam-label">Camera</span>
   </button>
+  <!-- Times here are spacebar or a Stackmat on the aux jack, never typed.
+       This pill picks the Stackmat for the window alone (sotdInput), so
+       somebody who types times everywhere else can still use a mat here;
+       somebody on a Stackmat already finds it lit. main.js, syncSotdStackmat. -->
+  <button class="ghost-btn" id="sotd-stackmat" title="Time today’s scramble on a Stackmat" aria-pressed="false" hidden>
+    <svg viewBox="0 0 24 24"><path d="M2.5 17.5h19l-1.8 3H4.3z"/><rect x="7" y="8" width="10" height="7" rx="1.5"/><path d="M10 11.5h4"/></svg>
+    <span class="sotd-sm-label">Stackmat</span>
+  </button>
   <button class="ghost-btn" id="sotd-exit" title="Leave (Esc)">
     <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
     <span>Leave</span>
@@ -806,7 +814,7 @@
   </div>
 </div>
 
-<script type="module" src="js/main.js?v=129"></script>
+<script type="module" src="js/main.js?v=130"></script>
 <script>
 (function () {
   var isFile = location.protocol === 'file:';
