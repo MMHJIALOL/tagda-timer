@@ -108,7 +108,7 @@ export function bpaWpa(solves) {
 /** Current aoN over the most recent N solves (solves given oldest-first). */
 export function currentAvg(solves, n) {
   if (solves.length < n) return null;
-  return averageOfRange(solves.map(eff), solves.length - n, solves.length);
+  return averageOfRange(effFrom(solves, solves.length - n), 0, n);
 }
 
 /**
@@ -153,7 +153,7 @@ export function bestMean(solves, n) {
 /** Current moN (mean of N). */
 export function currentMean(solves, n) {
   if (solves.length < n) return null;
-  return meanOfRange(solves.map(eff), solves.length - n, solves.length);
+  return meanOfRange(effFrom(solves, solves.length - n), 0, n);
 }
 
 /** Mean of `e[from .. to)`. Any DNF makes it a DNF. */
@@ -182,9 +182,30 @@ function meanOfRange(e, from, to) {
    through to the full scan. */
 const _bestAvg = new Map();   // n -> { len, hash, value, at }
 
+// A Fewest Moves result is its move count, so an edited count is an edited result too.
 const hashStep = (h, s) =>
-  (Math.imul(Math.imul(h, 31) + (s.timeMs | 0), 31) +
+  (Math.imul(Math.imul(Math.imul(h, 31) + (s.timeMs | 0), 31) + (s.fmcMoves ?? -1), 31) +
    (s.penalty === 'DNF' ? 2 : s.penalty === '+2' ? 1 : 0)) | 0;
+
+/* One pass gives both the hash of the whole list and the hash of its first
+   `want` solves (the list a cache was built from), so the two questions cost
+   one walk, not two. It only reads: nothing is allocated. */
+function hashes(solves, want) {
+  let h = 0, prefix = null;
+  for (let i = 0; i < solves.length; i++) {
+    if (i === want) prefix = h;
+    h = hashStep(h, solves[i]);
+  }
+  if (want === solves.length) prefix = h;
+  return { h, prefix };
+}
+
+/** Effective times of solves[from..], indexed from 0. */
+function effFrom(solves, from) {
+  const out = new Array(solves.length - from);
+  for (let i = from; i < solves.length; i++) out[i - from] = eff(solves[i]);
+  return out;
+}
 
 /** Best aoN across the whole session, plus the index where it starts. */
 export function bestAvg(solves, n) {
@@ -192,20 +213,10 @@ export function bestAvg(solves, n) {
   if (N < n) return { value: null, at: -1 };
 
   const prev = _bestAvg.get(n);
-  const want = prev ? prev.len : -1;
-
-  // One pass gives both the hash of the whole list and the hash of the prefix
-  // the cache was built from, so the two questions cost one walk, not two.
-  let h = 0, prefix = null;
-  for (let i = 0; i < N; i++) {
-    if (i === want) prefix = h;
-    h = hashStep(h, solves[i]);
-  }
-  if (want === N) prefix = h;
+  const { h, prefix } = hashes(solves, prev ? prev.len : -1);
 
   if (prev && prev.hash === h) return { value: prev.value, at: prev.at };
 
-  const e = solves.map(eff);
   let best = null, at = -1, from = 0;
 
   // Same list plus a short tail: keep the old winner and score only the
@@ -216,8 +227,10 @@ export function bestAvg(solves, n) {
     from = Math.max(0, prev.len - n + 1);
   }
 
+  // Only the solves those windows cover: an append no longer maps the whole session.
+  const e = effFrom(solves, from);
   for (let i = from; i + n <= N; i++) {
-    const a = averageOfRange(e, i, i + n);
+    const a = averageOfRange(e, i - from, i - from + n);
     if (a === null || a === DNF) continue;
     if (best === null || a < best) { best = a; at = i; }
   }
@@ -297,54 +310,65 @@ export function consistencySeries(solves, n = 12) {
 /**
  * Everything the UI needs.
  *
- * This used to advertise one pass and take about eight — a filter for the
- * non-DNFs, another for the DNF count, another for the +2s, then stdev,
- * median, bestSingle and worstSingle each walking the list again with their
- * own `map(eff)` allocating a full array on the way. It runs on every solve,
- * so on a long session that was a lot of garbage for one row of numbers.
- * Now: one walk to collect everything, one sort for the median, one more walk
- * for the variance.
+ * It runs on every render, often several times between two solves. So the
+ * same list as last time (same length, same hash of every time and penalty)
+ * gets last time's answer. Otherwise one walk collects the counts, best,
+ * worst and sum; a second takes the variance over the same values in the
+ * same order as always, so every figure is bit-for-bit what it was; and the
+ * median is sorted in a typed scratch buffer kept between calls. The current
+ * averages read only the last 100 solves. Nothing the size of the session is
+ * allocated per call.
  */
+let _summary = null;           // { len, hash, value }
+let _sortBuf = new Float64Array(0);
+
 export function summarize(solves) {
   const n = solves.length;
-  const e = new Array(n);
-  const valid = [];
-  let best = null, worst = null, sum = 0, dnfCount = 0, plus2Count = 0;
+  const { h } = hashes(solves, -1);
+  if (_summary && _summary.len === n && _summary.hash === h) return { ..._summary.value };
 
+  let best = null, worst = null, sum = 0, dnfCount = 0, plus2Count = 0, valid = 0;
   for (let i = 0; i < n; i++) {
     const s = solves[i];
     const v = eff(s);
-    e[i] = v;
     if (s.penalty === 'DNF') dnfCount++;
     else if (s.penalty === '+2') plus2Count++;
     if (v === DNF) continue;
-    valid.push(v);
+    valid++;
     sum += v;
     if (best === null || v < best) best = v;
     if (worst === null || v > worst) worst = v;
   }
 
-  const mean = valid.length ? sum / valid.length : null;
+  const mean = valid ? sum / valid : null;
 
   let sd = null;
-  if (valid.length >= 2) {
+  if (valid >= 2) {
     let acc = 0;
-    for (let i = 0; i < valid.length; i++) acc += (valid[i] - mean) ** 2;
-    sd = Math.sqrt(acc / valid.length);
+    for (let i = 0; i < n; i++) {
+      const v = eff(solves[i]);
+      if (v !== DNF) acc += (v - mean) ** 2;
+    }
+    sd = Math.sqrt(acc / valid);
   }
 
   let med = null;
-  if (valid.length) {
-    valid.sort((a, b) => a - b);
-    const m = valid.length >> 1;
-    med = valid.length % 2 ? valid[m] : (valid[m - 1] + valid[m]) / 2;
+  if (valid) {
+    if (_sortBuf.length < valid) _sortBuf = new Float64Array(Math.max(valid, _sortBuf.length * 2));
+    let k = 0;
+    for (let i = 0; i < n; i++) { const v = eff(solves[i]); if (v !== DNF) _sortBuf[k++] = v; }
+    const sorted = _sortBuf.subarray(0, valid).sort();
+    const m = valid >> 1;
+    med = valid % 2 ? sorted[m] : (sorted[m - 1] + sorted[m]) / 2;
   }
 
-  const ao = (k) => (n < k ? null : averageOfRange(e, n - k, n));
+  const off = Math.max(0, n - 100);
+  const tail = effFrom(solves, off);
+  const ao = (k) => (n < k ? null : averageOfRange(tail, n - k - off, n - off));
 
-  return {
+  const value = {
     count: n,
-    valid: valid.length,
+    valid,
     dnfCount,
     plus2Count,
     best,
@@ -357,10 +381,12 @@ export function summarize(solves) {
     ao12:  ao(12),
     ao50:  ao(50),
     ao100: ao(100),
-    mo3:   n < 3 ? null : meanOfRange(e, n - 3, n),
+    mo3:   n < 3 ? null : meanOfRange(tail, n - 3 - off, n - off),
     bestAo5:  bestAvg(solves, 5).value,
     bestAo12: bestAvg(solves, 12).value,
   };
+  _summary = { len: n, hash: h, value };
+  return { ...value };
 }
 
 /** Sample σ of what an average counts: the trimmed ends and any DNFs left out. */
@@ -464,17 +490,36 @@ export function trimmedIndices(solves, n) {
 }
 
 /** Rolling aoN series aligned with `solves` (null before enough data). */
+/* Like bestAvg: a solve added at the end leaves every earlier value as it
+   was, so the last series for each length is kept and only the new solves
+   are scored. An edit or a different list starts over. Callers get a copy;
+   the cached array is never handed out. */
+const _rolling = new Map();   // n -> { len, hash, out, sameUnitFrom }
+
 export function rollingSeries(solves, n) {
-  const e = solves.map(eff);
-  const out = new Array(solves.length);
-  let sameUnitFrom = 0;
-  for (let i = 0; i < solves.length; i++) {
+  const N = solves.length;
+  const prev = _rolling.get(n);
+  const { h, prefix } = hashes(solves, prev ? prev.len : -1);
+  if (prev && prev.hash === h) return prev.out.slice();
+
+  let start = 0, sameUnitFrom = 0, out;
+  if (prev && prefix === prev.hash && N > prev.len) {
+    start = prev.len;
+    sameUnitFrom = prev.sameUnitFrom;
+    out = prev.out;
+    out.length = N;
+  } else out = new Array(N);
+
+  const from = Math.max(0, start - n + 1);
+  const e = effFrom(solves, from);
+  for (let i = start; i < N; i++) {
     if (i && isMoveResult(solves[i]) !== isMoveResult(solves[i - 1])) sameUnitFrom = i;
     if (i + 1 - sameUnitFrom < n) { out[i] = null; continue; }
-    const a = averageOfRange(e, i + 1 - n, i + 1);
+    const a = averageOfRange(e, i + 1 - n - from, i + 1 - from);
     out[i] = (a === null || a === DNF) ? null : a;
   }
-  return out;
+  _rolling.set(n, { len: N, hash: h, out, sameUnitFrom });
+  return out.slice();
 }
 
 /** Per-case aggregation for trainer modes. */
