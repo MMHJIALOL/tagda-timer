@@ -1,6 +1,13 @@
 /* Spanish for Tagda Timer. Keys are the English source text exactly as it is
    written in js/ and in the HTML; {name} placeholders are filled by t(). */
 export const es = {
+  // Scramble of the Day → Stackmat pill
+  "Stackmat": "Stackmat",
+  "Stackmat on": "Stackmat activado",
+  "Time today’s scramble on a Stackmat": "Cronometra el scramble de hoy con un Stackmat",
+  "Timing today’s scramble on a Stackmat — click for the spacebar": "Cronometrando el scramble de hoy con un Stackmat: haz clic para usar la barra espaciadora",
+  "Today’s scramble is on the spacebar": "El scramble de hoy va con la barra espaciadora",
+  "Today’s scramble is timed on the spacebar, or on a Stackmat with the Stackmat button. Your usual input is back when you leave.": "El scramble de hoy se cronometra con la barra espaciadora, o con un Stackmat usando el botón Stackmat. Tu entrada habitual vuelve al salir.",
   // Appearance → Text
   "All text": "Todo el texto",
   "overrides the theme’s font colour": "sustituye el color de letra del tema",

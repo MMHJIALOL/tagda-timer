@@ -327,6 +327,12 @@ async function enterSotd() {
      leave the timer engaged with no window around it, which only a reload
      could undo. */
   ctl.engage();
+  // Typed / virtual-cube / Stackmat → whatever the window times on (inputMode()).
+  syncInputMode();
+  const usual = app.settings.inputMode;
+  if (ctl.attempting && inputMode() === 'timer' && (usual === 'manual' || usual === 'virtual')) {
+    toast(t('Today’s scramble is timed on the spacebar, or on a Stackmat with the Stackmat button. Your usual input is back when you leave.'), { long: true });
+  }
 
   ui.openSotd(app, ctl, {
     onExit: () => {
@@ -334,6 +340,7 @@ async function enterSotd() {
          never be a way to put the main scramble back for another go. */
       pendingMisfire?.dismiss();
       ctl.disengage();
+      syncInputMode();
       refit();
       syncSotdChip();
       // The practice session's last time comes back the moment the window
@@ -635,6 +642,7 @@ async function init() {
   });
   wireTimer();
   wireReplayUI();
+  wireSotdStackmat();
   wireSupportNudge();
   wireInput();
   wireScrambleSwipe();
@@ -803,6 +811,7 @@ function wireConfig() {
      or back on. Never mid-solve: the input changes once the timer is idle. */
   const onSwitches = () => {
     syncBanner();
+    syncSotdStackmat();
     if (document.body.dataset.input && document.body.dataset.input !== inputMode()) {
       if (timerIdle()) applyInputMode(false);
       else timer.addEventListener('state', onSwitches, { once: true });
@@ -4241,12 +4250,57 @@ const timerInputLive = () => inputMode() === 'timer' && !movesMode()
 /* The virtual cube is only a cube for 2x2 to 7x7. Chosen on any other event it
    falls back to the spacebar, rather than leaving that event with no way to time. */
 function inputMode() {
+  /* The Scramble of the Day takes a timed solve only — a typed time there
+     would be a time nobody did — so in the window it is the spacebar, or a
+     Stackmat when the window's own Stackmat pill says so. inputMode itself
+     is never touched: leaving the window puts your usual input back. */
+  if (dailyCtl()?.engaged) return sotdInputMode() === 'stackmat' && featureOn('stackmat') ? 'stackmat' : 'timer';
   const m = app.settings.inputMode || 'timer';
   // A Stackmat switched off from the admin console (features.stackmat): the keyboard, until it is back.
   if (m === 'stackmat' && !featureOn('stackmat')) return 'timer';
   return m === 'virtual' && !virtualSize(app.settings.event) ? 'timer' : m;
 }
 app.stackmatOff = () => featureOff('stackmat', t('Stackmat input is switched off for now'));
+/** The window's choice from its Stackmat pill, or else a Stackmat if that is what you use anyway. */
+const sotdInputMode = () => app.settings.sotdInput || (app.settings.inputMode === 'stackmat' ? 'stackmat' : 'timer');
+/* A Stackmat ignores timerInputLive, so the windows that shut the timer have
+   to shut the mat too: in the SOTD window after your time is in, a mat solve
+   was otherwise an ordinary solve on top of the "already done" line. */
+const stackmatShut = () => !!(raceCtl()?.locked() || dailyCtl()?.locked());
+
+/** Re-apply the input source only when the one running is not the one there should be. */
+function syncInputMode() {
+  if (document.body.dataset.input !== inputMode()) applyInputMode(false);
+  else syncSotdStackmat();
+}
+
+/* The SOTD bar's Stackmat pill: lit when the window times on a mat, hidden
+   where there is no mat to be had (switched off, or no audio input at all),
+   and shut mid-attempt like the camera beside it. */
+function syncSotdStackmat() {
+  const b = $('#sotd-stackmat');
+  if (!b) return;
+  b.hidden = !featureOn('stackmat') || !navigator.mediaDevices?.getUserMedia;
+  const on = sotdInputMode() === 'stackmat';
+  b.classList.toggle('on', on);
+  b.setAttribute('aria-pressed', String(on));
+  b.disabled = !timerIdle();
+  b.title = on ? t('Timing today’s scramble on a Stackmat — click for the spacebar') : t('Time today’s scramble on a Stackmat');
+  const label = b.querySelector('.sotd-sm-label');
+  if (label) label.textContent = on ? t('Stackmat on') : t('Stackmat');
+}
+
+function wireSotdStackmat() {
+  const b = $('#sotd-stackmat');
+  b?.addEventListener('click', () => {
+    if (!timerIdle()) return;
+    const next = sotdInputMode() === 'stackmat' ? 'timer' : 'stackmat';
+    app.setSetting('sotdInput', next);
+    if (next === 'timer') toast(t('Today’s scramble is on the spacebar'));
+  });
+  timer.addEventListener('state', syncSotdStackmat);
+  syncSotdStackmat();
+}
 const virtualLive = () => inputMode() === 'virtual';
 
 const VIRTUAL_HINT = 'turn to start &middot; <kbd>space</kbd> inspection &middot; <kbd>esc</kbd> reset';
@@ -4262,6 +4316,7 @@ function applyInputView() {
   const hint = $('#timer-hint');
   if (hint) hint.hidden = mode !== 'timer' && mode !== 'virtual';
   updateHint();
+  syncSotdStackmat();
   $('#vcube-wrap').hidden = mode !== 'virtual';
   if (mode === 'virtual') {
     loadVcube().then(resetVcube).catch((err) => {
@@ -4286,7 +4341,7 @@ function applyInputMode(changed) {
   if (mode === 'manual') setTimeout(() => $('#manual-input')?.focus(), 0);
   else $('#manual-input')?.blur();
 
-  if (changed && app.settings.inputMode === 'virtual' && mode !== 'virtual') {
+  if (changed && app.settings.inputMode === 'virtual' && mode !== 'virtual' && !dailyCtl()?.engaged) {
     toast(t('The virtual cube is 2x2 to 7x7 — {event} stays on the spacebar', { event: eventOf(app.settings.event).short }), { long: true });
   }
   syncVirtualSession().then((moved) => {
@@ -4440,6 +4495,7 @@ async function wireStackmat() {
   });
 
   stackmat.addEventListener('time', (e) => {
+    if (timer.state !== 'running' && stackmatShut()) return;
     // The mat starting is the solve starting: going through the Timer is what
     // ends a spacebar inspection with its penalty, and what focus mode, hidden
     // digits and the rest of the running-state UI all key off.
@@ -4468,7 +4524,10 @@ async function wireStackmat() {
   stackmat.addEventListener('solve', (e) => {
     // Normally already running from the first 'time' packet; a solve that
     // arrives without one (timer reset mid-solve) still gets recorded.
-    if (timer.state !== 'running') timer.start();
+    if (timer.state !== 'running') {
+      if (stackmatShut()) return;
+      timer.start();
+    }
     timer.stop(e.detail.timeMs);   // -> 'stop' -> onSolveFinished, with the inspection penalty
   });
 
@@ -4486,7 +4545,9 @@ async function startStackmat() {
   } catch (err) {
     console.warn('[stackmat] could not start', err);
     toast(t('Could not open the audio input: {err}', { err: err.message }), { kind: 'bad' });
-    app.settings.inputMode = 'timer';
+    // In the SOTD window it was the window's pill that asked: put that back, not your usual input.
+    if (dailyCtl()?.engaged) app.settings.sotdInput = 'timer';
+    else app.settings.inputMode = 'timer';
     persist();
     applyInputMode();
   }
@@ -5271,6 +5332,7 @@ function applyAll(changed) {
   }
   if (changed === 'cubeView') { updateLabels(); if (app.scramble) showScramble(app.scramble, true); }
   if (!changed || changed === 'inputMode') applyInputMode(changed);
+  if (changed === 'sotdInput') syncInputMode();
   if (!changed || String(changed).startsWith('webcam')) syncReplay();
   if (!changed || changed === 'bld') { bldEpoch++; syncBldTimer(); renderBld(); }
   if (!changed || changed === 'multiphase') { syncBldTimer(); syncPhaseZoneVisibility(); phaseReset(); }
@@ -5879,7 +5941,7 @@ function wireInput() {
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     e.preventDefault();
     e.stopImmediatePropagation();
-    if (e.repeat || timer.state !== 'idle' || !timer.inspectionEnabled) return;
+    if (e.repeat || timer.state !== 'idle' || !timer.inspectionEnabled || stackmatShut()) return;
     smSpace = true;
     timer.down(e.timeStamp);               // -> inspecting
   }, true);
