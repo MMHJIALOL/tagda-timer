@@ -61,6 +61,11 @@ export function closeDrawer() {
   if (drawer.contains(document.activeElement)) document.activeElement.blur();
   drawer.hidden = true;
   $('#scrim').hidden = true;
+  /* Nothing reopens a closed drawer as it was (openDrawer always rebuilds),
+     so a hidden one only kept its panel's listeners alive, and with them
+     whatever they closed over: all-sessions statistics held every solve on
+     record until another panel happened to replace it. */
+  $('#drawer-body').replaceChildren();
   current = null;
 }
 
@@ -1808,7 +1813,12 @@ export function buildStats(app) {
       const heatHost = el('div', { class: 'heat-host' });
       body.append(el('div', { class: 'chart-card' },
         el('h4', { text: t('Practice heatmap — all events, last 12 months') }), heatHost));
-      const drawHeat = () => app.allSolves().then(all => renderHeatmap(heatHost, all));
+      /* Thirteen months back covers the grid's year plus the part-week it
+         opens on; only the timestamps are read, never the solves. */
+      const drawHeat = () => {
+        const since = new Date(); since.setMonth(since.getMonth() - 13);
+        return Solves.createdTimes(since.getTime()).then(times => renderHeatmap(heatHost, times));
+      };
       heatHost.refresh = drawHeat;
       drawHeat();
 

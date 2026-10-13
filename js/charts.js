@@ -537,7 +537,9 @@ const LEVEL_OPACITY = [0.07, 0.3, 0.52, 0.76, 1];
 const longDate = (d) => d.toLocaleDateString(undefined,
   { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
 
-export function renderHeatmap(host, solves, { months = 12 } = {}) {
+/** `times` is when each solve was done (ms), not the solves themselves: the
+    grid only ever needed the dates, and the caller reads just those. */
+export function renderHeatmap(host, times, { months = 12 } = {}) {
   host.innerHTML = '';
 
   const CELL = 11, GAP = 3, PITCH = CELL + GAP;
@@ -559,10 +561,10 @@ export function renderHeatmap(host, solves, { months = 12 } = {}) {
 
   const counts = new Map();
   let total = 0;
-  for (const s of solves) {
-    const d = startOfDay(s.createdAt);
+  for (const at of times) {
+    const d = startOfDay(at);
     if (d < start || d > end) continue;
-    const k = dayKey(s.createdAt);
+    const k = dayKey(at);
     counts.set(k, (counts.get(k) || 0) + 1);
     total++;
   }

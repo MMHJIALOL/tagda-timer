@@ -4006,9 +4006,7 @@ async function undoDelete() {
    Sessions
    ========================================================= */
 async function refreshCounts() {
-  const all = await Solves.all();
-  app.sessionCounts = new Map();
-  for (const s of all) app.sessionCounts.set(s.sessionId, (app.sessionCounts.get(s.sessionId) || 0) + 1);
+  app.sessionCounts = await Solves.countsBySession();
 }
 
 app.switchSession = async (id) => {
