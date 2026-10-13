@@ -158,10 +158,10 @@ function chips(options, value, onChange) {
    The cable goes into a mic socket, and on a laptop with a headset, a webcam
    and a USB interface the system default is rarely that socket. Remembered
    by id and by name (stackmat.js start()). In Settings under the Stackmat
-   input and in the Scramble of the Day's Stackmat panel, where `sotd` adds
-   the window's own on/off ({ on, set }) above it.
+   input, and in the Stackmat panels of the SOTD window and a race, where
+   `place` adds that place's own on/off ({ on, set, sub }) above it.
    ========================================================= */
-export function stackmatControls(app, { sotd = null } = {}) {
+export function stackmatControls(app, { place = null } = {}) {
   const S = app.settings;
   const box = el('div', { class: 'rp-settings sm-settings' });
   const pick = el('select', { class: 'inp', id: 'stackmat-mic', 'aria-label': t('Stackmat input') });
@@ -191,10 +191,10 @@ export function stackmatControls(app, { sotd = null } = {}) {
   navigator.mediaDevices?.addEventListener?.('devicechange', onDevices);
   addEventListener('tdt-stackmat-started', onDevices);
   const micRow = row(t('Input'), pick, t('the mic socket the timer’s cable is in. Names show once the microphone is allowed'));
-  if (sotd) {
-    const sw = toggle(sotd.on(), (v) => { sotd.set(v); micRow.hidden = !v; });
-    micRow.hidden = !sotd.on();
-    box.append(row(t('Use a Stackmat'), sw, t('for today’s scramble. Off, it is the spacebar')), micRow);
+  if (place) {
+    const sw = toggle(place.on(), (v) => { place.set(v); micRow.hidden = !v; });
+    micRow.hidden = !place.on();
+    box.append(row(t('Use a Stackmat'), sw, place.sub), micRow);
   } else {
     box.append(micRow);
   }

@@ -37,6 +37,7 @@ import { el } from './util.js';
 import { toast } from './toast.js';
 import { getConfig } from './config.js';
 import { RTC_ICE_SERVERS, CAM_VIDEO, CAM_MAX_BITRATE, CAM_RETRIES } from './raceapp.js';
+import { chooseMic, stackmatInput } from './replay.js';
 
 const sidOf = () => Math.random().toString(36).slice(2, 12);
 const denied = (err) => /permission/i.test(String(err?.code || err?.message || err));
@@ -85,6 +86,10 @@ export class DuelCam {
     this.opp = { ...opp };
     this.ice = null;
     this.role = String(this.race.uid) < String(opp.uid) ? 'offer' : 'answer';
+    // Until stop(): a Stackmat coming on mid-1v1 must not end up in the voice call.
+    const onStackmat = () => this._keepMicOffStackmat();
+    addEventListener('tdt-stackmat-started', onStackmat);
+    this._unsubs.push(() => removeEventListener('tdt-stackmat-started', onStackmat));
     this._unsubs.push(
       this.net.rtcOn(opp.uid, 'media', (v) => {
         this.remoteMedia = { cam: !!v?.cam, mic: !!v?.mic };
@@ -218,12 +223,55 @@ export class DuelCam {
       });
       return s.getVideoTracks()[0] || null;
     }
-    const id = S.webcamMic;
+    /* Never the input a Stackmat is plugged into: the other player would
+       hear its data signal, a loud whine, for the whole 1v1. The same choice
+       replay sound makes (replay.js chooseMic): yours if free, else another. */
+    const sm = stackmatInput();
+    let id = S.webcamMic;
+    if (sm) {
+      const devs = await navigator.mediaDevices.enumerateDevices().catch(() => []);
+      const pick = chooseMic(devs, { want: S.webcamMic || '', wantLabel: S.webcamMicLabel || '', sm });
+      if (pick.none) throw Object.assign(new Error('stackmat-only'), { name: 'StackmatOnly' });
+      id = pick.deviceId;
+    }
     const s = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, ...(id ? { deviceId: { ideal: id } } : {}) },
+      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true,
+        ...(id ? { deviceId: sm ? { exact: id } : { ideal: id } } : {}) },
       video: false,
     });
     return s.getAudioTracks()[0] || null;
+  }
+
+  /* The Stackmat came on (or moved inputs) with the mic already live: if they
+     now share an input, move the mic off it, or turn it off when there is no
+     other. main.js fires tdt-stackmat-started. */
+  async _keepMicOffStackmat() {
+    const mic = this.local.mic;
+    const sm = stackmatInput();
+    if (!mic || !sm || this.busy.mic) return;
+    const st = mic.getSettings?.() || {};
+    const shared = (sm.deviceId && st.deviceId === sm.deviceId) || (sm.groupId && st.groupId === sm.groupId)
+      || (!sm.deviceId && !st.deviceId);
+    if (!shared) return;
+    this.busy.mic = true;
+    try {
+      let next = null;
+      try { next = await this._open('mic'); }
+      catch (err) { if (err?.name !== 'StackmatOnly') throw err; }
+      if (this.local.mic !== mic) { next?.stop(); return; }
+      mic.stop();
+      this.local.mic = next;
+      await this._applyTracks();
+      if (!next) {
+        await this.net.rtcSet('media', { cam: !!this.local.cam, mic: false }).catch(() => {});
+        toast(this._openError('mic', { name: 'StackmatOnly' }), { long: true });
+      }
+    } catch (err) {
+      console.warn('[cam] moving the mic off the Stackmat', err);
+    } finally {
+      this.busy.mic = false;
+      this._draw();
+    }
   }
 
   _openError(kind, err) {
@@ -239,6 +287,7 @@ export class DuelCam {
       return kind === 'cam' ? t('The camera is in use by another app.') : t('The microphone is in use by another app.');
     }
     if (name === 'unsupported') return t('This browser cannot share a camera or microphone.');
+    if (name === 'StackmatOnly') return t('Your mic is off: the only microphone input is the one your Stackmat is plugged into.');
     return kind === 'cam' ? t('Could not turn the camera on.') : t('Could not turn the microphone on.');
   }
 

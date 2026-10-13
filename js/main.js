@@ -811,7 +811,7 @@ function wireConfig() {
      or back on. Never mid-solve: the input changes once the timer is idle. */
   const onSwitches = () => {
     syncBanner();
-    syncSotdStackmat();
+    syncStackmatButtons();
     if (document.body.dataset.input && document.body.dataset.input !== inputMode()) {
       if (timerIdle()) applyInputMode(false);
       else timer.addEventListener('state', onSwitches, { once: true });
@@ -4250,72 +4250,108 @@ const timerInputLive = () => inputMode() === 'timer' && !movesMode()
 /* The virtual cube is only a cube for 2x2 to 7x7. Chosen on any other event it
    falls back to the spacebar, rather than leaving that event with no way to time. */
 function inputMode() {
-  /* The Scramble of the Day takes a timed solve only — a typed time there
-     would be a time nobody did — so in the window it is the spacebar, or a
-     Stackmat when the window's own Stackmat pill says so. inputMode itself
-     is never touched: leaving the window puts your usual input back. */
-  if (dailyCtl()?.engaged) return sotdInputMode() === 'stackmat' && featureOn('stackmat') ? 'stackmat' : 'timer';
+  /* The Scramble of the Day and a race take a timed solve only — a typed time
+     there would be a time nobody did — so in either it is the spacebar, or a
+     Stackmat when that place's own Stackmat button says so. inputMode itself
+     is never touched: leaving puts your usual input back. */
+  const where = competing();
+  if (where) return competeInputMode(where) === 'stackmat' && featureOn('stackmat') ? 'stackmat' : 'timer';
   const m = app.settings.inputMode || 'timer';
   // A Stackmat switched off from the admin console (features.stackmat): the keyboard, until it is back.
   if (m === 'stackmat' && !featureOn('stackmat')) return 'timer';
   return m === 'virtual' && !virtualSize(app.settings.event) ? 'timer' : m;
 }
+app.inputMode = () => inputMode();
 app.stackmatOff = () => featureOff('stackmat', t('Stackmat input is switched off for now'));
-/** The window's choice from its Stackmat pill, or else a Stackmat if that is what you use anyway. */
-const sotdInputMode = () => app.settings.sotdInput || (app.settings.inputMode === 'stackmat' ? 'stackmat' : 'timer');
+
+/** Where a timed-only attempt is under way: the SOTD window ('sotd'), a race room ('race'), or null. */
+const competing = () => (dailyCtl()?.engaged ? 'sotd' : raceCtl()?.inRoom ? 'race' : null);
+/* Each keeps its own choice: a mat for the daily attempt says nothing about races. */
+const COMPETE_INPUT = { sotd: 'sotdInput', race: 'raceInput' };
+/** That place's choice from its Stackmat button, or else a Stackmat if that is what you use anyway. */
+const competeInputMode = (where) => app.settings[COMPETE_INPUT[where]]
+  || (app.settings.inputMode === 'stackmat' ? 'stackmat' : 'timer');
 /* A Stackmat ignores timerInputLive, so the windows that shut the timer have
    to shut the mat too: in the SOTD window after your time is in, a mat solve
    was otherwise an ordinary solve on top of the "already done" line. */
 const stackmatShut = () => !!(raceCtl()?.locked() || dailyCtl()?.locked());
 
-/** Re-apply the input source only when the one running is not the one there should be. */
+/** Re-apply the input source only when the one running is not the one there should be. Never mid-solve. */
 function syncInputMode() {
-  if (document.body.dataset.input !== inputMode()) applyInputMode(false);
-  else syncSotdStackmat();
+  if (document.body.dataset.input === inputMode()) { syncStackmatButtons(); return; }
+  if (timerIdle()) applyInputMode(false);
+  else timer.addEventListener('state', function again() {
+    if (!timerIdle()) return;
+    timer.removeEventListener('state', again);
+    syncInputMode();
+  });
 }
+// race.js: entering or leaving a room.
+app.syncInputMode = syncInputMode;
 
-/* The SOTD bar's Stackmat pill: lit when the window times on a mat, hidden
-   where there is no mat to be had (switched off, or no audio input at all),
-   and shut mid-attempt like the camera beside it. */
-function syncSotdStackmat() {
+/* The Stackmat buttons — the SOTD bar's pill and the race panel's: lit when
+   that place times on a mat, hidden where there is no mat to be had (switched
+   off, or no audio input at all), and shut mid-attempt like the camera. */
+function syncStackmatButtons() {
+  const usable = featureOn('stackmat') && !!navigator.mediaDevices?.getUserMedia;
   const b = $('#sotd-stackmat');
-  if (!b) return;
-  b.hidden = !featureOn('stackmat') || !navigator.mediaDevices?.getUserMedia;
-  const on = sotdInputMode() === 'stackmat';
-  b.classList.toggle('on', on);
-  b.setAttribute('aria-pressed', String(on));
-  b.disabled = !timerIdle();
-  b.title = on ? t('Timing today’s scramble on a Stackmat') : t('Time today’s scramble on a Stackmat');
-  const label = b.querySelector('.sotd-sm-label');
-  if (label) label.textContent = on ? t('Stackmat on') : t('Stackmat');
+  if (b) {
+    b.hidden = !usable;
+    const on = competeInputMode('sotd') === 'stackmat';
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-pressed', String(on));
+    b.disabled = !timerIdle();
+    b.title = on ? t('Timing today’s scramble on a Stackmat') : t('Time today’s scramble on a Stackmat');
+    const label = b.querySelector('.sotd-sm-label');
+    if (label) label.textContent = on ? t('Stackmat on') : t('Stackmat');
+  }
+  for (const r of document.querySelectorAll('.race-stackmat')) {
+    r.hidden = !usable;
+    const on = competeInputMode('race') === 'stackmat';
+    r.classList.toggle('on', on);
+    r.setAttribute('aria-pressed', String(on));
+    r.disabled = !timerIdle();
+    r.textContent = on ? t('Stackmat on') : t('Stackmat');
+    r.title = on ? t('Racing on a Stackmat') : t('Race on a Stackmat');
+  }
 }
+app.syncStackmatButtons = syncStackmatButtons;
 
-/* Like the camera beside it, the pill opens a small panel: the window's
-   Stackmat on or off, and which input its cable is in. */
-async function openSotdStackmatPanel(anchor) {
+const STACKMAT_PANEL = {
+  sotd: { blurb: 'Time today’s scramble on a Stackmat plugged into a mic socket.', sub: 'for today’s scramble. Off, it is the spacebar', off: 'Today’s scramble is on the spacebar' },
+  race: { blurb: 'Race on a Stackmat plugged into a mic socket.', sub: 'for races. Off, it is the spacebar', off: 'Racing on the spacebar' },
+};
+
+/* Like the camera, the button opens a small panel: that place's Stackmat on
+   or off, and which input its cable is in. */
+async function openStackmatPanel(where, anchor) {
   if (!timerIdle()) return;
   let m;
   try { m = await loadPanels(); }
   catch (err) { return lazyFailed(t('the Stackmat settings'), err); }
+  const words = STACKMAT_PANEL[where];
   const node = el('div', { class: 'cam-panel' },
     el('div', { class: 'cam-panel-head' },
       el('b', { text: t('Stackmat') }),
-      el('span', { text: t('Time today’s scramble on a Stackmat plugged into a mic socket.') })),
-    m.stackmatControls(app, { sotd: {
-      on: () => sotdInputMode() === 'stackmat',
+      el('span', { text: t(words.blurb) })),
+    m.stackmatControls(app, { place: {
+      sub: t(words.sub),
+      on: () => competeInputMode(where) === 'stackmat',
       set: (v) => {
-        app.setSetting('sotdInput', v ? 'stackmat' : 'timer');
-        if (!v) toast(t('Today’s scramble is on the spacebar'));
+        app.setSetting(COMPETE_INPUT[where], v ? 'stackmat' : 'timer');
+        if (!v) toast(t(words.off));
       },
     } }));
   setTimeout(() => popover(anchor, [{ node }], { minWidth: 360 }), 0);
 }
+// race.js: its panel's button.
+app.openRaceStackmat = (anchor) => openStackmatPanel('race', anchor);
 
 function wireSotdStackmat() {
   const b = $('#sotd-stackmat');
-  b?.addEventListener('click', () => openSotdStackmatPanel(b));
-  timer.addEventListener('state', syncSotdStackmat);
-  syncSotdStackmat();
+  b?.addEventListener('click', () => openStackmatPanel('sotd', b));
+  timer.addEventListener('state', syncStackmatButtons);
+  syncStackmatButtons();
 }
 const virtualLive = () => inputMode() === 'virtual';
 
@@ -4332,7 +4368,7 @@ function applyInputView() {
   const hint = $('#timer-hint');
   if (hint) hint.hidden = mode !== 'timer' && mode !== 'virtual';
   updateHint();
-  syncSotdStackmat();
+  syncStackmatButtons();
   $('#vcube-wrap').hidden = mode !== 'virtual';
   if (mode === 'virtual') {
     loadVcube().then(resetVcube).catch((err) => {
@@ -4357,7 +4393,7 @@ function applyInputMode(changed) {
   if (mode === 'manual') setTimeout(() => $('#manual-input')?.focus(), 0);
   else $('#manual-input')?.blur();
 
-  if (changed && app.settings.inputMode === 'virtual' && mode !== 'virtual' && !dailyCtl()?.engaged) {
+  if (changed && app.settings.inputMode === 'virtual' && mode !== 'virtual' && !competing()) {
     toast(t('The virtual cube is 2x2 to 7x7 — {event} stays on the spacebar', { event: eventOf(app.settings.event).short }), { long: true });
   }
   syncVirtualSession().then((moved) => {
@@ -4565,8 +4601,8 @@ async function startStackmat() {
   } catch (err) {
     console.warn('[stackmat] could not start', err);
     toast(t('Could not open the audio input: {err}', { err: err.message }), { kind: 'bad' });
-    // In the SOTD window it was the window's pill that asked: put that back, not your usual input.
-    if (dailyCtl()?.engaged) app.settings.sotdInput = 'timer';
+    // In the SOTD window or a race it was that place's button that asked: put that back, not your usual input.
+    if (competing()) app.settings[COMPETE_INPUT[competing()]] = 'timer';
     else app.settings.inputMode = 'timer';
     persist();
     applyInputMode();
@@ -5354,7 +5390,7 @@ function applyAll(changed) {
   }
   if (changed === 'cubeView') { updateLabels(); if (app.scramble) showScramble(app.scramble, true); }
   if (!changed || changed === 'inputMode') applyInputMode(changed);
-  if (changed === 'sotdInput') syncInputMode();
+  if (changed === 'sotdInput' || changed === 'raceInput') syncInputMode();
   // Another input picked: listen on that one instead, now.
   if (changed === 'stackmatMic' && inputMode() === 'stackmat' && timerIdle()) { stackmat?.stop(); startStackmat(); }
   if (!changed || String(changed).startsWith('webcam')) syncReplay();

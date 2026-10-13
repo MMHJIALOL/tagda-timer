@@ -1,6 +1,14 @@
 /* Spanish for Tagda Timer. Keys are the English source text exactly as it is
    written in js/ and in the HTML; {name} placeholders are filled by t(). */
 export const es = {
+  // Races: the Stackmat button
+  "Race on a Stackmat": "Competir con un Stackmat",
+  "Racing on a Stackmat": "Compitiendo con un Stackmat",
+  "Race on a Stackmat plugged into a mic socket.": "Compite con un Stackmat conectado a una entrada de micrófono.",
+  "for races. Off, it is the spacebar": "para las carreras. Desactivado, se usa la barra espaciadora",
+  "Racing on the spacebar": "Compitiendo con la barra espaciadora",
+  "Races are timed on the spacebar, or on a Stackmat with the Stackmat button. Your usual input is back when you leave.": "Las carreras se cronometran con la barra espaciadora, o con un Stackmat usando el botón Stackmat. Tu entrada habitual vuelve al salir.",
+  "Your mic is off: the only microphone input is the one your Stackmat is plugged into.": "Tu micrófono está apagado: la única entrada de micrófono es la del Stackmat.",
   // Stackmat input picker
   "System default": "Predeterminada del sistema",
   "Input": "Entrada",
