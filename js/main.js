@@ -4285,19 +4285,35 @@ function syncSotdStackmat() {
   b.classList.toggle('on', on);
   b.setAttribute('aria-pressed', String(on));
   b.disabled = !timerIdle();
-  b.title = on ? t('Timing today’s scramble on a Stackmat — click for the spacebar') : t('Time today’s scramble on a Stackmat');
+  b.title = on ? t('Timing today’s scramble on a Stackmat') : t('Time today’s scramble on a Stackmat');
   const label = b.querySelector('.sotd-sm-label');
   if (label) label.textContent = on ? t('Stackmat on') : t('Stackmat');
 }
 
+/* Like the camera beside it, the pill opens a small panel: the window's
+   Stackmat on or off, and which input its cable is in. */
+async function openSotdStackmatPanel(anchor) {
+  if (!timerIdle()) return;
+  let m;
+  try { m = await loadPanels(); }
+  catch (err) { return lazyFailed(t('the Stackmat settings'), err); }
+  const node = el('div', { class: 'cam-panel' },
+    el('div', { class: 'cam-panel-head' },
+      el('b', { text: t('Stackmat') }),
+      el('span', { text: t('Time today’s scramble on a Stackmat plugged into a mic socket.') })),
+    m.stackmatControls(app, { sotd: {
+      on: () => sotdInputMode() === 'stackmat',
+      set: (v) => {
+        app.setSetting('sotdInput', v ? 'stackmat' : 'timer');
+        if (!v) toast(t('Today’s scramble is on the spacebar'));
+      },
+    } }));
+  setTimeout(() => popover(anchor, [{ node }], { minWidth: 360 }), 0);
+}
+
 function wireSotdStackmat() {
   const b = $('#sotd-stackmat');
-  b?.addEventListener('click', () => {
-    if (!timerIdle()) return;
-    const next = sotdInputMode() === 'stackmat' ? 'timer' : 'stackmat';
-    app.setSetting('sotdInput', next);
-    if (next === 'timer') toast(t('Today’s scramble is on the spacebar'));
-  });
+  b?.addEventListener('click', () => openSotdStackmatPanel(b));
   timer.addEventListener('state', syncSotdStackmat);
   syncSotdStackmat();
 }
@@ -4539,9 +4555,13 @@ async function startStackmat() {
   try { stackmat = await wireStackmat(); }
   catch (err) { return lazyFailed(t('the Stackmat driver'), err); }
   try {
-    await stackmat.start();
+    await stackmat.start({ deviceId: app.settings.stackmatMic, label: app.settings.stackmatMicLabel });
     syncReplay();                     // now its input is known, replay sound keeps off it
-    toast('Listening on the microphone input');
+    dispatchEvent(new Event('tdt-stackmat-started'));   // an open input picker can show names now
+    const name = stackmat.stream?.getAudioTracks()[0]?.label;
+    if (stackmat.fellBack) {
+      toast(t('{name} is not connected — listening on the default input', { name: app.settings.stackmatMicLabel || t('The Stackmat’s input') }), { long: true });
+    } else toast(name ? t('Listening on {name}', { name }) : t('Listening on the microphone input'));
   } catch (err) {
     console.warn('[stackmat] could not start', err);
     toast(t('Could not open the audio input: {err}', { err: err.message }), { kind: 'bad' });
@@ -5252,6 +5272,8 @@ const RESET_KEEPS = [
   // Which camera this machine films with, how far behind its picture runs, and
   // where in it the cube sits.
   'webcamDevice', 'webcamLabel', 'webcamSync', 'webcamCrop',
+  // And which socket its Stackmat is plugged into.
+  'stackmatMic', 'stackmatMicLabel',
 ];
 
 /** Put every look-and-feel setting back to the value it shipped with. */
@@ -5333,6 +5355,8 @@ function applyAll(changed) {
   if (changed === 'cubeView') { updateLabels(); if (app.scramble) showScramble(app.scramble, true); }
   if (!changed || changed === 'inputMode') applyInputMode(changed);
   if (changed === 'sotdInput') syncInputMode();
+  // Another input picked: listen on that one instead, now.
+  if (changed === 'stackmatMic' && inputMode() === 'stackmat' && timerIdle()) { stackmat?.stop(); startStackmat(); }
   if (!changed || String(changed).startsWith('webcam')) syncReplay();
   if (!changed || changed === 'bld') { bldEpoch++; syncBldTimer(); renderBld(); }
   if (!changed || changed === 'multiphase') { syncBldTimer(); syncPhaseZoneVisibility(); phaseReset(); }

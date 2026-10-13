@@ -152,6 +152,55 @@ function chips(options, value, onChange) {
    what they take up. `onWatch`, from the top-bar panel, adds a button for the
    last solve's replay; `compact` (the same panel) drops the longer notes.
    ========================================================= */
+/* =========================================================
+   Which input the Stackmat listens on
+
+   The cable goes into a mic socket, and on a laptop with a headset, a webcam
+   and a USB interface the system default is rarely that socket. Remembered
+   by id and by name (stackmat.js start()). In Settings under the Stackmat
+   input and in the Scramble of the Day's Stackmat panel, where `sotd` adds
+   the window's own on/off ({ on, set }) above it.
+   ========================================================= */
+export function stackmatControls(app, { sotd = null } = {}) {
+  const S = app.settings;
+  const box = el('div', { class: 'rp-settings sm-settings' });
+  const pick = el('select', { class: 'inp', id: 'stackmat-mic', 'aria-label': t('Stackmat input') });
+  const fill = async () => {
+    const mics = await listMics();
+    const want = S.stackmatMic || '';
+    const opts = [el('option', { value: '', text: t('System default') })];
+    mics.forEach((d, i) => opts.push(el('option', { value: d.deviceId, text: d.label || t('Microphone {n}', { n: i + 1 }) })));
+    if (want && !mics.some(d => d.deviceId === want)) {
+      opts.push(el('option', { value: want, text: t('{name} (not connected)', { name: S.stackmatMicLabel || t('Microphone') }) }));
+    }
+    pick.replaceChildren(...opts);
+    pick.value = want;
+  };
+  pick.addEventListener('change', () => {
+    // The name first: setting the id is what restarts the Stackmat on it.
+    S.stackmatMicLabel = pick.value ? (pick.selectedOptions[0]?.textContent || '') : '';
+    app.setSetting('stackmatMic', pick.value);
+  });
+  fill();
+  // Plugged in or pulled out while the panel is open; and names appear once the mic is allowed.
+  const onDevices = () => {
+    if (pick.isConnected) return fill();
+    navigator.mediaDevices?.removeEventListener?.('devicechange', onDevices);
+    removeEventListener('tdt-stackmat-started', onDevices);
+  };
+  navigator.mediaDevices?.addEventListener?.('devicechange', onDevices);
+  addEventListener('tdt-stackmat-started', onDevices);
+  const micRow = row(t('Input'), pick, t('the mic socket the timer’s cable is in. Names show once the microphone is allowed'));
+  if (sotd) {
+    const sw = toggle(sotd.on(), (v) => { sotd.set(v); micRow.hidden = !v; });
+    micRow.hidden = !sotd.on();
+    box.append(row(t('Use a Stackmat'), sw, t('for today’s scramble. Off, it is the spacebar')), micRow);
+  } else {
+    box.append(micRow);
+  }
+  return box;
+}
+
 export function webcamControls(app, { onWatch = null, compact = false } = {}) {
   const note = (text) => (compact ? null : text);
   const S = app.settings;
@@ -1028,6 +1077,9 @@ export function buildSettings(app, searchQuery = '') {
         S.inputMode === 'stackmat' && app.stackmatOff?.()
           ? el('div', { class: 'sc-blocked', role: 'status', text: app.stackmatOff() })
           : S.inputMode === 'stackmat'
+          ? stackmatControls(app)
+          : null,
+        S.inputMode === 'stackmat' && !app.stackmatOff?.()
           ? el('div', { class: 'hint-note', html:
               t('Run a 3.5&nbsp;mm cable from the timer&rsquo;s data port to this machine&rsquo;s <b>microphone</b> input and allow the microphone when asked. The bar under the clock says whether packets are actually arriving — if it stays on &ldquo;no signal&rdquo;, raise the input level in your sound settings and check the cable is in the mic socket, not line-out.') })
           : null,

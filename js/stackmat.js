@@ -224,7 +224,13 @@ export class Stackmat extends EventTarget {
 
   emit(type, detail) { this.dispatchEvent(new CustomEvent(type, { detail })); }
 
-  async start() {
+  /**
+   * `deviceId` / `label`: the input the cable is in (stackmatMic). By id, then
+   * by name (an id can change when the device is replugged), then the system
+   * default, so a mat that was unplugged and moved still gets heard.
+   * `this.fellBack` says the default was used instead of the one asked for.
+   */
+  async start({ deviceId = '', label = '' } = {}) {
     if (this.ctx) return true;
     if (!navigator.mediaDevices?.getUserMedia) throw new Error(t('This browser has no microphone access'));
 
@@ -244,15 +250,22 @@ export class Stackmat extends EventTarget {
     }
 
     // Every clean-up the browser applies to speech destroys a data signal.
+    const RAW = { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 };
+    const gum = (id) => navigator.mediaDevices.getUserMedia({ audio: { ...RAW, ...(id ? { deviceId: { exact: id } } : {}) } });
+    const gone = (err) => err?.name === 'OverconstrainedError' || err?.name === 'NotFoundError';
+    this.fellBack = false;
     try {
-      this.stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: false,
-          noiseSuppression: false,
-          autoGainControl: false,
-          channelCount: 1,
-        },
-      });
+      if (!deviceId) this.stream = await gum('');
+      else {
+        try { this.stream = await gum(deviceId); }
+        catch (err) {
+          if (!gone(err)) throw err;
+          const same = label && (await navigator.mediaDevices.enumerateDevices().catch(() => []))
+            .find(d => d.kind === 'audioinput' && d.label === label && d.deviceId);
+          this.stream = same ? await gum(same.deviceId) : await gum('');
+          this.fellBack = !same;
+        }
+      }
     } catch (err) {
       ctx.close();
       throw err;
