@@ -67,7 +67,9 @@ export class CubeView {
   }
 
   async init() {
+    if (this.player) return true;
     const ok = await loadTwisty();
+    if (this.player) return true;      // a second init() that overtook this one
     // twisty-player renders into a *closed* shadow root, so there is no way to
     // inspect its innards from out here — every "did it paint?" watchdog we
     // could write reports a false negative and tears down a working preview.
@@ -92,6 +94,31 @@ export class CubeView {
     this.ready = true;
     if (this.pending) { const p = this.pending; this.pending = null; this.set(p.scramble, p.opts); }
     return true;
+  }
+
+  /**
+   * Take the player off the page so its memory can go: the three.js scene,
+   * the canvases and, for the first two views on the page (twisty gives
+   * those a WebGL context each before it starts sharing one), the context
+   * too. init() makes a fresh one, and the next set() puts the scramble,
+   * colours and view back. For real setting or mode changes only: contexts
+   * are a scarce thing to churn.
+   */
+  release() {
+    const p = this.player;
+    if (!p) return;
+    this.player = null;
+    this.ready = false;
+    this.applied = null;
+    p.remove();
+    p.experimentalCurrentVantages?.().then(async (vantages) => {
+      for (const v of vantages) {
+        if (v.rendererIsShared) continue;
+        const r = await v.renderer();
+        r.dispose();
+        r.forceContextLoss();
+      }
+    }).catch(() => {});
   }
 
   showFallback(message) {

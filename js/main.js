@@ -550,6 +550,7 @@ function applyLite() {
    been made cheap. Nothing else needs to know: fx.js announces it. */
 window.addEventListener('tt-celebrate', (e) => bg.throttle(e.detail.on ? 20 : 0));
 const cube = new CubeView($('#cube-holder'), $('#cube-fallback'));
+let previewBooted = false, previewStarting = null;   // see syncPreviewCube
 let timer = null;
 let cubeDrag = null;
 
@@ -740,14 +741,8 @@ async function init() {
   wireAccountButtonOnFirstClick();
   adoptCloudChanges();
 
-  cube.orbit = app.settings.cubeOrbit;
-  cube.init().then(() => {
-    cube.setHints(app.settings.hintFacelets);
-    if (app.scramble) showScramble(app.scramble, true);
-  }).catch((err) => {
-    console.warn('[cube] failed to initialise', err);
-    cube.showFallback(t('preview unavailable'));
-  });
+  previewBooted = true;
+  syncPreviewCube();
 
   window.addEventListener('resize', debounce(() => {
     applyTheme(app.settings);
@@ -4373,7 +4368,7 @@ function applyInputView() {
       console.warn('[vcube] could not start', err);
       toast('The virtual cube could not load', { kind: 'bad' });
     });
-  }
+  } else dropVcube();
 }
 
 function applyInputMode(changed) {
@@ -4405,8 +4400,25 @@ app.applyInputMode = applyInputMode;
 /* ---------------- virtual cube ----------------
    Loaded the first time it is switched on: a second twisty-player and the
    sticker simulator are nothing anyone on the spacebar needs. */
-let vcube = null;
-const loadVcube = lazy(async () => {
+let vcube = null, vcubeReq = null;
+/* Made each time virtual mode is entered and released on leaving it: a
+   second twisty-player kept for the rest of the visit is a scene and canvases
+   (WebGL contexts, too, when the preview is off) for a mode you have left. */
+const loadVcube = () => {
+  if (vcubeReq) return vcubeReq;
+  const req = vcubeReq = makeVcube().then((v) => {
+    if (vcubeReq === req) vcube = v; else v.view.release();   // left before it was ready
+    return v;
+  }, (err) => { if (vcubeReq === req) vcubeReq = null; throw err; });
+  return req;
+};
+function dropVcube() {
+  if (!vcubeReq) return;
+  vcubeReq = null;
+  vcube?.view.release();
+  vcube = null;
+}
+const makeVcube = async () => {
   const { VirtualCube } = await import('./vcube.js');
   const view = new CubeView($('#vcube-holder'), null);
   view.backView = 'none';     // csTimer shows the one cube, no floating rear view
@@ -4416,7 +4428,7 @@ const loadVcube = lazy(async () => {
   // The preview is static on purpose (tempo 0); this one has to show each turn.
   view.player.setAttribute('tempo-scale', '4');
   return new VirtualCube(view, timer);
-}, v => (vcube = v));
+};
 
 /** Put the scramble on screen onto the virtual cube. */
 function resetVcube() {
@@ -5369,6 +5381,7 @@ function applyAll(changed) {
   if (changed === 'scramblesOnly') { timer?.reset(); measureLayout(); }
   if (changed === 'showBpa') renderStats();
   if (changed === 'hintFacelets') cube.setHints(app.settings.hintFacelets);
+  if (!changed || changed === 'showCube') syncPreviewCube();
   if (!changed || changed === 'cubeColors') {
     cube.setColors(app.settings.cubeColors);
     vcube?.view.setColors(app.settings.cubeColors);
@@ -5400,6 +5413,29 @@ function applyAll(changed) {
   if (changed === 'metronome') metroExternal(0);   // switched off mid-solve
 }
 app.applyAll = () => applyAll();
+
+/* The scramble preview only exists while "Show cube" is on. Hidden with
+   display:none it still held twisty's 3D engine, a scene and (being the first
+   cube on the page) two WebGL contexts, for a cube nobody could see. Made at
+   the end of boot, so the first screen never waits on it. */
+function syncPreviewCube() {
+  if (!previewBooted) return;
+  if (!app.settings.showCube) { cube.release(); return; }
+  if (cube.ready || previewStarting) return;
+  cube.orbit = app.settings.cubeOrbit;
+  previewStarting = cube.init().then((ok) => {
+    previewStarting = null;
+    // Switched off again while twisty was still loading.
+    if (!app.settings.showCube) return cube.release();
+    if (!ok) return;
+    cube.setHints(app.settings.hintFacelets);
+    if (app.scramble) showScramble(app.scramble, true);
+  }).catch((err) => {
+    previewStarting = null;
+    console.warn('[cube] failed to initialise', err);
+    cube.showFallback(t('preview unavailable'));
+  });
+}
 app.refreshBackground = () => applyBackground(bg, app.settings);
 
 /* =========================================================
