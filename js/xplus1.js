@@ -1,4 +1,5 @@
-import { t, lang } from './i18n.js';
+import { t } from './i18n.js';
+import { askWorker, warmSolver, restSolver, solverDead } from './solver-client.js';
 /* ===========================================================
    Tagda Timer — the Cross+1 trainer
 
@@ -253,49 +254,16 @@ function setView(v) {
    however long you spent planning.
    ========================================================= */
 
-let worker = null;
-let workerDead = false;
-const jobs = new Map();
-let seq = 0;
 let ticket = 0;
 
-function getWorker() {
-  if (worker || workerDead) return worker;
-  try {
-    worker = new Worker(new URL(`./solver.worker.js?lang=${lang}`, import.meta.url), { type: 'module' });
-    worker.onmessage = (e) => {
-      const { id, result, error } = e.data || {};
-      const job = jobs.get(id);
-      if (!job) return;
-      jobs.delete(id);
-      if (error) job.reject(new Error(error)); else job.resolve(result);
-    };
-    worker.onerror = (e) => {
-      console.warn('[xp1] solver worker failed, falling back', e.message);
-      workerDead = true;
-      worker = null;
-      for (const job of jobs.values()) job.reject(new Error(t('worker died')));
-      jobs.clear();
-    };
-  } catch (err) {
-    console.warn('[xp1] no module workers here, solving inline', err.message);
-    workerDead = true;
-  }
-  return worker;
-}
-
 function ask(state, frame, opts) {
-  const w = getWorker();
-  if (!w) {
+  const job = askWorker({ type: 'xp1', state: state.slice().buffer, frame, opts });
+  if (!job) {
     // Inline, but after a paint, so the panel is on screen before it blocks.
     return new Promise(r => setTimeout(() => r(suggestCrossPlusOne(state, frame, opts)), 16));
   }
-  const id = ++seq;
-  return new Promise((resolve, reject) => {
-    jobs.set(id, { resolve, reject });
-    w.postMessage({ id, type: 'xp1', state: state.slice().buffer, frame, opts });
-  }).catch((err) => {
-    if (workerDead) return suggestCrossPlusOne(state, frame, opts);
+  return job.catch((err) => {
+    if (solverDead()) return suggestCrossPlusOne(state, frame, opts);
     throw err;
   });
 }
@@ -1919,7 +1887,7 @@ export async function openXp1({ scramble = '', timerScramble = null, onExit = nu
   else { render(); paintClock(); showCube(); }
 
   // Get the worker and its pruning tables warming now, not on the first answer.
-  setTimeout(() => { try { getWorker(); } catch { /* ignore */ } }, 0);
+  setTimeout(() => { try { warmSolver(); } catch { /* ignore */ } }, 0);
 }
 
 export function closeXp1() {
@@ -1935,6 +1903,7 @@ export function closeXp1() {
   xh.pad?.hide();
   host.hidden = true;
   document.body.classList.remove('xp1-open');
+  restSolver();
   onClose?.();
   return true;
 }
