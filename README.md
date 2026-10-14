@@ -2,8 +2,10 @@
 
 A modern WCA speedcubing timer. Official random-state scrambles for every WCA event,
 real competition inspection, trainers with per-case stats, an alg trainer for seven
-puzzles, a reconstruction workbench, live race rooms, a daily scramble with a
-leaderboard, and a theme engine that lets you rebuild the entire look.
+puzzles, a reconstruction workbench for CFOP and Roux, Competition Mode for timed
+averages, webcam replay with video export, live race rooms with random 1v1, a daily
+scramble with a leaderboard, chat and shared replays, and a theme engine that lets you
+rebuild the entire look. In English or Spanish, on a desktop or a phone.
 
 **Live at [tagdatimer.me](https://tagdatimer.me/)** · built by
 [@cubingngagng](https://instagram.com/cubingngagng)
@@ -18,12 +20,13 @@ leaderboard, and a theme engine that lets you rebuild the entire look.
 - [Timing](#timing) — scrambles, inspection, input methods
 - [Events](#events) — Fewest Moves, Relay, Blindfolded
 - [Training](#training) — trainers, learn mode, alg trainer, Cross + 1, reconstruction
+- [Competition Mode](#competition-mode) — Ao5, Ao12 or your own set size, with one continuous replay
 - [Statistics](#statistics) — averages, charts, the times list, webcam replay, share cards
-- [Playing with other people](#playing-with-other-people) — race rooms, Scramble of the Day
-- [Making it yours](#making-it-yours) — themes, backgrounds, panels, Spotify
-- [Your data](#your-data) — storage, sync, import/export, offline, gear
+- [Playing with other people](#playing-with-other-people) — race rooms, random 1v1, Scramble of the Day
+- [Making it yours](#making-it-yours) — themes, backgrounds, panels, language, Spotify
+- [Your data](#your-data) — storage, sessions, sync, import/export, offline, gear
 - [Keyboard shortcuts](#keyboard-shortcuts)
-- [Layout](#layout) · [Deploying](#deploying) · [Admin console](#admin-console) · [Not in this version](#not-in-this-version)
+- [Layout](#layout) · [Deploying](#deploying) · [Admin console](#admin-console) · [Not in this version](#not-in-this-version) · [License](#license)
 
 ---
 
@@ -54,12 +57,12 @@ simulating a real cube), the reconstruction model and solver (superflip, the wid
 identities, and whole CFOP solves driven only by the suggestions it gives back), and
 the rendered page itself (that no overlay is stuck on screen).
 
-Settings, Appearance and Blindsolving have a search field that filters the live
-controls by name, related words and common typos. For example, `precision` finds
-Decimals and `sound` finds audio options. Clear the search to see every option.
-The focused search checks use Node and jsdom: run `npm ci`, then
-`npm run test:settings-search`. These dependencies are only for tests; serving
-the timer still needs no build step.
+There are also focused checks that run under Node: `npm ci`, then
+`npm run test:settings-search`, `test:stats-session`, `test:stats-units`,
+`test:stats-cache` or `test:site` (a browser audit of the layout, timer, tools and
+settings; it needs Playwright and the dev server running). `tools/` holds the
+database-rules checks, which run against the Firebase emulators. These dependencies
+are only for tests; serving the timer still needs no build step.
 
 ---
 
@@ -72,7 +75,13 @@ the timer still needs no build step.
   (the WCA's own scrambler) uses. These are competition-grade scrambles, not random moves.
 - A **queue keeps three scrambles ready** at all times. A random-state 4x4 scramble
   takes about 3.5 seconds to compute, but you never wait for one, because the next is
-  ready before you finish the current solve.
+  ready before you finish the current solve. Every other event is warmed in the
+  background too, and unseen scrambles are kept in the browser, so switching event
+  (even straight after a reload) hands one out at once.
+- **Square-1 and Clock scrambles are made here**, not by cubing.js: cubing.js takes
+  15-27 seconds for a Square-1 scramble in Firefox. The Square-1 one is a two-phase
+  random-state scrambler running in its own worker (a few milliseconds), and Clock's is
+  a random dial amount per move in the WCA order.
 - cubing.js is **vendored into `vendor/`**, so scrambles work with no internet at all.
   Re-mirror it any time with `python tools/mirror_cubing.py`.
 - **A static 3D preview** of the scrambled cube, which you can drag anywhere and
@@ -88,7 +97,8 @@ the timer still needs no build step.
 - `R` repeats the last solve's scramble; `←` / `→` step back and forward.
 
 ### Inspection
-Exactly as in competition: 15 seconds, spoken or tonal callouts at 8 and 12, automatic
+Exactly as in competition: 15 seconds, callouts at 8 and 12 (a beep, a voice saying
+"8 seconds" and "12 seconds", or nothing: Settings → Inspection), automatic
 **+2 past 15 seconds** and automatic **DNF past 17**. The countdown is not a small number
 in a corner. A ring of light drains around the screen edge, the background warms from
 neutral to amber to red, and the digits breathe faster as time runs out.
@@ -106,7 +116,9 @@ Four sources, one at a time, chosen in Settings → Timing input:
   microphone socket. The 1200-baud stream is decoded in an AudioWorklet, either polarity,
   any Stackmat revision (it matches the packet checksum, not the frame length).
   A bar under the clock says whether packets are actually arriving, so a wrong socket or
-  a muted input shows up in a second rather than a whole session later.
+  a muted input shows up in a second rather than a whole session later. With more than one
+  microphone input, pick the one the cable is in (Settings, or the Stackmat pill in a race or
+  the Scramble of the Day).
 - **Virtual cube**: csTimer's keyboard cube. Every key on the letter block is one turn
   (`I`/`K` are R/R', `J`/`F` are U/U', and so on, mapped by physical key so it works on
   any layout). The first real turn starts the clock and a solved cube stops it. The cube
@@ -115,6 +127,24 @@ Four sources, one at a time, chosen in Settings → Timing input:
 Bluetooth smart timers are deliberately **not** supported. Every model speaks its own
 encrypted protocol, and code that has never been tested on one would be a button that fails silently.
 The aux route works with any Stackmat, which is what those timers imitate anyway.
+
+### Around the clock
+
+- **While running** the clock can show everything, whole seconds, or nothing at all
+  (*Full / Seconds / Hidden*). The final time is always shown in full.
+- **Confirm misfires** asks before keeping a solve that is too short to be real, with a
+  threshold you set (0.3-5 s, 0.5 by default). **Show start hint** turns the "tap space,
+  release to start" line off without moving the digits.
+- **BPA / WPA**: once four solves are in, the best and worst possible ao5 appear under your
+  averages and in the statistics drawer, trimmed exactly like every other average.
+- **Scrambles only** turns the timer off for when you just want scrambles: Space, a tap or
+  a swipe deals the next one.
+- **On a touch screen**, swipe the scramble left for the next one and right for the one
+  before. The last solve has buttons for +2, DNF, Note and Reconstruct, and a way to cancel
+  inspection.
+- **Session goals**: give a session a target (a time, or a move count in FMC) for a single,
+  ao5 or ao12. A quiet line under the scramble shows how close you are and the share of
+  solves under it, and beating it for the first time plays the PB celebration once.
 
 ### Accuracy
 All timing comes from `performance.now()` timestamps, never from counting frames, so no
@@ -243,6 +273,7 @@ full-solve averages.
 | Last slot + LL | three pairs in, one to go |
 | 2-gen (R,U) · Roux LSE (M,U) · Roux L10P | restricted move sets |
 | Cross practice | full WCA scramble, time your cross only |
+| Other puzzles | 2x2 OLL · PBL · CLL · EG-1 · EG-2, 4x4 PLL parity and *Centres solved* (a practice scramble, not random-state), Pyraminx last layer and L4E, Skewb Sarah's Intermediate and Advanced, Square-1 shape · CSP · OBL · EO · CP · EP |
 
 Press **K** to pick exactly which cases you want, including a "my worst 8" button that
 selects the cases you are slowest at. Where a set has groups (F2L's six pair states,
@@ -335,6 +366,12 @@ instead. It is a separate screen from the timer: it opens from a solve's menu
 (*Reconstruct this solve*), the **reconstruct** button beside any row of the times list,
 the topbar cube button, or `Y`.
 
+- **CFOP or Roux.** A switch at the top picks the method. Roux gets its own phase detection,
+  progress strip and suggestions: first block, second block (the easier square first), CMLL
+  from the app's own alg set, then EO, UL/UR and the finish, counted in slice turns. Pick
+  the bottom and front colour to pin which side the first block is built on, or leave it on
+  `auto`. Switching method re-cuts the lines you typed; nothing is lost. Details in
+  [RECONSTRUCTION_ROUX.md](RECONSTRUCTION_ROUX.md).
 - **It suggests the moves.** From wherever the cube currently stands, it works out
   every shortest way forward, ranked by move count and then by how comfortable they are to turn.
   The search runs in a worker, so a hard last-slot position can take a second or two of
@@ -366,14 +403,60 @@ the topbar cube button, or `Y`.
   the cube it makes, and the solution one line per phase.
 
 Any scramble works, not just a recorded solve. Paste one into the field at the top, or
-pick a past solve from *from a solve*. Roux, ZZ and freestyle solves will not split into
-phases cleanly, and the workbench says so rather than guessing.
+pick a past solve from *from a solve*. ZZ and freestyle solves will not split into
+phases cleanly, and the workbench says so rather than guessing. On a phone the workbench
+has its own layout, typed on a move pad.
+
+---
+
+## Competition Mode
+
+![Competition Mode part-way through an Ao5: three attempts in, the set pinned above your ordinary solves](docs/screenshots/competition.webp)
+
+Start it from the **Session** picker (on a phone, the Sessions section of the event sheet).
+Choose **Ao5**, **Ao12**, or a custom whole number of attempts of at least 5. The event and
+set size are fixed, and the set stays in the current session. Switch explicitly to Random
+state when leaving a trainer or a pasted scramble list. Relay, FMC, Multi-Blind, race and
+virtual sessions are excluded.
+
+- **Durable.** Every attempt is saved in order, and the set resumes after a refresh. **Leave
+  view** lets you do ordinary practice, and **Return to set** picks the set back up. When the
+  set is complete it opens the exact average and stops collecting attempts; **Start another
+  AoX** begins the next one explicitly. Competition history has session and event filters, and
+  ordinary rolling averages are untouched.
+- **Nothing is quietly editable.** Individual attempts cannot be deleted. You can correct their
+  penalties, discard an unfinished set, or delete a whole average and its replays. Whole-set
+  deletions have no undo, and merging an old backup cannot resurrect a deleted set. Tagda
+  backups include `competitionSets` (format version 2); old ordinary backups still import.
+- **One replay for the whole set.** By default replay follows the ordinary per-solve
+  setting. **Record entire AoX** is opt-in at setup: it records scrambling, inspection,
+  attempts and the gaps between them into one local video, up to **30 minutes / 256 MiB**
+  with a 32 MiB storage reserve (the limits do not limit the number of timed attempts).
+  Chunks are saved every two seconds, so a killed page loses at most the last one. Leaving
+  the view, switching sessions or tabs, a camera failure, device sleep or running out of
+  storage interrupts the recording while keeping your solves, and the surviving footage is
+  labelled *interrupted*. A wake lock keeps the screen on while it records, and the recording
+  stops when the tab is hidden.
+- **Save video** offers **Original**, **Landscape** and **Reel**, the same crop controls and
+  MP4/WebM pipeline as an ordinary solve. Landscape and Reel show attempt numbers, clocks and
+  current penalties. These videos live in their own local database and are never pruned to
+  make room for another capture. Cloud sync and JSON backups carry the set's metadata and
+  solves, not the video: on another device it says the video is stored on the original one.
+  The updated `firebase.rules.json` must be published for the new fields to sync.
+- **A score-sheet card** for completed sets: a paper-style card, branded Tagda Timer and
+  labelled as unofficial practice, with numbered results, trim markers and the calculated
+  final average. It uses the same copy, save and device-share controls as any share card,
+  paginates at 12 rows per image, and uses the corrected score if you fixed a penalty
+  (cards you already exported stay as they were).
+
+See [Competition Mode verification and handover](docs/competition-mode.md) for the checks and
+local preview instructions.
 
 ---
 
 ## Statistics
 
-![Statistics drawer: session figures, trend, distribution, heatmap](docs/screenshots/stats-charts.webp)
+![Statistics drawer: every figure, then the consistency chart](docs/screenshots/stats.webp)
 
 WCA-correct averages: trim the best and worst, DNFs count as worst, and two DNFs inside
 a window make the whole average a DNF. Current and best ao5 / ao12 / ao50 / ao100 / ao1000,
@@ -382,6 +465,19 @@ mo3, mean, median, standard deviation, and a consistency score.
 Five charts, all hand-drawn SVG: a trend line with rolling ao5/ao12, your PB and DNFs
 marked; a distribution histogram; a practice heatmap with streaks; a consistency dial; and a
 per-case ranking for trainer sessions. The trend line can be filtered to [one cube](#gear).
+
+![Statistics drawer: trend, distribution and when you are fastest](docs/screenshots/stats-charts.webp)
+
+- **Pick the sessions it counts.** Statistics can cover one session, several or all of them,
+  and *Copy selected stats* / *Download selected stats (.txt)* export exactly what is selected.
+  The consistency tile opens the drawer and shows how its percentage is worked out.
+- **Pin and brush the trend.** Click a point to pin that solve (time, penalty, date and
+  scramble, with *Repeat this scramble*, *Reconstruct* and *Copy scramble*); the arrow keys
+  step to the neighbours. Drag across the chart to select a range, see its count, mean and
+  best, and load those scrambles into the custom queue.
+- **When you're fastest** groups the session by hour of the day, and **Do you slow down?**
+  compares the early and late stretches of a sitting (split at 30-minute breaks). Click a
+  bar for its solves. DNFs are left out of every mean and counted beside it.
 
 **New PBs are celebrated**: a chime, confetti, a shockwave and a PB ticker when you beat
 your best single, ao5, ao12, ao25 or ao100. The chime can be turned off in Settings.
@@ -464,11 +560,13 @@ Settings or the camera panel keeps it on while you aim it. Solving without inspe
 **Camera on between solves**, so the clip catches the very start. The browser is never made to
 ask for permission in the middle of a solve.
 
-Browsers record with a keyframe only every six or seven seconds, which made scrubbing back
+Firefox records with a keyframe only every six or seven seconds, which made scrubbing back
 and forth stutter. So once a clip is saved, while the timer is idle, it is re-encoded with a
-keyframe every half second and a seek index (a seek went from a median 136 ms in Firefox, and
-41 ms in Chrome, to 13 ms). Starting an attempt pauses that, so filming and converting never
-cost the timer anything.
+keyframe every half second and a seek index (a seek went from a median 423 ms to about 60 ms).
+Chrome already writes a keyframe every half second, so its clips are kept exactly as recorded,
+with their frame times stored, and nothing is re-encoded. Starting an attempt pauses any
+conversion, so filming and converting never cost the timer anything. Clips are written to disk
+while they are filmed, rather than held in memory until the stop.
 
 The clock is lined up to within a frame using when the recording started, and, in Chrome, the
 camera's own frame timestamps. A camera with a slower picture (a phone over Wi-Fi) can still
@@ -496,7 +594,8 @@ on any statistic, or anything from the command palette.
 
 ## Playing with other people
 
-Both of these need the Firebase project described in [RACE.md](RACE.md). With no
+Race rooms, random 1v1 and the Scramble of the Day need the Firebase project described in
+[RACE.md](RACE.md). With no
 configuration, race rooms run in **local mode** between tabs of your own browser, which is
 enough to develop against and demo.
 
@@ -513,6 +612,31 @@ throwaway time, peek, and rewrite. Rooms keep standings across rounds, colour ea
 let you edit your own solve, and have a chat. By default each room gets its own session,
 so race times do not mix into your practice averages. Details in [RACE.md](RACE.md).
 
+![The race drawer: find a stranger, or join and create a room](docs/screenshots/race.webp)
+
+- **Every round is kept.** The times list turns into **Rounds**, **Standings** and **Your
+  solves** tabs for a room, and a card under the race panel shows the last round. A round
+  waits a moment for the slowest result to arrive, so a time never flashes past.
+- **A late penalty counts.** A +2 or DNF you add after stopping reaches the room, a 1v1 and the
+  Scramble of the Day. It can get heavier at any time, and lighter only within 15 seconds.
+- **Spacebar or a Stackmat.** A race uses the input you chose for racing (typed times are not
+  allowed in a race), without touching your usual input mode.
+
+### Random 1v1
+**Find an opponent** pairs you with whoever else is looking, on 3x3. There is no code and no
+invite: it is an ordinary race room capped at two, which starts by itself and runs one
+scramble per round, head to head, with the same hidden-until-you-finish reveal, until one of
+you quits. Every 1v1 lands in one session (`1v1 · 3x3`) and gets a head-to-head card and a
+*This 1v1* table. The chat only goes to your opponent. There is no skill matching: a rating
+the client reports about itself could be faked, so pairing is random.
+
+**Cam and mic are optional**, off until you turn them on, and by default for signed-in players
+only (an admin switch). They run peer to peer over WebRTC: nothing passes through Firebase
+or the Worker, and nothing is recorded. Your opponent's picture stays covered until you press
+**Show**. If a direct connection can't form (a strict network), a short-lived TURN relay is
+used. A ⚑ on the opponent files a report for the admins. Details in
+[RACE.md](RACE.md#8-random-1v1).
+
 ### Scramble of the Day
 The **SOTD** button in the top bar. Every day, every signed-in visitor gets the same
 scramble per event and **one official attempt at it**, like a competition single. It
@@ -522,8 +646,25 @@ device's, so moving your clock does not get you tomorrow's scramble or a second 
 Pressing SOTD enters **the window**: the top bar, sidebars and panels disappear, leaving
 today's scramble, the timer, and a slim bar with the day and how long is left of it. Submit
 and the leaderboards slide up. Like race rooms, times are hidden until you have submitted
-your own, and each result is write-once, apart from an optional one-line note you can edit.
+your own, and each result is write-once, apart from an optional one-line note you can edit
+(and a penalty that only gets heavier, or lighter within 15 seconds of the solve).
 Details in [DAILY.md](DAILY.md).
+
+- **Misfires.** A solve under 2 s on the main scramble is thrown away and you get a hidden
+  **backup scramble** as a final attempt; 2-4.99 s asks *misfire? Use backup / Keep*. You can
+  never pick the better of the two. (2x2, Pyraminx, Skewb and Clock are exempt, because real
+  solves are that fast.)
+- **Chat.** Once your time is in, a chat opens beside the board: one room per event per day,
+  for everybody who has done that scramble (Google accounts only; a ⚑ reports a message). On a
+  phone it is a tab on the board's sheet. Your uploaded profile picture shows on the board
+  and in the chat.
+- **Shared replays.** After you submit, you can share your clip (720p at most, sound only if
+  you tick *Include sound*) so everyone else who has done that scramble can watch it for
+  seven days. Sharing is opt-in and removable. See [Webcam replay](#webcam-replay).
+- **Stackmat.** A pill beside Camera switches the window between spacebar and Stackmat and
+  picks the mic input, without changing your normal input mode.
+- **Taking a time down.** Only a site admin can remove a time they think is dishonest; that
+  person gets the backup scramble, and a removed backup time is their day.
 
 ---
 
@@ -531,7 +672,7 @@ Details in [DAILY.md](DAILY.md).
 
 | Nebula | Vaporwave |
 |---|---|
-| ![Nebula theme](docs/screenshots/timer.webp) | ![Vaporwave theme](docs/screenshots/theme-vaporwave.webp) |
+| ![Nebula theme on the Cells background](docs/screenshots/timer.webp) | ![Vaporwave theme on the Cells background](docs/screenshots/theme-vaporwave.webp) |
 | **Terminal** | **Paper** |
 | ![Terminal theme](docs/screenshots/theme-terminal.webp) | ![Paper theme](docs/screenshots/theme-paper.webp) |
 
@@ -541,13 +682,26 @@ updates the variables live: drag a slider and the app changes as you drag, no re
 ![The appearance panel](docs/screenshots/appearance.webp)
 
 - Seven themes: Nebula, Carbon, Vaporwave, Ice, Terminal, Speedcube, Paper.
-- Custom accent colours on top of any theme.
-- Backgrounds: five animated WebGL shaders (aurora, mesh, plasma, grid, stars), a CSS
-  gradient, a solid colour, **your own image**, or **your own looping video**. Uploaded
-  media is stored in your browser and never leaves your machine.
+- Custom accent colours on top of any theme (every screenshot in this README is the *Cells*
+  background in a different palette, made with just the accent, secondary and background
+  colours).
+- Backgrounds: ten animated WebGL shaders (aurora, curtains, mesh, plasma, grid, stars, beams,
+  waves, smoke, cells), a gradient you build from 2-3 colour pickers (angle, linear or radial,
+  13 presets, or raw CSS), a solid colour, **your own image**, or **your own looping video**.
+  Uploaded media is stored in your browser and never leaves your machine. **Reduce effects**
+  keeps the background still and turns glass off, and switches itself on where WebGL is drawn
+  by the CPU.
 - Background dim, blur, saturation and brightness, so any photo can be made readable, and
   **auto contrast** switches to dark text when the background is bright.
-- Timer font (JetBrains Mono, Chivo Mono, Space Grotesk, Inter, system), weight, size and glow.
+- **Glass** panels: *Off*, *Frosted* or *Liquid* (Liquid bends the background and only
+  Chromium browsers draw it; elsewhere it falls back to Frosted).
+- **Fonts** for the timer digits, the scramble (monospace only, so the moves line up), the
+  interface, the solve list and the statistics, plus weight, size and glow for the timer.
+- **A Text block**: one colour for all text, then different colours for the timer digits,
+  scramble, solve list and statistics, and a text shadow (strength, blur, distance and colour)
+  for reading over a busy background.
+- A **profile picture** for your account, cropped and shrunk in the browser and synced with
+  your settings. It appears on the Scramble of the Day board and chat.
 - Sizes for the scramble, the preview cube, the sidebar, the stats text and the solve list.
 - **Cube colours**: six pickers for the preview's stickers.
 - **Dockable panels.** Drag the times list, statistics, now-playing card or race panel by
@@ -555,16 +709,29 @@ updates the variables live: drag a slider and the app changes as you drag, no re
   snaps in, or drop it anywhere else and it floats there.
 - Show or hide any panel; widget or flat panel style; compact / comfortable / spacious density.
 - Motion: full, reduced, or off (and `prefers-reduced-motion` is respected by default).
+- **Language**: English or Spanish (Settings → Language; the whole interface, including the
+  solver's suggestions, switches and the page reloads).
 - Zen mode (`Z`) hides everything but the scramble and the clock.
 - Export your theme as JSON and send it to someone.
+
+### Settings and search
+
+![Settings, with a search field that finds options by name, related words and typos](docs/screenshots/settings.webp)
+
+Settings, Appearance and Blindsolving each have a search field that filters the live
+controls by name, related words and common typos. For example, `precision` finds Decimals
+and `sound` finds the audio options. Clear it to see every option.
 
 ### Phones
 
 ![The timer on a phone](docs/screenshots/mobile.webp)
 
-The layout rebuilds itself for a phone: tap anywhere to start and stop, the pickers
-move under the logo, the rest of the top bar folds into a menu, and the panels stack
-under the clock.
+Below 641px wide the app gets a phone layout of its own: a floating dock (**Timer**, **Times**,
+**Train**, **More**) replaces the top bar, one pill picks the event and session, and the
+scramble, big digits, ao5 / ao12 and the +2 / DNF / Note / Reconstruct buttons sit on the Timer
+tab with a strip of recent times. Tap anywhere to start and stop. The dock steps aside for
+inspection, the solve, focus mode, the Scramble of the Day, an FMC attempt, Reconstruct and
+Cross + 1, which have phone layouts of their own.
 
 The screen stays on while you practise: each attempt holds a screen wake lock, and it is
 let go ten minutes after the last one, so a long memo or inspection never dims the phone.
@@ -584,17 +751,23 @@ straight back; the album tint is never saved to your settings. Details in
 
 Everything lives in your browser's IndexedDB, and stays there unless you sign in.
 
-- **Sessions** per event, named, reordered and managed from the session picker (`S`).
+- **Sessions** per event, named, reordered (drag the grip, or use the arrows) and managed from
+  the session picker (`S`). The pencil beside a session edits its name and [goal](#around-the-clock).
 - Full JSON backup and restore.
 - **Data Health** at the top of **Settings → Data** shows confirmed local saves,
   pending cloud changes, and browser storage estimates. Failed saves remain
   available for retry and recovery export. Cloud status follows acknowledgements;
   the backup date means **export prepared**—check your Downloads folder and keep
   the file somewhere safe.
-- Per-session CSV export.
-- **csTimer import**: one picker takes either a Tagda backup (`.json`) or a csTimer
-  export (`.txt`) and works out which it is from the contents, because csTimer writes
-  JSON into a `.txt`, so the file extension cannot be trusted. Every session comes
+
+![Settings → Data: Data Health, backup, csTimer and CubeDesk import, and the language picker](docs/screenshots/data-health.webp)
+
+- Per-session CSV export, and the Statistics drawer's *Download selected stats*.
+- **csTimer and CubeDesk import**: one picker takes a Tagda backup (`.json`), a csTimer
+  export or a CubeDesk export (`.txt`) and works out which it is from the contents, because
+  both write JSON into a `.txt`, so the file extension cannot be trusted. A CubeDesk session
+  becomes its own session, with the real solve dates, and importing the same file twice adds
+  nothing. Every csTimer session comes
   across with its name, times, scrambles, comments and penalties, and the event is read
   from the session's scramble type. Tested at ~12,000 solves across 23 sessions in under
   five seconds.
@@ -683,31 +856,37 @@ button moved to make room for the camera.
 ```
 index.html              the timer
 algs.html               the alg trainer
+admin.html              the admin console (see below)
 css/tokens.css          every design value, as CSS variables
 css/base.css            reset, layout, background, timer
 css/components.css      panels, controls, overlays, charts
+css/phone.css           the phone layout and its dock and sheets
 css/recon.css           the reconstruction workbench (fetched on first open)
 css/xplus1.css          the Cross + 1 trainer
 css/alglibrary.css      the alg trainer page
+css/announce.css        announcements
+css/admin.css           the admin console
 js/main.js              wiring: the entry point
 js/timer.js             timer state machine + WCA inspection
 js/events.js            events, modes, relay definitions
 js/scramble.js          cubing.js integration, trainers, pre-generation queue
+js/sidescramble.js      the Square-1 scrambler (and its worker)
 js/learn.js             the learn-mode scheduler (pure, and tested)
 js/learnmode.js         learn mode around it: which case next, the alg, the verdict
 js/algs.js, algs2.js    trainer case tables (verified in test.html)
 js/algsets.js           every OLL, PLL and ZBLL alg, all checked in test.html
 js/alglibrary*.js       the alg trainer: data per set, setups, UI
-js/stats.js             WCA-correct averages
+js/stats.js             WCA-correct averages, BPA / WPA, grouping
 js/charts.js            hand-built SVG charts
 js/theme.js             settings model + live theming
 js/contrast.js          auto contrast against whatever background is on screen
-js/bg.js                WebGL background shaders
+js/bg.js                the WebGL background shaders
 js/tiles.js, drag.js    dockable panels and floating widgets
+js/phoneshell.js        the phone layout: dock, Timer tab, sheets
 js/cube.js              3D scramble preview
 js/cubenet.js           sticker simulator and flat nets
-js/cube3.js             the 3x3 model: notation, state, CFOP phase detection
-js/solver.js            cross / F2L search, last layer by simulation
+js/cube3.js             the 3x3 model: notation, state, CFOP and Roux phase detection
+js/solver.js            cross / F2L / Roux block search, last layer by simulation
 js/solver.worker.js     runs that search off the main thread
 js/recon.js             the reconstruction workbench
 js/xplus1.js            the Cross + 1 trainer
@@ -716,50 +895,77 @@ js/bldtrace.js          3BLD memo tracing
 js/stackmat.js          Stackmat decoding over the aux jack
 js/vcube.js             the virtual (keyboard) cube
 js/metro.js             the floating metronome window
-js/race*.js             race rooms
-js/daily*.js, dayid.js  Scramble of the Day
+js/competition*.js      Competition Mode: sets, stats, whole-set replay
+js/replay*.js           webcam replay: filming, the player, MP4 export
+js/race*.js             race rooms and random 1v1 (race-cam.js: 1v1 cam and mic)
+js/daily*.js, sotd-*.js, dayid.js   Scramble of the Day: the board, chat, replays
 js/sync*.js             Google sign-in and cross-device sync
+js/data-health.js       Data Health: local saves, cloud acknowledgements, recovery
 js/spotify*.js          Spotify link and album theming
 js/albumpalette.js      colours from album art
 js/sharecard.js         share card rendering
 js/gear.js              the gear log
 js/panels.js            settings / stats / history / case picker drawers
+js/settings-search.js   the search field in Settings and Appearance
 js/palette.js           the command palette
+js/i18n.js              interface language (locales/es.js is the Spanish dictionary)
+js/announce*.js         announcements, news and feedback
+js/admin*.js, config*.js   the admin console and the settings it controls (ADMIN.md)
 js/db.js                IndexedDB
 js/fx.js                confetti, shockwave, audio callouts
 sw.js                   service worker (offline)
+worker.js               the Cloudflare Worker: sign-in proxy, shared replays, TURN
+wrangler.jsonc          the Worker's and the asset host's configuration
+_headers                caching rules for the Cloudflare deploy
 cubes.json, lubes.json  gear picker seeds
 vendor/cubing/          mirrored cubing.js (works offline)
-tools/                  cubing.js mirror, alg library build and verification
+vendor/mediabunny/      MP4 muxing for saved replay videos
+tools/                  cubing.js mirror, alg library build and verification, rules checks
 serve.py                no-cache dev server
 start.bat               double-click launcher
 test.html               self test: open it in a browser to run it
-firebase.rules.json     database rules for race rooms, SOTD and sync
+firebase.rules.json     database rules for race rooms, SOTD, sync and the admin console
+docs/                   verification write-ups and the README's screenshots
 ```
 
-Deeper write-ups: [RACE.md](RACE.md) · [DAILY.md](DAILY.md) · [SPOTIFY.md](SPOTIFY.md) ·
-[CROSSPLUS1.md](CROSSPLUS1.md) · [ALGLIBRARY.md](ALGLIBRARY.md) ·
-[BLIND_WORKFLOW.md](BLIND_WORKFLOW.md) · [PLAN.md](PLAN.md)
+Deeper write-ups: [RACE.md](RACE.md) · [DAILY.md](DAILY.md) · [ADMIN.md](ADMIN.md) ·
+[SPOTIFY.md](SPOTIFY.md) · [CROSSPLUS1.md](CROSSPLUS1.md) · [ALGLIBRARY.md](ALGLIBRARY.md) ·
+[LASTSLOT.md](LASTSLOT.md) · [RECONSTRUCTION_ROUX.md](RECONSTRUCTION_ROUX.md) ·
+[BLIND_WORKFLOW.md](BLIND_WORKFLOW.md) · [PLAN.md](PLAN.md) ·
+[Competition Mode](docs/competition-mode.md)
 
-Screenshots in `docs/screenshots/` are taken from the running app.
+Screenshots in `docs/screenshots/` are taken from the running app, on its *Cells* background.
 
 ---
 
 ## Deploying
 
-The folder is already a static site: no build step, no server, no environment
-variables:
+The timer itself is a plain static site: no build step, no environment variables. The
+live site (tagdatimer.me) runs on **Cloudflare Workers** (`wrangler.jsonc`), which serves the
+repo root as static assets, which are not metered, and runs `worker.js` for only three paths:
+`/__/auth/*` (the same-origin sign-in proxy, below), `/replay/*` (shared Scramble of the Day
+replays, kept in R2 for 8 days) and `/turn` (relay credentials for a 1v1's cam and mic). It
+also runs once a minute to apply the admin console's scheduled changes. Pushing to `main`
+deploys it through Cloudflare's Git integration, or by hand:
 
 ```bash
-npx vercel --prod
+npx wrangler deploy
 ```
 
-`vercel.json` is committed and sets the caching that matters: `vendor/` is
-content-hashed so it is cached for a year, while `js/`, `css/` and
-`index.html` are revalidated on every load, so a deploy can never leave a visitor with
-half the old app and half the new one. `.vercelignore` keeps `sync-test.html`
-out of the deployment — it is a developer page, and it writes to whatever
-database the browser opening it is signed in to.
+`_headers` sets the caching that matters: `vendor/` and the fonts are cached for a year,
+`sw.js` is never cached, and `js/`, `css/` and `index.html` are revalidated on every load, so a
+deploy can never leave a visitor with half the old app and half the new one. `.assetsignore`
+keeps `worker.js`, the package files, `sync-test.html` (a developer page that writes to
+whatever database the browser opening it is signed in to) and the Vercel mover out of the public
+assets.
+
+One-time setup, none of it in the repo: an R2 bucket named `tagda-replays` with a rule that
+deletes objects after 8 days and no public access; the Worker secrets `TURN_KEY_ID` and
+`TURN_KEY_TOKEN` (Cloudflare Realtime TURN, without them 1v1 cam and mic fall back to STUN
+alone) and `FIREBASE_SERVICE_ACCOUNT` (so the scheduler can write); and `firebase.rules.json`,
+which is **published by hand** in the Firebase console, so a merged rules change is not live
+until someone publishes it. Stay on the Workers Free plan: its daily request cap is part of
+what keeps R2 free. [ADMIN.md](ADMIN.md) and [DAILY.md](DAILY.md) have the details.
 
 ### The old tagdatimer.vercel.app
 
@@ -771,8 +977,9 @@ old service worker so the browser stops calling Vercel. A history too long for a
 URL gets a one-click button instead. `.assetsignore` keeps the folder off
 Cloudflare.
 
-For GitHub Pages, push the folder to a `gh-pages` branch and enable Pages on it.
-The `.nojekyll` file stops Jekyll from touching anything.
+Any static host can serve the timer, trainers and offline mode, and the `.nojekyll` file stops
+Jekyll from touching anything on GitHub Pages. Sign-in on a custom domain, shared replays and
+1v1 cam relay need the Worker or something that does its job.
 
 ### Sign-in and the `/__/auth/*` proxy
 
@@ -785,14 +992,15 @@ popup opens, Google signs you in, and the result never reaches the page. The onl
 way around that is a full-page redirect out to Google and back, which tears down the
 running timer.
 
-The fix is to stop being third-party. `vercel.json` rewrites `/__/auth/*` to the
-firebaseapp.com handler, so the iframe and the popup are served from the app's
-own origin and there is no partitioned storage left to block. Two things have to
+The fix is to stop being third-party. The Worker proxies `/__/auth/*` to the
+firebaseapp.com handler (`vercel.json` still carries the same rewrite for Vercel), so the
+iframe and the popup are served from the app's own origin and there is no partitioned
+storage left to block. Two things have to
 line up for that, and sign-in breaks outright if only one of them does:
 
 1. `SAME_ORIGIN_AUTH_HOSTS` in `js/raceapp.js` lists the hosts that actually
-   have the rewrite. Anywhere else (localhost, a Vercel preview URL, a fork on
-   another host), `/__/auth/*` is a 404, so those keep the firebaseapp.com
+   have the proxy. Anywhere else (localhost, a preview URL, a fork on another
+   host), `/__/auth/*` is a 404, so those keep the firebaseapp.com
    default and fall back to the redirect flow.
 2. Each host in that list needs `https://<host>/__/auth/handler` added to the
    **Authorized redirect URIs** of the project's OAuth client (Google Cloud
@@ -802,14 +1010,14 @@ line up for that, and sign-in breaks outright if only one of them does:
    with `redirect_uri_mismatch`.
 
 Deploying to a new domain therefore means editing `SAME_ORIGIN_AUTH_HOSTS`, both
-console lists, and, on a host that is not Vercel, porting the rewrite to that
+console lists, and, on a host that is not Cloudflare or Vercel, porting the proxy to that
 host's own config.
 
 Solves and settings live in IndexedDB, which the browser keys by origin, so
 `tagdatimer.me` starts empty for someone who has only ever used
 `tagdatimer.vercel.app`. Signing in on the new domain pulls synced solves back;
 anything unsynced has to come across as a Settings → backup export and import.
-That is why the old domain still serves the app instead of redirecting.
+That is why the old domain serves the mover page instead of just redirecting.
 
 Whatever the host, it must serve the whole folder (`vendor/` included) with
 JavaScript files as `text/javascript`. Every host above does that by default.
@@ -844,22 +1052,14 @@ FMC is excluded from race rooms and the Scramble of the Day, and it has no Stack
 typed-result input.
 
 The reconstructor suggests and animates, but it cannot know what you actually turned.
-Without a smart cube it removes the typing, not the remembering. It reads CFOP; Roux, ZZ and
-freestyle solves will not split into phases cleanly, and it says so rather than guessing.
+Without a smart cube it removes the typing, not the remembering. It reads CFOP and Roux; ZZ
+and freestyle solves will not split into phases cleanly, and it says so rather than guessing.
 
+---
 
-## Competition Mode
+## License
 
-Start **Competition Mode** from the **Session** picker (on a phone, the Sessions section of the event sheet). Choose Ao5, Ao12, or a custom whole number of attempts of at least 5. The selected event and set size are fixed, and the set stays in the current session. Switch explicitly to Random state when leaving a trainer or a pasted scramble list. Relay, FMC, Multi-Blind, race and virtual sessions are excluded.
-
-A set saves each ordered attempt and resumes after a refresh. Use **Leave view** to do ordinary practice, then **Return to set** to resume. Completion opens the exact average and stops collecting attempts; **Start another AoX** starts the next set explicitly. Competition history has session/event filters. Ordinary rolling averages keep their existing behavior.
-
-Individual Competition attempts cannot be deleted. Correct their penalties, discard an unfinished set, or delete the entire average and its replays. Session clearing/deletion explains the whole-set consequence. Whole-set deletions have no undo, and merging an old backup cannot resurrect a deleted set. Tagda backups now include `competitionSets` in format version 2; old ordinary backups remain supported.
-
-Replay defaults to the existing per-solve behavior when the webcam setting is enabled. **Record entire AoX** is opt-in at setup: it records scrambling, inspection, attempts and gaps into one local video. Capture is limited to **30 minutes / 256 MiB**, with a 32 MiB storage reserve; these limits do not limit the number of timed attempts. Video chunks are saved every two seconds, so a killed page may lose the final unsaved chunk. Leaving the view, switching sessions/tabs, camera failure, device sleep or storage exhaustion interrupts full recording while preserving solves. Surviving footage is explicitly labeled interrupted. Where supported, a wake lock holds the screen on during capture. Background recording is intentionally stopped when the tab is hidden.
-
-The entire replay opens in the normal replay player. **Save video** offers **Original**, **Landscape**, and **Reel**, with the same crop controls and MP4/WebM export pipeline as ordinary solves. Landscape and Reel show attempt numbers, clocks and current penalties; Original keeps the filmed picture and small watermark. Whole-set videos live in a separate local media database and are not pruned to make room for another capture. Cloud sync and JSON backups carry set metadata and solves, without the video bytes. A device without the video says it is stored on the original device. Updated `firebase.rules.json` must be deployed for the new metadata and solve fields to sync.
-
-Completed sets have a separate paper score-sheet card, clearly branded Tagda Timer and labeled as unofficial practice. Cards show numbered results, trim markers and the calculated final average. They use the existing copy/save/device-share controls and paginate at 12 legible rows per image. Cards generated after a penalty correction use the corrected score; exported images remain immutable.
-
-See [Competition Mode verification and handover](docs/competition-mode.md) for checks and local preview instructions.
+The source is published so it can be read, but it is **not open source**: Tagda Timer and
+[tagdatimer.me](https://tagdatimer.me/) are proprietary. You may read the code, use the site, and
+open issues or pull requests; see [LICENSE](LICENSE) for exactly what else is and is not allowed.
+Security reports: [SECURITY.md](SECURITY.md).
