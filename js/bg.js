@@ -3,7 +3,9 @@ import { t } from './i18n.js';
    Tagda Timer — animated background
    A single fullscreen WebGL quad with swappable fragment shaders,
    plus image / video / gradient / solid modes.
-   Pauses when the tab is hidden and while a solve is running.
+   Draws at most 30 frames a second, at half resolution for the soft
+   shaders, and stops altogether while the tab is hidden, the window is in
+   the background or a solve is running.
    =========================================================== */
 
 const VERT = `
@@ -15,7 +17,15 @@ precision highp float;
 uniform vec2  u_res;
 uniform float u_t;
 uniform vec3  u_c1, u_c2, u_c3;
-uniform float u_speed, u_amount;
+uniform float u_speed, u_amount, u_sat;
+
+/* The Saturation setting, done here rather than as a CSS saturate() on the
+   canvas: a CSS filter on a full-screen layer that changes every frame is a
+   second full-screen pass every frame. Same luma weights as CSS saturate(). */
+vec4 finish(vec4 c){
+  float l = dot(c.rgb, vec3(0.213, 0.715, 0.072));
+  return vec4(clamp(mix(vec3(l), c.rgb, u_sat), 0.0, 1.0), c.a);
+}
 
 float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123); }
 float noise(vec2 p){
@@ -233,6 +243,17 @@ void main(){
 
 export const SHADER_NAMES = Object.keys(SHADERS);
 
+/* Shaders with nothing sharp in them: drawn at half resolution and stretched,
+   which the eye cannot tell apart and the GPU does in a quarter of the work.
+   beams, grid, stars and waves have hairlines and points, so they stay at
+   full size. */
+const SOFT = new Set(['aurora', 'curtains', 'mesh', 'plasma', 'smoke', 'cells']);
+
+/* Nothing in any shader moves fast enough to need more. Without a cap the
+   loop ran at the monitor's refresh rate — 144 full-screen passes a second
+   on a 144 Hz screen. */
+const MAX_FPS = 30;
+
 function hexToRgb(hex) {
   const h = (hex || '#000').replace('#', '');
   const s = h.length === 3 ? h.split('').map(c => c + c).join('') : h;
@@ -268,17 +289,25 @@ export class Background {
     this.colors = ['#241a4d', '#7c5cff', '#35e6c5'];
     this.paused = false;
     this.slow = 1;
+    this.sat = 1;
+    this._sat = 1;                // what is drawn; eases toward the target
+    this._focus = false;
     this._t = 0;
     this._last = 0;
     this._drawn = 0;
-    this._minStep = 0;
+    this._minStep = 1000 / MAX_FPS;
     this._raf = null;
+    this._holds = new Set();      // reasons to stand still: 'hidden', 'blur', 'solve'
     this.mode = 'shader';
     this.lite = false;            // one still frame instead of an animation — see softwareGL()
 
-    document.addEventListener('visibilitychange', () => {
-      if (document.hidden) this.stop(); else if (this.mode === 'shader') this.start();
-    });
+    document.addEventListener('visibilitychange', () => this.hold('hidden', document.hidden));
+    // A timer left open on one screen while you work on another was animating
+    // at full tilt behind everything else.
+    window.addEventListener('blur', () => this.hold('blur', true));
+    window.addEventListener('focus', () => this.hold('blur', false));
+    if (document.hidden) this._holds.add('hidden');
+    if (!document.hasFocus()) this._holds.add('blur');
     window.addEventListener('resize', () => this.resize());
   }
 
@@ -312,7 +341,7 @@ export class Background {
       return s;
     };
     const vs = mk(gl.VERTEX_SHADER, VERT);
-    const fs = mk(gl.FRAGMENT_SHADER, src);
+    const fs = mk(gl.FRAGMENT_SHADER, src.replace(/gl_FragColor\s*=\s*([^;]+);/g, 'gl_FragColor = finish($1);'));
     if (!vs || !fs) return;
     const prog = gl.createProgram();
     gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
@@ -324,6 +353,7 @@ export class Background {
     gl.enableVertexAttribArray(loc);
     gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
     this.u = {
+      sat:    gl.getUniformLocation(prog, 'u_sat'),
       res:    gl.getUniformLocation(prog, 'u_res'),
       t:      gl.getUniformLocation(prog, 'u_t'),
       c1:     gl.getUniformLocation(prog, 'u_c1'),
@@ -336,7 +366,7 @@ export class Background {
 
   resize() {
     if (!this.gl) return;
-    const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+    const dpr = SOFT.has(this.shader) ? 0.5 : Math.min(window.devicePixelRatio || 1, 1);
     const w = Math.floor(this.canvas.clientWidth * dpr);
     const h = Math.floor(this.canvas.clientHeight * dpr);
     if (w === 0 || h === 0) return;
@@ -350,9 +380,39 @@ export class Background {
   /* ---------------- config ---------------- */
 
   setShader(name) {
+    const resized = SOFT.has(name) !== SOFT.has(this.shader);
     this.shader = name;
     if (this.gl) this._compile(name);
+    if (resized) this.resize(); else this._still();
+  }
+
+  /** The Saturation setting (1 = as drawn). */
+  setSat(v) {
+    this.sat = v;
+    if (!this._focus) this._sat = this._target();
     this._still();
+  }
+
+  /** Focus mode drains the colour out while an attempt is on. */
+  setFocus(on) {
+    if (on === this._focus) return;
+    this._focus = on;
+    // Eased in the loop when it is running; set outright when it is not.
+    if (!this._raf) { this._sat = this._target(); this._still(); }
+  }
+
+  _target() { return this._focus ? 0.25 : (this.lite ? 1 : this.sat); }
+
+  /**
+   * Stand still for a reason, or stop standing still for it. The last frame
+   * stays on the canvas, so stopping costs nothing to look at.
+   */
+  hold(reason, on) {
+    if (on) this._holds.add(reason); else this._holds.delete(reason);
+    if (this._holds.size) {
+      // A solve lets the colour finish draining first; the loop stops itself.
+      if (reason !== 'solve' || !on) this.stop();
+    } else if (this.mode === 'shader') this.start();
   }
 
   setColors(c1, c2, c3) { this.colors = [c1, c2, c3]; this._still(); }
@@ -360,12 +420,13 @@ export class Background {
   /** Reduce effects: draw one frame and stop, or go back to animating. */
   setLite(on) {
     this.lite = on;
+    this._sat = this._target();
     this.stop();
     this.start();
   }
 
-  /** In lite mode nothing redraws on its own, so a change has to. */
-  _still() { if (this.lite && this.mode === 'shader' && this.gl) this.draw(); }
+  /** When nothing is redrawing on its own, a change has to. */
+  _still() { if (!this._raf && this.mode === 'shader' && this.gl) this.draw(); }
 
   /** 1 = normal, <1 = calmed down (used during a solve). */
   setSlow(v) { this.slow = v; }
@@ -393,7 +454,7 @@ export class Background {
   /* ---------------- loop ---------------- */
 
   /**
-   * Draw at most `fps` frames a second; 0 puts it back to every frame.
+   * Draw at most `fps` frames a second; 0 puts it back to the usual cap.
    *
    * A full-screen fragment shader is the most expensive thing on the page, and
    * during a celebration it is also the least important — the confetti is what
@@ -401,20 +462,30 @@ export class Background {
    * being drawn into and the shader keeps its own clock: nothing jumps when it
    * comes back up to speed.
    */
-  throttle(fps) { this._minStep = fps ? 1000 / fps : 0; }
+  throttle(fps) { this._minStep = 1000 / (fps || MAX_FPS); }
 
   start() {
     if (this._raf || this.mode !== 'shader') return;
     if (!this.init()) return;
-    if (this.lite) { this.draw(); return; }
+    if (this.lite || this._holds.size) { this.draw(); return; }
     this._last = performance.now();
     const step = (now) => {
       const dt = Math.min(0.05, (now - this._last) / 1000);
       this._last = now;
       if (!this.paused) this._t += dt * this.slow;
-      if (!this._minStep || now - this._drawn >= this._minStep) {
+      const target = this._target();
+      this._sat += (target - this._sat) * Math.min(1, dt * 12);
+      // Within a frame's step of 1 ms, so the rAF and the draw throttle agree.
+      if (now - this._drawn >= this._minStep - 1) {
         this._drawn = now;
         this.draw();
+      }
+      // Held for a solve: carry on only until the colour has finished easing.
+      if (this._holds.size && Math.abs(target - this._sat) < 0.01) {
+        this._sat = target;
+        this.draw();
+        this._raf = null;
+        return;
       }
       this._raf = requestAnimationFrame(step);
     };
@@ -433,6 +504,7 @@ export class Background {
     gl.uniform3fv(this.u.c3, hexToRgb(this.colors[2]));
     gl.uniform1f(this.u.speed, this.speed);
     gl.uniform1f(this.u.amount, this.amount);
+    gl.uniform1f(this.u.sat, this._sat);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
 }
