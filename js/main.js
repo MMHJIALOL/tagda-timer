@@ -1648,8 +1648,13 @@ function wireTimer() {
     // Focus mode clears the chrome the instant you press down and keeps it
     // clear through inspection and the solve, so nothing pops back into view
     // mid-attempt. Only a finished or cancelled attempt brings it back.
-    document.body.classList.toggle('focus',
-      app.settings.focusMode && FOCUS_STATES.has(st));
+    // Nobody is looking at the background mid-solve: it stands still (last
+    // frame kept) until the attempt is over. Before the focus switch, so the
+    // colour comes back while the loop is running again rather than in a jump.
+    bg.hold('solve', st === 'running');
+    const focus = !!app.settings.focusMode && FOCUS_STATES.has(st);
+    document.body.classList.toggle('focus', focus);
+    bg.setFocus(focus);
     if (st === 'idle') placeTimer();
 
     // Arming feedback. During inspection the digits are hidden behind the
@@ -5360,6 +5365,7 @@ function applyAll(changed) {
   // at what is actually in it, so the panels have to be in their homes by then.
   applyTiles(app.settings);
   applyTheme(app.settings);
+  bg.setSat(app.settings.bgSat ?? 1);
   // bgSolid and bgGradient were missing here, so editing the background colour
   // or the gradient string did nothing at all until some unrelated setting
   // happened to trigger a re-apply.

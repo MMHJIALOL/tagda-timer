@@ -109,9 +109,13 @@ kbd {
   position: absolute; inset: -2%;
   width: 104%; height: 104%;
   transform: scale(var(--bg-scale));
-  filter: blur(var(--bg-blur)) saturate(var(--bg-sat));
   transition: filter var(--dur-slow) var(--ease), opacity var(--dur-slow) var(--ease), transform 1.2s var(--ease);
 }
+#bg-media { filter: blur(var(--bg-blur)) saturate(var(--bg-sat)); }
+/* The shader does its own saturation (u_sat in bg.js), and gets no filter at
+   all unless a blur is asked for: even blur(0) saturate(1) is a filter, and a
+   filter on a layer that redraws is a second full-screen pass per frame. */
+#bg-shader { filter: var(--bg-shader-fx, none); }
 #bg-media { background-size: cover; background-position: center; background-repeat: no-repeat; }
 #bg-media video { width: 100%; height: 100%; object-fit: cover; }
 #bg-shader[hidden], #bg-media[hidden] { display: none; }
@@ -176,7 +180,7 @@ body.focus #creator-chip {
   transition: opacity 220ms var(--ease), filter 220ms var(--ease), transform 220ms var(--ease);
 }
 body.focus #bg-veil { opacity: calc(var(--bg-dim) + .34); }
-body.focus #bg-shader, body.focus #bg-media { filter: blur(calc(var(--bg-blur) + 5px)) saturate(.25); }
+body.focus #bg-media { filter: blur(calc(var(--bg-blur) + 5px)) saturate(.25); }
 body.focus #app { grid-template-rows: 0 0 1fr; }
 
 /* A relay is the one case where the scramble zone keeps its row in focus mode.
