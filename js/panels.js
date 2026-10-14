@@ -568,7 +568,8 @@ export function buildAppearance(app, searchQuery = '') {
       };
       const base = () => cur.textColor || themeColors().text;
       const shadowOn = cur.textShadow > 0;
-      textBlock.replaceChildren(
+      // Native replaceChildren() would print the shadow rows' null as the word "null"; el() skips them, this has to too.
+      textBlock.replaceChildren(...[
         el('h3', { text: t('Text') }),
         colourRow(t('All text'), 'textColor', () => themeColors().text, t('overrides the theme’s font colour')),
         colourRow(t('Timer digits'), 'timerColor', () => cur.textColor || shown('--t-idle') || base()),
@@ -590,7 +591,7 @@ export function buildAppearance(app, searchQuery = '') {
             for (const [k, v] of Object.entries(TEXT_DEFAULTS)) set(k, v);
             renderText();
           } })),
-      );
+      ].filter(Boolean));
     }
     renderText();
 
@@ -2542,7 +2543,8 @@ export function buildCases(app) {
         })),
     );
 
-    body.append(
+    // groupChips is null for a mode with no groups, and native append() would print that as the word "null".
+    body.append(...[
       el('div', { class: 'hint-note', text:
         t('{mode} — pick which cases you want to drill. Times shown are your session average for that case.', { mode: MODES[modeId].name }) }),
       /* Learn mode works on exactly the cases switched on below, so the switch
@@ -2577,7 +2579,7 @@ export function buildCases(app) {
         count,
       ),
       grid,
-    );
+    ].filter(Boolean));
     paint();
   };
 }
