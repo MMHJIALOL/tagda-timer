@@ -19,12 +19,18 @@ export const lang = (() => {
   let v = null;
   try { v = localStorage.getItem(KEY); }
   catch { v = new URLSearchParams(globalThis.location?.search).get('lang'); }
-  return v === 'es' ? 'es' : 'en';
+  return v === 'es' || v === 'ptbr' ? v : 'en';
 })();
 
-const dict = lang === 'es' ? (await import('../locales/es.js')).es : {};
+const dict = lang === 'es'
+  ? (await import('../locales/es.js')).es
+  : lang === 'ptbr'
+    ? (await import('../locales/ptbr.js')).ptbr
+    : {};
 
-if (typeof document !== 'undefined') document.documentElement.lang = lang;
+if (typeof document !== 'undefined') {
+  document.documentElement.lang = lang === 'ptbr' ? 'pt-BR' : lang;
+}
 
 export function t(str, vars) {
   let s = (str && dict[str]) || str;

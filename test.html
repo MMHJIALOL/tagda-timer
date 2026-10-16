@@ -998,6 +998,12 @@ section('phone sheets');
   const missing = keys.filter(k => !(k in es));
   check('every phone-shell string has its Spanish', keys.length > 30 && !missing.length, missing.join(' | ') || String(keys.length));
 
+  // Portuguese has every string Spanish has, with the same {placeholders}.
+  const { ptbr } = await import('./locales/ptbr.js');
+  const holes = s => (s.match(/\{\w+\}/g) || []).sort().join();
+  const ptMissing = Object.keys(es).filter(k => !(k in ptbr) || holes(ptbr[k]) !== holes(k));
+  check('Portuguese covers every Spanish string', !ptMissing.length, ptMissing.slice(0, 5).join(' | ') || String(Object.keys(ptbr).length));
+
   // The Times tab's trend card: a dot per time, the best ringed, a DNF crossed.
   const C = await import('./js/charts.js');
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');

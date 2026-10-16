@@ -307,7 +307,7 @@ function speak(words) {
   try {
     synth.cancel();
     const u = new SpeechSynthesisUtterance(words);
-    u.lang = lang === 'es' ? 'es-ES' : 'en-US';
+    u.lang = lang === 'es' ? 'es-ES' : lang === 'ptbr' ? 'pt-BR' : 'en-US';
     u.rate = 1.1;
     synth.speak(u);
     return true;
