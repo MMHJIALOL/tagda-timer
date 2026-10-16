@@ -24,6 +24,10 @@ export const EVENTS = {
   '333mbf': { name: t('3x3 Multi-Blind'),    short: 'MBLD',   puzzle: '3x3x3',   noInspection: true, hideDuringSolve: true, multi: true, wrap: true },
   // Unofficial, but cubing.js ships a random-state FTO scrambler and puzzle.
   'fto':    { name: 'FTO',                short: 'FTO',    puzzle: 'fto',     wrap: true },
+  /* Unofficial too: csTimer's 8 puzzle, the 3x3 sliding puzzle. Not a twisty
+     puzzle, so the preview draws it itself (js/slide.js), and no Scramble of
+     the Day — the shared board's rules only know the WCA events and FTO. */
+  '8puzzle': { name: t('8 Puzzle'),          short: '8 Puz',  puzzle: '8puzzle', noDaily: true },
   /* A relay is several puzzles inside one attempt, so it has no single puzzle
      of its own. `puzzle` is still here and still 3x3x3: every caller of
      eventOf(id).puzzle has to get something loadable back, and the relay code
@@ -36,7 +40,7 @@ export const EVENTS = {
 export const EVENT_ORDER = [
   '333', '222', '444', '555', '666', '777',
   '333bf', '333fm', '333oh', 'clock', 'minx',
-  'pyram', 'skewb', 'sq1', '444bf', '555bf', '333mbf', 'fto',
+  'pyram', 'skewb', 'sq1', '444bf', '555bf', '333mbf', 'fto', '8puzzle',
   'custom',
 ];
 
@@ -162,5 +166,5 @@ export const modeOf   = id => MODES[id]  || MODES['wca'];
  */
 export function dailyEligible(eventId) {
   const ev = eventOf(eventId);
-  return !ev.fmc && !ev.multi && !ev.relay;
+  return !ev.fmc && !ev.multi && !ev.relay && !ev.noDaily;
 }
