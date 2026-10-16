@@ -380,6 +380,7 @@ export function applyTheme(s) {
   st.setProperty('--bg-blur', `${s.bgBlur}px`);
   st.setProperty('--bg-dim', s.bgDim);
   st.setProperty('--bg-sat', s.bgSat);
+  st.setProperty('--bg-shader-fx', s.bgBlur > 0 ? `blur(${s.bgBlur}px)` : 'none');
 
   if (s.accent)  st.setProperty('--accent', s.accent);  else st.removeProperty('--accent');
   if (s.accent2) st.setProperty('--accent-2', s.accent2); else st.removeProperty('--accent-2');
@@ -632,6 +633,16 @@ export function themeColors() {
    Background wiring
    --------------------------------------------------------- */
 
+/* The object URL behind an image or video background. Each apply made a new
+   one and never let the last go, so every re-apply kept another full copy of
+   the file alive until the tab closed. */
+let mediaUrl = null;
+function mediaUrlFor(blob) {
+  if (mediaUrl) URL.revokeObjectURL(mediaUrl);
+  mediaUrl = blob ? URL.createObjectURL(blob) : null;
+  return mediaUrl;
+}
+
 export async function applyBackground(bg, s) {
   // Re-sample before anything else: the palette this resolves may itself be
   // about to flip, and the shaders read their colours from it.
@@ -641,20 +652,21 @@ export async function applyBackground(bg, s) {
   invalidateThemeColors();
   bg.speed = s.bgSpeed;
   bg.amount = s.bgAmount;
+  bg.setSat(s.bgSat ?? 1);
   bg.setShader(s.bgShader);
 
-  if (s.bgMode === 'shader') { bg.setMode('shader'); paintBackgroundColors(bg, s); return; }
+  if (s.bgMode === 'shader') { bg.setMode('shader'); paintBackgroundColors(bg, s); mediaUrlFor(null); return; }
 
   bg.setMode('media');
-  if (s.bgMode === 'gradient') paintBackgroundColors(bg, s);
-  else if (s.bgMode === 'solid') bg.setMedia(s.bgSolid);
+  if (s.bgMode === 'gradient') { paintBackgroundColors(bg, s); mediaUrlFor(null); }
+  else if (s.bgMode === 'solid') { bg.setMedia(s.bgSolid); mediaUrlFor(null); }
   else if (s.bgMode === 'image') {
     const blob = await Assets.get('bg-image');
-    if (blob) bg.setMedia(`url(${URL.createObjectURL(blob)}) center/cover no-repeat`);
+    if (blob) bg.setMedia(`url(${mediaUrlFor(blob)}) center/cover no-repeat`);
     else bg.setMedia(s.bgGradient);
   } else if (s.bgMode === 'video') {
     const blob = await Assets.get('bg-video');
-    if (blob) bg.setMedia('', URL.createObjectURL(blob));
+    if (blob) bg.setMedia('', mediaUrlFor(blob));
     else bg.setMedia(s.bgGradient);
   }
 }
