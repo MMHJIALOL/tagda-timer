@@ -2907,6 +2907,34 @@ section('gear — filtering solves and placing markers');
     Gear.markersFor(S1, []).length === 0 && Gear.markersFor(S1, null).length === 0);
 }
 
+/* ---------------- 8 puzzle ----------------
+   csTimer's 3x3 sliding puzzle. A scramble has to be legal from solved, land
+   on a solvable board, and be the shortest way there (random-state, like
+   csTimer's), and the preview has to draw exactly that board.
+   ---------------------------------------------------------------- */
+section('8 puzzle');
+{
+  const P = await import('./js/slide.js');
+  const Ev = await import('./js/events.js');
+  check('8 Puzzle is an event, with only random-state and no daily board',
+    Ev.EVENT_ORDER.includes('8puzzle') && !Ev.dailyEligible('8puzzle')
+      && JSON.stringify(Ev.modesForEvent('8puzzle')) === '["wca"]');
+  check('moves name the way a tile slides', P.slideState('D R').join() === '1,2,3,4,0,5,7,8,6');
+  check('a slide with no tile to move is ignored', P.slideState('U L').join() === P.SLIDE_SOLVED.join());
+  let ok = true, bad = '';
+  for (let i = 0; i < 40 && ok; i++) {
+    const s = P.slideScramble();
+    const len = s.split(' ').reduce((n, tok) => n + (+tok.slice(1) || 1), 0);
+    ok = /^([UDLR]\d*)( [UDLR]\d*)*$/.test(s) && P.solveSlide(P.slideState(s)).length === len;
+    if (!ok) bad = s;
+  }
+  check('scrambles are written right and are the shortest way there', ok, bad);
+  const host = document.createElement('div');
+  const grid = P.drawSlide(host, 'D R');
+  check('the preview draws the scrambled board',
+    [...grid.children].map(c => c.textContent || '0').join() === '1,2,3,4,0,5,7,8,6');
+}
+
 /* ---------------- custom relay ----------------
    One attempt, several puzzles, one total. What can quietly go wrong: the
    split arithmetic (parts must add up to the total exactly), the scrambles
