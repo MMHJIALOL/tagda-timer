@@ -3125,6 +3125,19 @@ section('virtual cube');
     && same(V.movesFor('KeyX', 4).join(' '), "M'", 4));
   check('a wide turn on a 2x2 is a rotation', V.movesFor('KeyU', 2)[0] === 'x' && same('x', 'Rw', 2));
   check('M does nothing on a 2x2', V.movesFor('Digit5', 2).length === 0);
+  const home = V.viewMap({ latitude: 35, longitude: 30 });
+  check('from the usual angle every key turns its own face',
+    ['F', "R'", 'x', 'M', 'Rw', 'S'].every(k => V.remap(k, home) === k));
+  // Dragged round to the red side: everything is a y turn away.
+  const red = V.viewMap({ latitude: 35, longitude: 118 });
+  check('dragged to the red side, F turns red and B orange',
+    V.remap('F', red) === 'R' && V.remap("B'", red) === "L'");
+  check('a turn of the dragged view is a y turn of the cube',
+    ['F', "R'", 'U2', 'Lw', 'x', "z'", 'M', 'S'].every(k => same(`y ${k}`, `${V.remap(k, red)} y`, 3)));
+  const top = V.viewMap({ latitude: 70, longitude: 0 });
+  check('looking down on the top, F turns the top face', V.remap('F', top) === 'U' && V.remap('U', top) === 'B');
+  check('a turn of a view from above is an x\' turn of the cube',
+    ['F', 'U', "R'", 'x', 'y', 'E', 'S'].every(k => same(`x' ${k}`, `${V.remap(k, top)} x'`, 3)));
 }
 
 section('webcam replay — the seekable copy');
