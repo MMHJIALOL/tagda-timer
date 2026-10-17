@@ -1,6 +1,6 @@
 # Subset scrambles: review and fix
 
-Branch `fix/subset-scrambles`, off `origin/main` at b21a731 (v140 → v141).
+Branch `fix/subset-scrambles`, off `origin/main` at b21a731 (v141 → v142).
 
 Reported in Artyom's screen recording (ScreenRecording_10-17-2026 03-17-01_1.mp4):
 "Last slot + LL" and "Cross solved" scrambles gave wrong positions on a real cube.
