@@ -1014,6 +1014,12 @@ section('phone sheets');
   const missing = keys.filter(k => !(k in es));
   check('every phone-shell string has its Spanish', keys.length > 30 && !missing.length, missing.join(' | ') || String(keys.length));
 
+  // Portuguese has every string Spanish has, with the same {placeholders}.
+  const { ptbr } = await import('./locales/ptbr.js');
+  const holes = s => (s.match(/\{\w+\}/g) || []).sort().join();
+  const ptMissing = Object.keys(es).filter(k => !(k in ptbr) || holes(ptbr[k]) !== holes(k));
+  check('Portuguese covers every Spanish string', !ptMissing.length, ptMissing.slice(0, 5).join(' | ') || String(Object.keys(ptbr).length));
+
   // The Times tab's trend card: a dot per time, the best ringed, a DNF crossed.
   const C = await import('./js/charts.js');
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -2923,6 +2929,34 @@ section('gear — filtering solves and placing markers');
     Gear.markersFor(S1, []).length === 0 && Gear.markersFor(S1, null).length === 0);
 }
 
+/* ---------------- 8 puzzle ----------------
+   csTimer's 3x3 sliding puzzle. A scramble has to be legal from solved, land
+   on a solvable board, and be the shortest way there (random-state, like
+   csTimer's), and the preview has to draw exactly that board.
+   ---------------------------------------------------------------- */
+section('8 puzzle');
+{
+  const P = await import('./js/slide.js');
+  const Ev = await import('./js/events.js');
+  check('8 Puzzle is an event, with only random-state and no daily board',
+    Ev.EVENT_ORDER.includes('8puzzle') && !Ev.dailyEligible('8puzzle')
+      && JSON.stringify(Ev.modesForEvent('8puzzle')) === '["wca"]');
+  check('moves name the way a tile slides', P.slideState('D R').join() === '1,2,3,4,0,5,7,8,6');
+  check('a slide with no tile to move is ignored', P.slideState('U L').join() === P.SLIDE_SOLVED.join());
+  let ok = true, bad = '';
+  for (let i = 0; i < 40 && ok; i++) {
+    const s = P.slideScramble();
+    const len = s.split(' ').reduce((n, tok) => n + (+tok.slice(1) || 1), 0);
+    ok = /^([UDLR]\d*)( [UDLR]\d*)*$/.test(s) && P.solveSlide(P.slideState(s)).length === len;
+    if (!ok) bad = s;
+  }
+  check('scrambles are written right and are the shortest way there', ok, bad);
+  const host = document.createElement('div');
+  const grid = P.drawSlide(host, 'D R');
+  check('the preview draws the scrambled board',
+    [...grid.children].map(c => c.textContent || '0').join() === '1,2,3,4,0,5,7,8,6');
+}
+
 /* ---------------- custom relay ----------------
    One attempt, several puzzles, one total. What can quietly go wrong: the
    split arithmetic (parts must add up to the total exactly), the scrambles
@@ -3141,6 +3175,19 @@ section('virtual cube');
     && same(V.movesFor('KeyX', 4).join(' '), "M'", 4));
   check('a wide turn on a 2x2 is a rotation', V.movesFor('KeyU', 2)[0] === 'x' && same('x', 'Rw', 2));
   check('M does nothing on a 2x2', V.movesFor('Digit5', 2).length === 0);
+  const home = V.viewMap({ latitude: 35, longitude: 30 });
+  check('from the usual angle every key turns its own face',
+    ['F', "R'", 'x', 'M', 'Rw', 'S'].every(k => V.remap(k, home) === k));
+  // Dragged round to the red side: everything is a y turn away.
+  const red = V.viewMap({ latitude: 35, longitude: 118 });
+  check('dragged to the red side, F turns red and B orange',
+    V.remap('F', red) === 'R' && V.remap("B'", red) === "L'");
+  check('a turn of the dragged view is a y turn of the cube',
+    ['F', "R'", 'U2', 'Lw', 'x', "z'", 'M', 'S'].every(k => same(`y ${k}`, `${V.remap(k, red)} y`, 3)));
+  const top = V.viewMap({ latitude: 70, longitude: 0 });
+  check('looking down on the top, F turns the top face', V.remap('F', top) === 'U' && V.remap('U', top) === 'B');
+  check('a turn of a view from above is an x\' turn of the cube',
+    ['F', 'U', "R'", 'x', 'y', 'E', 'S'].every(k => same(`x' ${k}`, `${V.remap(k, top)} x'`, 3)));
 }
 
 section('webcam replay — the seekable copy');

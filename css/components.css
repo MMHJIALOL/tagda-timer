@@ -338,6 +338,27 @@
   border: 1px solid color-mix(in srgb, var(--border) 65%, transparent);
   backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
 }
+/* The 8 puzzle's preview (js/slide.js): twisty-player cannot draw a sliding
+   puzzle. Sized off the host's height so the phone's thumbnail works too. */
+.slide-board {
+  height: 88%; max-width: 100%; aspect-ratio: 1; container-type: size;
+  display: grid; grid-template: repeat(3, 1fr) / repeat(3, 1fr); gap: 4%;
+  padding: 4%; border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+}
+.slide-board > span {
+  display: grid; place-items: center; border-radius: 12%;
+  font: 700 21cqh/1 var(--font-timer, var(--font-ui)); font-variant-numeric: tabular-nums;
+}
+.slide-board > .tile {
+  color: var(--text);
+  background: color-mix(in srgb, var(--accent) 22%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+}
+.slide-board > .tile.home {
+  color: var(--on-accent); background: var(--accent);
+}
 #cube-fallback .ico-big { width: 26px; height: 26px; opacity: .55; color: var(--text-faint); }
 
 .view-toggle {

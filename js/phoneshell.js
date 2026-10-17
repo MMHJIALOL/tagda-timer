@@ -878,7 +878,7 @@ function renderMore() {
       row(I.spotify, t('Spotify'), X.spotifyLinked() ? t('Linked') : t('Not linked'), () => X.click('#btn-spotify'))),
     group(
       row(I.download, t('Import and export'), null, () => openSettingsAt(t('Data'))),
-      row(I.globe, t('Language'), lang === 'es' ? 'Español' : 'English', () => openSettingsAt(t('Language'))),
+      row(I.globe, t('Language'), lang === 'es' ? 'Español' : lang === 'ptbr' ? 'Português (BR)' : 'English', () => openSettingsAt(t('Language'))),
       hasKeyboard ? row(I.keyboard, t('Keyboard shortcuts'), null, () => X.openPanel(t('Keyboard shortcuts'), 'buildShortcuts', { wide: true })) : null,
       row(I.info, t('About'), newsUnread() ? el('span', { class: 'ph-news', text: t('{n} new', { n: newsUnread() }) }) : null, () => X.click('#btn-about'))));
 }

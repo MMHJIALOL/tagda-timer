@@ -317,6 +317,7 @@ export const es = {
   "3x3 Blindfolded": "3x3 a ciegas",
   "3x3 Fewest Moves": "3x3 menos movimientos",
   "3x3 Multi-Blind": "3x3 multi a ciegas",
+  "8 Puzzle": "Puzzle de 8",
   "3x3 One-Handed": "3x3 a una mano",
   "4 out, 3 compression": "4 de tensión, 3 de compresión",
   "4x4 Blindfolded": "4x4 a ciegas",

@@ -1259,7 +1259,8 @@ export function buildSettings(app, searchQuery = '') {
       group(t('Language'),
         row(t('Interface language'), select([
           { value: 'en', label: t('English') },
-          { value: 'es', label: t('Español') }
+          { value: 'es', label: t('Español') },
+          { value: 'ptbr', label: t('Português (BR)') }
         ], lang, setLang))
       ),
       group(t('Account'), buildAccountRow(),

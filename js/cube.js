@@ -1,4 +1,5 @@
 import { t } from './i18n.js';
+import { drawSlide } from './slide.js';
 /* ===========================================================
    Tagda Timer — static scramble preview
 
@@ -12,6 +13,10 @@ const SOURCES = [
   new URL('../vendor/cubing/cubing/twisty.js', import.meta.url).href,
   'https://cdn.cubing.net/v0/js/cubing/twisty',
 ];
+
+/* Puzzles twisty-player cannot draw. These get a drawing of their own in the
+   same host, and the player (kept on its last twisty puzzle) is hidden. */
+const FLAT = { '8puzzle': drawSlide };
 
 let loaded = null;
 let failed = false;
@@ -80,7 +85,7 @@ export class CubeView {
       return false;
     }
     this.player = document.createElement('twisty-player');
-    this.player.setAttribute('puzzle', this.puzzle);
+    this.player.setAttribute('puzzle', FLAT[this.puzzle] ? '3x3x3' : this.puzzle);
     this.player.setAttribute('alg', '');
     this.player.setAttribute('control-panel', 'none');
     this.player.setAttribute('background', 'none');
@@ -91,6 +96,7 @@ export class CubeView {
     if (this.orbit) this.setOrbit(this.orbit);
     this.host.append(this.player);
     this.hideFallback();
+    this.syncFlat();
     this.ready = true;
     if (this.pending) { const p = this.pending; this.pending = null; this.set(p.scramble, p.opts); }
     return true;
@@ -111,6 +117,7 @@ export class CubeView {
     this.ready = false;
     this.applied = null;
     p.remove();
+    this.host.querySelector(':scope > .slide-board')?.remove();
     p.experimentalCurrentVantages?.().then(async (vantages) => {
       for (const v of vantages) {
         if (v.rendererIsShared) continue;
@@ -140,11 +147,12 @@ export class CubeView {
    * every event work, not just 3x3.
    */
   configure(puzzle, view = '3D') {
-    // Compare before assigning — writing this.puzzle first made the check below
-    // always false, so the player kept whatever puzzle it was born with.
-    const changed = puzzle !== this.puzzle;
     this.puzzle = puzzle;               // remembered even without a live player
-    if (!this.player) return;
+    this.syncFlat();
+    if (FLAT[puzzle] || !this.player) return;
+    // Against the player's own puzzle, not this.puzzle: an 8 puzzle in between
+    // leaves the player on whatever twisty puzzle came before it.
+    const changed = puzzle !== this.player.getAttribute('puzzle');
     if (changed) {
       // A player can still be loading its previous geometry/stickering. Reusing
       // it across puzzle sizes lets those async results collide (notably in
@@ -169,6 +177,7 @@ export class CubeView {
   /** Only 3x3 has a last-layer view; cubes, FTO, megaminx, pyraminx, skewb,
       square-1 and clock all have a usable flat drawing. */
   supports(view) {
+    if (FLAT[this.puzzle]) return view === '2D' || view === '3D';
     const cube = /^([234567])x\1x\1$/.test(this.puzzle);
     if (view === 'LL' || view === 'LL3') return this.puzzle === '3x3x3';
     if (view === '2D') return cube || ['fto', 'megaminx', 'pyraminx', 'skewb', 'square1', 'clock'].includes(this.puzzle);
@@ -208,8 +217,27 @@ export class CubeView {
     this.applied = null;          // force the next set() through
   }
 
+  /** Show a flat puzzle's own drawing in place of the player, or put the player back. */
+  syncFlat() {
+    const flat = !!FLAT[this.puzzle];
+    if (this.player) this.player.style.display = flat ? 'none' : '';
+    if (flat) {
+      this.hideFallback();
+      FLAT[this.puzzle](this.host, this.flatScramble || '');
+    } else {
+      this.host.querySelector(':scope > .slide-board')?.remove();
+      this.flatScramble = '';
+    }
+  }
+
   /** Show the state produced by `scramble`. Instant — no animation. */
   set(scramble, opts = {}) {
+    // Drawn here, so it needs no player: it works even if twisty never loads.
+    if (FLAT[this.puzzle]) {
+      this.flatScramble = previewAlg(scramble);
+      FLAT[this.puzzle](this.host, this.flatScramble);
+      return;
+    }
     if (!this.ready) { this.pending = { scramble, opts }; return; }
     if (!this.player) return;
     if (opts.view) this.setView(opts.view);
@@ -246,6 +274,7 @@ export class CubeView {
 
   /** Animate one turn on top of what is shown. Only the virtual cube does this. */
   addMove(tok) {
+    if (FLAT[this.puzzle]) return;
     try { this.player?.experimentalAddMove(tok); }
     catch (err) { console.warn('[cube] turn rejected', tok, err); }
   }

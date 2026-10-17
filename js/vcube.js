@@ -44,6 +44,47 @@ export function movesFor(code, n) {
 
 const isRotation = (tok) => /^[xyz]/.test(tok);
 
+/*
+ * Dragging the cube only moves twisty's camera, so a cube turned to show its
+ * red side still turned green on F. csTimer turns what you are looking at:
+ * the face nearest the camera is F, the one nearest the top of the screen U.
+ * Axes are twisty's own: x out of R, y out of U, z out of F.
+ */
+const NORMAL = { R: [1, 0, 0], L: [-1, 0, 0], U: [0, 1, 0], D: [0, -1, 0], F: [0, 0, 1], B: [0, 0, -1] };
+const OPP = { R: 'L', L: 'R', U: 'D', D: 'U', F: 'B', B: 'F' };
+const AXIS = { x: 'R', y: 'U', z: 'F', M: 'L', E: 'D', S: 'F' };   // the face each one turns like
+const ROT_OF = { R: 'x', U: 'y', F: 'z' };
+const SLICE_OF = { L: 'M', D: 'E', F: 'S' };
+const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const nearest = (v, faces) => faces.reduce((a, f) => (dot(NORMAL[f], v) > dot(NORMAL[a], v) ? f : a));
+
+/** Which real face sits where each face letter points, seen from `orbit`; null when unknown. */
+export function viewMap(orbit) {
+  if (!orbit || !Number.isFinite(orbit.latitude) || !Number.isFinite(orbit.longitude)) return null;
+  const la = orbit.latitude * Math.PI / 180, lo = orbit.longitude * Math.PI / 180;
+  const eye = [Math.sin(lo) * Math.cos(la), Math.sin(la), Math.cos(lo) * Math.cos(la)];
+  const up = [-Math.sin(lo) * Math.sin(la), Math.cos(la), -Math.cos(lo) * Math.sin(la)];
+  const F = nearest(eye, Object.keys(NORMAL));
+  const U = nearest(up, Object.keys(NORMAL).filter(f => f !== F && f !== OPP[F]));
+  const [a, b] = [NORMAL[U], NORMAL[F]];
+  const right = [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+  const R = nearest(right, Object.keys(NORMAL));
+  return { U, F, R, D: OPP[U], B: OPP[F], L: OPP[R] };
+}
+
+const invert = (s) => (s === "'" ? '' : s === '' ? "'" : s.replace("'", ''));
+
+/** `tok` as the turn of the face that `map` puts under its letter. */
+export function remap(tok, map) {
+  const m = map && /^([URFDLBxyzMES])(w?)(.*)$/.exec(tok);
+  if (!m) return tok;
+  const [, base, w, rest] = m;
+  if (map[base]) return map[base] + w + rest;
+  const to = map[AXIS[base]];
+  const of = /[xyz]/.test(base) ? ROT_OF : SLICE_OF;
+  return of[to] ? of[to] + rest : of[OPP[to]] + invert(rest);
+}
+
 /** Every face one colour, whichever way up the cube is held. */
 export function isSolved(alg, n) {
   const f = faceletsFor(alg, n);
@@ -70,6 +111,16 @@ export class VirtualCube {
     this.view.configure(puzzle, '3D');
     this.view.setOrientation(orientation);
     this.view.set(scramble, { force: true });
+    // configure() makes a new player when the puzzle changes: follow that one's camera.
+    const p = this.view.player;
+    if (p && p !== this.watched) {
+      this.watched = p;
+      this.map = null;
+      try {
+        p.experimentalModel.twistySceneModel.orbitCoordinates
+          .addFreshListener((c) => { if (this.watched === p) this.map = viewMap(c); });
+      } catch { /* an older twisty: keys stay on the fixed faces */ }
+    }
   }
 
   restart() { if (this.last) this.reset(this.last); }
@@ -85,7 +136,7 @@ export class VirtualCube {
     // swallow too: never start a clock on a cube that is already solved.
     if (repeat || !this.armed) return true;
     const t = this.timer;
-    for (const tok of toks) {
+    for (const tok of toks.map(k => remap(k, this.map))) {
       if (!isRotation(tok) && (t.state === 'idle' || t.state === 'inspecting')) t.start();
       this.moves.push(tok);
       this.view.addMove(tok);

@@ -18,6 +18,7 @@ import { faceTurns } from './faceturns.js';
 import { SOLVED, FACES, applyAlg } from './cube3.js';
 import { preferredAlg, loadSet } from './alglibrary.js';
 import { clockScramble } from './sidescramble.js';
+import { slideScramble } from './slide.js';
 
 // Local copy first (works offline — see tools/mirror_cubing.py), CDN as backup.
 const SOURCES = [
@@ -68,7 +69,7 @@ setTimeout(() => sq1(true), 0);
    time and then searches, so it runs in a worker of its own: never on the
    page, where it would stall the timer, and never in cubing.js's worker,
    where it would hold up every other puzzle. */
-const OWN = { clock: () => clockScramble(), sq1: () => sq1() };
+const OWN = { clock: () => clockScramble(), sq1: () => sq1(), '8puzzle': () => slideScramble() };
 
 let sq1Worker = null;
 const sq1Waiting = new Map();
