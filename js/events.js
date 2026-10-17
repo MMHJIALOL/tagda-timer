@@ -106,11 +106,13 @@ export const MODES = {
   'sq1ep':     { name: 'EP',               kind: 'case', set: 'SQ1-EP',    events: ['sq1'], desc: t('Permute the edges') },
 
   'll':       { name: t('Last layer'),     kind: 'compose', events: ['333','333oh'], view: 'LL', desc: t('Random OLL + PLL together') },
-  'cross':    { name: t('Cross solved'),   kind: 'trigger', depth: [5, 7], events: ['333','333oh'], desc: t('Cross is done — practise F2L + LL') },
-  'lastslot': { name: t('Last slot + LL'), kind: 'trigger', depth: [3, 4],  events: ['333','333oh'], view: 'LL3', desc: t('Three pairs in, one to go') },
-  '2gen':     { name: t('2-gen (R,U)'),    kind: 'subgroup', pool: '2gen', depth: [12, 15], events: ['333','333oh'], desc: t('Only R and U turns') },
-  'lse':      { name: t('Roux LSE (M,U)'), kind: 'subgroup', pool: 'lse',  depth: [10, 14], events: ['333','333oh'], desc: t('Last six edges') },
-  'roux':     { name: t('Roux L10P'),      kind: 'subgroup', pool: 'roux', depth: [12, 16], events: ['333'], desc: t('R, U and M moves only') },
+  /* Random-state, like csTimer's subsets: a position drawn at random from all
+     the ones the mode allows, then solved backwards (js/subsets.js). */
+  'cross':    { name: t('Cross solved'),   kind: 'subset', subset: 'cross',    events: ['333','333oh'], desc: t('Cross is done — practise F2L + LL') },
+  'lastslot': { name: t('Last slot + LL'), kind: 'subset', subset: 'lastslot', events: ['333','333oh'], view: 'LL3', desc: t('Three pairs in, one to go') },
+  '2gen':     { name: t('2-gen (R,U)'),    kind: 'subset', subset: '2gen',     events: ['333','333oh'], desc: t('Only R and U turns') },
+  'lse':      { name: t('Roux LSE (M,U)'), kind: 'subset', subset: 'lse',      events: ['333','333oh'], desc: t('Last six edges') },
+  'roux':     { name: t('Roux L10P'),      kind: 'subset', subset: 'l10p',     events: ['333'], desc: t('Both blocks done — CMLL and LSE to go') },
 
   'crossgoal':{ name: t('Cross practice'), kind: 'wca-goal', events: ['333','333oh'], desc: t('Full WCA scramble — time your cross only') },
   '444centres': { name: t('Centres solved'), kind: 'centres444', events: ['444'], desc: t('Practice, not random-state: centres done, edges and corners mixed') },

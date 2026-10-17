@@ -14,6 +14,8 @@ import { F2L } from './f2l.js';
 import { OLL_222, PBL_222, CLL_222, EG1_222, EG2_222 } from './algs2.js';
 import { ZBLL_SET } from './zbll.js';
 import { invert, tidy, pick } from './util.js';
+import { faceTurns } from './faceturns.js';
+import { SOLVED, FACES, applyAlg } from './cube3.js';
 import { preferredAlg, loadSet } from './alglibrary.js';
 import { clockScramble } from './sidescramble.js';
 import { slideScramble } from './slide.js';
@@ -255,7 +257,7 @@ function libraryScramble(set, c, alg) {
   const post = pick(fill.post || ['']);
   if (set.puzzle === 'cube') {
     /* tidy() reads `R2'` as three quarter turns; it is the same half turn. */
-    const seq = tidy([pre, c.setup, invert(alg), post].filter(Boolean).join(' ').replace(/2'/g, '2'));
+    const seq = tidy([pre, c.setup, backwards(alg, set.n || 3), post].filter(Boolean).join(' ').replace(/2'/g, '2'));
     return { scramble: set.n === 4 ? forBigCube(seq) : seq };
   }
   const seq = PUZ.joinMoves(set.puzzle, [pre, c.setup, PUZ.invertMoves(set.puzzle, alg), post]);
@@ -269,6 +271,40 @@ export function previewOf(modeId, scramble) {
 }
 
 const auf = () => pick(U_MOVES);
+
+/**
+ * An algorithm backwards, as a scramble for the case it solves.
+ *
+ * Reversing the letters is right only when the algorithm ends held the way it
+ * started. `y U' L' U L` read backwards is `L' U' L U y'`, and nobody performs
+ * the y' at the end of a scramble: held the usual way, that opened the
+ * front-left slot for an algorithm that solves the front-right one. `d` hides
+ * the same y' inside a wide turn. So an algorithm that ends rotated is
+ * reversed by its face turns instead — slices kept if that is exact, outer
+ * faces only if not — and the result is checked on the cube model: it has to
+ * leave the centres home and the cube one algorithm from solved. An
+ * algorithm that ends turned only by its M slices (LSE) keeps its letters:
+ * that offset is part of those cases, and their fillers count on it. Big cubes keep theirs too: their wide
+ * turns are not cube3's.
+ */
+const sameFrame = (frame) => FACES.every(f => frame[f] === f);
+const ROTATES = /(^|\s)([xyzurfdlb]|[URFDLB]w)/;      // a rotation, or a wide turn with one inside
+function backwards(alg, n = 3) {
+  const plain = invert(alg);
+  if (n !== 3) return plain;
+  const P = applyAlg(SOLVED, alg);
+  if (!P || sameFrame(P.frame) || !ROTATES.test(alg)) return plain;
+  const exact = (x) => {
+    const r = x && applyAlg(SOLVED, x);
+    if (!r || !sameFrame(r.frame)) return false;
+    return applyAlg(r.state, alg).state.every((v, i) => v === SOLVED[i]);
+  };
+  for (const turns of [faceTurns(alg), faceTurns(alg, { slices: false })]) {
+    const x = turns && invert(turns);
+    if (exact(x)) return x;
+  }
+  return plain;
+}
 
 /**
  * Case-based scramble: AUF + inverse(solution) + AUF.
@@ -286,41 +322,104 @@ function caseScramble(setName, allowed) {
   const c = pick(pool.length ? pool : set);
   const alg = preferredAlg(c.id) || c.alg;
   if (LIBRARY[setName]) return { ...libraryScramble(LIBRARY[setName], c, alg), caseId: c.id, caseName: c.name };
-  const seq = tidy([auf(), invert(alg), auf()].filter(Boolean).join(' '));
+  const seq = tidy([auf(), backwards(alg), auf()].filter(Boolean).join(' '));
   return { scramble: seq, caseId: c.id, caseName: c.label ? `${c.name} · ${c.label}` : c.name };
 }
 
 /** Last layer = a random orientation case stacked on a random permutation case. */
 function composeLL() {
   const o = pick(OLL), p = pick(PLL);
-  const seq = tidy([auf(), invert(p.alg), auf(), invert(o.alg), auf()].join(' '));
+  const seq = tidy([auf(), backwards(p.alg), auf(), backwards(o.alg), auf()].join(' '));
   return { scramble: seq, caseId: `${o.id}+${p.id}`, caseName: `OLL ${o.name} + ${p.name}` };
 }
 
-/**
- * Random composition of cross-preserving triggers — leaves the cross solved.
- * Short triggers are favoured so the scramble stays executable; anything that
- * still comes out overlong is regenerated rather than handed to the user.
- */
-function triggerScramble([lo, hi], maxMoves = 26) {
-  const short = CROSS_SAFE_TRIGGERS.filter(t => t.split(' ').length <= 3);
-  for (let attempt = 0; attempt < 12; attempt++) {
-    const n = lo + Math.floor(Math.random() * (hi - lo + 1));
-    const parts = [];
-    for (let i = 0; i < n; i++) {
-      // mostly short triggers, with the occasional longer one for variety
-      parts.push(pick(Math.random() < 0.82 ? short : CROSS_SAFE_TRIGGERS));
-      parts.push(auf());
-    }
-    // Inverting keeps the cross solved and makes the sequence feel like a scramble.
-    const seq = tidy(invert(parts.filter(Boolean).join(' ')));
-    const len = seq.split(/\s+/).filter(Boolean).length;
-    if (len <= maxMoves && len >= 8) return { scramble: seq };
-  }
-  return { scramble: tidy(invert(Array.from({ length: lo }, () => `${pick(short)} ${auf()}`).join(' '))) };
+/* ---------------------------------------------------------
+   Random-state subsets: cross solved, last slot, 2-gen, LSE, L10P
+   --------------------------------------------------------- */
+
+/* js/subsets.js picks a random position the subset allows and finds a way
+   there. It builds tables the first time (min2phase's, ~0.2 s; LSE and
+   2-gen their own), so it runs on a thread of its own, like square-1. */
+let subsetWorker = null;
+const subsetWaiting = new Map();
+let subsetSeq = 0;
+
+function subsetOnPage(kind) {
+  return import('./subsets.js').then(m => m.subsetScramble(kind));
 }
 
-/** Random moves from a restricted pool (2-gen, LSE, Roux). */
+function subset(kind) {
+  if (subsetWorker === null) {
+    try {
+      subsetWorker = new Worker(new URL('./subsets.worker.js', import.meta.url), { type: 'module' });
+      subsetWorker.onmessage = ({ data }) => {
+        const w = subsetWaiting.get(data.id);
+        subsetWaiting.delete(data.id);
+        if (!w) return;
+        if (data.error) w.reject(new Error(data.error)); else w.resolve(data.scramble);
+      };
+      subsetWorker.onerror = (err) => {
+        console.warn('[scramble] subset worker failed — making them on the page', err.message);
+        subsetWorker = false;
+        for (const w of subsetWaiting.values()) subsetOnPage(w.kind).then(w.resolve, w.reject);
+        subsetWaiting.clear();
+      };
+    } catch {
+      subsetWorker = false;          // no module workers: the page makes them
+    }
+  }
+  if (!subsetWorker) return subsetOnPage(kind);
+  return new Promise((resolve, reject) => {
+    const id = ++subsetSeq;
+    subsetWaiting.set(id, { kind, resolve, reject });
+    subsetWorker.postMessage({ id, kind });
+    /* A worker that never answers (Firefox once held one at startup behind
+       the service worker, see sw.js) must not hold the queue forever: give
+       up on it and make this one, and every later one, on the page. */
+    setTimeout(() => {
+      if (!subsetWaiting.has(id)) return;
+      console.warn('[scramble] subset worker did not answer — making them on the page');
+      subsetWorker?.terminate?.();
+      subsetWorker = false;
+      for (const w of subsetWaiting.values()) subsetOnPage(w.kind).then(w.resolve, w.reject);
+      subsetWaiting.clear();
+    }, 15000);
+  });
+}
+
+/**
+ * Only if the solver cannot load at all: compositions of triggers that keep
+ * what the mode promises. Not random-state — whole slots can survive them —
+ * but never a scramble that breaks the subset.
+ */
+function triggerScramble(triggers, [lo, hi]) {
+  const n = lo + Math.floor(Math.random() * (hi - lo + 1));
+  const parts = [];
+  for (let i = 0; i < n; i++) parts.push(pick(triggers), auf());
+  return tidy(invert(parts.filter(Boolean).join(' ')));
+}
+/* Triggers that only touch the front-right slot and the top layer. */
+const FR_TRIGGERS = ["R U R'", "R U' R'", "R U2 R'", "F' U F", "F' U' F", "F' U2 F", "R U R' U' R' F R F'", "F R U R' U' F'"];
+/* Triggers that keep both Roux blocks: M and U, and the two-block-safe R U R' U' conjugates of CMLL. */
+const L10P_TRIGGERS = ["M", "M'", "M2", "R U R' U R U2 R'", "R' U' R U' R' U2 R", "F R U R' U' F'", "M' U M", "M U M'"];
+const FALLBACK = {
+  cross: () => triggerScramble(CROSS_SAFE_TRIGGERS, [6, 8]),
+  lastslot: () => triggerScramble(FR_TRIGGERS, [3, 5]),
+  l10p: () => triggerScramble(L10P_TRIGGERS, [6, 9]),
+  '2gen': () => subgroupScramble('2gen', [20, 25]),
+  lse: () => subgroupScramble('lse', [14, 18]),
+};
+
+async function subsetScramble(kind) {
+  try {
+    return await subset(kind);
+  } catch (err) {
+    console.warn('[scramble] random-state subset failed for', kind, err.message);
+    return FALLBACK[kind]();
+  }
+}
+
+/** Random moves from a restricted pool (2-gen, LSE) — the fallback only. */
 function subgroupScramble(poolName, [lo, hi]) {
   const pool = POOLS[poolName] || POOLS['2gen'];
   const n = lo + Math.floor(Math.random() * (hi - lo + 1));
@@ -332,7 +431,7 @@ function subgroupScramble(poolName, [lo, hi]) {
     last = faceOf(m);
     out.push(m);
   }
-  return { scramble: out.join(' ') };
+  return out.join(' ');
 }
 
 /* 4x4 with every centre solved, for practising edge pairing and the 3x3 stage.
@@ -407,8 +506,7 @@ async function makeScramble(eventId, modeId = 'wca', opts = {}) {
     return { ...caseScramble(mode.set, opts.allowedCases), official: false };
   }
   if (mode.kind === 'compose')  return { ...composeLL(), official: false };
-  if (mode.kind === 'trigger')  return { ...triggerScramble(mode.depth, mode.maxMoves), official: false };
-  if (mode.kind === 'subgroup') return { ...subgroupScramble(mode.pool, mode.depth), official: false };
+  if (mode.kind === 'subset')   return { scramble: await subsetScramble(mode.subset), official: false };
   if (mode.kind === 'centres444') return { scramble: centresSolved444((await one(await cubing(), '333')).scramble), official: false };
 
   // wca + wca-goal: official random-state scramble
