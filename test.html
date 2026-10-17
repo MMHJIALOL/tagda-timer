@@ -595,14 +595,30 @@ const sample = async (mode, n, test) => {
   return { bad, median: lens[n >> 1], max: lens[n - 1] };
 };
 
+/* The four F2L slots in cubing.js's numbering: [edge, corner]. FR first. */
+const SLOTS = [[8, 4], [9, 5], [10, 7], [11, 6]];
+const slotDone = (d, [e, c]) => okAt(d, 'EDGES', [e]) && okAt(d, 'CORNERS', [c]);
 {
-  const r = await sample('cross', 60, d => okAt(d, 'EDGES', DL));
+  /* Random-state: across 60 scrambles a slot is solved by chance about once
+     in a hundred. Built from cross-safe triggers it was most of a slot each. */
+  let solvedSlots = 0;
+  const r = await sample('cross', 60, d => { solvedSlots += SLOTS.filter(s => slotDone(d, s)).length; return okAt(d, 'EDGES', DL); });
   check('"cross solved" really leaves the cross solved', r.bad === 0, `${r.bad}/60 bad · median ${r.median} moves`);
   check('"cross solved" scrambles stay executable', r.max <= 28, `longest ${r.max} moves`);
+  check('"cross solved" does not hand out solved slots', solvedSlots <= 6, `${solvedSlots} solved slots in 60 scrambles`);
 }
 {
-  const r = await sample('lastslot', 60, d => okAt(d, 'EDGES', DL));
-  check('"last slot" keeps the cross solved', r.bad === 0, `median ${r.median} moves`);
+  /* Exactly one pair to go, and it is the front-right one. The trigger
+     version kept the cross but opened two or three slots. */
+  const r = await sample('lastslot', 60, d => okAt(d, 'EDGES', DL)
+    && SLOTS.slice(1).every(s => slotDone(d, s)) && !slotDone(d, SLOTS[0]));
+  check('"last slot" leaves cross and three pairs solved, front-right open', r.bad === 0, `${r.bad}/60 bad · median ${r.median} moves`);
+}
+{
+  /* Roux L10P: both 1x2x3 blocks built, the top corners and M-slice edges free. */
+  const blocks = d => okAt(d, 'EDGES', [5, 7, 8, 9, 10, 11]) && okAt(d, 'CORNERS', [4, 5, 6, 7]);
+  const r = await sample('roux', 40, blocks);
+  check('"Roux L10P" leaves both blocks built', r.bad === 0, `${r.bad}/40 bad · median ${r.median} moves`);
 }
 {
   const f2l = d => okAt(d, 'EDGES', nonU('EDGES')) && okAt(d, 'CORNERS', nonU('CORNERS'));
