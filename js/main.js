@@ -49,6 +49,7 @@ import './moved.js';
 import { captureErrors, startHealth, noteHeal } from './health.js';
 import { startIdleDisconnect } from './presence.js';
 import { startNews } from './news.js';
+import { setKeybinds, actionFor, keyLabel, useKeybindStore } from './keybinds.js';
 
 // From the first moment, so an error during boot is caught too (js/health.js sends it once signed in).
 captureErrors();
@@ -571,6 +572,8 @@ function bootFailure(err) {
 
 async function init() {
   app.settings = await loadSettings();
+  setKeybinds(app.settings.keybinds);
+  useKeybindStore({ get: () => app.settings.keybinds, set: v => app.setSetting('keybinds', v) });
   setCalloutMode(app.settings.callouts);   // wakes the voice now, not at 8 seconds
   translateDOM();
   applyTheme(app.settings);
@@ -5361,6 +5364,7 @@ app.setSetting = (k, v) => {
 };
 
 function applyAll(changed) {
+  if (!changed || changed === 'keybinds') setKeybinds(app.settings.keybinds);
   // Tiles first: applyTheme decides whether each rail earns a column by looking
   // at what is actually in it, so the panels have to be in their homes by then.
   applyTiles(app.settings);
@@ -6550,10 +6554,12 @@ function wireShortcuts() {
     if (isTyping()) return;
     const k = e.key;
     const mod = e.ctrlKey || e.metaKey;
+    // Which named action this key is bound to (keybinds.js); null for none.
+    const action = mod || e.altKey ? null : actionFor(e);
 
-    // palette
+    // palette — its key works over an open panel too, so it is asked first
     if (mod && k.toLowerCase() === 'k') { e.preventDefault(); return openPaletteWithCommands(); }
-    if (k === '/' && !mod && !paletteOpen()) { e.preventDefault(); return openPaletteWithCommands(); }
+    if (action === 'palette' && !paletteOpen()) { e.preventDefault(); return openPaletteWithCommands(); }
     if (mod && k.toLowerCase() === 'c' && !window.getSelection().toString()) {
       e.preventDefault(); return copyToast(app.scramble?.scramble || '', 'Scramble');
     }
@@ -6584,29 +6590,28 @@ function wireShortcuts() {
 
     const last = app.solves.at(-1);
 
-    switch (k) {
-      case 'Delete': case 'Backspace':
+    switch (action) {
+      case 'deleteLast':
         e.preventDefault();
         if (e.repeat) break;                   // a held key is one intent, not many
         if (!last) toast('No solves yet');
         else if (!deleteThrottled(last)) toast('One at a time — undo is Ctrl+Z');
         break;
-      case '2': e.preventDefault(); penalizeLast('+2'); break;
-      case 'd': case 'D': e.preventDefault(); penalizeLast('DNF'); break;
-      case '0': e.preventDefault(); penalizeLast('none'); break;
-      case 'c': case 'C': e.preventDefault(); if (last) commentOn(last); break;
-      case 'w': case 'W':
+      case 'plus2': e.preventDefault(); penalizeLast('+2'); break;
+      case 'dnf': e.preventDefault(); penalizeLast('DNF'); break;
+      case 'noPenalty': e.preventDefault(); penalizeLast('none'); break;
+      case 'comment': e.preventDefault(); if (last) commentOn(last); break;
+      case 'replay':
         e.preventDefault();
         if (last && hasReplay(last.id)) openReplay(last);
         else toast(replayEnabled() ? t('No replay for the last solve') : t('Webcam replay is off. Turn it on in Settings'));
         break;
-      case 'r': case 'R':
+      case 'repeat':
         e.preventDefault();
         if (last) repeatScramble(last); else toast('No solves yet');
         break;
 
-      case 'n': case 'N': e.preventDefault(); forwardScramble(); break;
-      case 'x': case 'X':
+      case 'ownScrambles':
         e.preventDefault();
         /* Pasting your own scrambles in here is the same instruction as the
            arrow keys, one step further round: it replaces today's scramble
@@ -6617,56 +6622,52 @@ function wireShortcuts() {
         if (relayOn()) { toast('Your own scrambles are not available on a relay'); break; }
         openPanel(t('Your scrambles'), 'buildCustomScrambles', undefined, app);
         break;
-      case 'ArrowLeft':  e.preventDefault(); prevScramble(); break;
-      case 'ArrowRight': e.preventDefault(); forwardScramble(); break;
+      case 'prevScramble': e.preventDefault(); prevScramble(); break;
+      case 'nextScramble': e.preventDefault(); forwardScramble(); break;
 
-      /* Shift+Comma and Shift+Period. `k` is already '<' or '>' rather than
-         ',' or '.', so these cannot fall through to the settings drawer or to
-         the virtual cube's letters — and isTyping() above keeps all of it off
-         while you are in a text field. */
-      case '<': e.preventDefault(); relayGoto(relayPos - 1); break;
-      case '>': e.preventDefault(); relayGoto(relayPos + 1); break;
+      case 'relayPrev': e.preventDefault(); relayGoto(relayPos - 1); break;
+      case 'relayNext': e.preventDefault(); relayGoto(relayPos + 1); break;
 
-      case 'e': case 'E': e.preventDefault(); $('#btn-event').click(); break;
-      case 'm': case 'M': e.preventDefault(); $('#btn-mode').click(); break;
-      case 's': case 'S': e.preventDefault(); $('#btn-session').click(); break;
-      case 'a': case 'A': e.preventDefault(); $('#btn-stats').click(); break;
-      case 'h': case 'H': e.preventDefault(); $('#btn-open-history').click(); break;
-      case 't': case 'T': e.preventDefault(); $('#btn-theme').click(); break;
-      case ',':           e.preventDefault(); $('#btn-settings').click(); break;
-      case '?':           e.preventDefault(); openShortcuts(); break;
-      case 'b': case 'B': e.preventDefault(); $('#btn-about').click(); break;
-      case 'y': case 'Y': e.preventDefault(); $('#btn-recon').click(); break;
-      case 'l': case 'L': e.preventDefault(); $('#btn-xp1').click(); break;
-      case 'p': case 'P': e.preventDefault(); $('#btn-spotify').click(); break;
-      case 'u': case 'U': e.preventDefault(); $('#btn-gear').click(); break;
-      case 'l': case 'L':
+      case 'event': e.preventDefault(); $('#btn-event').click(); break;
+      case 'mode': e.preventDefault(); $('#btn-mode').click(); break;
+      case 'sessions': e.preventDefault(); $('#btn-session').click(); break;
+      case 'stats': e.preventDefault(); $('#btn-stats').click(); break;
+      case 'history': e.preventDefault(); $('#btn-open-history').click(); break;
+      case 'appearance': e.preventDefault(); $('#btn-theme').click(); break;
+      case 'settings': e.preventDefault(); $('#btn-settings').click(); break;
+      case 'shortcuts': e.preventDefault(); openShortcuts(); break;
+      case 'about': e.preventDefault(); $('#btn-about').click(); break;
+      case 'recon': e.preventDefault(); $('#btn-recon').click(); break;
+      case 'xp1':        e.preventDefault(); $('#btn-xp1').click(); break;
+      case 'spotify': e.preventDefault(); $('#btn-spotify').click(); break;
+      case 'gear': e.preventDefault(); $('#btn-gear').click(); break;
+      case 'learn':
         e.preventDefault();
         learn.setEnabled(!learn.enabled);
         break;
-      case 'g': case 'G':
+      case 'peek':
         e.preventDefault();
         if (learn.enabled) learn.peek();
         break;
-      case 'k': case 'K':
+      case 'cases':
         e.preventDefault();
         if (setFor(app.settings.mode)) openPanel('Cases', 'buildCases', undefined, app);
         else toast('Current mode has no case list');
         break;
 
-      case 'z': case 'Z':
+      case 'zen':
         e.preventDefault(); document.body.classList.toggle('zen'); break;
-      case 'f': case 'F':
+      case 'fullscreen':
         e.preventDefault();
         if (document.fullscreenElement) document.exitFullscreen();
         else document.documentElement.requestFullscreen?.().catch(() => {});
         break;
-      case 'v': case 'V':
+      case 'cubeView':
         e.preventDefault();
         app.setSetting('cubeView', app.settings.cubeView === '3D' ? '2D' : '3D');
         if (app.scramble) showScramble(app.scramble, true);
         break;
-      case 'i': case 'I':
+      case 'inspection':
         e.preventDefault();
         app.setSetting('inspection', !app.settings.inspection);
         toast(t(app.settings.inspection ? 'Inspection on' : 'Inspection off'));
@@ -6695,31 +6696,31 @@ function openPaletteWithCommands() {
       out.push({ kind: 'session', label: s.name, run: () => app.switchSession(s.id) });
     }
     out.push(
-      { kind: 'go', label: 'Statistics', key: 'A', run: () => $('#btn-stats').click() },
-      { kind: 'go', label: t('All solves'), key: 'H', run: () => $('#btn-open-history').click() },
-      { kind: 'go', label: 'Appearance', key: 'T', run: () => $('#btn-theme').click() },
-      { kind: 'go', label: 'Settings', key: ',', run: () => $('#btn-settings').click() },
-      { kind: 'go', label: 'Gear', key: 'U', keywords: t('cube lube tension magnets hardware collection'), run: () => $('#btn-gear').click() },
-      { kind: 'go', label: t('Keyboard shortcuts'), key: '?', run: () => openShortcuts() },
+      { kind: 'go', label: 'Statistics', key: keyLabel('stats'), run: () => $('#btn-stats').click() },
+      { kind: 'go', label: t('All solves'), key: keyLabel('history'), run: () => $('#btn-open-history').click() },
+      { kind: 'go', label: 'Appearance', key: keyLabel('appearance'), run: () => $('#btn-theme').click() },
+      { kind: 'go', label: 'Settings', key: keyLabel('settings'), run: () => $('#btn-settings').click() },
+      { kind: 'go', label: 'Gear', key: keyLabel('gear'), keywords: t('cube lube tension magnets hardware collection'), run: () => $('#btn-gear').click() },
+      { kind: 'go', label: t('Keyboard shortcuts'), key: keyLabel('shortcuts'), run: () => openShortcuts() },
       { kind: 'go', label: t('Webcam replay'), keywords: t('webcam video camera recording film replay'), run: () => openCameraPanel() },
-      { kind: 'go', label: 'About', key: 'B', run: () => $('#btn-about').click() },
-      { kind: 'go', label: t('Reconstruct a scramble'), key: 'Y', run: () => $('#btn-recon').click() },
-      { kind: 'go', label: t('Cross + 1 trainer'), key: 'L', keywords: t('cross plus one f2l lookahead first pair'), run: () => $('#btn-xp1').click() },
+      { kind: 'go', label: 'About', key: keyLabel('about'), run: () => $('#btn-about').click() },
+      { kind: 'go', label: t('Reconstruct a scramble'), key: keyLabel('recon'), run: () => $('#btn-recon').click() },
+      { kind: 'go', label: t('Cross + 1 trainer'), key: keyLabel('xp1'), keywords: t('cross plus one f2l lookahead first pair'), run: () => $('#btn-xp1').click() },
       { kind: 'go', label: 'Race', keywords: t('room multiplayer versus head to head'), run: () => $('#btn-race').click() },
       { kind: 'go', label: 'Scramble of the Day', keywords: t('leaderboard daily global scramble competition single sotd'), run: () => $('#btn-daily').click() },
       { kind: 'go', label: t('Daily leaderboards'), keywords: t('board times solves ranking daily'), run: () => openPanel('Scramble of the Day', 'buildDaily', undefined, app) },
       { kind: 'do', label: t('Reconstruct the last solve'), run: () => app.solves.at(-1) ? reconstructSolve(app.solves.at(-1)) : toast('No solves yet') },
-      { kind: 'go', label: t('Pick trainer cases'), key: 'K', run: () => setFor(app.settings.mode) ? openPanel('Cases', 'buildCases', undefined, app) : toast('Current mode has no case list') },
-      { kind: 'do', key: 'L', keywords: t('learn spaced repetition algorithm memorise drill teach'),
+      { kind: 'go', label: t('Pick trainer cases'), key: keyLabel('cases'), run: () => setFor(app.settings.mode) ? openPanel('Cases', 'buildCases', undefined, app) : toast('Current mode has no case list') },
+      { kind: 'do', key: keyLabel('learn'), keywords: t('learn spaced repetition algorithm memorise drill teach'),
         label: learn.enabled ? t('Turn off learn mode') : t('Learn mode — teach me these cases'),
         run: () => learn.setEnabled(!learn.enabled) },
       { kind: 'do', label: t('New session'), run: () => app.newSession() },
-      { kind: 'do', label: t('New scramble'), key: 'N', run: forwardScramble },
+      { kind: 'do', label: t('New scramble'), key: keyLabel('nextScramble'), run: forwardScramble },
       ...(app.solves.length && hasReplay(app.solves.at(-1).id)
-        ? [{ kind: 'do', label: t('Watch the last solve’s replay'), key: 'W', keywords: t('webcam video camera recording'), run: () => openReplay(app.solves.at(-1)) }]
+        ? [{ kind: 'do', label: t('Watch the last solve’s replay'), key: keyLabel('replay'), keywords: t('webcam video camera recording'), run: () => openReplay(app.solves.at(-1)) }]
         : []),
       { kind: 'do', label: t('Copy scramble'), run: () => copyToast(app.scramble?.scramble || '', 'Scramble') },
-      { kind: 'do', label: t('Enter your own scrambles'), key: 'X', run: () => openPanel(t('Your scrambles'), 'buildCustomScrambles', undefined, app) },
+      { kind: 'do', label: t('Enter your own scrambles'), key: keyLabel('ownScrambles'), run: () => openPanel(t('Your scrambles'), 'buildCustomScrambles', undefined, app) },
       { kind: 'do', label: t('Share last solve as a card'), run: () => app.solves.at(-1) ? app.shareSolveCard(app.solves.at(-1)) : toast('No solves yet') },
       { kind: 'do', label: t('Share current ao5 as a card'), run: () => app.shareAverageCard('ao5') },
       { kind: 'do', label: t('Share current ao12 as a card'), run: () => app.shareAverageCard('ao12') },
@@ -6728,9 +6729,9 @@ function openPaletteWithCommands() {
       { kind: 'do', label: t('Share best single as a card'), run: () => app.shareAverageCard('best-single') },
       { kind: 'do', label: t('Reset panel layout'), run: () => app.resetTiles?.() },
       { kind: 'do', label: t('Restore default settings'), run: () => app.resetSettings?.() },
-      { kind: 'do', label: t('Toggle inspection'), key: 'I', run: () => { app.setSetting('inspection', !app.settings.inspection); toast(t(app.settings.inspection ? 'Inspection on' : 'Inspection off')); } },
-      { kind: 'do', label: t('Zen mode'), key: 'Z', run: () => document.body.classList.toggle('zen') },
-      { kind: 'do', label: 'Fullscreen', key: 'F', run: () => document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen?.() },
+      { kind: 'do', label: t('Toggle inspection'), key: keyLabel('inspection'), run: () => { app.setSetting('inspection', !app.settings.inspection); toast(t(app.settings.inspection ? 'Inspection on' : 'Inspection off')); } },
+      { kind: 'do', label: t('Zen mode'), key: keyLabel('zen'), run: () => document.body.classList.toggle('zen') },
+      { kind: 'do', label: 'Fullscreen', key: keyLabel('fullscreen'), run: () => document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen?.() },
       { kind: 'do', label: t('Export backup'), run: () => $('#btn-settings').click() },
       { kind: 'do', label: t('Clear this session'), run: clearSession },
       { kind: 'do', label: t('Start Competition Mode'), run: () => app.openCompetition() },

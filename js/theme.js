@@ -178,6 +178,7 @@ export const DEFAULTS = {
   metronomeBpm: 60,             // shared by the solve-time click and the window
   metroOpen: false,             // the floating beat meter, for drilling algs
   metroPos: null,
+  keybinds: {},                 // only the shortcuts somebody changed: { actionId: 'k1 k2' } (keybinds.js)
   mouseTimer: false,            // click-to-time; off so a stray click cannot start a solve
   inputMode: 'timer',           // timer = spacebar/touch | manual = typed | stackmat = aux jack | virtual = keyboard cube
   stackmatMic: '',              // the input the Stackmat's cable is in; '' = the system default
