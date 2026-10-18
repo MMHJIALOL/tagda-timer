@@ -629,6 +629,18 @@ export class DailyTransport extends EventTarget {
     await logged(S, up, { action: 'removeTime', path: `${base}/results/${uid}`, uid, before: row });
   }
 
+  /**
+   * Re-time somebody's result (an admin or a sotd mod: the rules refuse
+   * anybody else): 'none', '+2' or 'DNF', for the +2 they forgot or a
+   * Stackmat glitch. Logged as the console's 'retime', so Log › Moderation
+   * can set it back. Throws when the rules refuse.
+   */
+  async setPenalty({ dayKey, event, uid, penalty, before = 'none' }) {
+    if (!dayKey || !event || !uid || !['none', '+2', 'DNF'].includes(penalty)) throw new Error('nothing-to-retime');
+    const path = `daily/${dayKey}/${event}/results/${uid}`;
+    await logged(this._sdk, { [`${path}/penalty`]: penalty }, { action: 'retime', path, uid, before, note: penalty });
+  }
+
   /** Report a message in the watched room (moderation.js): 'sent' or 'already'. */
   reportChat(m) {
     const { dayKey, event } = this.target();

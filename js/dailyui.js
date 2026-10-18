@@ -144,7 +144,7 @@ export function lockText(ctl) {
  * @param revealed  whether this viewer has earned the right to see times
  * @param replays   { dayKey, event, onGone }: put a ▶ on rows with a shared
  *                  replay (sotd-replays.js). Left out, there are none.
- * @param opts      { remove, locked }: the admin's × on every row (adminRemover),
+ * @param opts      { remove, locked }: the admin's ✎ on every row (adminTimeMenu),
  *                  and what the lock says instead of the usual (lockText).
  */
 export function timeBoard(rows, revealed, replays = null, { remove = null, locked = null } = {}) {
@@ -182,25 +182,53 @@ export function replaysBoard(rows, revealed, replays, { past = false, remove = n
 const timeText = (res) => (res.penalty === 'DNF' ? 'DNF'
   : fmt(res.timeMs + (res.penalty === '+2' ? 2000 : 0)) + (res.penalty === '+2' ? '+' : ''));
 
-const DEL_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7L7 17"/></svg>';
+const EDIT_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg>';
+
+const refused = (err) => /permission.denied/i.test(String(err?.code || err?.message || err));
 
 /**
- * The admin's × on a board row, or null for everybody else: takes that time
- * off the board after a confirm. On today's board the person gets the backup
- * scramble as a final attempt, unless the time was already on the backup.
- * The rules have the final say (firebase.rules.json, `removed/$uid`).
+ * The admin's ✎ on a board row, or null for everybody else: a +2, a DNF or no
+ * penalty, for the time somebody forgot to mark (plenty never find out how),
+ * or the time off the board after a confirm. On today's board a removed
+ * person gets the backup scramble as a final attempt, unless the time was
+ * already on the backup. The rules have the final say (firebase.rules.json,
+ * results/$uid/penalty and `removed/$uid`).
  *
  * @param dayKey  the board's day key
  * @param past    true on a past day's board, where there is no next attempt
- * @param onDone  after it lands, with the row: a past day's one-shot read has
- *                no listener to drop the row by itself
+ * @param onDone  after it lands, with the row and 'removed' or the new
+ *                penalty: a past day's one-shot read has no listener to
+ *                redraw the row by itself
  */
-export function adminRemover(ctl, { dayKey, past = false, onDone = null } = {}) {
+export function adminTimeMenu(ctl, { dayKey, past = false, onDone = null } = {}) {
   if (!ctl.admin || !dayKey) return null;
   const event = ctl.eventId;
+  const retime = async (r, penalty) => {
+    const res = r.result || {};
+    try {
+      await ctl.setPenalty(r, penalty, dayKey, event);
+    } catch (err) {
+      console.warn('[daily] penalty refused', err?.code || err);
+      toast(refused(err) ? t('The board refused that — firebase.rules.json needs publishing first')
+        : t('Couldn’t change that time, try again'), { kind: 'bad', long: true });
+      return;
+    }
+    toast(t('{name}’s time is now {time}', { name: res.name || 'Cuber', time: timeText({ ...res, penalty }) }));
+    onDone?.(r, penalty);
+  };
   return async (r) => {
     const res = r.result || {};
     const vars = { name: res.name || 'Cuber', time: timeText(res) };
+    const now = res.penalty || 'none';
+    const pick = await choiceToast(r.isMe ? t('Your {time}: change the penalty, or remove it?', vars)
+      : t('{name}’s {time}: change the penalty, or remove it?', vars), [
+      now !== '+2' ? { label: '+2', value: '+2' } : null,
+      now !== 'DNF' ? { label: 'DNF', value: 'DNF' } : null,
+      now !== 'none' ? { label: t('No penalty'), value: 'none' } : null,
+      { label: t('Remove…'), value: 'remove' },
+    ].filter(Boolean), { timeout: 10000 });
+    if (!pick) return;
+    if (pick !== 'remove') return retime(r, pick);
     const msg = past
       ? (r.isMe ? t('Remove your {time} from that day’s board?', vars) : t('Remove {name}’s {time} from that day’s board?', vars))
       : res.backup
@@ -219,7 +247,7 @@ export function adminRemover(ctl, { dayKey, past = false, onDone = null } = {}) 
       await ctl.removeResult(r, dayKey, event);
     } catch (err) {
       console.warn('[daily] remove refused', err?.code || err);
-      toast(/permission.denied/i.test(String(err?.code || err?.message || err))
+      toast(refused(err)
         ? t('The board refused that — firebase.rules.json needs publishing first')
         : t('Couldn’t remove that time, try again'), { kind: 'bad', long: true });
       return;
@@ -227,7 +255,7 @@ export function adminRemover(ctl, { dayKey, past = false, onDone = null } = {}) 
     // The clip goes too: nobody can reach it without the row, and deletes are free.
     if (res.replay === true) dropClip({ dayKey, event, uid: r.uid });
     toast(r.isMe ? t('Removed your time') : t('Removed {name}’s time', vars));
-    onDone?.(r);
+    onDone?.(r, 'removed');
     if (how !== 'ban') return;
     try {
       await ctl.banUser({ uid: r.uid, name: res.name || '', reason: `Scramble of the Day time ${timeText(res)} (${event}, ${new Date(Number(dayKey) + 19800000).toISOString().slice(0, 10)})` });
@@ -299,8 +327,8 @@ function timeRow(r, i, replays = null, remove = null) {
       /* First in the cell, so the times still line up down the right on a
          board where some rows have a ▶ and some do not. */
       remove ? el('button', {
-        class: 'db-del', type: 'button', html: DEL_SVG,
-        title: t('Remove this time (admin)'), 'aria-label': t('Remove this time'),
+        class: 'db-del', type: 'button', html: EDIT_SVG,
+        title: t('Penalty or remove (admin)'), 'aria-label': t('Change the penalty or remove this time'),
         onclick: (e) => { e.stopPropagation(); remove(r); },
         // Space on a focused × is not the timer's.
         onkeydown: (e) => e.stopPropagation(),
@@ -472,9 +500,14 @@ export function dayHistory(ctl, redraw) {
       const cur = (got && got.dayId === day && got.eventId === eventId) ? got : null;
       if (!cur) load(day, eventId);
       const dayKey = String(dayStartMs(day));
-      // A one-shot read has no listener to drop a removed row, so it is dropped here.
-      const remove = adminRemover(ctl, { dayKey, past: true, onDone: (r) => {
-        if (cur) cur.rows = cur.rows.filter(x => x.uid !== r.uid);
+      // A one-shot read has no listener to drop a removed row or re-rank a re-timed one, so that is done here.
+      const remove = adminTimeMenu(ctl, { dayKey, past: true, onDone: (r, what) => {
+        if (cur && what === 'removed') cur.rows = cur.rows.filter(x => x.uid !== r.uid);
+        else if (cur) {
+          cur.rows = cur.rows.map(x => (x.uid !== r.uid ? x : { ...x, result: { ...x.result, penalty: what },
+            e: what === 'DNF' ? Infinity : (x.result?.timeMs || 0) + (what === '+2' ? 2000 : 0) }))
+            .sort((a, b) => a.e - b.e);
+        }
         redraw();
       } });
       return pastView(cur, mode, { dayKey, event: eventId, onGone: redraw, onBan: replayBan(ctl, eventId), onReport: replayReport(ctl, dayKey, eventId) }, remove);
@@ -703,7 +736,7 @@ export function openSotd(app, ctl, { onExit, solving = () => false } = {}) {
     const replays = dayKey && replaysForMe() ? { dayKey, event: ctl.eventId, featured: past ? null : ctl.featuredReplay, onGone: () => { renderBoard(); placeBoard(); }, onBan: replayBan(ctl, ctl.eventId), onReport: replayReport(ctl, dayKey, ctl.eventId) } : null;
     if (!replays && mode === 'replays') mode = 'times';
     // Today's rows only: a past day's picker builds its own (it has to drop the row itself).
-    const opts = { remove: past ? null : adminRemover(ctl, { dayKey }), locked: lockText(ctl) };
+    const opts = { remove: past ? null : adminTimeMenu(ctl, { dayKey }), locked: lockText(ctl) };
     const sharedN = replays ? rows.filter(r => r.result?.replay === true).length : 0;
     board.append(el('div', { class: 'sotd-board-card' },
       past ? null : featuredLine(),

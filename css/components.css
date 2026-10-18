@@ -4357,15 +4357,15 @@ body.duel-on #panel-stats > .stats-duel { margin-top: 10px; }
 .db-play:hover { background: color-mix(in srgb, var(--accent) 26%, transparent); }
 .db-play.loading { opacity: .5; cursor: progress; animation: recPulse 1s ease-in-out infinite; }
 @media (pointer: coarse) { .db-play { width: 30px; height: 30px; } }
-/* The admin's × on a row (dailyui.js adminRemover): out of the way until the row is hovered, like the chat's. */
+/* The admin's ✎ on a row (dailyui.js adminTimeMenu): out of the way until the row is hovered, like the chat's. */
 .db-del {
   flex: none; width: 20px; height: 20px; display: grid; place-items: center;
   padding: 0; border: 0; border-radius: 5px; background: none;
   color: var(--text-faint); cursor: pointer; opacity: 0;
 }
-.db-del svg { width: 11px; height: 11px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; }
+.db-del svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .db-row:hover .db-del, .db-del:focus-visible { opacity: .85; }
-.db-del:hover { color: var(--danger); background: color-mix(in srgb, var(--danger) 14%, transparent); }
+.db-del:hover { color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
 @media (pointer: coarse) { .db-del { opacity: .5; width: 28px; height: 28px; } }
 
 /* Share replay, under the note composer. */
