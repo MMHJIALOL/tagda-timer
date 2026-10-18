@@ -254,6 +254,11 @@ const SOFT = new Set(['aurora', 'curtains', 'mesh', 'plasma', 'smoke', 'cells'])
    on a 144 Hz screen. */
 const MAX_FPS = 30;
 
+/* How long a lost WebGL context gets to come back by itself before the canvas
+   is swapped for a fresh one. Zen once lost its context and never restored it:
+   the background stayed black until the browser was restarted. */
+const RESTORE_WAIT_MS = 1500;
+
 function hexToRgb(hex) {
   const h = (hex || '#000').replace('#', '');
   const s = h.length === 3 ? h.split('').map(c => c + c).join('') : h;
@@ -281,6 +286,10 @@ export function softwareGL() {
 export class Background {
   constructor(canvas, mediaEl) {
     this.canvas = canvas;
+    this._onLost = (e) => this._lost(e);
+    this._onRestored = () => this._restored();
+    this._watch(canvas);
+    this._restoreTimer = null;
     this.mediaEl = mediaEl;
     this.gl = null;
     this.shader = 'aurora';
@@ -316,7 +325,8 @@ export class Background {
   init() {
     if (this.gl) return true;
     const gl = this.canvas.getContext('webgl', { antialias: false, alpha: false, powerPreference: 'low-power' });
-    if (!gl) return false;
+    // Lost and not back yet: _restored() or _replaceCanvas() will init again.
+    if (!gl || gl.isContextLost()) return false;
     this.gl = gl;
     const buf = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, buf);
@@ -325,6 +335,53 @@ export class Background {
     this._compile(this.shader);
     this.resize();
     return true;
+  }
+
+  /* ---------------- context loss ----------------
+     A GPU reset, a driver update, sleep, or the browser running out of WebGL
+     contexts takes the context away and leaves the canvas black. Without a
+     preventDefault() on the loss the browser never gives it back, and nothing
+     here would ask again: the background stayed black until a restart. */
+
+  _watch(canvas) {
+    canvas.addEventListener('webglcontextlost', this._onLost);
+    canvas.addEventListener('webglcontextrestored', this._onRestored);
+  }
+
+  _lost(e) {
+    e.preventDefault();             // without this the context is never restored
+    this.stop();
+    this.gl = null; this._prog = null; this._buf = null;
+    clearTimeout(this._restoreTimer);
+    // Some browsers never send webglcontextrestored. A new canvas gets a new
+    // context, so swap one in rather than wait for ever.
+    this._restoreTimer = setTimeout(() => this._replaceCanvas(), RESTORE_WAIT_MS);
+  }
+
+  _restored() {
+    clearTimeout(this._restoreTimer);
+    this._restoreTimer = null;
+    this._reinit();
+  }
+
+  _replaceCanvas() {
+    this._restoreTimer = null;
+    const old = this.canvas;
+    const fresh = old.cloneNode(false);  // same id, class and hidden state
+    old.removeEventListener('webglcontextlost', this._onLost);
+    old.removeEventListener('webglcontextrestored', this._onRestored);
+    this._watch(fresh);
+    old.replaceWith(fresh);
+    this.canvas = fresh;
+    this._reinit();
+  }
+
+  /** Everything init() set up lived on the old context: build it again. */
+  _reinit() {
+    this.gl = null; this._prog = null; this._buf = null;
+    if (this.mode !== 'shader') return;   // setMode('shader') will init it
+    this.init();
+    this.start();
   }
 
   _compile(name) {
