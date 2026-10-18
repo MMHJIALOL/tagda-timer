@@ -3380,7 +3380,7 @@ export function buildDaily(app) {
           // ▶ on the rows that shared a replay, the same as in the window.
           ui.timeBoard(ctl.ranked(), ctl.revealed, ctl.net?.target?.().dayKey
             ? { dayKey: ctl.net.target().dayKey, event: ctl.eventId, onGone: render } : null,
-          { remove: ui.adminRemover(ctl, { dayKey: ctl.net?.target?.().dayKey }), locked: ui.lockText(ctl) }),
+          { remove: ui.adminTimeMenu(ctl, { dayKey: ctl.net?.target?.().dayKey }), locked: ui.lockText(ctl) }),
         ));
       } else {
         // The picker below carries the date, so the group title does not repeat it.
