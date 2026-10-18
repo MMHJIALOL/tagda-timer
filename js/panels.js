@@ -30,6 +30,7 @@ import { DEFAULT_SPEFFZ_MAP, DEFAULT_BLD, CORNER_STICKER_KEYS, EDGE_STICKER_KEYS
          pieceName, samePiece, diagnose } from './bldtrace.js';
 import { FACES } from './cube3.js';
 import { mountSettingsSearch } from './settings-search.js';
+import { ACTIONS, MAX_KEYS, actionById, resolve, assign, reset, reservedWhy, keyOf, labelOf as keyLabelOf, keybindStore } from './keybinds.js';
 import { newsSection } from './news.js';
 import { feedbackSection } from './send-feedback.js';
 import { enableReplay, enableSound, requestCamera, attachPreview, onCamerasChanged, listCameras, listMics, cameraName,
@@ -1137,9 +1138,9 @@ export function buildSettings(app, searchQuery = '') {
       /* Where the top bar's keyboard button went: the camera took its place,
          and both of these still open from anywhere with ? and Ctrl+K or /. */
       group(t('Keyboard & commands'),
-        row(t('Keyboard shortcuts'), el('button', { class: 'ghost-btn sm', text: t('Show'),
+        row(t('Keyboard shortcuts'), el('button', { class: 'ghost-btn sm', text: t('Edit'),
           onclick: () => openDrawer(t('Keyboard shortcuts'), buildShortcuts(), { wide: true }) }),
-          t('every key the timer answers to. ? opens it from anywhere')),
+          t('every key the timer answers to, and which key does what. ? opens it from anywhere')),
         row(t('Command palette'), el('button', { class: 'ghost-btn sm', text: t('Open'),
           onclick: () => { closeDrawer(); app.openCommands?.(); } }),
           t('any event, mode, panel or action by name. Ctrl+K or / opens it from anywhere')),
@@ -1147,7 +1148,7 @@ export function buildSettings(app, searchQuery = '') {
 
       group(t('Learn mode'),
         el('div', { class: 'hint-note', html:
-            t('On top of any trainer mode: a case you have never seen arrives with its algorithm, after that you are asked to recall it, and how the solve went decides when it comes back. Turn it on with <b>L</b>, or from the case picker.') }),
+            t('On top of any trainer mode: a case you have never seen arrives with its algorithm, after that you are asked to recall it, and how the solve went decides when it comes back. Turn it on from the case picker, or give it a key in Keyboard shortcuts.') }),
         row(t('New cases per sitting'), slider(S.learnNewPerSession, 1, 15, 1, v => set('learnNewPerSession', v)),
           t('how many cases you have never seen may be introduced before you switch it off and on again')),
         row(t('Counts as slow'), slider(S.learnSlowFactor, 1.1, 3, .1, v => set('learnSlowFactor', v), v => v.toFixed(1) + '×'),
@@ -2591,54 +2592,19 @@ const labelOf = (set, group) => set.find(c => c.group === group)?.label || group
 /* =========================================================
    SHORTCUTS
    ========================================================= */
-export const SHORTCUTS = [
+/* The keys that cannot be changed: the timer's own, the Ctrl chords and the
+   virtual cube's letters. Every other key comes from keybinds.js, and the
+   list above them lets you change it. */
+const FIXED_SHORTCUTS = [
   ['Timer', [
     [t('hold Space'), t('start / stop the timer')],
     ['Esc', t('cancel inspection')],
+    ['Space', t('on a relay: split to the next puzzle')],
   ]],
-  [t('Last solve'), [
-    ['Delete', t('delete last solve')],
+  [t('With Ctrl'), [
     [t('Ctrl + Z'), t('undo the delete')],
-    ['2', t('toggle +2')],
-    ['D', t('toggle DNF')],
-    ['0', t('clear penalty')],
-    ['C', t('add a comment')],
-    ['R', t('solve its scramble again')],
-    ['W', t('watch its webcam replay')],
-  ]],
-  ['Scramble', [
-    ['N', t('new scramble')],
     [t('Ctrl + C'), t('copy scramble')],
-    [t('←  →'), t('previous / next scramble')],
-    ['X', t('enter your own scrambles')],
-  ]],
-  // Only on a relay; on any other event these do nothing.
-  ['Relay', [
-    ['<  >', t('previous / next puzzle')],
-    ['Space', t('start, split to the next puzzle, stop')],
-  ]],
-  ['Go to', [
-    ['E', t('event picker')],
-    ['M', t('mode + trainer picker')],
-    ['S', 'sessions'],
-    ['A', 'statistics'],
-    ['H', t('all solves')],
-    ['T', 'appearance'],
-    [',', 'settings'],
-    ['K', t('case picker')],
-    ['L', t('learn mode on / off')],
-    ['G', t('show the alg (counts as not knowing it)')],
-    [t('Ctrl + K  or  /'), t('command palette')],
-    ['?', t('this list')],
-    ['B', 'about'],
-  ]],
-  ['View', [
-    ['Z', t('zen mode')],
-    ['F', 'fullscreen'],
-    ['V', t('3D / 2D preview')],
-    ['I', t('toggle inspection')],
-  ]],
-  ['Careful', [
+    [t('Ctrl + K'), t('command palette')],
     [t('Ctrl + Shift + Del'), t('clear the whole session')],
   ]],
   // Only while Settings > Timing input is t("Virtual cube"); these letters then
@@ -2652,25 +2618,175 @@ export const SHORTCUTS = [
   ]],
 ];
 
+const MODIFIER_KEYS = new Set(['Shift', 'Control', 'Alt', 'AltGraph', 'Meta', 'OS']);
+
 export function buildShortcuts() {
   return (body) => {
-    const list = el('div', { class: 'kbd-list' });
-    for (const [title, rows] of SHORTCUTS) {
-      const col = el('div', { class: 'kbd-col' }, el('h3', { text: title, style: { fontSize: '.64rem', letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--text-faint)' } }));
-      for (const [keys, desc] of rows) {
-        col.append(el('div', { class: 'kbd-row' },
-          el('span', { text: desc }),
-          el('span', { class: 'keys' }, ...keys.split(/\s{2,}|\s\+\s/).map(k => el('kbd', { text: k })))));
+    const store = keybindStore();
+    const user = () => store?.get() || {};
+    const save = next => store?.set(next);
+    const nameOf = id => t(actionById(id).label);
+
+    /* rec: what is being recorded, { id, slot }; a slot past the end is a new key.
+       clash: a key someone else has, waiting on "use it here", "swap" or "cancel".
+       note: why the last key pressed was turned down. */
+    let rec = null, clash = null, note = '';
+    const wrap = el('div');
+
+    const stop = () => {
+      rec = null; clash = null; note = '';
+      removeEventListener('keydown', onKey, true);
+      paint();
+    };
+    const start = (id, slot) => {
+      rec = { id, slot }; clash = null; note = '';
+      // On window, in the capture phase: ahead of the timer and every shortcut
+      // on the document, so the key you are choosing does nothing else.
+      removeEventListener('keydown', onKey, true);
+      addEventListener('keydown', onKey, true);
+      paint();
+    };
+
+    function commit(k, swap) {
+      const { id, slot } = rec;
+      const r = resolve(user());
+      const mine = [...(r.keys[id] || [])];
+      const old = mine[slot];
+      const owner = r.byKey.get(k);
+      if (slot < mine.length) mine[slot] = k; else mine.push(k);
+      let next = assign(user(), id, mine);              // takes k off whoever had it
+      if (swap && old && owner && owner !== id) {
+        next = assign(next, owner, [...resolve(next).keys[owner], old]);
       }
-      list.append(col);
+      save(next);
+      stop();
     }
-    body.append(
-      el('div', { class: 'hint-note', text: t('Shortcuts are ignored while you are typing in a text field.') }),
-      list,
-    );
+
+    function onKey(e) {
+      // The drawer closed under us: stop listening rather than eat every key.
+      if (!wrap.isConnected) { removeEventListener('keydown', onKey, true); return; }
+      // While a clash is being asked about, Tab and Enter reach its buttons.
+      if (clash && (e.key === 'Tab' || e.key === 'Enter')) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      if (e.repeat || MODIFIER_KEYS.has(e.key)) return;
+      if (e.key === 'Escape') return stop();
+      if (e.ctrlKey || e.metaKey || e.altKey) {
+        note = t('Pick a key on its own; Ctrl, ⌘ and Alt chords stay as they are'); clash = null;
+        return paint();
+      }
+      const k = keyOf(e);
+      const why = reservedWhy(k);
+      if (why) { note = why; clash = null; return paint(); }
+      const r = resolve(user());
+      if ((r.keys[rec.id] || []).includes(k)) return stop();     // it has that key already
+      const owner = r.byKey.get(k);
+      if (owner) { clash = { key: k, owner }; note = ''; return paint(); }
+      commit(k, false);
+    }
+
+    const recChip = () => el('button', { class: 'kb-key rec', type: 'button', onclick: stop },
+      el('kbd', { text: t('press a key…') }));
+
+    function editRow(a, r) {
+      const own = Object.hasOwn(user(), a.id);
+      const keys = r.keys[a.id] || [];
+      const recording = rec?.id === a.id;
+      const keysBox = el('span', { class: 'keys' }, ...keys.map((k, slot) => (recording && rec.slot === slot
+        ? recChip()
+        : el('button', {
+          class: 'kb-key', type: 'button', title: t('Change'),
+          'aria-label': t('{action}: {key}. Change', { action: nameOf(a.id), key: keyLabelOf(k) }),
+          onclick: () => start(a.id, slot),
+        }, el('kbd', { text: keyLabelOf(k) })))));
+      if (recording && rec.slot >= keys.length) keysBox.append(recChip());
+      else if (keys.length < MAX_KEYS) {
+        keysBox.append(el('button', {
+          class: 'kb-add' + (keys.length ? '' : ' none'), type: 'button',
+          text: keys.length ? '+' : t('set a key'),
+          title: keys.length ? t('Add a second key') : t('Set a key'),
+          onclick: () => start(a.id, keys.length),
+        }));
+      }
+      if (own) {
+        const def = a.def ? a.def.split(' ').map(keyLabelOf).join(' / ') : t('no key');
+        keysBox.append(el('button', {
+          class: 'kb-reset', type: 'button', text: '↺',
+          title: t('Back to {key}', { key: def }), 'aria-label': t('Back to {key}', { key: def }),
+          onclick: () => { save(reset(user(), a.id)); stop(); },
+        }));
+      }
+      const out = [el('div', { class: 'kbd-row' + (recording ? ' editing' : '') }, el('span', { text: t(a.label) }), keysBox)];
+
+      // A clash that arrived from elsewhere (another device, a new default).
+      for (const c of r.clashes[a.id] || []) {
+        out.push(el('div', { class: 'kb-msg bad', text:
+          t('{key} is also set for “{other}”, which keeps it', { key: keyLabelOf(c.key), other: nameOf(c.owner) }) }));
+      }
+      if (!recording) return out;
+      if (clash) {
+        const old = keys[rec.slot];
+        out.push(el('div', { class: 'kb-msg ask' },
+          el('span', { text: t('{key} already does “{other}”.', { key: keyLabelOf(clash.key), other: nameOf(clash.owner) }) }),
+          el('span', { class: 'kb-btns' },
+            el('button', { class: 'ghost-btn sm', type: 'button', text: t('Use it here'),
+              title: t('“{other}” loses {key}', { other: nameOf(clash.owner), key: keyLabelOf(clash.key) }),
+              onclick: () => commit(clash.key, false) }),
+            old ? el('button', { class: 'ghost-btn sm', type: 'button', text: t('Swap'),
+              title: t('“{other}” gets {key} instead', { other: nameOf(clash.owner), key: keyLabelOf(old) }),
+              onclick: () => commit(clash.key, true) }) : null,
+            el('button', { class: 'ghost-btn sm', type: 'button', text: t('Cancel'), onclick: stop }))));
+      } else {
+        out.push(el('div', { class: 'kb-msg' + (note ? ' bad' : '') },
+          el('span', { text: note || t('Press the key you want. Esc cancels.') }),
+          rec.slot < keys.length ? el('span', { class: 'kb-btns' },
+            el('button', { class: 'ghost-btn sm', type: 'button', text: t('Remove this key'), onclick: () => {
+              save(assign(user(), a.id, keys.filter((_, i) => i !== rec.slot)));
+              stop();
+            } })) : null));
+      }
+      return out;
+    }
+
+    const plainRow = (desc, keys) => el('div', { class: 'kbd-row' },
+      el('span', { text: desc }), el('span', { class: 'keys' }, ...keys.map(k => el('kbd', { text: k }))));
+
+    function paint() {
+      const r = resolve(user());
+      const list = el('div', { class: 'kbd-list' });
+      for (const g of [...new Set(ACTIONS.map(a => a.group))]) {
+        const col = el('div', { class: 'kbd-col' }, el('h3', { class: 'kbd-head', text: t(g) }));
+        for (const a of ACTIONS.filter(x => x.group === g)) {
+          if (store) col.append(...editRow(a, r));
+          else col.append(plainRow(t(a.label), (r.keys[a.id] || []).map(keyLabelOf)));
+        }
+        list.append(col);
+      }
+      for (const [title, rows] of FIXED_SHORTCUTS) {
+        const col = el('div', { class: 'kbd-col' }, el('h3', { class: 'kbd-head', text: title }));
+        for (const [keys, desc] of rows) col.append(plainRow(desc, keys.split(/\s{2,}|\s\+\s/)));
+        list.append(col);
+      }
+      const changed = Object.keys(user()).filter(id => actionById(id)).length;
+      wrap.replaceChildren(
+        el('div', { class: 'hint-note', text: store
+          ? t('Click a key to change it. A key does one thing, so picking one that is taken asks first. Shortcuts are ignored while you are typing in a text field.')
+          : t('Shortcuts are ignored while you are typing in a text field.') }),
+        changed ? el('div', { class: 'kb-top' },
+          el('span', { text: changed === 1 ? t('1 shortcut changed') : t('{n} shortcuts changed', { n: changed }) }),
+          el('button', { class: 'ghost-btn sm', type: 'button', text: t('Reset all'),
+            onclick: () => { save(reset(user())); stop(); } })) : null,
+        list,
+      );
+      wrap.querySelector('.kb-key.rec')?.focus({ preventScroll: true });
+    }
+
+    paint();
+    body.append(wrap);
+    // Closing the drawer mid-recording hands the keyboard back.
+    return () => removeEventListener('keydown', onKey, true);
   };
 }
-
 
 /* =========================================================
    ABOUT

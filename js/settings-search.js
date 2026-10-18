@@ -82,7 +82,7 @@ const ALIASES = [
   ['Webcam replay', 'camera film record video recordings playback'],
   ['Record sound', 'audio microphone mic volume sonido'],
   ['Microphone', 'audio sound input mic sonido'],
-  ['Keyboard shortcuts', 'hotkeys keys keybindings commands help'],
+  ['Keyboard shortcuts', 'hotkeys keys keybindings keybinds rebind remap change keys commands help'],
   ['Command palette', 'search actions commands shortcuts ctrl k'],
 ];
 
