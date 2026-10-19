@@ -1792,6 +1792,8 @@ export const es = {
   "Waiting for the round’s scramble…": "Esperando la mezcla de la ronda…",
   "waiting for today’s scramble": "esperando la mezcla de hoy",
   "Waiting on {n} more — {s}s. Keep your cube solved.": "Faltan {n}: {s} s. Mantén tu cubo resuelto.",
+  "Waiting on {n} more — still solving. Keep your cube solved.": "Faltan {n}: siguen resolviendo. Mantén tu cubo resuelto.",
+  "{name} is still solving — waiting for their time": "{name} sigue resolviendo: esperando su tiempo",
   "Warming up scrambler…": "Preparando el generador de mezclas…",
   "Watch this one on the cube": "Ver esta en el cubo",
   "WCA inspection": "Inspección WCA",

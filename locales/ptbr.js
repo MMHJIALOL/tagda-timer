@@ -1792,6 +1792,8 @@ export const ptbr = {
   "Waiting for the round’s scramble…": "Aguardando o scramble da rodada…",
   "waiting for today’s scramble": "aguardando o scramble de hoje",
   "Waiting on {n} more — {s}s. Keep your cube solved.": "Aguardando mais {n} — {s}s. Mantenha o cubo resolvido.",
+  "Waiting on {n} more — still solving. Keep your cube solved.": "Aguardando mais {n} — ainda resolvendo. Mantenha o cubo resolvido.",
+  "{name} is still solving — waiting for their time": "{name} ainda está resolvendo — aguardando o tempo",
   "Warming up scrambler…": "Preparando o generador de scrambles…",
   "Watch this one on the cube": "Ver esta solve no cubo",
   "WCA inspection": "Inspeção WCA",
