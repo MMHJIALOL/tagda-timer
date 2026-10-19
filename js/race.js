@@ -102,6 +102,30 @@ const ordinal = (n) => n + ((n % 100 >= 11 && n % 100 <= 13) ? 'th' : ['th', 'st
 const DUEL_SETTLE_MS = 3000;
 
 /**
+ * How much longer than the grace period a round waits for somebody who is
+ * already on the cube.
+ *
+ * The grace period is there for the racer who never starts — gone to make
+ * tea, scrambling the wrong puzzle. It used to cut off the racer who simply
+ * solves slowly too: the round moved on mid-solve, their solve no longer
+ * matched the live scramble, and the time they had just set was never
+ * counted. Somebody inspecting or solving is now waited for. Bounded, because
+ * a timer left running in a tab nobody is watching still looks like a solve.
+ */
+const SOLVE_CAP_MS = 10 * 60 * 1000;
+
+/**
+ * How long this tab's timer must sit idle before it takes back an
+ * 'inspecting' or 'solving' the room still shows for it. Longer than the
+ * misfire prompt, so a finished solve still on its way to 'done' is never
+ * mistaken for an abandoned one.
+ */
+const STUCK_STATUS_MS = 8000;
+
+/** Progress statuses that mean the racer is on the cube right now. */
+const ON_CUBE = new Set(['inspecting', 'solving']);
+
+/**
  * How long a round may sit without a scramble before somebody who is not the
  * host publishes one.
  *
@@ -215,6 +239,8 @@ export class Race extends EventTarget {
     this.settleFrom = 0;
     /** Set when everyone still connected but one has finished. */
     this.graceAt = 0;
+    /** When this tab's timer last went idle — see _releaseStuckStatus. */
+    this._timerIdleAt = Date.now();
     /** roundNo -> when this client first saw that round with no scramble. */
     this._roundSeenAt = new Map();
     /** Timer that fires the settle → advance step on time rather than on tick. */
@@ -754,6 +780,9 @@ export class Race extends EventTarget {
 
   /** Timer state changes become the public, time-free progress feed. */
   onTimerState(state) {
+    const idle = state === 'idle' || state === 'cooldown';
+    if (!idle) this._timerIdleAt = 0;
+    else if (!this._timerIdleAt) this._timerIdleAt = Date.now();
     if (!this.inRoom || this.phase !== 'racing' || this.locked()) return;
     const map = { inspecting: 'inspecting', holding: 'inspecting', ready: 'inspecting', running: 'solving' };
     const status = map[state];
@@ -928,7 +957,11 @@ export class Race extends EventTarget {
     if (someone && !everyone && !this.graceAt) this.graceAt = Date.now() + tune('graceSec') * 1000;
     if (everyone) this.graceAt = 0;
 
-    const graceUp = this.graceAt && Date.now() >= this.graceAt;
+    /* Running out of grace ends the round for whoever has not started, not
+       for whoever is mid-solve — see SOLVE_CAP_MS. */
+    this._releaseStuckStatus(r);
+    const graceUp = this.graceAt && Date.now() >= this.graceAt
+      && (!this.onCube(r) || Date.now() >= this.graceAt + SOLVE_CAP_MS);
 
     /* Everyone done is not everyone's time in. The last to finish learns that
        it was the last from its own 'done', a round trip before the others'
@@ -989,6 +1022,34 @@ export class Race extends EventTarget {
         // honest answer, and if it says we are still here the tick tries again.
         if (this.round?.no !== from) this._clearSettle();
       });
+  }
+
+  /** Live racers this round is still waiting on who are inspecting or solving. */
+  onCube(r = this.round) {
+    return this.livePlayers().filter(([id]) => ON_CUBE.has(r?.progress?.[id]?.status)).length;
+  }
+
+  /** The grace period is over and the round is only still open for somebody on the cube. */
+  get overtime() {
+    return !!this.graceAt && Date.now() >= this.graceAt && this.onCube() > 0;
+  }
+
+  /**
+   * Take back an 'inspecting' or 'solving' this tab is no longer doing.
+   *
+   * Now that the room waits for anybody on the cube, a status left behind
+   * would hold it up for the whole of SOLVE_CAP_MS: a hold released before
+   * the timer started, an inspection abandoned with Escape, a misfire thrown
+   * away, or a reload mid-solve (the new page's timer is idle, the room still
+   * says solving). None of those ends in 'done', so say 'waiting' instead.
+   */
+  _releaseStuckStatus(r) {
+    if (!ON_CUBE.has(r.progress?.[this.uid]?.status)) return;
+    if (this.submittedRound === r.no || this._submittingRound === r.no) return;
+    if (this._lastStatus === 'waiting') return;           // already on its way
+    if (!this._timerIdleAt || Date.now() - this._timerIdleAt < STUCK_STATUS_MS) return;
+    this._lastStatus = 'waiting';
+    this.net.setProgress({ status: 'waiting' }, r.no).catch(() => {});
   }
 
   _clearSettle() {
@@ -2794,10 +2855,11 @@ export class Race extends EventTarget {
        landed on the wrong side of a rebuild hit a node already on its way out
        and did nothing at all. The countdowns are in the signature, so they
        still update — and while one is running there is no button to lose. */
+    const overtime = this.overtime;
     const secs = this.settleAt ? Math.ceil((this.settleAt - Date.now()) / 1000)
-      : this.graceAt ? Math.ceil((this.graceAt - Date.now()) / 1000)
+      : this.graceAt && !overtime ? Math.ceil((this.graceAt - Date.now()) / 1000)
       : null;
-    const sig = [this.phase, this.revealed, done, live, secs,
+    const sig = [this.phase, this.revealed, done, live, secs, overtime,
       !!this.round?.info?.scramble, this.isHost, this.kind, this.isDuel].join('|');
     if (sig === this._lastFootSig) return;
     this._lastFootSig = sig;
@@ -2840,6 +2902,8 @@ export class Race extends EventTarget {
         const left = Math.max(0, Math.ceil((this.settleAt - Date.now()) / 1000));
         foot.append(el('div', { class: 'race-next' },
           el('span', { text: t('Next scramble in') + ' ' }), el('b', { text: `${left}s` })));
+      } else if (this.revealed && overtime) {
+        foot.append(el('div', { class: 'race-note', text: t('{name} is still solving — waiting for their time', { name: this.opponent.name }) }));
       } else if (this.revealed && this.graceAt) {
         const left = Math.max(0, Math.ceil((this.graceAt - Date.now()) / 1000));
         foot.append(el('div', { class: 'race-note', text: t('Waiting on {name} — {s}s', { name: this.opponent.name, s: left }) }));
@@ -2852,6 +2916,9 @@ export class Race extends EventTarget {
       const left = Math.max(0, Math.ceil((this.settleAt - Date.now()) / 1000));
       foot.append(el('div', { class: 'race-next' },
         el('span', { text: t('Next scramble in') + ' ' }), el('b', { text: `${left}s` })));
+    } else if (overtime) {
+      foot.append(el('div', { class: 'race-note',
+        text: t('Waiting on {n} more — still solving. Keep your cube solved.', { n: live - done }) }));
     } else if (this.graceAt) {
       const left = Math.max(0, Math.ceil((this.graceAt - Date.now()) / 1000));
       foot.append(el('div', { class: 'race-note',
