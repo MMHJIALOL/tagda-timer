@@ -4590,6 +4590,12 @@ body.duel-on #panel-stats > .stats-duel { margin-top: 10px; }
 .chart-filter select { max-width: 220px; min-width: 0; }
 .stats-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; margin-bottom: 10px; }
 .stats-filters > [role="status"]:empty { display: none; }
+/* Stats drawer search: the box, what it understood, then the matches. */
+.solve-search-reading:empty { display: none; }
+.solve-search-examples .ghost-btn { font-family: var(--font-mono); }
+.solve-search-results { display: flex; flex-direction: column; gap: 10px; }
+.solve-search-results[hidden] { display: none; }
+.solve-search-more { align-self: flex-start; }
 .gear-list { display: flex; flex-direction: column; gap: 10px; }
 .gear-card { gap: 6px; }
 .gear-log {

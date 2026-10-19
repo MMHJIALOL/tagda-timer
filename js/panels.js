@@ -30,6 +30,7 @@ import { DEFAULT_SPEFFZ_MAP, DEFAULT_BLD, CORNER_STICKER_KEYS, EDGE_STICKER_KEYS
          pieceName, samePiece, diagnose } from './bldtrace.js';
 import { FACES } from './cube3.js';
 import { mountSettingsSearch } from './settings-search.js';
+import { searchSolves } from './solve-search.js';
 import { ACTIONS, MAX_KEYS, actionById, resolve, assign, reset, reservedWhy, keyOf, labelOf as keyLabelOf, keybindStore } from './keybinds.js';
 import { newsSection } from './news.js';
 import { feedbackSection } from './send-feedback.js';
@@ -1555,6 +1556,63 @@ export function buildStats(app) {
       resultPick.focus({ preventScroll: true });
     });
 
+    /* Search: a time, a day, a penalty, a solve number or some moves, over the
+       solves the filters above have picked (js/solve-search.js has the
+       grammar). The query outlives render(), so changing the session searches
+       the new one for the same thing. */
+    let query = '';
+    const PAGE = 50;
+    const EXAMPLES = ['12.24', 'sub 10', '12-13', 'dnf', 'today', '20 oct', '#50'];
+    const searchCard = (solves, cell, f) => {
+      let limit = PAGE;
+      const input = el('input', {
+        class: 'inp', type: 'search', value: query, spellcheck: 'false', autocomplete: 'off',
+        placeholder: t('Search solves — a time, a date, dnf, #12, moves…'), 'aria-label': t('Search solves'),
+      });
+      const examples = el('div', { class: 'sd-actions solve-search-examples' },
+        el('span', { class: 'bs-sub', text: t('Try') }),
+        ...EXAMPLES.map(q => el('button', {
+          type: 'button', class: 'ghost-btn sm', text: q,
+          onclick: () => { input.value = q; run(); input.focus({ preventScroll: true }); },
+        })));
+      const reading = el('div', { class: 'bs-sub solve-search-reading', 'aria-live': 'polite' });
+      const results = el('div', { class: 'solve-search-results', hidden: true });
+      const eventText = (s) => s.event ? `${eventOf(s.event).short} ${eventOf(s.event).name}` : '';
+
+      const run = () => {
+        query = input.value;
+        const { terms, matches } = searchSolves(solves, query, { extraText: eventText });
+        examples.hidden = !!terms.length;
+        results.hidden = !terms.length;
+        reading.textContent = terms.length
+          ? t('Looking for {terms}', { terms: terms.map(x => x.label).join(' · ') }) : '';
+        if (!terms.length) { results.replaceChildren(); return; }
+        if (!matches.length) {
+          results.replaceChildren(el('div', { class: 'hint-note', text: t('No solves match.') }));
+          return;
+        }
+        const g = groupStats(matches.map(m => m.solve));
+        const list = el('div', { class: 'sd-list' },
+          ...matches.slice(0, limit).map((m, i) => solveRow(app, m.solve, i + 1, m.n - 1)));
+        const more = matches.length - limit;
+        results.replaceChildren(
+          el('div', { class: 'big-stats' },
+            cell(t('matches'), String(g.count), t('of {n} in {scope}', { n: solves.length, scope: scopeName })),
+            cell('best', f(g.best)),
+            cell('mean', f(g.mean), g.dnf ? t('{n} DNF left out', { n: g.dnf }) : '')),
+          list);
+        if (more > 0) results.append(el('button', {
+          type: 'button', class: 'ghost-btn sm solve-search-more',
+          text: t('Show {n} more', { n: Math.min(more, PAGE) }),
+          onclick: () => { limit += PAGE; run(); },
+        }));
+      };
+      input.addEventListener('input', () => { limit = PAGE; run(); });
+      run();
+      return el('div', { class: 'chart-card', id: 'solve-search' },
+        el('h4', { text: t('Search solves') }), input, examples, reading, results);
+    };
+
     const render = () => {
       const scrollTop = body.scrollTop;
       const hasMoves = scopedSolves.some(isMoveResult);
@@ -1602,6 +1660,8 @@ export function buildStats(app) {
               onclick: () => download(`${scopeName.replace(/\W+/g, '-')}-stats.txt`, sessionReport(solves), 'text/plain') }),
           ) : null),
       );
+
+      body.append(searchCard(solves, cell, f));
 
       /* The consistency tile's figure, worked through with this session's own
          numbers, and how it moved solve by solve. */

@@ -7,6 +7,8 @@ import * as charts from './charts.js';
 import * as util from './util.js';
 import { t } from './i18n.js';
 import { filterByCube } from './gear.js';
+import { searchSolves } from './solve-search.js';
+import { eventOf } from './events.js';
 
 // Exercise the drawer with real statistics, DOM controls and SVG charts,
 // without loading unrelated camera, audio and account integrations.
@@ -32,9 +34,10 @@ function mount() {
     allSolves: async () => all,
     copyToast: text => { copied = text; },
   };
-  const db = { bySession: async id => all.filter(s => s.sessionId === id) };
+  const db = { bySession: async id => all.filter(s => s.sessionId === id), createdTimes: async () => [] };
   const bindings = {
-    ...util, ...stats, ...charts, t, filterByCube, Solves: db,
+    ...util, ...stats, ...charts, t, filterByCube, Solves: db, searchSolves, eventOf,
+    solveRow: (app, s, i, gi) => util.el('div', { class: 'sd-row', 'data-id': s.id, text: `${i} #${gi + 1}` }),
     group: (title, ...kids) => util.el('div', { class: 'group' }, util.el('h3', { text: title }), ...kids),
     Gear: { all: async () => [{ id: 'cube', name: 'Cube' }] },
     GearLog: { byGear: async () => [] }, gearLabel: g => g.name, markersFor: () => [], LOG_KINDS: {},
@@ -55,7 +58,13 @@ function mount() {
     select.value = value;
     select.dispatchEvent(new dom.window.Event('change'));
   };
-  return { app, all, db, body, rendered, dispose, pick, change, copied: () => copied };
+  const search = value => {
+    const input = body.querySelector('input[aria-label="Search solves"]');
+    input.value = value;
+    input.dispatchEvent(new dom.window.Event('input'));
+  };
+  const found = () => [...body.querySelectorAll('#solve-search .sd-row')].map(r => r.dataset.id);
+  return { app, all, db, body, rendered, dispose, pick, change, search, found, copied: () => copied };
 }
 
 test('defaults to current session; all sessions update stats, charts and exports chronologically', async () => {
@@ -133,4 +142,35 @@ test('latest selection wins, loading errors retain data, and closed drawers igno
   resolveAll(h.all);
   await tick();
   assert.equal(h.body.innerHTML, before);
+});
+
+test('search finds solves by time, penalty and solve number, and keeps its query across sessions', async () => {
+  const h = mount();
+  await tick();
+  const card = () => h.body.querySelector('#solve-search');
+  assert.equal(card().querySelector('.solve-search-results').hidden, true);
+  h.search('10');
+  assert.deepEqual(h.found(), ['a1']);
+  assert.doesNotMatch(card().textContent, /null|undefined/);
+  assert.match(card().textContent, /of 2 in Current/);
+  // A +2 is searched as it is shown: 12.00 + 2 reads 14.00.
+  h.search('14');
+  assert.deepEqual(h.found(), ['a2']);
+  h.search('12');
+  assert.deepEqual(h.found(), []);
+  assert.match(card().textContent, /No solves match/);
+  h.search('+2');
+  assert.deepEqual(h.found(), ['a2']);
+  h.change('Statistics session', '');
+  await tick();
+  assert.equal(h.body.querySelector('input[aria-label="Search solves"]').value, '+2');
+  assert.deepEqual(h.found(), ['a2']);
+  h.search('dnf');
+  assert.deepEqual(h.found(), ['b2']);
+  // Numbered oldest first across the selection, listed newest first.
+  h.search('#1-#2');
+  assert.deepEqual(h.found(), ['a1', 'b1']);
+  h.search('');
+  assert.equal(card().querySelector('.solve-search-results').hidden, true);
+  h.dispose();
 });
