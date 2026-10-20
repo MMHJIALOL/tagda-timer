@@ -110,8 +110,11 @@ export function createPeople(ctx) {
 
   function personData(uid) {
     if (!P.person.has(uid)) {
-      const d = { sotd: null, ann: null, msgs: null, msgsBusy: false, mod: null };
+      const d = { sotd: null, ann: null, msgs: null, msgsBusy: false, mod: null, rating: undefined };
       P.person.set(uid, d);
+      // Their 1v1 rating (ratings/<uid>, RATING-PLAN.md): null for none yet, false when refused (rules from before ratings).
+      sdk().get(ref(`ratings/${uid}`)).then((s) => { d.rating = s.val(); ctx.scheduleRender(); },
+        () => { d.rating = false; ctx.scheduleRender(); });
       // What admins have done about them (modLog/, indexed on uid; ADMIN.md §19).
       const { query, orderByChild, equalTo } = sdk();
       sdk().get(query(ref('modLog'), orderByChild('uid'), equalTo(uid))).then((s) => {
@@ -185,6 +188,25 @@ export function createPeople(ctx) {
       el('div', { class: 'ac-sheet-actions' },
         el('button', { class: 'ac-btn', text: 'Back', onclick: ctx.closeSheet }),
         el('button', { class: `ac-btn primary${danger ? ' danger' : ''}`, text: label, onclick: run })));
+  }
+
+  /**
+   * Back to 1000 with no rated rounds (RATING-PLAN.md phase 4): an admin may
+   * write a rating any amount, with its version bumped, so a 1v1 being rated
+   * at the same moment refuses one of the two and nothing is half-done.
+   */
+  function askResetRating(uid, name) {
+    confirm(t('Reset {name}’s 1v1 rating?', { name }),
+      [t('Back to 1000 with no rated rounds, so their next 20 move it twice as fast. Rounds already played keep their marks in their rooms, and nobody else’s rating changes.')],
+      t('Reset'), async () => {
+        let cur = null;
+        try { cur = (await sdk().get(ref(`ratings/${uid}`))).val(); } catch { /* below */ }
+        if (!cur) { ctx.closeSheet(); toast(t('They have no rating to reset')); return; }
+        const fresh = { r: 1000, n: 0, w: 0, l: 0, d: 0, v: (Number(cur.v) || 0) + 1 };
+        const ok = await write({ [`ratings/${uid}`]: { ...fresh, at: sdk().serverTimestamp() } }, t('Rating reset'),
+          { action: 'ratingReset', path: `ratings/${uid}`, uid, before: { r: cur.r, n: cur.n, w: cur.w, l: cur.l, d: cur.d } });
+        if (ok) { personData(uid).rating = { ...fresh, at: Date.now() }; ctx.scheduleRender(); }
+      }, true);
   }
 
   const block = (title, ...kids) => el('section', { class: 'ac-block' }, el('h2', { class: 'ac-h2', text: title }), ...kids);
@@ -270,6 +292,17 @@ export function createPeople(ctx) {
             raw('span', { class: 'ac-card-sub' }, ago(room?.meta?.createdAt))),
           raw('span', { class: 'ac-chev', 'aria-hidden': 'true' }, '›')))));
 
+    const rt = d.rating;
+    const ratingBlock = block(t('1v1 rating'),
+      rt === undefined ? loading()
+        : rt === false ? none(t('Ratings need this version’s firebase.rules.json published.'))
+          : !rt ? none(t('No rated 1v1 yet.'))
+            : el('div', { class: 'ac-stack' },
+              raw('p', { class: 'ac-sub' }, t('{r} · {n} rated rounds: {w} won, {l} lost, {d} drawn · last change {when}',
+                { r: rt.r, n: rt.n, w: rt.w, l: rt.l, d: rt.d, when: ago(rt.at) })),
+              el('div', { class: 'ac-entry-actions ac-start' },
+                el('button', { class: 'ac-btn small danger', text: t('Reset rating…'), onclick: () => askResetRating(uid, name) }))));
+
     const msgs = block(t('Messages, the last 7 days'),
       !d.msgs ? el('button', { class: 'ac-btn small', text: d.msgsBusy ? t('Looking…') : t('Find their messages'), disabled: d.msgsBusy, onclick: () => findMessages(uid) })
         : !d.msgs.length ? none(t('No messages this week.'))
@@ -317,7 +350,7 @@ export function createPeople(ctx) {
               raw('span', { class: 'ac-entry-meta' }, `${ago(e.at)} · ${ctx.who(e.by)}`))))),
       el('a', { class: 'ac-link', href: '#log/mod', text: t('The moderation log ›') }));
 
-    return [...head, status, sup, sotd, races, msgs, healthBlock, reportsBlock, modBlock, ann];
+    return [...head, status, sup, sotd, races, ratingBlock, msgs, healthBlock, reportsBlock, modBlock, ann];
   }
 
   /* ---------------- lookup ---------------- */

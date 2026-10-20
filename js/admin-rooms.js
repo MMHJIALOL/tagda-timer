@@ -10,7 +10,9 @@ import { t } from './i18n.js';
                          round's times with when each came in and when its
                          penalty changed, flags, its chat; and the room
                          actions (close, remove a player, strike a time,
-                         delete the room)
+                         delete the room). In a 1v1, what each round did to
+                         the ratings, and an admin's Take back for a rated
+                         round with a struck time (RATING-PLAN.md phase 4)
      1v1 lobby           the one waiting seat everybody queues through
                          (rooms/_1v1_333/meta/waiting), with Clear seat, and
                          the day's 1v1s; on Today and on Rooms
@@ -29,6 +31,7 @@ import { eventOf } from './events.js';
 import { MATCH_LOBBY, FIREBASE_CONFIG } from './raceapp.js';
 import { EMULATED } from './sync-auth.js';
 import { logged } from './moderation.js';
+import { reverseRound, markerSeats } from './elo.js';
 
 const DAY_MS = 86_400_000;
 const HISTORY_DAYS = 7;
@@ -215,15 +218,97 @@ export function createRooms(ctx) {
   const askUnkick = (id, uid, name) => confirm(t('Let {name} back into room {id}?', { name, id }),
     [], t('Let back in'), () => write({ [`rooms/${id}/mod/kicked/${uid}`]: null }, t('They can join again'), { action: 'letBack', path: `rooms/${id}`, uid, note: name }));
 
-  function askStrike(id, n, uid, name, res) {
+  function askStrike(id, n, uid, name, res, room) {
     const reason = el('input', { class: 'ac-inp', maxlength: 200, placeholder: t('Why (optional, kept with it)') });
+    // A rated 1v1 round: an admin can take its rating change back in the same go (a moderator cannot write ratings).
+    const takeBack = ratedRound(room, n) && ctx.isAdmin?.() ? el('input', { type: 'checkbox', checked: true }) : null;
     confirm(t('Strike {name}’s {time} in round {n}?', { name, time: timeText(res), n }),
       [t('It stops counting: out of the round, the standings and Race stats, on every screen in the room. They see it was removed by a moderator. The time itself stays in the database, so this can be undone.')],
-      t('Strike'), () => write({
-        [`rooms/${id}/mod/struck/${n}/${uid}`]: { at: TS(), by: me(), ...(reason.value.trim() ? { reason: reason.value.trim().slice(0, 200) } : {}) },
-      }, t('Struck'), { action: 'strike', path: `rooms/${id}/rounds/${n}/results/${uid}`, uid, before: res || null, note: reason.value.trim() }),
-      { extra: el('div', { class: 'ac-text' }, reason) });
+      t('Strike'), async () => {
+        const ok = await write({
+          [`rooms/${id}/mod/struck/${n}/${uid}`]: { at: TS(), by: me(), ...(reason.value.trim() ? { reason: reason.value.trim().slice(0, 200) } : {}) },
+        }, t('Struck'), { action: 'strike', path: `rooms/${id}/rounds/${n}/results/${uid}`, uid, before: res || null, note: reason.value.trim() });
+        if (ok && takeBack?.checked) await reverse(id, n);
+      },
+      { extra: el('div', { class: 'ac-text' }, reason,
+        takeBack ? el('label', { class: 'ac-check' }, takeBack, el('span', { text: t('Also take back this round’s rating change') })) : null) });
   }
+  /* ---------------- a 1v1's ratings (RATING-PLAN.md) ---------------- */
+
+  /** rated/<round> when it changed ratings and has not been taken back, else null. */
+  const ratedRound = (room, n) => {
+    const m = room?.rated?.[n];
+    return isDuel(room) && m && typeof m.skip !== 'string' && !m.reversed && markerSeats(m).length ? m : null;
+  };
+  const deltaText = (d) => (d > 0 ? `+${d}` : d < 0 ? `−${-d}` : '±0');
+  const SKIPS = {
+    unlinked: 'a player wasn’t signed in', 'same-account': 'one account on both seats', cap: 'the pair’s rated rounds for the day were used up',
+    struck: 'a time was struck', floor: 'a time under 3 s', event: 'not 3x3', 'bad-result': 'a result that isn’t a time',
+  };
+
+  /**
+   * Take a rated round back: each account loses that round's change, one
+   * rated round and its win, loss or draw (js/elo.js reverseRound), with the
+   * room's rated/<round>/reversed mark in the same update, so it happens
+   * once. Everything read fresh; once more if a rating moved meanwhile (a
+   * version the rules refuse).
+   */
+  async function reverse(id, n) {
+    const get = (path) => sdk().get(ref(path)).then(s => s.val());
+    for (let i = 0; i < 2; i++) {
+      let out;
+      try {
+        const [marker, acct] = await Promise.all([get(`rooms/${id}/rated/${n}`), get(`rooms/${id}/acct`)]);
+        const accounts = markerSeats(marker).map(([seat]) => acct?.[seat]?.claim).filter(g => typeof g === 'string');
+        const ratings = Object.fromEntries(await Promise.all(accounts.map(async g => [g, await get(`ratings/${g}`)])));
+        out = reverseRound({ room: id, round: n, marker, acct, ratings, ts: TS(), by: me() });
+      } catch (err) {
+        console.warn('[admin] rating read refused', err?.code || err);
+        toast(t('Refused: ratings need this version’s firebase.rules.json published'), { kind: 'bad', hold: true });
+        return false;
+      }
+      if (!out) { toast(t('That round has no rating change to take back')); return false; }
+      const note = out.undone.map(u => `${u.account} ${deltaText(-u.d)}`).join(', ') || t('nobody had it any more');
+      try {
+        await logged(sdk(), out.patch, { action: 'ratingReverse', path: `rooms/${id}/rated/${n}`, note,
+          before: { undone: out.undone, kept: out.kept } });
+        ctx.closeSheet();
+        toast(t('Rating change taken back'), { kind: 'good' });
+        return true;
+      } catch (err) {
+        if (i) {
+          console.warn('[admin] rating reversal refused', err?.code || err);
+          toast(t('Refused: ratings need this version’s firebase.rules.json published'), { kind: 'bad', hold: true });
+          return false;
+        }
+      }
+    }
+    return false;
+  }
+
+  const askReverse = (id, room, n) => {
+    const m = ratedRound(room, n);
+    if (!m) return;
+    confirm(t('Take back round {n}’s rating change?', { n }),
+      [...markerSeats(m).map(([seat, x]) => t('{name}: {d} comes off, and one rated round', { name: nameOf(room, seat), d: deltaText(x.d) })),
+        t('Their ratings move back by exactly what this round gave them, whatever they have played since. It can’t be undone.')],
+      t('Take back'), () => reverse(id, n), { danger: true });
+  };
+
+  /** One line under a 1v1 round: what it did to the ratings, or why it didn't, and Take back. */
+  function ratingLine(id, room, n) {
+    const m = room?.rated?.[n];
+    if (!isDuel(room) || !m) return null;
+    if (typeof m.skip === 'string') return raw('p', { class: 'ac-entry-meta' }, t('Not rated: {why}', { why: t(SKIPS[m.skip] || m.skip) }));
+    const seats = markerSeats(m).map(([seat, x]) => `${nameOf(room, seat)} ${deltaText(x.d)} → ${x.r}`).join(' · ');
+    if (m.reversed) return raw('p', { class: 'ac-entry-meta' }, `${t('Rated: {seats}', { seats })} · ${t('taken back {when} by {who}', { when: ago(m.reversed.at), who: ctx.who(m.reversed.by) })}`);
+    const struck = Object.keys(room?.mod?.struck?.[n] || {}).length > 0;
+    return el('div', { class: 'ac-entry-actions ac-start' },
+      raw('span', { class: 'ac-entry-meta' }, t('Rated: {seats}', { seats })),
+      struck && ctx.isAdmin?.() ? el('button', { class: 'ac-btn small danger', text: t('Take back the rating…'), onclick: () => askReverse(id, room, n) })
+        : struck ? raw('span', { class: 'ac-flag' }, t('A time is struck: an admin can take the rating back')) : null);
+  }
+
   const askUnstrike = (id, n, uid, name) => confirm(t('Count {name}’s time in round {n} again?', { name, n }),
     [], t('Count it again'), () => write({ [`rooms/${id}/mod/struck/${n}/${uid}`]: null }, t('Counted again'),
       { action: 'unstrike', path: `rooms/${id}/rounds/${n}/results/${uid}`, uid }));
@@ -481,7 +566,7 @@ export function createRooms(ctx) {
         raw('span', { class: 'ac-uid' }, uid)),
       el('div', { class: 'ac-entry-actions' },
         struck ? el('button', { class: 'ac-btn small', text: t('Count again'), onclick: () => askUnstrike(id, n, uid, name) })
-          : el('button', { class: 'ac-btn small', text: t('Strike'), onclick: () => askStrike(id, n, uid, name, res) })));
+          : el('button', { class: 'ac-btn small', text: t('Strike'), onclick: () => askStrike(id, n, uid, name, res, room) })));
   }
 
   function roundBlock(id, room, n) {
@@ -504,6 +589,7 @@ export function createRooms(ctx) {
       entries.length ? el('ol', { class: 'ac-log ac-tight' }, ...entries
         .sort((a, b) => effOf(a[1]) - effOf(b[1]))
         .map(([uid, x]) => resultRow(id, room, n, uid, x, median))) : el('p', { class: 'ac-note ac-small', text: 'No times.' }),
+      ratingLine(id, room, n),
       noTime.length ? raw('p', { class: 'ac-flag' }, t('Finished but no time arrived: {names}', { names: noTime.map(u => nameOf(room, u)).join(', ') })) : null);
   }
 

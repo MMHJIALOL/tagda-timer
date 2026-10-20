@@ -1170,7 +1170,7 @@ const nameOf = (uid) => { people.start(); return people.nameOf(uid) || S.bans?.[
 const may = (scope) => S.role === 'admin' || S.can.has(scope);
 const moderation = createModeration({ S, scheduleRender, raw, ago, who, openSheet, closeSheet, askBan, gate, nameOf, may, isAdmin: () => S.role === 'admin', rooms: () => rooms, sotd: () => sotd });
 const modlog = createModLog({ S, scheduleRender, raw, ago, who, openSheet, closeSheet, gate, nameOf, downloadCsv });
-const rooms = createRooms({ S, scheduleRender, raw, ago, who, openSheet, closeSheet, askBan, gate, cfg, moderation });
+const rooms = createRooms({ S, scheduleRender, raw, ago, who, openSheet, closeSheet, askBan, gate, cfg, moderation, isAdmin: () => S.role === 'admin' });
 const sotd = createSotd({ S, scheduleRender, raw, ago, who, openSheet, closeSheet, askBan, gate, cfg, moderation });
 const fb = createFeedback({ S, scheduleRender, raw, ago, who, openSheet, closeSheet, gate, cfg });
 const team = createTeam({ S, scheduleRender, raw, ago, who, openSheet, closeSheet, gate, nameOf });

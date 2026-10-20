@@ -69,6 +69,7 @@ export function createModLog(ctx) {
     keep: t('Kept a held time'), unkeep: t('Took a keep back'), retime: t('Re-timed'), feature: t('Featured a replay'),
     unfeature: t('Took the featured replay off'), dismiss: t('Dismissed reports'), actioned: t('Closed reports as acted on'),
     reopenReport: t('Reopened reports'), deleteAccount: t('Deleted an account’s cloud data'), sweep: t('Swept old data'), addMod: t('Made a moderator'), removeMod: t('Removed a moderator'),
+    ratingReset: t('Reset a 1v1 rating'), ratingReverse: t('Took back a rated 1v1 round'),
   })[action] || action;
 
   /* ---------------- undo ---------------- */

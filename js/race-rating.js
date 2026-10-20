@@ -195,7 +195,7 @@ export class DuelRating {
     if (this.state !== 'on') return null;
     let d, at = -1;
     for (const [k, v] of Object.entries(this.rated)) {
-      if (v?.[seat] && Number(k) > at) { at = Number(k); d = v[seat].d; }
+      if (v?.[seat] && !v.reversed && Number(k) > at) { at = Number(k); d = v[seat].d; }
     }
     const r = this.elo[seat]?.r ?? (at >= 0 ? this.rated[at][seat].r : undefined);
     return Number.isInteger(r) ? { r, d: Number.isInteger(d) ? d : undefined } : null;

@@ -116,7 +116,8 @@ export function roundUpdate({ room, round, seats, accounts, s, ratings, pairCoun
     w: cur.w + (mine === 1 ? 1 : 0), l: cur.l + (mine === 0 ? 1 : 0), d: cur.d + (mine === 0.5 ? 1 : 0),
     v: cur.v + 1, at: ts,
   });
-  const out = { [seats[0]]: { r: sa.r, d: sa.d }, [seats[1]]: { r: sb.r, d: sb.d } };
+  // `s`, each seat's score, so an admin can take the round back exactly (reverseRound).
+  const out = { [seats[0]]: { r: sa.r, d: sa.d, s }, [seats[1]]: { r: sb.r, d: sb.d, s: 1 - s } };
   const patch = {
     [`ratings/${accounts[0]}`]: next(a, sa, s),
     [`ratings/${accounts[1]}`]: next(b, sb, 1 - s),
@@ -128,11 +129,52 @@ export function roundUpdate({ room, round, seats, accounts, s, ratings, pairCoun
   return { patch, seats: out };
 }
 
-/** A stored rated/<round> as the Worker answers it: { at, skip } or { at, seats }. */
+/** The seats of a stored rated/<round>, without its at, skip and reversed. */
+const MARK_KEYS = new Set(['at', 'skip', 'reversed']);
+export const markerSeats = (node) => Object.entries(node || {}).filter(([k, v]) => !MARK_KEYS.has(k) && v && typeof v === 'object');
+
+/** A stored rated/<round> as the Worker answers it: { at, skip } or { at, seats }, and `reversed` once an admin has. */
 export function ratedView(node) {
   if (!node || typeof node !== 'object') return null;
   if (typeof node.skip === 'string') return { at: node.at, skip: node.skip };
   const seats = {};
-  for (const [k, v] of Object.entries(node)) if (k !== 'at' && k !== 'skip' && v && typeof v === 'object') seats[k] = { r: v.r, d: v.d };
-  return { at: node.at, seats };
+  for (const [k, v] of markerSeats(node)) seats[k] = { r: v.r, d: v.d, ...(v.s !== undefined ? { s: v.s } : {}) };
+  return { at: node.at, seats, ...(node.reversed ? { reversed: node.reversed } : {}) };
+}
+
+/**
+ * Take a rated round back (a moderator struck one of its times): each
+ * account loses that round's change, one rated round and the win, loss or
+ * draw it had, as one update with the room's rated/<round>/reversed mark, so
+ * it can only happen once. An admin writes it (the rules let an admin move a
+ * rating any amount, version + 1).
+ *
+ * `marker` is rated/<round>, `acct` the room's acct/, `ratings` the stored
+ * ratings by Google uid. An account is left alone when it has no rated round
+ * to give back (reset since). A marker from before scores were kept reads the
+ * score off the change's sign. Returns { patch, undone: [{ seat, account, d }],
+ * kept: [{ seat, account, why }] }, or null for a marker there is nothing to
+ * take back from (unrated, or reversed already).
+ */
+export function reverseRound({ room, round, marker, acct, ratings, ts, by }) {
+  if (!marker || typeof marker !== 'object' || typeof marker.skip === 'string' || marker.reversed) return null;
+  const patch = { [`rooms/${room}/rated/${round}/reversed`]: { at: ts, by } };
+  const undone = [], kept = [];
+  for (const [seat, m] of markerSeats(marker)) {
+    const account = acct && acct[seat] && typeof acct[seat].claim === 'string' ? acct[seat].claim : null;
+    const stored = account && ratings ? ratings[account] : null;
+    if (!account || !stored) { kept.push({ seat, account, why: 'no-rating' }); continue; }
+    const cur = asRating(stored);
+    const d = Number.isInteger(m.d) ? m.d : 0;
+    const s = m.s === 0 || m.s === 0.5 || m.s === 1 ? m.s : d > 0 ? 1 : d < 0 ? 0 : 0.5;
+    const field = s === 1 ? 'w' : s === 0 ? 'l' : 'd';
+    if (cur.n < 1 || cur[field] < 1) { kept.push({ seat, account, why: 'reset' }); continue; }
+    patch[`ratings/${account}`] = {
+      r: Math.min(MAX, Math.max(MIN, cur.r - d)), n: cur.n - 1,
+      w: cur.w - (field === 'w' ? 1 : 0), l: cur.l - (field === 'l' ? 1 : 0), d: cur.d - (field === 'd' ? 1 : 0),
+      v: cur.v + 1, at: ts,
+    };
+    undone.push({ seat, account, d });
+  }
+  return { patch, undone, kept };
 }

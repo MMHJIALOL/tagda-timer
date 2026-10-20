@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
   START, MIN, MAX, MAX_STEP, K_NEW, K_SETTLED, PROVISIONAL, PENALTY_WINDOW_MS, FINAL_SLACK_MS,
-  kFor, expected, effective, score, step, pairKey, dayKey, judgeRound, roundUpdate, ratedView,
+  kFor, expected, effective, score, step, pairKey, dayKey, judgeRound, roundUpdate, ratedView, reverseRound, markerSeats,
 } from './elo.js';
 
 const NOW = Date.UTC(2026, 9, 20, 12, 0, 0);
@@ -97,11 +97,11 @@ test('the update: both ratings, the pair, the marker and the card, in one go', (
     ratings: [null, { r: 1100, n: 30, w: 20, l: 9, d: 1, v: 30, at: 5 }], pairCount: 3, day: '1760898600000', ts,
   });
   // gina is new (K 40) and beat a 1100 (expected 0.36): +26. gail is settled (K 20): -13.
-  assert.deepEqual(seats, { alice: { r: 1026, d: 26 }, bob: { r: 1087, d: -13 } });
+  assert.deepEqual(seats, { alice: { r: 1026, d: 26, s: 1 }, bob: { r: 1087, d: -13, s: 0 } });
   assert.deepEqual(patch['ratings/gina'], { r: 1026, n: 1, w: 1, l: 0, d: 0, v: 1, at: ts });
   assert.deepEqual(patch['ratings/gail'], { r: 1087, n: 31, w: 20, l: 10, d: 1, v: 31, at: ts });
   assert.equal(patch['ratingPair/1760898600000/gail_gina'], 4);
-  assert.deepEqual(patch['rooms/ABC/rated/7'], { at: ts, alice: { r: 1026, d: 26 }, bob: { r: 1087, d: -13 } });
+  assert.deepEqual(patch['rooms/ABC/rated/7'], { at: ts, alice: { r: 1026, d: 26, s: 1 }, bob: { r: 1087, d: -13, s: 0 } });
   assert.deepEqual(patch['rooms/ABC/elo/alice'], { r: 1026, n: 1 });
   assert.deepEqual(patch['rooms/ABC/elo/bob'], { r: 1087, n: 31 });
   assert.equal(Object.keys(patch).length, 6);
@@ -124,5 +124,50 @@ test('keys: the same pair either way round, and today as the rules write it', ()
 test('a stored marker as the Worker answers it', () => {
   assert.deepEqual(ratedView({ at: 5, skip: 'unlinked' }), { at: 5, skip: 'unlinked' });
   assert.deepEqual(ratedView({ at: 5, alice: { r: 1020, d: 20 }, bob: { r: 980, d: -20 } }), { at: 5, seats: { alice: { r: 1020, d: 20 }, bob: { r: 980, d: -20 } } });
+  assert.deepEqual(ratedView({ at: 5, alice: { r: 1020, d: 20, s: 1 }, reversed: { at: 9, by: 'boss' } }),
+    { at: 5, seats: { alice: { r: 1020, d: 20, s: 1 } }, reversed: { at: 9, by: 'boss' } });
   assert.equal(ratedView(null), null);
+  assert.deepEqual(markerSeats({ at: 1, reversed: { at: 2 }, alice: { r: 1, d: 1 } }).map(([k]) => k), ['alice']);
+});
+
+test('reversing a round gives back exactly what it did, once', () => {
+  const ts = { '.sv': 'timestamp' };
+  const marker = { at: 5, alice: { r: 1026, d: 26, s: 1 }, bob: { r: 1087, d: -13, s: 0 } };
+  const acct = { alice: { claim: 'gina', ok: true }, bob: { claim: 'gail', ok: true } };
+  const ratings = {
+    gina: { r: 1040, n: 2, w: 2, l: 0, d: 0, v: 2, at: 1 },        // played another round since
+    gail: { r: 1087, n: 31, w: 20, l: 10, d: 1, v: 31, at: 1 },
+  };
+  const out = reverseRound({ room: 'ABC', round: 7, marker, acct, ratings, ts, by: 'boss' });
+  assert.deepEqual(out.patch['ratings/gina'], { r: 1014, n: 1, w: 1, l: 0, d: 0, v: 3, at: ts });
+  assert.deepEqual(out.patch['ratings/gail'], { r: 1100, n: 30, w: 20, l: 9, d: 1, v: 32, at: ts });
+  assert.deepEqual(out.patch['rooms/ABC/rated/7/reversed'], { at: ts, by: 'boss' });
+  assert.equal(Object.keys(out.patch).length, 3);
+  assert.deepEqual(out.undone.map(u => [u.seat, u.account, u.d]), [['alice', 'gina', 26], ['bob', 'gail', -13]]);
+  // Already reversed, unrated, nothing: nothing to do.
+  assert.equal(reverseRound({ room: 'ABC', round: 7, marker: { ...marker, reversed: { at: 1, by: 'boss' } }, acct, ratings, ts, by: 'boss' }), null);
+  assert.equal(reverseRound({ room: 'ABC', round: 7, marker: { at: 5, skip: 'unlinked' }, acct, ratings, ts, by: 'boss' }), null);
+  assert.equal(reverseRound({ room: 'ABC', round: 7, marker: null, acct, ratings, ts, by: 'boss' }), null);
+});
+
+test('a reversal leaves alone an account with nothing to give back', () => {
+  const ts = 1;
+  const marker = { at: 5, alice: { r: 1020, d: 20, s: 1 }, bob: { r: 980, d: -20, s: 0 } };
+  const acct = { alice: { claim: 'gina', ok: true }, bob: { claim: 'gail', ok: true } };
+  // gina was reset since (no rounds); gail has no rating at all.
+  const out = reverseRound({ room: 'R', round: 1, marker, acct, ratings: { gina: { r: 1000, n: 0, w: 0, l: 0, d: 0, v: 9 } }, ts, by: 'boss' });
+  assert.deepEqual(Object.keys(out.patch), ['rooms/R/rated/1/reversed']);
+  assert.deepEqual(out.kept.map(k => [k.account, k.why]), [['gina', 'reset'], ['gail', 'no-rating']]);
+  // A seat no longer linked in acct/ is kept too.
+  assert.deepEqual(reverseRound({ room: 'R', round: 1, marker, acct: {}, ratings: {}, ts, by: 'boss' }).kept.length, 2);
+});
+
+test('a marker from before scores were kept is read off the sign of the change', () => {
+  const marker = { at: 5, alice: { r: 1020, d: 20 }, bob: { r: 1000, d: 0 } };
+  const acct = { alice: { claim: 'gina', ok: true }, bob: { claim: 'gail', ok: true } };
+  const ratings = { gina: { r: 1020, n: 1, w: 1, l: 0, d: 0, v: 1 }, gail: { r: 1000, n: 1, w: 0, l: 0, d: 1, v: 1 } };
+  const out = reverseRound({ room: 'R', round: 2, marker, acct, ratings, ts: 1, by: 'boss' });
+  assert.equal(out.patch['ratings/gina'].w, 0);
+  assert.equal(out.patch['ratings/gail'].d, 0);
+  assert.equal(out.patch['ratings/gail'].r, 1000);
 });

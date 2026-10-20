@@ -18,6 +18,8 @@ Screenshots go to RATING_UI_SHOTS (default: the system temp folder).
 import json, os, re, sys, tempfile, time, urllib.request
 from playwright.sync_api import sync_playwright
 
+sys.stdout.reconfigure(encoding='utf-8')   # names hold → and ’; python -I ignores PYTHONIOENCODING
+
 ROOT = sys.argv[1]
 BROWSER = sys.argv[2] if len(sys.argv) > 2 else 'chromium'
 BASE = 'http://127.0.0.1:8791'

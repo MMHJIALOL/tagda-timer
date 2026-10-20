@@ -5,8 +5,8 @@ down when you lose, and that nobody can type in for themselves. The browser neve
 the Worker does, as its own account, and the database rules let only that account write it.
 
 Written against `main` at #204. **Phases 1 (the rules and the rater account, #205) and 2
-(`js/elo.js` and the Worker's `/rate`, #206) and 3 (the page) are built**; phases 4–5 are
-not. Decided 2026-10-20: K 40 then 20, 20 rated
+(`js/elo.js` and the Worker's `/rate`, #206), 3 (the page, #207) and 4 (the admin console) are
+built**; phase 5 is a list of separate ideas. Decided 2026-10-20: K 40 then 20, 20 rated
 rounds per pair a day, the opponent's rating visible, leaving mid-round unrated.
 
 ---
@@ -66,8 +66,8 @@ A round is rated only if:
 | Rating a round twice | `rooms/<id>/rated/<round>` is write-once, written in the same atomic update as the ratings |
 | Two tabs updating one account at once | Each rating has a version `v`; the rules accept only `v + 1`, so the loser of the race is refused and retries |
 | A fresh account to escape a low rating | Allowed (it costs nothing to make a Google account), but it starts at 1000 with a provisional K, so there's little to gain |
-| Two of your own accounts farming each other | Same account on both seats: unrated. Different accounts: **20 rated rounds per pair per IST day**, then unrated; admins can reset a rating (phase 4) |
-| Fake times | The existing Tier 1 checks (RACE.md §2), the 3 s floor, and a moderator's strike. Strikes after rating are reversed in phase 4 |
+| Two of your own accounts farming each other | Same account on both seats: unrated. Different accounts: **20 rated rounds per pair per IST day**, then unrated; an admin can reset a rating (People › a person) |
+| Fake times | The existing Tier 1 checks (RACE.md §2), the 3 s floor, and a moderator's strike. An admin takes a struck rated round back from the room inspector |
 | Quitting when you're about to lose | No result, no rating change. This is the hole. Phase 5 decides whether leaving mid-round after starting, once your opponent has submitted, counts as a loss |
 
 ## 5. Data
@@ -76,7 +76,8 @@ A round is rated only if:
 |---|---|---|---|
 | `ratings/<g>` | rater | that account, admins, rater | `{ r, n, w, l, d, v, at }`: rating, rated rounds, wins/losses/draws, version, last change |
 | `ratingPair/<istDay>/<gA>_<gB>` | rater | rater | rated rounds this pair has played today (gA < gB) |
-| `rooms/<id>/rated/<round>` | rater, once | room's players | `{ <seat>: { r, d } }` or `{ skip: reason }` |
+| `rooms/<id>/rated/<round>` | rater, once | room's players | `{ at, <seat>: { r, d, s } }` (`s` the seat's score: 1, 0.5, 0) or `{ at, skip }` |
+| `rooms/<id>/rated/<round>/reversed` | an admin, once | room's players | `{ at, by }`: the round was taken back |
 | `rooms/<id>/elo/<seat>` | rater | room's players | the seat's current rating, for the card at match start |
 
 Seat uids are what the room sees, never the Google uids, so opponents can't learn each other's
@@ -194,8 +195,14 @@ round isn't rated. Phase 5's cron backstop closes it.
    the pair cap, a struck round.
 3. **The page.** ✅ Built (§8). Card, drawer, unrated reasons. Playwright with two seats signed
    in, Chrome and Firefox.
-4. **Admin console.** Look up an account's rating, reset it, and reverse a rated round when a
-   moderator strikes it (the reversal is another versioned `PATCH`).
+4. **Admin console.** ✅ Built. People › a person: their rating, rounds and record, and **Reset
+   rating…** (1000, no rounds, version + 1, logged `ratingReset`). Moderate › a 1v1 room: what
+   each round did to the ratings, and for a rated round with a struck time **Take back the
+   rating…** (also offered, ticked, on the Strike sheet): `reverseRound()` in `js/elo.js`, one
+   versioned update with `rated/<round>/reversed` and the log (`ratingReverse`); admins only.
+   For it, each seat's score is now kept in the marker (`s`), so a draw is taken back as a draw.
+   Tests: `js/elo.check.mjs` (13), `tools/verify-rating-rules.mjs` (105),
+   `tools/verify-rating-admin.py` (15, Chrome and Firefox).
 5. **Later, each on its own:** a public leaderboard (opt-in name, `.indexOn: r`); a cron backstop
    that rates rounds nobody called `/rate` for; leaving mid-round as a loss; matching by rating
    once there are enough players to choose between; race rooms (csTimer's `K / (players − 1)`).
