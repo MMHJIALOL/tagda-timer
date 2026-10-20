@@ -12,6 +12,7 @@ const exportListeners = new Set();
 let exporting = false;
 
 export function localCopy(status = getLocalStatus()) {
+  if (status.memoryOnly) return t('Not saved — this browser won’t let the site save anything');
   return t(({ saved: 'Saved on this device', saving: 'Saving on this device…',
     error: 'Could not save on this device', checking: 'Checking local storage…',
     unknown: 'Local save status unavailable' })[status.state]);

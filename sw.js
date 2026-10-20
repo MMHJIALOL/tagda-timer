@@ -155,8 +155,10 @@ async function navigate(request) {
   // A server error (a paused host, a bad deploy) must not replace the app for
   // someone who already has it: serve the cached page, and leave the cache alone.
   // A redirect (Cloudflare sends /algs.html to /algs) comes back to a navigation
-  // as an opaqueredirect with ok false; hand it to the browser to follow.
-  if (res.type === 'opaqueredirect') return res;
+  // as an opaqueredirect with ok false; hand it to the browser to follow. So does
+  // a 404: an address with no page gets the site's 404 page, not the timer
+  // pretending to live there, and nothing is stored.
+  if (res.type === 'opaqueredirect' || res.status === 404) return res;
   if (!res.ok) return (await caches.match('/')) || (await caches.match('/index.html')) || res;
   const cache = await caches.open(CACHE);
   if (await isStale(cache, request, res.clone())) await dropApp(cache);

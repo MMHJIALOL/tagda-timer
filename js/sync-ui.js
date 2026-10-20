@@ -174,10 +174,19 @@ export function buildAccountRow() {
  * cannot survive, and anything else now lands here instead of silently
  * redirecting, which is only an improvement if the code is findable.
  */
+/* "Try again" is no help where trying again cannot work: a network that
+   will not let Google's sign-in through (common on work and school
+   laptops), or a browser that blocks the storage sign-in keeps its session in. */
+const SIGN_IN_FAILURES = {
+  'auth/network-request-failed': 'Could not reach Google to sign in — check your connection. Work and school networks sometimes block it.',
+  'auth/web-storage-unsupported': 'Sign-in needs this site to store data, and this browser is blocking it',
+  'auth/too-many-requests': 'Too many sign-in attempts — wait a minute, then try again',
+  'auth/user-disabled': 'This Google account has been disabled',
+};
 function reportSignInFailure(err) {
   if (err?.code === 'auth/popup-closed-by-user' || err?.code === 'auth/cancelled-popup-request') return;
   console.warn('[sync] sign-in failed', err?.code || err);
-  toast('Could not sign in — try again', { kind: 'bad' });
+  toast(SIGN_IN_FAILURES[err?.code] || 'Could not sign in — try again', { kind: 'bad', long: !!SIGN_IN_FAILURES[err?.code] });
 }
 
 /* The popup closes a beat before the account has answered. Saying so right

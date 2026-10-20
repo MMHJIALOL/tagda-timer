@@ -128,6 +128,27 @@ export function afterLayout(fn) {
 }
 
 /**
+ * Whether this browser can make a WebGL context at all. Without one (no GPU,
+ * a remote desktop, or WebGL switched off by policy, as on many work laptops)
+ * twisty's 3D cube throws and leaves a spinner where the cube should be; its
+ * flat 2D drawing needs no WebGL, so that is what gets drawn instead. Asked
+ * once per page, and the probe's context is given straight back: contexts
+ * are scarce, and the background shader and the previews need theirs.
+ */
+let webgl = null;
+export function hasWebGL() {
+  if (webgl === null) {
+    try {
+      const canvas = document.createElement('canvas');
+      const gl = canvas.getContext('webgl2') || canvas.getContext('webgl');
+      webgl = !!gl;
+      gl?.getExtension('WEBGL_lose_context')?.loseContext();
+    } catch { webgl = false; }
+  }
+  return webgl;
+}
+
+/**
  * Copy to the clipboard. Resolves to whether it actually worked, and never
  * rejects.
  *

@@ -4,8 +4,8 @@ import { t, translateDOM } from './i18n.js';
    =========================================================== */
 
 import { $, $$, el, uid, fmt, fmtLive, fmtResult, clamp, copy, download, toCSV, debounce,
-         parseTimeInput, parseScrambleList, parseGoal } from './util.js';
-import { Solves, Sessions, KV, Assets, LetterPairs, importAll, onWrite, onLocalStatus } from './db.js';
+         parseTimeInput, parseScrambleList, parseGoal, hasWebGL } from './util.js';
+import { Solves, Sessions, KV, Assets, LetterPairs, importAll, onWrite, onLocalStatus, memoryOnly } from './db.js';
 import { initCompetition, competitionOpen, competitionTiming, recordCompetitionSolve, rememberCompetitionScramble, leaveCompetition } from './competition.js';
 import { competitionResult } from './competition-stats.js';
 import { activeGearId, Gear, gearLabel } from './gear.js';
@@ -38,7 +38,7 @@ import { toast, confirmToast } from './toast.js';
 // dependencies of its own to drag in with it.
 import { dayIdFromServerMs, sotdDoneOn, clearSotdDone } from './dayid.js';
 import { openPalette, closePalette, paletteOpen } from './palette.js';
-import { startAnnouncements, announcementModal, announcementShowing, markOpened, reconsider, placeChanged } from './announcer.js';
+import { startAnnouncements, announcementModal, announcementShowing, markOpened, reconsider, placeChanged, tabChanged } from './announcer.js';
 import { isPhone } from './phone.js';
 import { getConfig, loadConfig, readOnlyText } from './config.js';
 import { featureOn, featureOff } from './audience.js';
@@ -87,7 +87,10 @@ app.viewDataHealth = async () => {
   _panels.openDataHealth(app);
 };
 let localFailureWarned = false;
+let memoryBanner = false;
 onLocalStatus(status => {
+  // Storage refused (db.js memoryOnly): the top banner says so for the rest of the visit.
+  if (status.memoryOnly && !memoryBanner) { memoryBanner = true; syncBanner(); }
   const warning = $('#local-save-warning');
   if (warning) warning.hidden = status.state !== 'error';
   if (status.state === 'error' && !localFailureWarned) {
@@ -827,7 +830,11 @@ function wireConfig() {
  */
 function syncBanner() {
   const own = getConfig('app', 'banner').trim();
-  const text = own || readOnlyText() || '';
+  /* Ahead of the admin's own text: it is about this visitor's solves. Not a
+     bottom bar like #local-save-warning, which on a phone sits on the dock
+     and would cover it for the whole visit. */
+  const memory = memoryOnly() ? t('This browser won’t let the site save anything, so solves last only until this tab closes. Export them before you leave.') : '';
+  const text = [memory, own || readOnlyText()].filter(Boolean).join('  ·  ');
   let bar = $('#app-banner');
   if (!text) {
     if (bar) { bar.remove(); document.body.classList.remove('has-banner'); }
@@ -839,7 +846,7 @@ function syncBanner() {
     // The app is a screen tall: it gives up the banner's height, however many lines that is.
     new ResizeObserver(() => document.body.style.setProperty('--banner-h', `${bar.offsetHeight}px`)).observe(bar);
   }
-  bar.dataset.kind = own ? getConfig('app', 'bannerKind') : 'warn';
+  bar.dataset.kind = own && !memory ? getConfig('app', 'bannerKind') : 'warn';
   bar.textContent = text;
   document.body.classList.add('has-banner');
 }
@@ -1872,7 +1879,11 @@ const cameraButton = () => (inSotdWindow() ? $('#sotd-camera') : $('#btn-camera'
 
 /** The panels an announcement's button may open (announce.js ANN_PANELS). */
 const ANN_OPEN = {
-  camera: () => openCameraPanel(cameraButton()),
+  // On a phone the camera button is on the Timer tab; its panel opens from there.
+  camera: () => {
+    if (phoneShell?.on() && phoneShell.tab() !== 'timer') phoneShell.setTab('timer');
+    openCameraPanel(cameraButton());
+  },
   sotd: () => enterSotd(),
   race: () => openPanel('Race', 'buildRace', undefined, app),
   stats: () => openPanel('Statistics', 'buildStats', { wide: true }, app),
@@ -1888,8 +1899,16 @@ const ANN_BUTTON = {
   appearance: () => $('#btn-theme'), settings: () => $('#btn-settings'), spotify: () => $('#btn-spotify'),
   gear: () => $('#btn-gear'), about: () => $('#btn-about'),
 };
-/** On a phone (phoneshell.js), the dock tab a top-bar button lives under, for a card to point at. */
-const ANN_PHONE_TAB = { race: 'train' };
+/** On a phone (phoneshell.js), the dock tab a top-bar button lives under, for a card to point at.
+    The camera and the Daily chip stay in the bar, but only the Timer tab shows the bar. */
+const ANN_PHONE_TAB = { race: 'train', camera: 'timer', sotd: 'timer' };
+/** Whether a button can be seen, not just laid out: another phone tab's screen covers the top bar. */
+function onScreen(btn) {
+  const r = btn.getBoundingClientRect();
+  if (!r.width) return false;
+  const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+  return !!hit && (btn.contains(hit) || !!hit.closest('.an-card'));
+}
 /** openPanel's builder → the panel id it is, for the notOpened audience. */
 const PANEL_OF = {
   buildStats: 'stats', buildGear: 'gear', buildAppearance: 'appearance', buildSettings: 'settings',
@@ -1912,7 +1931,7 @@ function wireAnnouncements() {
       // The camera card means nothing where this browser cannot record.
       if (id === 'camera' && (!replaySupported() || replayOff())) return null;
       const btn = ANN_BUTTON[id]?.();
-      if (btn && btn.getBoundingClientRect().width && !btn.disabled) return btn;
+      if (btn && onScreen(btn) && !btn.disabled) return btn;
       // Where the top bar's button is folded away (not from the SOTD window): on a phone, the
       // dock's tab that holds it (race: Train), otherwise the ☰ menu.
       if (inSotdWindow() || !btn?.closest('.topbar-right')) return null;
@@ -3829,7 +3848,9 @@ function updateLabels() {
   $('#session-label').textContent = app.session.name;
   $('#btn-mode').classList.toggle('active-mode', app.settings.mode !== 'wca');
   $('#hist-title').textContent = t('Times · {event}', { event: ev.short });
-  $$(t('#view-toggle button')).forEach(b => b.classList.toggle('on', b.dataset.view === app.settings.cubeView));
+  // With no WebGL the preview is always the flat drawing (cube.js), whatever the setting says.
+  const shown = hasWebGL() ? app.settings.cubeView : '2D';
+  $$(t('#view-toggle button')).forEach(b => b.classList.toggle('on', b.dataset.view === shown));
 }
 
 /* =========================================================
@@ -6376,6 +6397,8 @@ function wireChrome() {
 
   $$(t('#view-toggle button[data-view="3D"], #view-toggle button[data-view="2D"]')).forEach(b =>
     b.addEventListener('click', () => app.setSetting('cubeView', b.dataset.view)));
+  // A 3D button that cannot draw anything, and an angle to reset that does not exist.
+  if (!hasWebGL()) for (const b of $$(t('#view-toggle button[data-view="3D"], #btn-reset-orbit'))) b.hidden = true;
 
   /* Hide the preview from the preview itself. The same switch the settings
      panel writes, so it is not a second piece of state — and the toast says
@@ -6477,7 +6500,7 @@ function wirePhoneShell() {
       Solves.put(live).then(() => toast(t('Note saved'))).catch(error => console.warn('[db] note retained for recovery', error));
     },
     hasCases: () => !!setFor(app.settings.mode),
-    shownSolve, timerIdle, remeasureHistory,
+    shownSolve, timerIdle, remeasureHistory, tabChanged,
     sessionSolves: (id) => Solves.bySession(id),
     spotifyLinked: () => !!spotify?.connected && !accessDenied,
     click: (sel) => $(sel)?.click(),
