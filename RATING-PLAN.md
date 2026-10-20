@@ -5,8 +5,8 @@ down when you lose, and that nobody can type in for themselves. The browser neve
 the Worker does, as its own account, and the database rules let only that account write it.
 
 Written against `main` at #204. **Phases 1 (the rules and the rater account, #205) and 2
-(`js/elo.js` and the Worker's `/rate`) are built**; phases 3–5 are not, so no page asks for a
-rating yet. Decided 2026-10-20: K 40 then 20, 20 rated
+(`js/elo.js` and the Worker's `/rate`, #206) and 3 (the page) are built**; phases 4–5 are
+not. Decided 2026-10-20: K 40 then 20, 20 rated
 rounds per pair a day, the opponent's rating visible, leaving mid-round unrated.
 
 ---
@@ -152,14 +152,34 @@ uses REST, so it costs no simultaneous connections.
 (36 checks: four asks at once rate a round once, one account rated in two 1v1s at the same moment
 lands both, every skip reason, both switches, and old rules).
 
-## 8. The page
+## 8. The page — built in phase 3
 
-- `race.js`: when a 1v1 round settles, call `/rate` at `max(submittedAt) + 15.5 s`, and once
-  more on `retryAfterMs`. Either player's call is enough, so the round still gets rated if the
-  other one has quit.
-- Listen to `rooms/<id>/rated` and `rooms/<id>/elo` (both small) and draw them on the card.
-- Read your own `ratings/<g>` with a plain REST request (no listener) for the drawer.
-- Strings in `locales/`, a `?v=` bump.
+- **Is it on?** `GET /rate` (no token) answers `{ on }`: `duel.rated`, the rater can sign in
+  (the secret is set) and the rules let it read (they are published). The page shows nothing
+  about ratings until it says yes, so a deploy without the secret or the rules looks exactly
+  as before. Kept 5 minutes in the page, a minute in the Worker.
+- **`js/race-rating.js`**, one `DuelRating` per 1v1, started by `race.js` when the opponent
+  arrives and stopped on leaving:
+  - listens to `rooms/<id>/rated` and `rooms/<id>/elo` (both small);
+  - once this seat is linked, `POST /rate` with no round, so both ratings are on the card at
+    once;
+  - when a round settles (`_settle`), `POST /rate` for it; `202 { wait }` is asked again then,
+    `409 not-finished` twice more (4 s, 12 s), `409 busy` once. Either player's ask is
+    enough, so a round is still rated if the other has quit.
+- **The card** (`_duelBoard`): the rating under each name and the last rated round's change
+  (`1020 +20`, green up, red down). One note line when the 1v1 isn't rated: *Sign in to get a
+  rating* (at once, when this seat isn't linked), then from the newest marker: the opponent
+  isn't signed in, one account on both seats, the day's cap with this player, a struck time,
+  a time under 3 s. 403 off: *Ratings are off right now*.
+- **The drawer** (Find an opponent card): *Your rating 1020 · 23 rated rounds*, *Your rating
+  starts at 1000 with your first rated 1v1*, or *Sign in to get a rating*. Your own
+  `ratings/<uid>` read once with the timer's sign-in, kept a minute, read again after a round
+  of yours is rated.
+- Strings in `locales/es.js` and `ptbr.js`, v148.
+- **Tested:** `tools/verify-rating-ui.py`, real browsers against `wrangler dev` and the
+  emulators (20 checks, Chrome and Firefox): two signed-in players rated ±20 and shown on both
+  cards 16 s after the times, the drawer before and after, and a signed-out player against a
+  signed-in one with both notes.
 
 **Known gap:** if both players quit within 15 s of the last round, nobody calls `/rate` and that
 round isn't rated. Phase 5's cron backstop closes it.
@@ -172,8 +192,8 @@ round isn't rated. Phase 5's cron backstop closes it.
 2. **`js/elo.js` + `/rate`.** ✅ Built (§7). Node checks for the formula and the rateable/final decisions.
    `wrangler dev` against the emulator: two linked seats, concurrent calls, a version clash,
    the pair cap, a struck round.
-3. **The page.** Card, drawer, unrated reasons. Playwright with two seats signed in, Chrome and
-   Firefox.
+3. **The page.** ✅ Built (§8). Card, drawer, unrated reasons. Playwright with two seats signed
+   in, Chrome and Firefox.
 4. **Admin console.** Look up an account's rating, reset it, and reverse a rated round when a
    moderator strikes it (the reversal is another versioned `PATCH`).
 5. **Later, each on its own:** a public leaderboard (opt-in name, `.indexOn: r`); a cron backstop

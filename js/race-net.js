@@ -17,6 +17,8 @@ import { t } from './i18n.js';
      fetchResults(n)   one read of a past round's times, once you raced it
      watchResults(n,f) keep reading one past round's times, until unsubscribed
      setPenalty(n, p)  change the penalty on your own submitted result
+     rate(n)           ask the Worker to rate a 1v1's round (Firebase only)
+     ratedOn(f), eloOn(f)  a 1v1's ratings as the Worker wrote them (Firebase only)
      destroy()
 
    It is an EventTarget and emits one event, 'room', carrying the whole
@@ -306,6 +308,34 @@ class FirebaseTransport extends EventTarget {
     if (!r.ok) return null;
     const j = await r.json();
     return Array.isArray(j?.iceServers) && j.iceServers.length ? { list: j.iceServers, ttl: Number(j.ttl) || 0 } : null;
+  }
+
+  /* ---- 1v1 ratings (RATING-PLAN.md) ----
+     The Worker rates; the room only carries the result, written by its
+     rater account and readable by the players: rated/<round> and elo/<seat>. */
+
+  /** Ask the Worker to rate round `n`, or with none to put both seats' ratings on the card: { status, body }, or null. */
+  async rate(n) {
+    const token = await this._user?.getIdToken();
+    if (!token || !this.snap.roomId) return null;
+    try {
+      const r = await fetch('/rate', {
+        method: 'POST', cache: 'no-store',
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        body: JSON.stringify(n == null ? { room: this.snap.roomId } : { room: this.snap.roomId, round: n }),
+      });
+      return { status: r.status, body: await r.json().catch(() => null) };
+    } catch { return null; }
+  }
+
+  /** rated/, now and on every change. Returns the unsubscribe. */
+  ratedOn(cb) {
+    return this._sdk.onValue(this._ref(`${this._base}/rated`), (s) => cb(s.val() || {}), () => cb({}));
+  }
+
+  /** elo/, now and on every change. Returns the unsubscribe. */
+  eloOn(cb) {
+    return this._sdk.onValue(this._ref(`${this._base}/elo`), (s) => cb(s.val() || {}), () => cb({}));
   }
 
   _ref(path) { return this._sdk.ref(this._sdk.db, path); }

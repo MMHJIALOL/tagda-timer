@@ -47,6 +47,7 @@ export const duelOffText = () => getConfig('duel', 'message') || t('Random 1v1 i
 import { banActive, banLine } from './admins.js';
 import { blockedWord, filteredText } from './moderation.js';
 import { hasPersistedSession } from './sync-auth.js';
+import { DuelRating, myRating, deltaText } from './race-rating.js';
 
 const FLAG_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 21V4m0 0h10l-2 4 2 4H6"/></svg>';
 
@@ -427,6 +428,8 @@ export class Race extends EventTarget {
     // Camera and mic off before anything else: leaving must never leave either lit.
     this._cam?.stop();
     this._cam = null;
+    this._rating?.stop();
+    this._rating = null;
     await this.net.leave();
     this.snap = null;
     this.settleAt = 0;
@@ -1278,6 +1281,7 @@ export class Race extends EventTarget {
       d.goneAt = 0;
       this.linkAccount();
       this._ensureCam(d.opp);
+      this._startRating();
       // Both sides write it; the same value twice is harmless.
       if (this.phase === 'lobby' && !d.started) {
         d.started = true;
@@ -1339,12 +1343,29 @@ export class Race extends EventTarget {
       if (this._link?.p !== p) return;
       this._link.state = state;
       this._cam?.redraw();
+      if (state === 'linked') this._rating?.seed();
+      this._syncPanel();
     });
     return p;
   }
 
   /** linkAccount's answer for this room so far: 'pending' until it has one. */
-  get linkState() { return this._link?.room === this.snap.roomId ? this._link.state : 'pending'; }
+  get linkState() { return this._link?.room === this.snap?.roomId ? this._link.state : 'pending'; }
+
+  /**
+   * This 1v1's ratings (js/race-rating.js, RATING-PLAN.md): listening from
+   * the moment the opponent is here, and once this seat is linked to an
+   * account, both seats' ratings put on the card. Local mode rates nothing.
+   */
+  _startRating() {
+    if (!this.net?.rate) return;
+    this._rating ||= new DuelRating(this, () => this._syncPanel());
+    this._rating.start(this.snap.roomId);
+    if (this.linkState === 'linked') this._rating.seed();
+  }
+
+  /** Your own rating, for the Find an opponent card (js/race-rating.js myRating). */
+  myRating() { return myRating(); }
 
   /**
    * Report the opponent to the admins (reports/, kind 'duel'), as the Google
@@ -1578,6 +1599,8 @@ export class Race extends EventTarget {
     this._restand();
     this._maybeCelebrate(entry);
     this._watchKept(entry);
+    // Rated by the Worker once no penalty can change; it says how long to wait.
+    if (this.isDuel) this._rating?.roundSettled(r.no);
   }
 
   /**
@@ -1719,9 +1742,16 @@ export class Race extends EventTarget {
         title: t('Report {name}', { name }), 'aria-label': t('Report {name}', { name }),
         onclick: () => this._reportOpponent(),
       }) : null;
+      // Their rating, as the Worker last wrote it, and what the last rated round did to it.
+      const rating = this._rating?.view(who === 'me' ? this.uid : opp?.uid);
+      const elo = rating ? el('span', { class: 'duel-board-elo', title: t('Rating') },
+        el('span', { text: String(rating.r) }),
+        rating.d !== undefined ? el('b', { dataset: { dir: rating.d > 0 ? 'up' : rating.d < 0 ? 'down' : 'flat' }, text: deltaText(rating.d) }) : null,
+      ) : null;
       return el('div', { class: 'duel-board-side', dataset: { who, state, lead: String(lead === who) } },
         av, flag,
         el('span', { class: 'duel-board-name', text: who === 'me' ? t('You') : name, title: name }),
+        elo,
         el('span', { class: 'duel-board-val', text: label,
           title: state === 'locked' ? t('They are done. You will see the time when you are.') : '' }),
       );
@@ -1739,8 +1769,12 @@ export class Race extends EventTarget {
       side(themRow, opp?.name || 'Cuber', 'them'),
     );
 
+    // Why this 1v1 is not rated, when it is not (sign in, the opponent isn't, the day's cap…).
+    const why = this._rating?.note(this.linkState, opp?.name || 'Cuber');
+    const note = why ? el('div', { class: 'duel-rating-note', role: 'status', text: why }) : null;
+
     const last = this.duelRounds.at(-1);
-    if (!last) return [board];
+    if (!last) return note ? [board, note] : [board];
     const w = Race.roundWinner(last);
     const a = effOf(last.me), b = effOf(last.them);
     // Number.isFinite, not isFinite: a round one side never finished is null, and isFinite(null) is true.
@@ -1757,7 +1791,7 @@ export class Race extends EventTarget {
         el('i', { text: '–' }),
         el('span', { dataset: { win: String(w === 'them') }, text: Race.resText(last.them) })),
     );
-    return [board, banner];
+    return note ? [board, banner, note] : [board, banner];
   }
 
   /**
@@ -2083,7 +2117,7 @@ export class Race extends EventTarget {
   _sig(rows) {
     return [
       this.snap.roomId, this.phase, this.round?.no, this.revealed, this._expanded, this.collapsed,
-      this.isHost, this.isDuel, this.opponent?.name, this._histSig(),
+      this.isHost, this.isDuel, this.opponent?.name, this._histSig(), this._rating?.sig() ?? '', this.isDuel ? this.linkState : '',
       ...rows.map(x => `${x.uid}:${x.status}:${x.eff ?? ''}:${x.standing?.wins ?? 0}:${x.clockOff ? 1 : 0}`),
     ].join('|');
   }

@@ -3336,10 +3336,24 @@ export function buildRace(app) {
             action = [find(state === 'none' ? t('Try again') : t('Find an opponent'))];
           }
 
+          /* Your rating (RATING-PLAN.md), only once the Worker says 1v1s are rated:
+             read once with your sign-in, then drawn into this same card. */
+          const ratingLine = el('div', { class: 'duel-rating', hidden: true });
+          if (state === 'idle' || state === 'none' || state === 'other') {
+            ctl.myRating?.().then((v) => {
+              if (drawn !== key || !v) return;
+              ratingLine.textContent = v === 'signed-out' ? t('Sign in to get a rating')
+                : !v.n ? t('Your rating starts at {r} with your first rated 1v1', { r: v.r })
+                : v.n === 1 ? t('Your rating {r} · 1 rated round', { r: v.r })
+                : t('Your rating {r} · {n} rated rounds', { r: v.r, n: v.n });
+              ratingLine.hidden = false;
+            });
+          }
+
           box.replaceChildren(group(t('Random 1v1'),
             el('div', { class: 'duel-card', dataset: { state } },
               el('div', { class: 'duel-vs' }, meAv, el('span', { class: 'duel-x', text: 'VS' }), them),
-              el('div', { class: 'duel-copy' }, el('div', { class: 'duel-title', text: copy[0] }), sub),
+              el('div', { class: 'duel-copy' }, el('div', { class: 'duel-title', text: copy[0] }), sub, ratingLine),
               ...(action || []),
               el('div', { class: 'duel-fine', text: t('Chat goes only to your opponent. Cam and mic are optional and off until you turn them on.') }),
             ),

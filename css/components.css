@@ -3524,6 +3524,19 @@ body.ph[data-tab="times"]:has(#times-race) #panel-race { display: none; }
 }
 .duel-board-score i { font-style: normal; font-size: 1rem; color: var(--text-faint); }
 .duel-board-round { font-size: .6rem; letter-spacing: .1em; text-transform: uppercase; color: var(--text-faint); }
+/* A 1v1's ratings (RATING-PLAN.md): the number under each name, and what the last rated round did to it. */
+.duel-board-elo {
+  display: inline-flex; align-items: baseline; gap: 4px;
+  font-size: .62rem; font-weight: 650; color: var(--text-dim);
+  font-variant-numeric: tabular-nums; line-height: 1;
+}
+.duel-board-elo b { font-weight: 750; color: var(--text-faint); }
+.duel-board-elo b[data-dir="up"] { color: var(--ok); }
+.duel-board-elo b[data-dir="down"] { color: var(--danger); }
+.duel-rating-note {
+  margin-top: 5px; padding: 0 2px;
+  font-size: .66rem; line-height: 1.4; color: var(--text-faint); text-align: center;
+}
 
 .duel-last {
   display: flex; align-items: baseline; gap: 7px;
@@ -3784,6 +3797,7 @@ body.duel-on #panel-stats > .stats-duel { margin-top: 10px; }
 .duel-title { font-size: 1rem; font-weight: 680; }
 .duel-sub { font-size: .77rem; line-height: 1.5; color: var(--text-dim); }
 .duel-card[data-state="none"] .duel-sub { color: var(--warn); }
+.duel-rating { font-size: .74rem; font-weight: 600; color: var(--text-dim); font-variant-numeric: tabular-nums; }
 .duel-bar {
   width: 100%; height: 4px; border-radius: 99px; overflow: hidden;
   background: color-mix(in srgb, var(--text) 10%, transparent);
