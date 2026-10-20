@@ -137,6 +137,10 @@ export const CONFIG = {
         help: 'The only part of the site billed by the gigabyte: 1,000 GB a month free, then $0.05/GB. Off: two players behind strict NATs see “Couldn’t connect”; everybody else connects directly as before.' },
       turnTtlMin: { type: 'int', def: 240, min: 10, max: 240, unit: 'min', label: 'A relay login lasts', where: 'worker',
         help: 'How long the credentials the Worker hands out stay good. 240 (4 h, TURN_TTL) is the ceiling.' },
+      rated: { type: 'bool', def: true, label: 'Rated 1v1s', where: 'rules',
+        help: 'On: a 1v1 between two signed-in accounts changes their ratings, worked out by the Worker (RATING-PLAN.md). Off: the rules refuse every rating change; ratings already earned stay as they are.' },
+      ratedPairCap: { type: 'int', def: 20, min: 1, max: 20, unit: 'rounds', label: 'Rated rounds per pair a day', where: 'rules',
+        help: 'Two accounts playing each other more than this in one day (from 00:00 IST) play on unrated, so nobody can farm a rating off their own second account. 20 is the ceiling.' },
     },
   },
   raceChat: {

@@ -2543,11 +2543,16 @@ section('admin console — settings and the rules that guard them');
   const asks = (rulesText.match(/root\.child\('admins\/' \+ auth\.uid\)\.val\(\) === true/g) || []).length;
   const google = (rulesText.match(/auth\.token\.firebase\.sign_in_provider === 'google\.com' && root\.child\('admins\/' \+ auth\.uid\)\.val\(\) === true/g) || []).length;
   check('no uid is hard-coded as an admin: every admin check reads admins/, and wants a Google sign-in',
-    !/auth\.uid === '(?!tagda-scheduler')/.test(rulesText) && asks >= 10 && google === asks, `${asks} ${google}`);
-  // The one uid the rules name is the scheduler's, and only ever with the custom-token sign-in no browser can make.
+    !/auth\.uid === '(?!tagda-scheduler'|tagda-rater')/.test(rulesText) && asks >= 10 && google === asks, `${asks} ${google}`);
+  // The only uids the rules name are the Worker's two accounts, the scheduler and the 1v1 rater,
+  // and only ever with the custom-token sign-in no browser can make.
   const named = (rulesText.match(/auth\.uid === 'tagda-scheduler'/g) || []).length;
   const custom = (rulesText.match(/auth\.uid === 'tagda-scheduler' && auth\.token\.firebase\.sign_in_provider === 'custom'/g) || []).length;
   check('the scheduler is named only with its custom sign-in', named > 10 && named === custom, `${named} ${custom}`);
+  const raterNamed = (rulesText.match(/auth\.uid === 'tagda-rater'/g) || []).length;
+  const raterCustom = rulesText.split(R.RATER).length - 1;
+  check('the 1v1 rater is named only as RATER, with its custom sign-in', raterNamed > 5 && raterNamed === raterCustom
+    && R.raterChecks(rulesText) === rulesText, `${raterNamed} ${raterCustom}`);
   check('admins/ is writable by nobody from the client',
     !JSON.stringify(rules.admins).includes('.write'));
 
