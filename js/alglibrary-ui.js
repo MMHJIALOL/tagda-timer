@@ -26,6 +26,10 @@ import {
   loadLibraryPrefs, saveOrder, resetOrder, hasCustomOrder, addCustom, removeCustom, countFor,
 } from './alglibrary.js';
 import { setupFor } from './alglibrary-setup.js';
+import { bracketTriggers } from './alg-triggers.js';
+
+/* Triggers in brackets on a cube alg; other puzzles' notation is shown as stored. */
+const shown = (setId, alg) => ((SETS[setId]?.puzzle || 'cube') === 'cube' ? bracketTriggers(alg) : alg);
 
 /* ---------------------------------------------------------
    Case pictures
@@ -396,7 +400,7 @@ function card(set, c) {
     class: 'case-open', type: 'button', title: t('Open this case — every algorithm for it'),
     'aria-label': t(algs.length === 1 ? 'Open {case} — {n} algorithm' : 'Open {case} — {n} algorithms', { case: set.caseLabel(c), n: algs.length }),
   },
-    el('code', { class: 'case-alg', text: algs[0]?.alg || c.alg }),
+    el('code', { class: 'case-alg', text: shown(set.id, algs[0]?.alg || c.alg) }),
     el('span', { class: 'case-more', text: t(algs.length === 1 ? '{n} alg' : '{n} algs', { n: algs.length }) }),
     icon('M9 6l6 6-6 6'),
   );
@@ -629,9 +633,9 @@ function algRow(setId, caseId, a, i, rebuild) {
   if (a.source === 'custom') meta.appendChild(el('span', { class: 'alg-badge yours', text: 'yours' }));
   if (a.notes) meta.appendChild(el('span', { class: 'alg-notes', text: a.notes }));
 
-  const moves = el('code', { class: 'alg-moves', text: a.alg, title: t('Click to copy') });
+  const moves = el('code', { class: 'alg-moves', text: shown(setId, a.alg), title: t('Click to copy') });
   moves.addEventListener('click', async () => {
-    const ok = await copy(a.alg);
+    const ok = await copy(moves.textContent);
     toast(ok ? t('Algorithm copied') : 'Your browser blocked the clipboard', ok ? {} : { kind: 'bad' });
   });
 
