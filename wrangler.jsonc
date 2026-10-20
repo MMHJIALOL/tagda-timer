@@ -1,6 +1,7 @@
 // Cloudflare Workers deploy: the repo root is served as static assets, which
 // are not metered. Only /__/auth/* (the Firebase sign-in proxy, see raceapp.js)
-// and /replay/* (shared SOTD replays, see DAILY.md §8) run worker.js;
+// /replay/* (shared SOTD replays, see DAILY.md §8), /turn (1v1 relay logins)
+// and /rate (1v1 ratings, RATING-PLAN.md) run worker.js;
 // everything else is answered straight from the asset store. Stay on the
 // Workers Free plan: its daily request cap is part of what keeps R2 free.
 {
@@ -11,7 +12,7 @@
   "assets": {
     "directory": ".",
     "binding": "ASSETS",
-    "run_worker_first": ["/__/auth/*", "/replay/*", "/turn"],
+    "run_worker_first": ["/__/auth/*", "/replay/*", "/turn", "/rate"],
     // /algs.html -> /algs, like cleanUrls did on Vercel.
     "html_handling": "auto-trailing-slash"
   },
@@ -22,7 +23,9 @@
   // (ADMIN.md §10). Cron Triggers are part of Workers Free (five an account),
   // and a minute of nothing due is one small database read. The scheduler
   // signs in with the FIREBASE_SERVICE_ACCOUNT secret (wrangler secret put);
-  // without it nothing is applied and the admin page says so.
+  // without it nothing is applied and the admin page says so. The 1v1 rater
+  // (/rate, RATING-PLAN.md) signs in with the same secret as its own account,
+  // tagda-rater; without it /rate answers 503 and every 1v1 stays unrated.
   "triggers": { "crons": ["* * * * *"] },
   // TURN for 1v1 cam and mic (worker.js, RACE.md §9): two secrets, from
   // dash.cloudflare.com > Realtime > TURN Server > Create.

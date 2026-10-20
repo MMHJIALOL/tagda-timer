@@ -4,8 +4,9 @@ A rating that belongs to your Google account, goes up when you beat people in ra
 down when you lose, and that nobody can type in for themselves. The browser never computes it:
 the Worker does, as its own account, and the database rules let only that account write it.
 
-Written against `main` at #204. **Phase 1 (the rules and the rater account) is built**;
-phases 2–5 are not, so nothing writes a rating yet. Decided 2026-10-20: K 40 then 20, 20 rated
+Written against `main` at #204. **Phases 1 (the rules and the rater account, #205) and 2
+(`js/elo.js` and the Worker's `/rate`) are built**; phases 3–5 are not, so no page asks for a
+rating yet. Decided 2026-10-20: K 40 then 20, 20 rated
 rounds per pair a day, the opponent's rating visible, leaving mid-round unrated.
 
 ---
@@ -110,28 +111,46 @@ Everything for one round goes in **one root `PATCH`**: both ratings, the pair co
 `rated` marker. The database applies a multi-path update all or nothing, so a refusal anywhere
 (a version that moved, a round already rated) writes nothing.
 
-## 7. The Worker: `POST /rate`
+## 7. The Worker: `POST /rate` — built in phase 2
 
-`{ room, round }`, with the seat's ID token as the bearer, like `/turn`.
+`{ room, round }`, with the seat's ID token as the bearer, like `/turn`. The code is `rate()` in
+`worker.js`; the arithmetic and every decision are `js/elo.js`.
 
-1. **Cheap checks first:** `config/duel` (cached), the shape of `room` and `round`.
+1. **Cheap checks first:** `duel.rated` (off: `403 off`), the token, the shape of `room` and
+   `round` (a whole number from 1).
 2. **Caller is in the room:** a read of `rooms/<room>/rtc` (shallow) with *their* token. As in
-   `/turn`, a read the rules allow is the proof.
-3. **As the rater** (custom token, cached until it expires): read `meta/kind`, `rounds/<round>`,
-   `acct`, `mod/struck/<round>` and `rated/<round>` in parallel.
-4. Already rated: return what's there. Not final yet: return `{ retryAfterMs }`. Not rateable:
-   write `rated/<round> = { skip }` once and return it.
-5. Read both `ratings/<g>` and today's pair count, work out the change with `js/elo.js`, and send
-   the root `PATCH`. If it's refused because a version moved, read again and retry once.
-6. Return `{ <seat>: { r, d } }`.
+   `/turn`, a read the rules allow is the proof. Refused: `401`/`403 not-in-room`.
+3. **As the rater** (`customToken()`, shared with the scheduler, kept until five minutes before it
+   expires; no `FIREBASE_SERVICE_ACCOUNT`: `503 no-credential`): read `meta` and `acct`
+   (not a 1v1: `403 not-a-1v1`), then the round's `info` and `results`, `mod/struck/<round>` and
+   `rated/<round>` in parallel. A read the rules refuse means rules from before ratings:
+   `503 rules`.
+4. Already rated: `200` with what's there. `judgeRound()` then says one of:
+   - `none`: one time in, or more than two: `409 not-finished`. Nothing is written; the round may
+     never finish (the other player quit).
+   - `wait`: a penalty can still improve: `202 { wait }`, ms until `max(submittedAt) + 15.5 s`.
+   - `skip`: `event`, `struck`, `unlinked`, `same-account`, `bad-result`, `floor`, or `cap` (the
+     pair's count is at the cap). Written once as `rated/<round> = { at, skip }` and returned.
+     Unlinked and same-account are decided at once; nothing about them can change.
+   - `rate`: read both `ratings/<g>` and today's pair count, build the root `PATCH` with
+     `roundUpdate()`, send it. Refused: read `rated/<round>` (somebody else rated it: return that)
+     or go round again, three tries in all (`409 busy` after).
+5. Answer: `200 { round, at, seats: { <seat>: { r, d } } }` or `200 { round, at, skip }`.
 
-**Budget:** about 10 subrequests per call, against the 50 Workers Free allows. Both clients call
-it for every round, and the second call is a no-op after one read. A long 1v1 is about one
-request a minute per player, far inside 100k a day. The database uses REST, so it costs no
-simultaneous connections.
+Without `round`: both linked seats' current ratings (1000 and 0 rounds when new) go to
+`rooms/<id>/elo/<seat>` and come back as `200 { elo }`, so the card has numbers before the first
+round.
 
-A separate `POST /rate` with no `round` writes `rooms/<id>/elo/<seat>` for both seats at match
-start, so the card has numbers before the first round.
+**Budget:** a round rated on the first try is 11 subrequests (13 when the settings and the
+rater's sign-in aren't cached yet), at most about 24 with all three tries, against
+the 50 Workers Free allows. Both clients call it for every round, and the later call is a read
+back. A long 1v1 is about one request a minute per player, far inside 100k a day. The database
+uses REST, so it costs no simultaneous connections.
+
+**Tested:** `js/elo.check.mjs` (`npm run test:elo`) for the formula and the decisions;
+`tools/verify-rate.mjs` end to end against `wrangler dev` and the database and Auth emulators
+(36 checks: four asks at once rate a round once, one account rated in two 1v1s at the same moment
+lands both, every skip reason, both switches, and old rules).
 
 ## 8. The page
 
@@ -150,7 +169,7 @@ round isn't rated. Phase 5's cron backstop closes it.
 1. **Rules + rater account.** ✅ Built: `RATER_UID`, the paths in §5 and §6, the `duel.rated`
    settings, `tools/verify-rating-rules.mjs`. The owner publishes the rules; nothing uses them
    until phase 2.
-2. **`js/elo.js` + `/rate`.** Node checks for the formula and the rateable/final decisions.
+2. **`js/elo.js` + `/rate`.** ✅ Built (§7). Node checks for the formula and the rateable/final decisions.
    `wrangler dev` against the emulator: two linked seats, concurrent calls, a version clash,
    the pair cap, a struck round.
 3. **The page.** Card, drawer, unrated reasons. Playwright with two seats signed in, Chrome and
