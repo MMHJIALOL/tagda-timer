@@ -26,6 +26,7 @@ import { OLL_LIBRARY } from './alglibrary-oll.js';
 import { faceletsFor, parseAlg } from './cubenet.js';
 import { KV } from './db.js';
 import { invert, tidy } from './util.js';
+import { stripBrackets } from './alg-triggers.js';
 
 /* ---------------------------------------------------------
    Sets
@@ -729,7 +730,9 @@ export const hasCustomOrder = (caseId) => _order.has(caseId);
  */
 export async function addCustom(setId, caseId, alg) {
   const set = SETS[setId];
-  const moves = puzzleOf(set) === 'cube' ? parseAlg(alg) : PUZ.parseMoves(set.puzzle, alg);
+  /* Brackets around triggers are how algs get written down — and copied from
+     this page — so a pasted (R U R' U') is read as the four moves inside. */
+  const moves = puzzleOf(set) === 'cube' ? parseAlg(stripBrackets(alg)) : PUZ.parseMoves(set.puzzle, alg);
   const typed = (moves || []).join(' ');
   if (!typed) return { ok: false, error: t('That is not move notation for this puzzle.') };
   if (!verifyAlgForCase(setId, caseId, typed)) {
