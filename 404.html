@@ -237,6 +237,8 @@ footer code { font-family: var(--mono); color: var(--text-dim); overflow-wrap: a
   if (still) { dnf.classList.add('on'); return wire(); }
   var start = null, END = 404, MS = 1300;
   function frame(now) {
+    // The fallback below already stopped the clock: a tab shown late must not run it again.
+    if (dnf.classList.contains('on')) { digits.textContent = '4.04'; return; }
     if (start === null) start = now;
     var p = Math.min(1, (now - start) / MS);
     var v = Math.round(END * (1 - Math.pow(1 - p, 3)));
