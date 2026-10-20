@@ -42,6 +42,7 @@ const users = {
   admin: token('boss', 'google.com'),
   alice: token('alice'), bob: token('bob'), carol: token('carol'),
   gina: token('gina', 'google.com'), gail: token('gail', 'google.com'),
+  mo: token('mo', 'google.com'),            // a moderator of race rooms (mods/mo)
 };
 
 async function call(method, path, body, who) {
@@ -226,6 +227,48 @@ expect('a pair over the cap sinks the whole update', await call('PATCH', '', {
   [pair]: 21, 'rooms/DUEL1/rated/4': mark({ alice: { r: 1048, d: 16 }, bob: { r: 984, d: -16 } }),
 }, 'rater'), false);
 check('…leaving round 4 unmarked', (await get('rooms/DUEL1/rated/4')) === null);
+
+/* ---------------- phase 4: scores, taking a round back, the log ---------------- */
+console.log('— scores in a marker —');
+expect('the rater keeps each seat\'s score', await call('PUT', 'rooms/DUEL1/rated/20', mark({ alice: { r: 1016, d: 16, s: 1 }, bob: { r: 984, d: -16, s: 0 } }), 'rater'), true);
+expect('a draw is 0.5', await call('PUT', 'rooms/DUEL1/rated/21', mark({ alice: { r: 1000, d: 0, s: 0.5 }, bob: { r: 1000, d: 0, s: 0.5 } }), 'rater'), true);
+expect('a score is 0, 0.5 or 1 and nothing else', await call('PUT', 'rooms/DUEL1/rated/22', mark({ alice: { r: 1016, d: 16, s: 0.3 } }), 'rater'), false);
+
+console.log('— taking a round back —');
+await set('mods/mo', { at: Date.now(), by: 'boss', can: 'race' });
+const back = (who) => ({ at: TS, by: who === 'admin' ? 'boss' : who });
+expect('a player cannot mark a round taken back', await call('PUT', 'rooms/DUEL1/rated/20/reversed', back('alice'), 'alice'), false);
+expect('the rater cannot', await call('PUT', 'rooms/DUEL1/rated/20/reversed', { at: TS, by: RATER_UID }, 'rater'), false);
+expect('a race moderator cannot (ratings are an admin\'s)', await call('PUT', 'rooms/DUEL1/rated/20/reversed', back('mo'), 'mo'), false);
+expect('not a round that was never rated', await call('PUT', 'rooms/DUEL1/rated/23/reversed', back('admin'), 'admin'), false);
+expect('not a round marked unrated', await call('PUT', 'rooms/DUEL1/rated/2/reversed', back('admin'), 'admin'), false);
+expect('the mark says who, in their own name', await call('PUT', 'rooms/DUEL1/rated/20/reversed', { at: TS, by: 'mo' }, 'admin'), false);
+const g0 = await get('ratings/gina'), l0 = await get('ratings/gail');
+const reversal = {
+  'ratings/gina': { r: g0.r - 16, n: g0.n - 1, w: g0.w - 1, l: g0.l, d: g0.d, v: g0.v + 1, at: TS },
+  'ratings/gail': { r: l0.r + 16, n: l0.n - 1, w: l0.w, l: l0.l - 1, d: l0.d, v: l0.v + 1, at: TS },
+  'rooms/DUEL1/rated/20/reversed': back('admin'),
+  'modLog/-rev1': { by: 'boss', at: TS, action: 'ratingReverse', path: 'rooms/DUEL1/rated/20', note: 'gina −16, gail +16', before: { undone: [] } },
+};
+expect('an admin takes a round back: ratings, mark and log in one update', await call('PATCH', '', reversal, 'admin'), true);
+check('…both ratings moved back', (await get('ratings/gina')).r === g0.r - 16 && (await get('ratings/gail')).n === l0.n - 1);
+expect('only once', await call('PUT', 'rooms/DUEL1/rated/20/reversed', back('admin'), 'admin'), false);
+expect('…and the mark cannot be deleted', await call('DELETE', 'rooms/DUEL1/rated/20/reversed', undefined, 'admin'), false);
+expect('a race moderator cannot write a rating either', await call('PUT', 'ratings/gina', rating(1000, 0, 0, 0, 0, (await get('ratings/gina')).v + 1), 'mo'), false);
+const stale = await get('ratings/gina');
+expect('a reversal on a stale version sinks whole, mark included', await call('PATCH', '', {
+  'ratings/gina': rating(stale.r, stale.n, stale.w, stale.l, stale.d, stale.v),
+  'rooms/DUEL1/rated/21/reversed': back('admin'),
+}, 'admin'), false);
+check('…leaving round 21 unmarked', (await get('rooms/DUEL1/rated/21/reversed')) === null);
+
+console.log('— the log —');
+const cur = await get('ratings/gina');
+expect('a reset is logged as ratingReset', await call('PATCH', '', {
+  'ratings/gina': rating(1000, 0, 0, 0, 0, cur.v + 1),
+  'modLog/-reset1': { by: 'boss', at: TS, action: 'ratingReset', path: 'ratings/gina', uid: 'gina', before: { r: cur.r, n: cur.n } },
+}, 'admin'), true);
+expect('an action the log does not know is still refused', await call('PUT', 'modLog/-bad1', { by: 'boss', at: TS, action: 'ratingFiddle', path: 'x' }, 'admin'), false);
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

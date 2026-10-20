@@ -550,6 +550,12 @@ rooms/<id>/mod/struck/<round>/<uid> { at, by, reason? }  this time does not coun
 | **Remove** a player | Their row goes and the mark is set, in one update. Their tab says *A moderator removed you from this room* and leaves, and the rules refuse their rejoining, their times and their chat in that room. Other rooms are not affected: to keep somebody out of everything, **Ban** (beside it) | **Let back in** |
 | **Strike** a time | It stops counting on every screen in the room: out of the round, the standings and Race stats, shown as ✕ *Removed by a moderator*. The time itself stays, so it can be counted again. An optional reason is kept with it | **Count again** |
 | **Delete room** | The whole room goes for good. Typing its code is the confirmation. For test junk (the `rooms/ZXCVB` leak) or a room past saving | none |
+| **Take back the rating…** (1v1, admins) | A rated round with a struck time: each account loses exactly what that round gave it, one rated round and its win, loss or draw (`reverseRound` in `js/elo.js`), with `rooms/<id>/rated/<round>/reversed` in the same update, so it happens once. An account reset since keeps its rating. The Strike sheet offers it too, ticked, on a rated round. Logged as `ratingReverse` | none |
+
+**1v1 ratings in the inspector** (RATING-PLAN.md): under each 1v1 round, what it did to both
+ratings (*Rated: Alice +20 → 1020 · Bob −20 → 980*), why it wasn't rated, or when and by whom
+it was taken back. Only an admin can take a round back: a moderator's strike leaves the line
+saying *an admin can take the rating back*, because the rules let no moderator write a rating.
 
 These marks sit beside `meta` rather than in it on purpose: any racer may write a room's `meta`
 (that is how a room runs itself), so a mark there could be wiped by a player.
@@ -1140,13 +1146,17 @@ synced data (`users/<uid>`); see Support for the person's own way to show it.
 | Support requests | `support/` |
 | Scramble of the Day, the last 7 days, with **Remove time** on today's | `daily/<day>/<event>/results/<uid>` |
 | Race rooms and 1v1s, the last 7 days | the rooms read of §6 |
+| 1v1 rating: rating, rated rounds, won, lost and drawn, last change, with **Reset rating…** | `ratings/<uid>` (RATING-PLAN.md) |
 | Messages, the last 7 days, on asking, with **Delete all** | every event's day room (indexed on `uid`) and every race room |
 | Health: the last heartbeat, and their error reports | `health/`, `errors/` (§16) |
 | Reports filed by them, and about their times or replays | `reports/` |
 | Announcements they were shown, and what they did | `annStats/` |
 
 Actions: **Ban** / **Unban**, **Make tester** / **Not a tester**, **Remove time** (today's, the
-usual removal: they get the backup), **Delete all** their messages this week in one update.
+usual removal: they get the backup), **Delete all** their messages this week in one update,
+**Reset rating…** (back to 1000 with no rated rounds, so their next 20 move it twice as fast;
+the version goes up by one, so a 1v1 being rated at that moment is refused and asks again;
+logged as `ratingReset` with what it was).
 
 ### Support requests
 
