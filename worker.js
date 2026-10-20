@@ -1,7 +1,7 @@
 /* ===========================================================
    Tagda Timer — the Worker
 
-   Only three kinds of path ever run this file (run_worker_first in
+   Only these paths ever run this file (run_worker_first in
    wrangler.jsonc); everything else is a static asset, which is not metered.
    It also runs once a minute on its own (the cron in wrangler.jsonc), to
    apply the admin console's scheduled changes when they are due.
@@ -18,6 +18,10 @@
    /turn       Short-lived TURN relay credentials for a 1v1's cam and mic
                (RACE.md §9), only to a player in that 1v1. Off until the
                TURN_KEY_ID and TURN_KEY_TOKEN secrets are set.
+
+   /rate       A random 1v1's rating (RATING-PLAN.md): works out a finished
+               round's Elo as the rater account and writes it, asked by
+               either player. Off until FIREBASE_SERVICE_ACCOUNT is set.
 
    The money rule for /replay/. R2 bills past its free tier instead of
    failing, so this file is what keeps every meter under it:
@@ -40,11 +44,13 @@
    the uid and the sign-in provider. Never as an Authorization header: the
    REST API takes a Bearer header as an admin OAuth credential, which skips
    every rule. The one signature made here is the scheduler's own sign-in
-   (schedulerToken), and that account is held to the rules like anybody.
+   (customToken), for the scheduler and the 1v1 rater, and those accounts
+   are held to the rules like anybody.
    =========================================================== */
 
 import { sectionOf, spec, valid } from './js/config-table.js';
-import { SCHEDULER_UID } from './js/config-rules.js';
+import { SCHEDULER_UID, RATER_UID } from './js/config-rules.js';
+import { START, PAIR_CAP, judgeRound, roundUpdate, ratedView, pairKey, dayKey } from './js/elo.js';
 
 const DAY_MS = 86_400_000;
 const IST_MS = 19_800_000;            // the day starts at 00:00 IST (js/dayid.js)
@@ -69,6 +75,13 @@ export default {
       catch (err) {
         console.log(JSON.stringify({ turn: 'error', message: String(err?.message || err) }));
         return fail(502, 'upstream');
+      }
+    }
+    if (pathname === '/rate') {
+      try { return await rate(request, env); }
+      catch (err) {
+        console.log(JSON.stringify({ rate: 'error', message: String(err?.message || err) }));
+        return fail(err instanceof Refused ? 503 : 502, err instanceof Refused ? 'rules' : 'upstream');
       }
     }
     if (pathname === '/replay' || pathname.startsWith('/replay/')) {
@@ -530,6 +543,124 @@ async function turn(request, env) {
   return json(200, { iceServers: list, ttl });
 }
 
+/* ---------------- 1v1 ratings (RATING-PLAN.md) ----------------
+
+   POST /rate { room, round }, with a 1v1 seat's ID token. Either player
+   asks once a round has settled (and again after `wait` ms, if told to);
+   whoever asks first does the work, and every later ask reads it back.
+   The arithmetic and the decisions are js/elo.js; this is the database.
+
+   - The caller must be a player in the room: rtc/ is readable only by the
+     room's players, so a read of it that succeeds proves the token and the
+     seat (as /turn does).
+   - Everything after that is read and written as the rater (RATER_UID), the
+     only account the rules let near ratings/. It reads the round's results,
+     the room's account links and any moderator's strike, and writes the
+     whole round in one root update: both ratings with their version bumped,
+     the pair's count for the day, the room's rated/<round> and both seats'
+     elo/. The rules take all of it or none, so a round is rated once, and two
+     rounds of one account rated at the same moment cannot both land; the
+     loser reads again and goes round once more.
+   - Without `round`: write both seats' current ratings to elo/, for the card
+     at the start of a 1v1.
+
+   Answers: 200 { round, at, seats: { <seat>: { r, d } } } or { round, at,
+   skip }, 202 { wait } (a penalty can still change), 200 { elo } for no
+   round; 403 off / not-in-room / not-a-1v1, 404 no-round, 409 not-finished
+   or busy, 503 no-credential (no FIREBASE_SERVICE_ACCOUNT) or rules (the
+   rater is refused: firebase.rules.json from before ratings). */
+
+const ROUND = /^[1-9][0-9]{0,5}$/;
+const RATE_TRIES = 3;
+
+/** The rules refused the rater a read: the published rules are from before ratings. */
+class Refused extends Error {}
+
+async function rate(request, env) {
+  if (request.method !== 'POST') return fail(405, 'method');
+  const cfg = await sectionSettings(env, 'duel');
+  if (!cfg.rated) return fail(403, 'off');
+  const token = bearer(request);
+  if (!token) return fail(401, 'no-token');
+  const sub = claims(token)?.sub;
+  if (typeof sub !== 'string' || !UID.test(sub)) return fail(401, 'bad-token');
+  const body = await request.json().catch(() => null);
+  const room = body?.room, round = body?.round;
+  if (typeof room !== 'string' || !ROOM.test(room)) return fail(400, 'bad-room');
+  if (round !== undefined && !(Number.isInteger(round) && ROUND.test(String(round)))) return fail(400, 'bad-round');
+  const seat = await rtdb(env, `rooms/${room}/rtc`, token, {}, { shallow: 'true' });
+  if (!seat.ok) return fail(seat.status === 401 ? 401 : 403, 'not-in-room');
+
+  const rater = await customToken(env, RATER_UID);
+  if (!rater) return fail(503, 'no-credential');
+  const get = async (path) => {
+    const r = await rtdb(env, path, rater);
+    if (r.status === 401 || r.status === 403) throw new Refused(path);
+    if (!r.ok) throw new Error(`read ${path}: ${r.status}`);
+    return r.json();
+  };
+  const base = `rooms/${room}`;
+  const [meta, acct] = await Promise.all([get(`${base}/meta`), get(`${base}/acct`)]);
+  if (meta?.kind !== 'duel') return fail(403, 'not-a-1v1');
+  if (round === undefined) return seedElo(env, rater, get, base, acct);
+
+  const [info, results, struck, done] = await Promise.all([
+    get(`${base}/rounds/${round}/info`), get(`${base}/rounds/${round}/results`),
+    get(`${base}/mod/struck/${round}`), get(`${base}/rated/${round}`),
+  ]);
+  if (done) return json(200, { round, ...ratedView(done) });
+  if (!info) return fail(404, 'no-round');
+  const verdict = judgeRound({ event: info.event || meta.event, results, acct, struck, now: Date.now() });
+  if (verdict.none) return fail(409, verdict.none);
+  if (verdict.wait) return json(202, { round, wait: verdict.wait });
+  if (verdict.skip) return markSkip(env, rater, get, base, round, verdict.skip);
+
+  const { seats, accounts, s } = verdict.rate;
+  const cap = Math.min(PAIR_CAP, cfg.ratedPairCap);
+  for (let i = 0; i < RATE_TRIES; i++) {
+    const day = dayKey(Date.now());
+    const [ra, rb, count] = await Promise.all([
+      get(`ratings/${accounts[0]}`), get(`ratings/${accounts[1]}`), get(`ratingPair/${day}/${pairKey(...accounts)}`),
+    ]);
+    if ((Number(count) || 0) >= cap) return markSkip(env, rater, get, base, round, 'cap');
+    const { patch, seats: out } = roundUpdate({ room, round, seats, accounts, s, ratings: [ra, rb], pairCount: Number(count) || 0, day, ts: TS });
+    const w = await rtdb(env, '', rater, { method: 'PATCH', body: JSON.stringify(patch) });
+    if (w.ok) {
+      console.log(JSON.stringify({ rate: 'rated', room, round, s, tries: i + 1 }));
+      return json(200, { round, at: Date.now(), seats: out });
+    }
+    // Refused: somebody else rated it first, or a rating's version moved under us.
+    const again = await get(`${base}/rated/${round}`);
+    if (again) return json(200, { round, ...ratedView(again) });
+  }
+  console.log(JSON.stringify({ rate: 'busy', room, round }));
+  return fail(409, 'busy');
+}
+
+/** Mark a round unrated, once, with why. Somebody else's mark first is just as good. */
+async function markSkip(env, rater, get, base, round, skip) {
+  const w = await rtdb(env, `${base}/rated/${round}`, rater, { method: 'PUT', body: JSON.stringify({ at: TS, skip }) });
+  const node = w.ok ? null : await get(`${base}/rated/${round}`);
+  if (!w.ok && !node) return fail(409, 'busy');
+  console.log(JSON.stringify({ rate: 'skipped', base, round, skip: node?.skip || skip }));
+  return json(200, { round, ...(node ? ratedView(node) : { at: Date.now(), skip }) });
+}
+
+/** Both linked seats' current ratings into the room's elo/, for the card before the first round. */
+async function seedElo(env, rater, get, base, acct) {
+  const linked = Object.entries(acct || {}).filter(([s, a]) => UID.test(s) && a?.ok === true && typeof a.claim === 'string' && UID.test(a.claim));
+  if (!linked.length) return json(200, { elo: {} });
+  const stored = await Promise.all(linked.map(([, a]) => get(`ratings/${a.claim}`)));
+  const elo = {};
+  linked.forEach(([s], i) => {
+    const x = stored[i];
+    elo[s] = { r: Number.isInteger(x?.r) ? x.r : START, n: Number.isInteger(x?.n) ? x.n : 0 };
+  });
+  const w = await rtdb(env, `${base}/elo`, rater, { method: 'PATCH', body: JSON.stringify(elo) });
+  if (!w.ok) throw new Refused(`${base}/elo`);
+  return json(200, { elo });
+}
+
 /* ---------------- scheduled changes (ADMIN.md §10) ---------------- */
 
 const TS = { '.sv': 'timestamp' };
@@ -548,23 +679,25 @@ function pushId(now) {
 const b64url = (bytes) => btoa(String.fromCharCode(...new Uint8Array(bytes))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 const enc = (o) => b64url(new TextEncoder().encode(JSON.stringify(o)));
 
-let scheduler = { token: null, until: 0 };
+const signedIn = new Map();           // uid -> { token, until }
 
 /**
- * An ID token for the scheduler's account (SCHEDULER_UID): a custom token
- * signed with the service account's key (the FIREBASE_SERVICE_ACCOUNT
- * secret), exchanged at Firebase Auth like any sign-in. Kept until five
- * minutes before it expires. No secret, no token: the changes wait, and the
- * admin page says they are overdue.
+ * An ID token for one of the Worker's own accounts: the scheduler
+ * (SCHEDULER_UID) or the 1v1 rater (RATER_UID). A custom token signed with
+ * the service account's key (the FIREBASE_SERVICE_ACCOUNT secret),
+ * exchanged at Firebase Auth like any sign-in, and kept until five minutes
+ * before it expires. No secret, no token: scheduled changes wait (the admin
+ * page says they are overdue) and /rate answers 503.
  */
-async function schedulerToken(env, now) {
-  if (scheduler.token && now < scheduler.until) return scheduler.token;
+async function customToken(env, uid, now = Date.now()) {
+  const held = signedIn.get(uid);
+  if (held && now < held.until) return held.token;
   let sa = null;
   try { sa = JSON.parse(env.FIREBASE_SERVICE_ACCOUNT || ''); } catch { /* below */ }
   if (!sa?.client_email || !sa?.private_key || !env.FIREBASE_API_KEY) return null;
   const s = Math.floor(now / 1000);
   const head = enc({ alg: 'RS256', typ: 'JWT' });
-  const body = enc({ iss: sa.client_email, sub: sa.client_email, aud: CUSTOM_AUD, iat: s, exp: s + 3600, uid: SCHEDULER_UID });
+  const body = enc({ iss: sa.client_email, sub: sa.client_email, aud: CUSTOM_AUD, iat: s, exp: s + 3600, uid });
   const der = Uint8Array.from(atob(sa.private_key.replace(/-----[^-]+-----|\s/g, '')), c => c.charCodeAt(0));
   const key = await crypto.subtle.importKey('pkcs8', der, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['sign']);
   const sig = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', key, new TextEncoder().encode(`${head}.${body}`));
@@ -574,11 +707,11 @@ async function schedulerToken(env, now) {
     body: JSON.stringify({ token: `${head}.${body}.${b64url(sig)}`, returnSecureToken: true }),
   });
   if (!r.ok) {
-    console.log(JSON.stringify({ schedule: 'sign-in-refused', status: r.status }));
+    console.log(JSON.stringify({ signIn: 'refused', uid, status: r.status }));
     return null;
   }
   const j = await r.json();
-  scheduler = { token: j.idToken, until: now + (Number(j.expiresIn) || 3600) * 1000 - 300_000 };
+  signedIn.set(uid, { token: j.idToken, until: now + (Number(j.expiresIn) || 3600) * 1000 - 300_000 });
   return j.idToken;
 }
 
@@ -605,7 +738,7 @@ async function applyScheduled(env, now = Date.now()) {
   }
   if (!due.length) return;
   due.sort((a, b) => a.at - b.at);
-  const token = await schedulerToken(env, now);
+  const token = await customToken(env, SCHEDULER_UID, now);
   if (!token) { console.log(JSON.stringify({ schedule: 'no-credential', due: due.length })); return; }
   const c = await fetch(`${base}/config.json${q}`);
   if (!c.ok) return;
