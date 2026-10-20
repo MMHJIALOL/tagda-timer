@@ -181,6 +181,7 @@ export function createLive(ctx) {
     ['duel', 'camEnabled', null, '1v1 cam and mic'],
     ['duel', 'camSignedIn', null, '1v1 cam: signed-in only'],
     ['duel', 'turnEnabled', null, '1v1 relay (TURN)'],
+    ['duel', 'rated', null, 'Rated 1v1s'],
     ['sotdChat', 'enabled', 'audience', 'Scramble of the Day chat'],
     ['replays', 'enabled', 'audience', 'Shared replays'],
     ['competition', 'enabled', null, 'Competition Mode'],

@@ -127,6 +127,7 @@
         },
 
         "acct": {
+          ".read": "auth != null && auth.uid === 'tagda-rater' && auth.token.firebase.sign_in_provider === 'custom'",
           "$uid": {
             ".read": "auth != null && auth.uid === $uid",
             "claim": {
@@ -171,6 +172,33 @@
                 }
               }
             },
+            "$other": { ".validate": false }
+          }
+        },
+
+        "rated": {
+          ".read": "(auth != null && root.child('rooms/' + $roomId + '/players/' + auth.uid).exists()) || (auth != null && auth.uid === 'tagda-rater' && auth.token.firebase.sign_in_provider === 'custom')",
+          "$round": {
+            ".write": "(auth != null && auth.uid === 'tagda-rater' && auth.token.firebase.sign_in_provider === 'custom') && !data.exists() && root.child('rooms/' + $roomId + '/meta/kind').val() === 'duel'",
+            ".validate": "$round.matches(/^[0-9]{1,6}$/) && newData.hasChildren(['at'])",
+            "at": { ".validate": "newData.val() === now" },
+            "skip": { ".validate": "newData.isString() && newData.val().matches(/^[a-z-]{1,24}$/)" },
+            "$seat": {
+              ".validate": "$seat.matches(/^[A-Za-z0-9]{1,128}$/) && newData.hasChildren(['r', 'd'])",
+              "r": { ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 100 && newData.val() <= 4000" },
+              "d": { ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= -40 && newData.val() <= 40" },
+              "$other": { ".validate": false }
+            }
+          }
+        },
+
+        "elo": {
+          ".read": "(auth != null && root.child('rooms/' + $roomId + '/players/' + auth.uid).exists()) || (auth != null && auth.uid === 'tagda-rater' && auth.token.firebase.sign_in_provider === 'custom')",
+          "$seat": {
+            ".write": "(auth != null && auth.uid === 'tagda-rater' && auth.token.firebase.sign_in_provider === 'custom') && root.child('rooms/' + $roomId + '/meta/kind').val() === 'duel'",
+            ".validate": "$seat.matches(/^[A-Za-z0-9]{1,128}$/) && newData.hasChildren(['r', 'n'])",
+            "r": { ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 100 && newData.val() <= 4000" },
+            "n": { ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 0 && newData.val() <= 1000000" },
             "$other": { ".validate": false }
           }
         },
@@ -240,7 +268,7 @@
             },
 
             "results": {
-              ".read": "auth != null && data.child(auth.uid).exists()",
+              ".read": "(auth != null && data.child(auth.uid).exists()) || (auth != null && auth.uid === 'tagda-rater' && auth.token.firebase.sign_in_provider === 'custom')",
 
               "$uid": {
                 ".write": "auth != null && ((auth.uid === $uid && !data.exists() && !root.child('rooms/' + $roomId + '/mod/closed').exists() && !root.child('rooms/' + $roomId + '/mod/kicked/' + auth.uid).exists() && ((root.child('rooms/' + $roomId + '/meta/kind').val() === 'duel' && (!root.child('bans/' + auth.uid).exists() || (root.child('bans/' + auth.uid + '/until').isNumber() && root.child('bans/' + auth.uid + '/until').val() <= now) || (root.child('bans/' + auth.uid + '/scope').isString() && !root.child('bans/' + auth.uid + '/scope').val().matches(/^(.*,)?duel(,.*)?$/)))) || (root.child('rooms/' + $roomId + '/meta/kind').val() !== 'duel' && (!root.child('bans/' + auth.uid).exists() || (root.child('bans/' + auth.uid + '/until').isNumber() && root.child('bans/' + auth.uid + '/until').val() <= now) || (root.child('bans/' + auth.uid + '/scope').isString() && !root.child('bans/' + auth.uid + '/scope').val().matches(/^(.*,)?race(,.*)?$/)))))) || (data.exists() && !newData.exists() && (((auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true) || (auth.token.firebase.sign_in_provider === 'google.com' && root.child('mods/' + auth.uid + '/can').isString() && root.child('mods/' + auth.uid + '/can').val().matches(/^(.*,)?race(,.*)?$/))))))",
@@ -537,6 +565,14 @@
         "turnTtlMin": {
           ".write": "(auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true || auth != null && auth.uid === 'tagda-scheduler' && auth.token.firebase.sign_in_provider === 'custom') && newData.parent().parent().parent().child('configMeta/duel/turnTtlMin/at').val() === now",
           ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 10 && newData.val() <= 240"
+        },
+        "rated": {
+          ".write": "(auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true || auth != null && auth.uid === 'tagda-scheduler' && auth.token.firebase.sign_in_provider === 'custom') && newData.parent().parent().parent().child('configMeta/duel/rated/at').val() === now",
+          ".validate": "newData.isBoolean()"
+        },
+        "ratedPairCap": {
+          ".write": "(auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true || auth != null && auth.uid === 'tagda-scheduler' && auth.token.firebase.sign_in_provider === 'custom') && newData.parent().parent().parent().child('configMeta/duel/ratedPairCap/at').val() === now",
+          ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 1 && newData.val() <= 20"
         },
         "$other": { ".validate": false }
       },
@@ -978,6 +1014,35 @@
           ".read": "auth != null && auth.uid === $uid",
           ".write": "auth != null && auth.uid === $uid && newData.exists() && $dayStart === '' + (now - ((now + 19800000) % 86400000))",
           ".validate": "newData.isNumber() && newData.val() === (data.exists() ? data.val() : 0) + 1 && newData.val() <= 1000"
+        }
+      }
+    },
+
+    "ratings": {
+      "$g": {
+        ".read": "auth != null && (auth.uid === $g || (auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true) || (auth != null && auth.uid === 'tagda-rater' && auth.token.firebase.sign_in_provider === 'custom'))",
+        ".write": "((auth != null && auth.uid === 'tagda-rater' && auth.token.firebase.sign_in_provider === 'custom') && root.child('config/duel/rated').val() !== false) || (auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true)",
+        ".validate": "$g.matches(/^[A-Za-z0-9]{1,128}$/) && newData.hasChildren(['r', 'n', 'w', 'l', 'd', 'v', 'at']) && newData.child('n').val() === newData.child('w').val() + newData.child('l').val() + newData.child('d').val() && newData.child('v').val() === (data.exists() ? data.child('v').val() + 1 : 1)",
+        "r": { ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 100 && newData.val() <= 4000 && (!(auth != null && auth.uid === 'tagda-rater' && auth.token.firebase.sign_in_provider === 'custom') || (newData.val() - (data.exists() ? data.val() : 1000) <= 40 && newData.val() - (data.exists() ? data.val() : 1000) >= -40))" },
+        "n": { ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 0 && newData.val() <= 1000000 && (!(auth != null && auth.uid === 'tagda-rater' && auth.token.firebase.sign_in_provider === 'custom') || newData.val() - (data.exists() ? data.val() : 0) === 1 || newData.val() - (data.exists() ? data.val() : 0) === -1)" },
+        "w": { ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 0 && newData.val() <= 1000000" },
+        "l": { ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 0 && newData.val() <= 1000000" },
+        "d": { ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 0 && newData.val() <= 1000000" },
+        "v": { ".validate": "newData.isNumber()" },
+        "at": { ".validate": "newData.val() === now" },
+        "$other": { ".validate": false }
+      }
+    },
+
+    "ratingPair": {
+      ".read": "auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true",
+      "$dayStart": {
+        ".read": "auth != null && auth.uid === 'tagda-rater' && auth.token.firebase.sign_in_provider === 'custom'",
+        ".write": "auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true && !newData.exists() && $dayStart !== '' + (now - ((now + 19800000) % 86400000))",
+        ".validate": "$dayStart.matches(/^[0-9]{13}$/)",
+        "$pair": {
+          ".write": "(auth != null && auth.uid === 'tagda-rater' && auth.token.firebase.sign_in_provider === 'custom') && root.child('config/duel/rated').val() !== false && newData.exists() && $dayStart === '' + (now - ((now + 19800000) % 86400000))",
+          ".validate": "$pair.matches(/^[A-Za-z0-9]{1,128}_[A-Za-z0-9]{1,128}$/) && newData.isNumber() && newData.val() === (data.exists() ? data.val() : 0) + 1 && newData.val() <= 20 && (!root.child('config/duel/ratedPairCap').isNumber() || newData.val() <= root.child('config/duel/ratedPairCap').val())"
         }
       }
     },
@@ -1610,6 +1675,30 @@
             ".write": "(auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true) || (auth != null && auth.uid === 'tagda-scheduler' && auth.token.firebase.sign_in_provider === 'custom' && !newData.exists() && newData.parent().parent().parent().parent().child('configMeta/duel/turnTtlMin/at').val() === now && newData.parent().parent().parent().parent().child('configLog/' + newData.parent().parent().parent().parent().child('configMeta/duel/turnTtlMin/log').val() + '/sched').val() === $id)",
             ".validate": "$id.matches(/^[A-Za-z0-9_-]{1,32}$/) && newData.hasChildren(['at', 'by', 'createdAt']) && ((newData.hasChild('to') && !newData.hasChild('def')) || (!newData.hasChild('to') && newData.hasChild('def')))",
             "to": { ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 10 && newData.val() <= 240" },
+            "def": { ".validate": "newData.val() === true" },
+            "at": { ".validate": "newData.isNumber() && newData.val() > now && newData.val() <= now + 31622400000" },
+            "by": { ".validate": "newData.val() === auth.uid" },
+            "createdAt": { ".validate": "newData.val() === now" },
+            "$other": { ".validate": false }
+          }
+        },
+        "rated": {
+          "$id": {
+            ".write": "(auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true) || (auth != null && auth.uid === 'tagda-scheduler' && auth.token.firebase.sign_in_provider === 'custom' && !newData.exists() && newData.parent().parent().parent().parent().child('configMeta/duel/rated/at').val() === now && newData.parent().parent().parent().parent().child('configLog/' + newData.parent().parent().parent().parent().child('configMeta/duel/rated/log').val() + '/sched').val() === $id)",
+            ".validate": "$id.matches(/^[A-Za-z0-9_-]{1,32}$/) && newData.hasChildren(['at', 'by', 'createdAt']) && ((newData.hasChild('to') && !newData.hasChild('def')) || (!newData.hasChild('to') && newData.hasChild('def')))",
+            "to": { ".validate": "newData.isBoolean()" },
+            "def": { ".validate": "newData.val() === true" },
+            "at": { ".validate": "newData.isNumber() && newData.val() > now && newData.val() <= now + 31622400000" },
+            "by": { ".validate": "newData.val() === auth.uid" },
+            "createdAt": { ".validate": "newData.val() === now" },
+            "$other": { ".validate": false }
+          }
+        },
+        "ratedPairCap": {
+          "$id": {
+            ".write": "(auth != null && auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true) || (auth != null && auth.uid === 'tagda-scheduler' && auth.token.firebase.sign_in_provider === 'custom' && !newData.exists() && newData.parent().parent().parent().parent().child('configMeta/duel/ratedPairCap/at').val() === now && newData.parent().parent().parent().parent().child('configLog/' + newData.parent().parent().parent().parent().child('configMeta/duel/ratedPairCap/log').val() + '/sched').val() === $id)",
+            ".validate": "$id.matches(/^[A-Za-z0-9_-]{1,32}$/) && newData.hasChildren(['at', 'by', 'createdAt']) && ((newData.hasChild('to') && !newData.hasChild('def')) || (!newData.hasChild('to') && newData.hasChild('def')))",
+            "to": { ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 1 && newData.val() <= 20" },
             "def": { ".validate": "newData.val() === true" },
             "at": { ".validate": "newData.isNumber() && newData.val() > now && newData.val() <= now + 31622400000" },
             "by": { ".validate": "newData.val() === auth.uid" },

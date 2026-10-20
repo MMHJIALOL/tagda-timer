@@ -32,6 +32,16 @@ export const ADMIN = "auth != null && auth.token.firebase.sign_in_provider === '
 export const SCHEDULER_UID = 'tagda-scheduler';
 export const SCHEDULER = `auth != null && auth.uid === '${SCHEDULER_UID}' && auth.token.firebase.sign_in_provider === 'custom'`;
 
+/**
+ * The Worker rating a random 1v1 (RATING-PLAN.md): a custom-token account
+ * of its own, so its rules grant exactly this. It reads a 1v1's results and
+ * account links, and it alone writes ratings/, ratingPair/ and a room's
+ * rated/ and elo/. Every mention in firebase.rules.json is this, word for
+ * word: raterChecks() refuses the file otherwise.
+ */
+export const RATER_UID = 'tagda-rater';
+export const RATER = `auth != null && auth.uid === '${RATER_UID}' && auth.token.firebase.sign_in_provider === 'custom'`;
+
 /** A tester (testers/<uid>, ADMIN.md §9), or an admin, who has everything a tester has. */
 export const TESTER = "auth != null && (root.child('testers/' + auth.uid).exists() || (auth.token.firebase.sign_in_provider === 'google.com' && root.child('admins/' + auth.uid).val() === true))";
 
@@ -66,6 +76,18 @@ export function banChecks(text) {
   }
   if (!text.includes(`"scope":  { ".validate": ${q(BAN_SCOPE_VALIDATE)} }`)) {
     throw new Error('firebase.rules.json: bans/$uid/scope is not BAN_SCOPE_VALIDATE from js/config-rules.js');
+  }
+  return text;
+}
+
+/**
+ * `text`, checked: every mention of the rater's uid is the whole RATER
+ * expression, so no rule can let a uid named 'tagda-rater' in without the
+ * custom sign-in that only the service account's key can make.
+ */
+export function raterChecks(text) {
+  if (text.split(RATER).join('').includes(RATER_UID)) {
+    throw new Error('firebase.rules.json mentions the rater without RATER from js/config-rules.js');
   }
   return text;
 }
@@ -196,7 +218,7 @@ export function replaceBlock(text, block, name = 'config') {
 
 /** `text` with every generated block rewritten: what `node tools/config-rules.mjs` writes and test.html checks. */
 export function generatedRules(text) {
-  let out = replaceBlock(banChecks(text), configBlock(), 'config');
+  let out = replaceBlock(raterChecks(banChecks(text)), configBlock(), 'config');
   out = replaceBlock(out, scheduledBlock(), 'configScheduled');
   return replaceBlock(out, featuredBlock(), 'sotdFeatured');
 }

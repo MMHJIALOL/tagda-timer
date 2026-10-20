@@ -189,6 +189,8 @@ rules enforce takes effect at once, whatever any tab has cached.
 | `duel.camSignedIn` | switch | on | | rules, Worker and app | Cam and mic only for seats linked to a Google account that is not banned (RACE.md §9) |
 | `duel.turnEnabled` | switch | on | | Worker | The TURN relay, the one part billed by the gigabyte (§4) |
 | `duel.turnTtlMin` | minutes | 240 | 10 to **240** | Worker | How long a relay login lasts |
+| `duel.rated` | switch | on | | rules (and the Worker, from phase 2) | Rated 1v1s: off, the rules refuse every rating change (RATING-PLAN.md) |
+| `duel.ratedPairCap` | rounds | 20 | 1 to **20** | rules | Rated rounds one pair of accounts may play a day; after it they play unrated |
 | `competition.enabled` | switch | on | | app | Off: no new Competition Mode set. One under way can be finished |
 | `competition.message` | text | empty | 200 characters | app | Shown in place of the setup while off |
 | `features.webcamReplay` | switch | on | | app | Webcam replays: off, nothing records (§4) |
@@ -337,6 +339,11 @@ Random 1v1 had no switch before this: turning it off meant a deploy.
 - **`duel.turnTtlMin`** shortens the relay login the Worker asks Cloudflare for, never past 4
   hours (`TURN_TTL`). The Worker reads `config/duel` like `config/replays`: over REST, kept a
   minute.
+- **`duel.rated: false`** refuses every write the Worker's rater account (`tagda-rater`) makes to
+  `ratings/` and `ratingPair/`, so no rating changes; the ratings already earned stay. A 1v1 plays
+  on, unrated. **`duel.ratedPairCap`** is checked by the rules on `ratingPair/<day>/<pair>`, the
+  count of one pair's rated rounds that day: past it, the Worker's update is refused and the round
+  is marked unrated. Both are RATING-PLAN.md §6; until the Worker rates (phase 2) they guard nothing.
 
 ### Competition Mode (the app)
 
