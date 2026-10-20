@@ -295,8 +295,9 @@ refused its room. Random 1v1 has its own switch since (`duel.enabled`, ADMIN.md 
 those rules are published they refuse the seat and a room becoming a 1v1 while it is off,
 and a searching tab that is refused reads the settings again and stops, saying so.
 
-**What it does not do.** There is no skill matching: a rating every client reports about
-itself is a rating anybody can fake. There is also no count of how many people are
+**What it does not do.** There is no skill matching. 1v1s between signed-in players are
+rated (RATING-PLAN.md), but the rating is worked out by the Worker, never reported by a
+client, and the one waiting seat leaves nobody to choose between. There is also no count of how many people are
 looking, because the seat holds at most one. With few people online, most searches
 will end in "couldn't find anyone"; that is the honest answer, not a bug.
 
@@ -308,6 +309,13 @@ clear a stuck one, and counts the 1v1 relay's logins (ADMIN.md §6).
 - **Race panel:** a head-to-head card replaces the room's status line, rows and standings.
   It shows both players, what each is doing (or their time once you've finished), and
   the score.
+- **Ratings** (RATING-PLAN.md), when both players are signed in and the Worker rates
+  1v1s (`GET /rate`): each side shows its rating under its name, and about 15 s after a
+  round (once no +2 can be undone) what that round did to it, `1020 +20`. When a 1v1 isn't
+  rated, one line under the card says why: sign in, the opponent isn't signed in, one
+  account on both seats, the pair's rated rounds for the day are done, or a struck or
+  impossibly fast time. With ratings off, or not set up, the card looks as it always did.
+  `js/race-rating.js` asks the Worker; the numbers come from `rooms/<id>/rated` and `elo`.
 - **After a round:** both times stay on the card for 3 s (`DUEL_SETTLE_MS` in `race.js`;
   a room's is 0.7 s). Then a one-line banner ("R4 · You won by 0.62 · 11.20 – 11.82")
   stays up through the whole next round.

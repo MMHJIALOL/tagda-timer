@@ -563,6 +563,8 @@ async function turn(request, env) {
      loser reads again and goes round once more.
    - Without `round`: write both seats' current ratings to elo/, for the card
      at the start of a 1v1.
+   - GET /rate, no token: { on }, whether ratings work right now (the setting,
+     the secret and the published rules), so the page shows them only then.
 
    Answers: 200 { round, at, seats: { <seat>: { r, d } } } or { round, at,
    skip }, 202 { wait } (a penalty can still change), 200 { elo } for no
@@ -577,8 +579,9 @@ const RATE_TRIES = 3;
 class Refused extends Error {}
 
 async function rate(request, env) {
-  if (request.method !== 'POST') return fail(405, 'method');
+  if (request.method !== 'POST' && request.method !== 'GET') return fail(405, 'method');
   const cfg = await sectionSettings(env, 'duel');
+  if (request.method === 'GET') return json(200, { on: await ratingOn(env, cfg) });
   if (!cfg.rated) return fail(403, 'off');
   const token = bearer(request);
   if (!token) return fail(401, 'no-token');
@@ -635,6 +638,23 @@ async function rate(request, env) {
   }
   console.log(JSON.stringify({ rate: 'busy', room, round }));
   return fail(409, 'busy');
+}
+
+let ratingProbe = { at: 0, on: false };
+
+/**
+ * GET /rate: whether 1v1s are rated right now, so the page shows ratings
+ * only when they are real. duel.rated on, the rater can sign in (the
+ * secret is set), and the rules let it read (they are published). Kept in
+ * this isolate as long as the settings are; one or two subrequests a miss.
+ */
+async function ratingOn(env, cfg, now = Date.now()) {
+  if (!cfg.rated) return false;
+  if (now - ratingProbe.at < num(env.CONFIG_TTL_MS, 60_000)) return ratingProbe.on;
+  const rater = await customToken(env, RATER_UID, now);
+  const r = rater ? await rtdb(env, `ratingPair/${dayKey(now)}`, rater, {}, { shallow: 'true' }).catch(() => null) : null;
+  ratingProbe = { at: now, on: !!r?.ok };
+  return ratingProbe.on;
 }
 
 /** Mark a round unrated, once, with why. Somebody else's mark first is just as good. */

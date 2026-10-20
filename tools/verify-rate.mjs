@@ -50,7 +50,7 @@ const get = (path) => owner('GET', path);
 
 async function rate(who, body, method = 'POST') {
   const headers = { 'content-type': 'application/json', ...(who ? { authorization: `Bearer ${seats[who] || who}` } : {}) };
-  const r = await fetch(`${WORKER}/rate`, { method, headers, body: method === 'POST' ? JSON.stringify(body) : undefined });
+  const r = await fetch(`${WORKER}/rate`, { method, headers, body: method === 'POST' || method === 'PUT' ? JSON.stringify(body) : undefined });
   const text = await r.text();
   let json = null; try { json = JSON.parse(text); } catch { /* not JSON */ }
   return { status: r.status, body: json ?? text };
@@ -104,8 +104,10 @@ r = await rate('alice', { room: 'DUEL1', round: 0 });
 check('round 0: 400', r.status === 400 && r.body.error === 'bad-round', r);
 r = await rate('alice', { room: 'DUEL1', round: '2' });
 check('a round as text: 400', r.status === 400, r);
-r = await rate('alice', null, 'GET');
-check('GET: 405', r.status === 405, r);
+r = await rate(null, null, 'GET');
+check('GET, no token: ratings are on', r.status === 200 && r.body.on === true, r);
+r = await rate('alice', { room: 'DUEL1' }, 'PUT');
+check('PUT: 405', r.status === 405, r);
 await room('RACE1', { kind: null });
 r = await rate('alice', { room: 'RACE1', round: 1 });
 check('a race room that is not a 1v1: 403 not-a-1v1', r.status === 403 && r.body.error === 'not-a-1v1', r);
@@ -195,6 +197,8 @@ await set('config/duel/ratedPairCap', null);
 await set('config/duel/rated', false);
 await settle();
 await roundOf('DUEL1', 10, result(11000), result(12000));
+r = await rate(null, null, 'GET');
+check('duel.rated off: GET says off', r.body?.on === false, r);
 r = await rate('alice', { room: 'DUEL1', round: 10 });
 check('duel.rated off: 403 off, and nothing marked', r.status === 403 && r.body.error === 'off' && (await get('rooms/DUEL1/rated/10')) === null, r);
 await set('config/duel/rated', null);
@@ -212,6 +216,9 @@ if (before.includes('tagda-rater')) {
   await roundOf('DUEL1', 11, result(11000), result(12000));
   r = await rate('alice', { room: 'DUEL1', round: 11 });
   check('the rater refused: 503 rules, nothing written', r.status === 503 && r.body.error === 'rules' && (await get('rooms/DUEL1/rated/11')) === null, r);
+  await settle();
+  r = await rate(null, null, 'GET');
+  check('…and GET says off, so the page shows no ratings', r.body?.on === false, r);
   await loadRules(readFileSync(join(ROOT, 'firebase.rules.json'), 'utf8'));
 }
 
