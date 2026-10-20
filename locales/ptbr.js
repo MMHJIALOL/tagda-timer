@@ -3734,4 +3734,11 @@ export const ptbr = {
   "yesterday": "ontem",
   "solve #{n}": "resolução #{n}",
   "solves #{a}–#{b}": "resoluções #{a}–#{b}",
+  // Storage refused by the browser (db.js memoryOnly), and sign-in that cannot work here
+  "This browser won’t let the site save anything, so solves last only until this tab closes. Export them before you leave.": "Este navegador não deixa o site salvar nada, então suas resoluções só ficam até você fechar esta aba. Exporte-as antes de sair.",
+  "Not saved — this browser won’t let the site save anything": "Não salvo — este navegador não deixa o site salvar nada",
+  "Could not reach Google to sign in — check your connection. Work and school networks sometimes block it.": "Não foi possível falar com o Google para entrar — verifique sua conexão. Redes de trabalho e de escola às vezes bloqueiam isso.",
+  "Sign-in needs this site to store data, and this browser is blocking it": "Para entrar, este site precisa salvar dados, e este navegador está bloqueando isso",
+  "Too many sign-in attempts — wait a minute, then try again": "Tentativas de entrada demais — espere um minuto e tente novamente",
+  "This Google account has been disabled": "Esta conta do Google foi desativada",
 };

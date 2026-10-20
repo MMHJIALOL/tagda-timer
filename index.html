@@ -7,8 +7,9 @@
      double-tap zoom on its own -- so the only thing the lock still did was
      stop people pinch-zooming to read small type. -->
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Tagda Timer</title>
-<meta name="description" content="Tagda Timer — a modern WCA speedcubing timer.">
+<title>Tagda Timer — Speedcubing Timer</title>
+<meta name="description" content="A free speedcubing timer for every WCA event: random-state scrambles, ao5 and ao12 stats, an alg trainer, a daily scramble, races and 1v1s. Works offline.">
+<link rel="canonical" href="https://tagdatimer.me/">
 <!-- The webfonts are served from this origin (css/fonts.css). That removes two
      DNS + TLS handshakes from in front of the first paint, and one variable
      file per family replaces the five static weights each used to cost.
@@ -32,17 +33,18 @@
      import hint in Settings over a main.js that has never heard of CubeDesk.
      vercel.json also serves /css/ as `max-age=31536000, immutable`, so a
      stylesheet there will not even be asked about for a year without it. -->
-<link rel="modulepreload" href="js/main.js?v=149">
-<link rel="stylesheet" href="css/fonts.css?v=149">
-<link rel="stylesheet" href="css/tokens.css?v=149">
-<link rel="stylesheet" href="css/base.css?v=149">
-<link rel="stylesheet" href="css/components.css?v=149">
-<link rel="stylesheet" href="css/announce.css?v=149">
+<link rel="modulepreload" href="js/main.js?v=150">
+<link rel="stylesheet" href="css/fonts.css?v=150">
+<link rel="stylesheet" href="css/tokens.css?v=150">
+<link rel="stylesheet" href="css/base.css?v=150">
+<link rel="stylesheet" href="css/components.css?v=150">
+<link rel="stylesheet" href="css/announce.css?v=150">
 <!-- Phones only: the same query as js/phone.js. A desktop or tablet never
      applies a rule from it, and does not wait on it to paint. -->
-<link rel="stylesheet" href="css/phone.css?v=149" media="(max-width: 640px)">
+<link rel="stylesheet" href="css/phone.css?v=150" media="(max-width: 640px)">
 <link rel="icon" href="assets/favicon.ico" sizes="any">
-<link rel="icon" type="image/png" href="assets/logo-192.png">
+<link rel="icon" type="image/png" sizes="32x32" href="assets/logo-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="assets/logo-192.png">
 <link rel="apple-touch-icon" href="assets/logo-180.png">
 <link rel="manifest" href="site.webmanifest">
 <meta name="theme-color" content="#07070c">
@@ -433,7 +435,7 @@
           <span>Now playing</span>
           <span class="panel-sub" id="np-state">not linked</span>
         </div>
-        <a id="np-card" href="#" target="_blank" rel="noopener noreferrer" title="Open in Spotify">
+        <a id="np-card" target="_blank" rel="noopener noreferrer" title="Open in Spotify">
           <span class="np-art-wrap">
             <img id="np-art" alt="" width="112" height="112" decoding="async">
             <span class="np-art-empty" aria-hidden="true">
@@ -686,7 +688,7 @@
   <!-- Click the brand mark to let him out. Draggable, resizable, remembers
        where you left him. -->
   <div id="mascot" hidden>
-    <img id="mascot-img" src="assets/logo-512.png" alt="The Tagda cube" draggable="false">
+    <img id="mascot-img" src="assets/logo-512.webp" alt="The Tagda cube" draggable="false">
     <div id="mascot-bar">
       <button id="mascot-smaller" title="Smaller">&minus;</button>
       <button id="mascot-bigger" title="Bigger">+</button>
@@ -809,7 +811,7 @@
   </div>
 </div>
 
-<script type="module" src="js/main.js?v=149"></script>
+<script type="module" src="js/main.js?v=150"></script>
 <script>
 (function () {
   var isFile = location.protocol === 'file:';
@@ -865,7 +867,7 @@
     if (window.__tdtBooted || healing) return;
     fail(isFile
       ? 'You opened the file directly. Browsers block JavaScript modules on file:// addresses for security, so the timer cannot load. It needs to be served over http.'
-      : 'The app scripts did not finish loading. Check that the whole project folder is being served.');
+      : 'The app’s scripts did not finish loading. A filtered network (common on work and school laptops), an ad blocker or an out-of-date browser can stop them.');
   }, 9000);
 })();
 </script>

@@ -14,7 +14,7 @@ import { askWorker, warmSolver, restSolver, solverDead } from './solver-client.j
    what it cost.
    =========================================================== */
 
-import { el, copy, capitaliseTypedMove } from './util.js';
+import { el, copy, capitaliseTypedMove, hasWebGL } from './util.js';
 import { SOLVED, applyAlg, analyse, analyseRoux, parse, canonical, IDENTITY_FRAME } from './cube3.js';
 import { suggest, slotLabel, lastLayerCase } from './solver.js';
 import { toast } from './toast.js';
@@ -1586,7 +1586,7 @@ function onPhoneKey(e) {
 
 function toggleFlat() {
   P.flat = !P.flat;
-  player?.setAttribute?.('visualization', P.flat ? '2D' : '3D');
+  player?.setAttribute?.('visualization', P.flat || !hasWebGL() ? '2D' : '3D');
   if (ph.viewBtn) ph.viewBtn.setAttribute('aria-pressed', String(P.flat));
   ph.viewBtn?.classList.toggle('on', P.flat);
 }
@@ -1930,7 +1930,7 @@ async function mountPlayer() {
   player.setAttribute('control-panel', 'none');
   player.setAttribute('hint-facelets', 'floating');
   player.setAttribute('back-view', 'top-right');
-  player.setAttribute('visualization', '3D');
+  player.setAttribute('visualization', P.flat || !hasWebGL() ? '2D' : '3D');
   player.setAttribute('tempo-scale', '2.2');
   /* After the letters, which are already in the stage and sit on top of the
      cube by z-index rather than by being later in the document. */

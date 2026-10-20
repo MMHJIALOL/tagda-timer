@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Page not found — Tagda Timer</title>
+<meta name="description" content="That page does not exist. Head back to Tagda Timer, the speedcubing timer.">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#07070c">
+<!-- Served for every address that has no file (wrangler.jsonc's
+     not_found_handling, Vercel's 404.html), however deep the path, so every
+     URL here starts at the site root. One file on purpose: styles and script
+     inline, nothing from the app's css/ or js/ to go stale against it. -->
+<link rel="preload" href="/assets/fonts/inter-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/assets/fonts/jetbrains-mono-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/assets/logo-512.webp" as="image" type="image/webp">
+<link rel="icon" href="/assets/favicon.ico" sizes="any">
+<link rel="icon" type="image/png" sizes="32x32" href="/assets/logo-32.png">
+<link rel="apple-touch-icon" href="/assets/logo-180.png">
+<script>document.documentElement.className = 'js';</script>
+<style>
+@font-face {
+  font-family: 'Inter'; font-style: normal; font-weight: 400 800; font-display: swap;
+  src: url('/assets/fonts/inter-latin.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'JetBrains Mono'; font-style: normal; font-weight: 400 800; font-display: swap;
+  src: url('/assets/fonts/jetbrains-mono-latin.woff2') format('woff2');
+}
+
+/* Nebula, the timer's default theme (css/tokens.css). */
+:root {
+  color-scheme: dark;
+  --bg: #07070c; --surface: #151423; --border: #2e2b4a;
+  --text: #ececf5; --text-dim: #9a8cd6; --text-faint: #6b6297;
+  --digits: #c3b2ff; --accent: #7c5cff; --accent-2: #35e6c5; --danger: #ff4d6d;
+  --ui: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --mono: 'JetBrains Mono', ui-monospace, 'Cascadia Mono', monospace;
+  --ease: cubic-bezier(.2, .8, .2, 1);
+}
+* { box-sizing: border-box; margin: 0; }
+html, body { height: 100%; }
+body {
+  min-height: 100dvh; overflow-x: hidden;
+  background: var(--bg); color: var(--text);
+  font: 400 16px/1.55 var(--ui);
+  -webkit-font-smoothing: antialiased;
+  display: grid; grid-template-rows: auto 1fr auto;
+  padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+}
+
+/* ---- the sky: two slow nebulae, a vignette, a faint sticker grid ---- */
+.sky { position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }
+.sky i {
+  position: absolute; width: 70vmax; height: 70vmax; border-radius: 50%;
+  filter: blur(90px); opacity: .7; will-change: transform;
+}
+.sky i:nth-child(1) { background: radial-gradient(closest-side, var(--accent), transparent 72%); left: -22vmax; top: -26vmax; animation: drift-a 26s ease-in-out infinite alternate; }
+.sky i:nth-child(2) { background: radial-gradient(closest-side, var(--accent-2), transparent 70%); right: -28vmax; bottom: -34vmax; opacity: .42; animation: drift-b 32s ease-in-out infinite alternate; }
+.sky i:nth-child(3) { background: radial-gradient(closest-side, #4b2fd6, transparent 70%); width: 54vmax; height: 54vmax; left: calc(50% - 27vmax); top: 4vmax; opacity: .38; animation: drift-c 20s ease-in-out infinite alternate; }
+.sky::before {
+  content: ''; position: absolute; inset: 0;
+  background-image:
+    linear-gradient(to right, rgba(195, 178, 255, .045) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(195, 178, 255, .045) 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: radial-gradient(ellipse at 50% 42%, #000 0%, transparent 68%);
+  -webkit-mask-image: radial-gradient(ellipse at 50% 42%, #000 0%, transparent 68%);
+}
+.sky::after { content: ''; position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 40%, transparent 40%, rgba(0, 0, 0, .55) 100%); }
+@keyframes drift-a { to { transform: translate(14vmax, 10vmax) scale(1.12); } }
+@keyframes drift-b { to { transform: translate(-12vmax, -8vmax) scale(.92); } }
+@keyframes drift-c { to { transform: translate(6vmax, 6vmax) scale(1.15); } }
+
+/* ---- top bar: the wordmark, which goes home ---- */
+header { display: flex; align-items: center; }
+.brand {
+  display: inline-flex; align-items: center; gap: 10px; padding: 6px 12px 6px 6px;
+  border-radius: 999px; color: var(--text); text-decoration: none;
+  font-weight: 600; letter-spacing: -.01em;
+  transition: background .2s var(--ease);
+}
+.brand:hover { background: rgba(124, 92, 255, .14); }
+.brand img { width: 32px; height: 32px; }
+.brand b { font-weight: 800; color: var(--digits); }
+
+/* ---- the card ---- */
+main { display: grid; place-items: center; text-align: center; padding: 24px 0 32px; }
+.stack { width: min(560px, 100%); display: grid; justify-items: center; }
+
+.mascot {
+  position: relative; display: block; width: clamp(150px, 34vw, 230px); aspect-ratio: 1;
+  margin-bottom: 10px; border-radius: 28%;
+  animation: bob 6s ease-in-out infinite;
+  -webkit-tap-highlight-color: transparent;
+}
+.mascot::before {          /* the halo */
+  content: ''; position: absolute; inset: -14%; border-radius: 50%; z-index: -1;
+  background: radial-gradient(circle, rgba(124, 92, 255, .8), rgba(53, 230, 197, .28) 50%, transparent 68%);
+  filter: blur(30px); animation: glow 6s ease-in-out infinite;
+}
+.mascot::after {           /* its shadow on the floor */
+  content: ''; position: absolute; left: 22%; right: 22%; bottom: -14px; height: 16px; border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(0, 0, 0, .7), transparent);
+  animation: shadow 6s ease-in-out infinite;
+}
+.mascot img { width: 100%; height: 100%; display: block; filter: drop-shadow(0 18px 30px rgba(0, 0, 0, .55)); transition: transform .35s var(--ease); }
+.mascot:hover img { transform: rotate(-6deg) scale(1.04); }
+.mascot:focus-visible { outline: 2px solid var(--accent-2); outline-offset: 6px; }
+@keyframes bob { 0%, 100% { transform: translateY(0) rotate(-2deg); } 50% { transform: translateY(-14px) rotate(2.5deg); } }
+@keyframes glow { 0%, 100% { opacity: .75; transform: scale(1); } 50% { opacity: 1; transform: scale(1.08); } }
+@keyframes shadow { 0%, 100% { transform: scaleX(1); opacity: .9; } 50% { transform: scaleX(.78); opacity: .5; } }
+
+.label {
+  font: 700 .72rem/1 var(--mono); letter-spacing: .32em; text-transform: uppercase;
+  color: var(--text-faint); margin: 18px 0 4px;
+}
+
+/* The clock, stopped where the page should have been. */
+.clock { position: relative; display: inline-block; margin: 2px 0 6px; }
+.digits {
+  font: 700 clamp(4.6rem, 22vw, 9.5rem)/1 var(--mono); letter-spacing: -.045em;
+  font-variant-numeric: tabular-nums;
+  background: linear-gradient(180deg, #e6dcff 0%, var(--digits) 55%, #8f78f0 100%);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  filter: drop-shadow(0 0 28px rgba(124, 92, 255, .38));
+}
+.dnf {
+  position: absolute; top: -.1em; right: -.55em;
+  font: 800 clamp(.8rem, 3.2vw, 1.05rem)/1 var(--mono); letter-spacing: .08em;
+  color: #fff; background: var(--danger); padding: 6px 9px 5px; border-radius: 8px;
+  box-shadow: 0 10px 26px -6px rgba(255, 77, 109, .7);
+  transform: rotate(9deg);
+}
+.js .dnf { opacity: 0; transform: rotate(9deg) scale(2.4); }
+.js .dnf.on { animation: stamp .42s var(--ease) forwards; }
+@keyframes stamp {
+  0% { opacity: 0; transform: rotate(9deg) scale(2.4); }
+  60% { opacity: 1; transform: rotate(9deg) scale(.92); }
+  100% { opacity: 1; transform: rotate(9deg) scale(1); }
+}
+
+h1 { font-size: clamp(1.5rem, 5.4vw, 2.1rem); line-height: 1.15; letter-spacing: -.03em; font-weight: 800; margin-top: 6px; }
+h1 span { background: linear-gradient(90deg, var(--accent), var(--accent-2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.lede { color: var(--text-dim); margin-top: 10px; max-width: 42ch; }
+
+.actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-top: 26px; }
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 46px; padding: 0 20px; border-radius: 14px;
+  font: 600 .95rem/1 var(--ui); text-decoration: none; color: var(--text);
+  border: 1px solid var(--border); background: rgba(21, 20, 35, .7);
+  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+  transition: transform .18s var(--ease), background .2s var(--ease), border-color .2s var(--ease), box-shadow .2s var(--ease);
+}
+.btn svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.btn:hover { transform: translateY(-2px); border-color: #4a4475; }
+.btn:active { transform: translateY(0); }
+.btn:focus-visible { outline: 2px solid var(--accent-2); outline-offset: 3px; }
+.btn.primary {
+  border-color: transparent; color: #fff;
+  background: linear-gradient(135deg, var(--accent), #5b3ff0);
+  box-shadow: 0 12px 30px -10px rgba(124, 92, 255, .85), inset 0 1px 0 rgba(255, 255, 255, .18);
+}
+.btn.primary:hover { box-shadow: 0 16px 36px -10px rgba(124, 92, 255, 1), inset 0 1px 0 rgba(255, 255, 255, .22); }
+
+.hint { margin-top: 18px; font-size: .82rem; color: var(--text-faint); }
+kbd {
+  font: 600 .72rem/1 var(--mono); color: var(--text-dim);
+  border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 6px; padding: 3px 7px 2px;
+  background: rgba(21, 20, 35, .7);
+}
+footer { text-align: center; font-size: .78rem; color: var(--text-faint); }
+footer code { font-family: var(--mono); color: var(--text-dim); overflow-wrap: anywhere; }
+
+@media (max-width: 440px) {
+  .actions { width: 100%; }
+  .btn { flex: 1 1 100%; }
+  .hint { display: none; }          /* no space bar on a phone */
+}
+@media (hover: none) { .hint { display: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .sky i, .mascot, .mascot::before, .mascot::after { animation: none; }
+  .btn, .mascot img { transition: none; }
+  .js .dnf { opacity: 1; transform: rotate(9deg); }
+  .js .dnf.on { animation: none; }
+}
+</style>
+</head>
+<body>
+<div class="sky" aria-hidden="true"><i></i><i></i><i></i></div>
+
+<header>
+  <a class="brand" href="/" aria-label="Tagda Timer home">
+    <img src="/assets/logo-64.png" alt="" width="32" height="32">
+    <span>Tagda <b>Timer</b></span>
+  </a>
+</header>
+
+<main>
+  <div class="stack">
+    <a class="mascot" href="/" aria-label="Back to the timer">
+      <img src="/assets/logo-512.webp" alt="" width="230" height="230" decoding="async">
+    </a>
+    <p class="label">Error 404 · page not found</p>
+    <div class="clock" role="img" aria-label="404">
+      <span class="digits" id="digits" aria-hidden="true">4.04</span>
+      <span class="dnf" id="dnf" aria-hidden="true">DNF</span>
+    </div>
+    <h1>This page is a <span>DNF</span>.</h1>
+    <p class="lede">The link you followed doesn’t lead anywhere. The page may have moved, or there’s a typo in the address.</p>
+    <div class="actions">
+      <a class="btn primary" href="/">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="13.5" r="7.5"/><path d="M12 13.5V10M9.5 3h5"/></svg>
+        Back to the timer
+      </a>
+      <a class="btn" href="/algs">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4.6A1.6 1.6 0 016.6 3H19v14.4H6.6A1.6 1.6 0 005 19z"/><path d="M5 19a1.6 1.6 0 001.6 1.6H19v-3.2"/></svg>
+        Alg trainer
+      </a>
+    </div>
+    <p class="hint">or press <kbd>Space</kbd> to start over</p>
+  </div>
+</main>
+
+<footer><code id="path"></code></footer>
+
+<script>
+(function () {
+  var path = location.pathname + location.search;
+  document.getElementById('path').textContent = path.length > 1 ? path : '';
+
+  /* The clock runs, stops on 4.04, and the attempt is stamped DNF. */
+  var digits = document.getElementById('digits');
+  var dnf = document.getElementById('dnf');
+  var still = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (still) { dnf.classList.add('on'); return wire(); }
+  var start = null, END = 404, MS = 1300;
+  function frame(now) {
+    if (start === null) start = now;
+    var p = Math.min(1, (now - start) / MS);
+    var v = Math.round(END * (1 - Math.pow(1 - p, 3)));
+    digits.textContent = Math.floor(v / 100) + '.' + String(v % 100).padStart(2, '0');
+    if (p < 1) requestAnimationFrame(frame);
+    else dnf.classList.add('on');
+  }
+  digits.textContent = '0.00';
+  requestAnimationFrame(frame);
+  // A background tab draws no frames: never leave the clock on 0.00.
+  setTimeout(function () { if (!dnf.classList.contains('on')) { digits.textContent = '4.04'; dnf.classList.add('on'); } }, MS + 600);
+  wire();
+
+  function wire() {
+    /* Like the timer itself: space starts over, which here means going home. */
+    addEventListener('keydown', function (e) {
+      if (e.code === 'Space' && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); location.href = '/'; }
+    });
+  }
+})();
+</script>
+</body>
+</html>

@@ -299,6 +299,11 @@ function tellPreview() {
   post({ shown: as, panel, anchored: as === 'card' && panel ? !!current.target : null, width: innerWidth });
 }
 
+/** A phone tab changed: the button a card points at may be under another screen now. */
+export function tabChanged() {
+  if (current?.as === 'card') place();
+}
+
 /** The SOTD window opened or closed: what is on screen may no longer belong. */
 export function placeChanged() {
   if (!current) { setTimeout(tick, 1200); return; }

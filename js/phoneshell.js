@@ -320,6 +320,7 @@ export function setTab(next) {
   }
   for (const [id, node] of Object.entries(ui.screens)) node.hidden = id !== next;
   if (next !== 'timer') { ui.screens[next].scrollTop = 0; renderTab(next); }
+  X.tabChanged?.();
   if (next === 'times') {
     ui.placeTimes?.();
     /* Hidden behind the timer, the list measured itself as no width at all and

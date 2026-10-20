@@ -3734,4 +3734,11 @@ export const es = {
   "yesterday": "ayer",
   "solve #{n}": "resolución #{n}",
   "solves #{a}–#{b}": "resoluciones #{a}–#{b}",
+  // Storage refused by the browser (db.js memoryOnly), and sign-in that cannot work here
+  "This browser won’t let the site save anything, so solves last only until this tab closes. Export them before you leave.": "Este navegador no deja que el sitio guarde nada, así que tus resoluciones solo duran hasta que cierres esta pestaña. Expórtalas antes de salir.",
+  "Not saved — this browser won’t let the site save anything": "No se guarda: este navegador no deja que el sitio guarde nada",
+  "Could not reach Google to sign in — check your connection. Work and school networks sometimes block it.": "No se pudo contactar con Google para iniciar sesión: revisa tu conexión. Las redes del trabajo o de los centros de estudio a veces lo bloquean.",
+  "Sign-in needs this site to store data, and this browser is blocking it": "Para iniciar sesión, este sitio necesita guardar datos y este navegador lo está bloqueando",
+  "Too many sign-in attempts — wait a minute, then try again": "Demasiados intentos de inicio de sesión: espera un minuto y vuelve a intentarlo",
+  "This Google account has been disabled": "Esta cuenta de Google está desactivada",
 };

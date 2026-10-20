@@ -14,7 +14,9 @@
     "binding": "ASSETS",
     "run_worker_first": ["/__/auth/*", "/replay/*", "/turn", "/rate"],
     // /algs.html -> /algs, like cleanUrls did on Vercel.
-    "html_handling": "auto-trailing-slash"
+    "html_handling": "auto-trailing-slash",
+    // An address with no file gets 404.html, with a 404 status (Vercel does the same on its own).
+    "not_found_handling": "404-page"
   },
   // Never public: no r2.dev, no custom domain. Every read goes through the
   // Worker. Lifecycle rule: delete objects 8 days after upload.

@@ -1,5 +1,6 @@
 import { t } from './i18n.js';
 import { drawSlide } from './slide.js';
+import { hasWebGL } from './util.js';
 /* ===========================================================
    Tagda Timer — static scramble preview
 
@@ -93,6 +94,7 @@ export class CubeView {
     this.player.setAttribute('back-view', this.backView);
     this.player.setAttribute('visualization', '3D');
     this.player.setAttribute('tempo-scale', '0');
+    this.setView(this.visualization);   // flat from the start where there is no WebGL
     if (this.orbit) this.setOrbit(this.orbit);
     this.host.append(this.player);
     this.hideFallback();
@@ -186,7 +188,8 @@ export class CubeView {
 
   setView(view) {
     if (!this.player) return;
-    const use = this.supports(view) ? view : '3D';
+    let use = this.supports(view) ? view : '3D';
+    if ((use === '3D' || use === 'LL3') && !hasWebGL() && this.supports('2D')) use = '2D';
     this.visualization = use;
     const vis = use === '2D' ? '2D'
               : use === 'LL' ? 'experimental-2D-LL'

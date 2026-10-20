@@ -11,7 +11,13 @@ import { recordingBudget, startSetReplay, stopSetReplay, recoverSetReplay, loadS
 
 let app, active = null, viewing = true, host = null, strip, dialogKind = '', dialogSetId = null;
 let capture = { inspection: null, start: null }, generation = 0;
-const channel = typeof BroadcastChannel === 'function' ? new BroadcastChannel('tagda-competition') : null;
+/* Firefox will not make a BroadcastChannel where the site's storage is
+   blocked (it throws SecurityError), and at this module's top level that
+   stopped the whole app loading. Without one, other tabs just are not told. */
+const channel = (() => {
+  try { return typeof BroadcastChannel === 'function' ? new BroadcastChannel('tagda-competition') : null; }
+  catch { return null; }
+})();
 export const competitionOpen = () => !!host;
 export const competitionTiming = () => !!active && viewing && active.sessionId === app?.session?.id;
 const compatible = () => {

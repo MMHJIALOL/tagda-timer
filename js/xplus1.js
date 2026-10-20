@@ -27,7 +27,7 @@ import { askWorker, warmSolver, restSolver, solverDead } from './solver-client.j
    disturb a solve or land anything in your stats.
    =========================================================== */
 
-import { el, copy, fmtLive, tidy, capitaliseTypedMove } from './util.js';
+import { el, copy, fmtLive, tidy, capitaliseTypedMove, hasWebGL } from './util.js';
 import {
   SOLVED, applyAlg, analyse, parse, canonical, toUserFace, IDENTITY_FRAME,
   FACES, CORNER_NAMES, EDGE_NAMES, CORNER_FACELETS, EDGE_FACELETS,
@@ -484,7 +484,7 @@ let cubeToken = 0;
 
 async function mountPlayer() {
   if (player || !ui.cube3d) return;
-  if (!await loadTwisty() || !customElements.get('twisty-player')) {
+  if (!hasWebGL() || !await loadTwisty() || !customElements.get('twisty-player')) {
     // A dead box helps nobody; fall back to the view that always works.
     if (!ui.cube3d.querySelector('.xp-nocube')) {
       ui.cube3d.append(el('div', { class: 'xp-nocube', text: t('the 3D cube could not load — showing the flat net') }));

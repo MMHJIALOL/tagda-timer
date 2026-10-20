@@ -18,6 +18,12 @@ const storageFailures = new WeakSet();
 let localPending = 0, lastWrite = null;
 const RECOVERY_KEY = 'tagda:unsaved';
 const recovery = new Map();
+/* The browser refused IndexedDB outright (site data blocked by a policy or a
+   setting): js/memdb.js stands in, so the timer still runs, but nothing
+   outlives the tab. getLocalStatus().memoryOnly tells the page to say so. */
+let memory = null;
+let memoryHasSolves = false;
+export const memoryOnly = () => !!memory;
 try {
   lastWrite = Number(localStorage.getItem('tagda:lastLocalWrite')) || null;
   for (const entry of JSON.parse(localStorage.getItem(RECOVERY_KEY) || '[]')) {
@@ -30,6 +36,7 @@ export function getLocalStatus() {
     state: localErrors.size || recovery.size ? 'error' : localPending ? 'saving' : lastWrite ? 'saved' : 'unknown',
     lastWrite, pending: localPending, unsaved: recovery.size,
     quotaError: [...localErrors.values()].some(e => e?.name === 'QuotaExceededError'),
+    memoryOnly: !!memory,
   });
 }
 export function onLocalStatus(fn) {
@@ -79,16 +86,28 @@ export async function retryLocalWrites() {
   }
 }
 if (typeof window !== 'undefined') window.addEventListener('beforeunload', e => {
-  if (!recovery.size && !localErrors.size) return;
+  if (!recovery.size && !localErrors.size && !memoryHasSolves) return;
   e.preventDefault(); e.returnValue = '';
 });
 
-
+/** How a browser says no to this site's storage, as against a busy or newer database. */
+const REFUSED = new Set(['SecurityError', 'UnknownError', 'InvalidStateError', 'NotAllowedError', 'NotSupportedError']);
 
 function openDB() {
   if (_db) return Promise.resolve(_db);
+  return openWith(memory || globalThis.indexedDB).catch(async (err) => {
+    if (memory || !REFUSED.has(err?.name)) throw err;
+    console.warn('[db] IndexedDB refused; this tab keeps its data in memory only', err);
+    memory ||= (await import('./memdb.js')).memoryIndexedDB;
+    notifyLocal();
+    return openWith(memory);
+  });
+}
+
+function openWith(factory) {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, DB_VER);
+    if (!factory) throw new DOMException('IndexedDB is not available', 'NotSupportedError');
+    const req = factory.open(DB_NAME, DB_VER);
     req.onupgradeneeded = (e) => {
       const db = req.result;
       if (!db.objectStoreNames.contains('solves')) {
@@ -152,6 +171,7 @@ export function tx(store, mode = 'readonly', { health = true } = {}) {
     const done = new Promise((resolve, reject) => {
       transaction.addEventListener('complete', () => {
         if (tracked) {
+          if (memory && store === 'solves') memoryHasSolves = true;
           localPending--; lastWrite = Date.now();
           if (![...recovery.values()].some(r => r.store === store)) localErrors.delete(store);
           try { localStorage.setItem('tagda:lastLocalWrite', String(lastWrite)); } catch {}
@@ -728,6 +748,7 @@ async function atomic(stores, fn) {
     }
     else {
       lastWrite = Date.now();
+      if (memory && stores.includes('solves')) memoryHasSolves = true;
       for (const store of stores) if (![...recovery.values()].some(r => r.store === store)) localErrors.delete(store);
       try { localStorage.setItem('tagda:lastLocalWrite', String(lastWrite)); } catch {}
     }
