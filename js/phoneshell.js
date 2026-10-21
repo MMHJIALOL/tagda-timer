@@ -271,6 +271,7 @@ function build() {
   buildTimes();
   buildTrain();
   buildMore();
+  wireRowSwipe();
 
   setTab(tab);
 
@@ -463,6 +464,7 @@ export function setTab(next) {
     if (on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
   }
   for (const [id, node] of Object.entries(ui.screens)) node.hidden = id !== next;
+  ui.closeRow?.();
   if (next !== 'timer') { ui.screens[next].scrollTop = 0; renderTab(next); }
   X.tabChanged?.();
   if (next === 'times') {
@@ -668,11 +670,15 @@ export function openSolveSheet(solve, { focusNote = false } = {}) {
       ? averageOfRange(e, i + 1 - n, i + 1) : null);
     const fa = (v) => (v == null ? '—' : fmtResult(v, moves));
     const time = fmtSolve(solve) + (solve.penalty === '+2' && !moves ? '+' : '');
+    // The session's best single, in gold, as the desktop list marks it.
+    const v = eff(solve);
+    const pb = v !== DNF && v === Math.min(...resultsFor(solves, moves).map(eff).filter(x => x !== DNF));
 
     const head = el('div', { class: 'ph-sv-head' },
       el('div', {},
-        el('div', { class: 'ph-sv-when', text: `${t('Solve {n}', { n: i + 1 })} · ${solve.createdAt ? AGO(solve.createdAt) : ''}` }),
-        el('div', { class: 'ph-sv-time' + (solve.penalty === 'DNF' ? ' dnf' : ''), text: time }),
+        el('div', { class: 'ph-sv-when' }, `${t('Solve {n}', { n: i + 1 })} · ${solve.createdAt ? AGO(solve.createdAt) : ''}`,
+          pb ? el('span', { class: 'ph-best', text: t('best single') }) : null),
+        el('div', { class: 'ph-sv-time' + (solve.penalty === 'DNF' ? ' dnf' : pb ? ' pb' : ''), text: time }),
         el('div', { class: 'ph-sv-avgs' }, 'ao5 ', el('b', { text: fa(ao(5)) }), '  ·  ao12 ', el('b', { text: fa(ao(12)) }))),
       iconBtn('ph-sv-close', t('Close'), I.close, () => sheet.close()));
 
@@ -697,14 +703,17 @@ export function openSolveSheet(solve, { focusNote = false } = {}) {
 
     const relayLegs = solve.relay?.length
       ? solve.relay.map((p, n) => ({ p, n })).filter(({ p }) => p.event === '333' || p.event === '333oh') : null;
-    const mainBtns = el('div', { class: 'ph-sv-main' },
-      relayLegs ? null : wordBtn('ph-btn primary', I.recon, solve.recon ? t('Open the reconstruction') : t('Reconstruct'),
+    // Cross + 1 plans a 3x3's cross and first pair, from this solve's own scramble.
+    const sev = eventOf(solve.event);
+    const xp1 = !!solve.scramble && sev.puzzle === '3x3x3' && !sev.relay && !sev.multi && !relayLegs;
+    const mainBtns = el('div', { class: 'ph-sv-grid' },
+      X.hasReplay(solve.id) ? wordBtn('ph-btn', I.play, t('Replay'), () => X.openReplay(solve)) : null,
+      relayLegs ? null : wordBtn('ph-btn', I.recon, solve.recon ? t('Open the reconstruction') : t('Reconstruct'),
         () => { sheet.close(); X.reconstructSolve(solve); }),
-      wordBtn('ph-btn', I.share, t('Share card'), () => { sheet.close(); A.shareSolveCard(solve); }));
+      xp1 ? wordBtn('ph-btn', I.xp1, t('Cross + 1'), () => { sheet.close(); X.openXp1(solve.scramble); }) : null,
+      wordBtn('ph-btn', I.repeat, t('Same scramble'), () => { sheet.close(); X.repeatScramble(solve); }));
 
     const extra = [];
-    if (X.hasReplay(solve.id)) extra.push({ label: t('Watch replay'), icon: I.play, onSelect: () => X.openReplay(solve) });
-    extra.push({ label: t('Repeat this scramble'), icon: I.repeat, onSelect: () => X.repeatScramble(solve) });
     if (relayLegs) {
       for (const { p, n } of relayLegs) {
         extra.push({ label: t('Reconstruct puzzle {i} ({event})', { i: n + 1, event: eventOf(p.event).short }), icon: I.recon,
@@ -741,16 +750,22 @@ export function openSolveSheet(solve, { focusNote = false } = {}) {
     if (extra.length) out.push(sheetRows(extra, () => sheet));
     out.push(el('div', { class: 'ph-sv-foot' },
       wordBtn('ph-link', I.copy, t('Copy scramble'), () => X.copyToast(solve.scramble, 'Scramble')),
-      solve.competitionSetId ? wordBtn('ph-link', I.trash, t('Open Competition average · whole-set deletion only'), () => { sheet.close(); A.openCompetitionSet(solve.competitionSetId); }) : wordBtn('ph-link danger' + (armed ? ' armed' : ''), I.trash, armed ? t('Tap again to delete') : t('Delete'), () => {
+      wordBtn('ph-link', I.share, t('Share card'), () => { sheet.close(); A.shareSolveCard(solve); })));
+    // Delete on a row of its own, under everything else; it asks twice.
+    out.push(solve.competitionSetId
+      ? wordBtn('ph-btn ph-sv-del', I.trash, t('Open Competition average · whole-set deletion only'), () => { sheet.close(); A.openCompetitionSet(solve.competitionSetId); })
+      : wordBtn('ph-btn ph-sv-del danger' + (armed ? ' armed' : ''), I.trash, armed ? t('Tap again to delete') : t('Delete solve'), () => {
         if (!armed) { armed = true; refresh(); setTimeout(() => { if (armed) { armed = false; refresh(); } }, 3000); return; }
         armed = false;
         noteEl = null;          // nothing to keep on a solve that is going
         sheet.close();
         X.deleteSolve(solve);
-      })));
+      }));
     return out;
   };
   const refresh = () => { if (sheet && !sheet.closed) { flushNote(); sheet.setContent(content()); } };
+  ui.curId = solve.id;
+  markCurrentRow();
   sheet = openSheet({
     label: t('Solve {n}', { n: A.solves.indexOf(solve) + 1 }), className: 'ph-sv', content: content(),
     onClose: flushNote,
@@ -770,12 +785,16 @@ function screenHead(title) {
 /* =========================================================
    Times
 
-   The four figures, a trend card, and the session's list. The list is the
+   The desktop's panels, as glass over the background: STATS (the six
+   figures in the desktop's order), TREND (every time, the rolling ao5 and
+   ao12 and the best single), and the session's list. The list is the
    desktop's own (#sidebar, with #panel-times in it) laid over the foot of
-   this tab by css/phone.css, so paging, sorting and the column pencils are
-   the desktop's code. It is placed rather than moved: tiles.js puts the
-   panels back in their rails on every resize, and a list carried off into a
-   tab would be dragged straight back out of it.
+   this tab by css/phone.css, so paging, sorting, the column pencils, the gold
+   best averages and the green counting edge are the desktop's code. It is
+   placed rather than moved: tiles.js puts the panels back in their rails on
+   every resize, and a list carried off into a tab would be dragged straight
+   back out of it. A row swiped left offers +2, DNF and delete; the solve
+   whose sheet was opened last is edged in teal.
    ========================================================= */
 
 function buildTimes() {
@@ -787,24 +806,29 @@ function buildTimes() {
   head.append(el('div', { class: 'ph-head-r' }, ui.timesCtx,
     iconBtn('ph-icon-btn', t('More for this session'), I.more, openTimesMenu)));
 
-  ui.timesCards = el('div', { class: 'ph-cards' });
+  const panelHead = (label, right) => el('div', { class: 'ph-ph' }, el('span', { class: 'ph-plbl', text: label }), right);
+  ui.statsCount = el('span', { class: 'ph-pr' });
+  ui.statsGrid = el('div', { class: 'ph-sgrid' });
+  ui.stats = el('section', { class: 'ph-panel ph-stats', 'aria-label': t('Statistics') },
+    panelHead(t('Stats'), ui.statsCount), ui.statsGrid);
 
   ui.trendSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   ui.trendSvg.setAttribute('class', 'ph-trend-svg');
   ui.trendSvg.setAttribute('role', 'img');
-  ui.trendLbl = el('span', { class: 'ph-lbl' });
   ui.trendEmpty = el('p', { class: 'ph-trend-empty', text: t('A few more solves and your trend shows here.') });
-  ui.trend = el('section', { class: 'ph-trend', 'aria-label': t('Trend') },
-    el('div', { class: 'ph-trend-head' }, ui.trendLbl,
-      el('span', { class: 'ph-legend' },
-        el('span', { class: 'ph-lg' }, el('i', { class: 'ph-lg-line', 'aria-hidden': 'true' }), 'ao5'),
-        el('span', { class: 'ph-lg' }, el('i', { class: 'ph-lg-dot', 'aria-hidden': 'true' }), t('single')),
-        el('button', { class: 'ph-charts', type: 'button', text: t('Charts ›'),
-          onclick: () => X.openPanel('Statistics', 'buildStats', { wide: true }) }))),
-    ui.trendSvg, ui.trendEmpty);
+  const key = (cls, label) => el('span', { class: 'ph-lg' }, el('i', { class: `ph-lg-line ${cls}`, 'aria-hidden': 'true' }), label);
+  // The whole panel opens the Statistics drawer, where the full chart is.
+  ui.trend = el('section', {
+    class: 'ph-panel ph-trend', role: 'button', tabindex: '0', 'aria-label': t('Trend — open Statistics'),
+    onclick: () => X.openPanel('Statistics', 'buildStats', { wide: true }),
+    onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.currentTarget.click(); } },
+  },
+  panelHead(t('Trend'), el('span', { class: 'ph-legend' },
+    key('solve', t('solve')), key('ao5', 'ao5'), key('ao12', 'ao12'), key('pb', 'PB'))),
+  ui.trendSvg, ui.trendEmpty);
 
   ui.timesSlot = el('div', { class: 'ph-times-slot' });
-  s.append(head, ui.timesCards, ui.trend, ui.timesSlot);
+  s.append(head, ui.stats, ui.trend, ui.timesSlot);
   const place = () => {
     const r = ui.timesSlot.getBoundingClientRect();
     if (r.height) document.body.style.setProperty('--ph-slot-top', `${Math.round(r.top)}px`);
@@ -836,35 +860,118 @@ function renderTimes() {
 
   const st = summarize(solves);
   const f = (v) => fmtResult(v, moves);
-  const card = (label, value, { best = false, sub = '' } = {}) => el('div', { class: 'ph-card' + (best ? ' is-best' : '') },
-    el('div', { class: 'ph-card-k' }, el('span', { text: label }), best ? el('span', { class: 'ph-best', text: t('best') }) : null),
-    el('div', { class: 'ph-card-v', text: f(value) }),
-    sub ? el('div', { class: 'ph-card-sub', text: sub }) : null);
-  // The current average, marked when it is the session's best and otherwise
-  // saying what the best one was.
-  const avg = (label, n, cur, best) => {
-    const isBest = cur != null && best != null && isFinite(cur) && cur === best && solves.length > n;
-    const sub = cur == null ? t('needs {n} solves', { n })
-      : !isBest && best != null && isFinite(best) ? t('best {time}', { time: f(best) }) : '';
-    return card(label, cur, { best: isBest, sub });
-  };
-  let bestAt = -1;
-  if (st.best != null) for (let i = solves.length - 1; i >= 0; i--) if (eff(solves[i]) === st.best) { bestAt = A.solves.indexOf(solves[i]); break; }
-  ui.timesCards.replaceChildren(
-    // Fewest Moves is scored by mean of three, and its averages say so.
-    moves ? avg('mo3', 3, st.mo3, bestMean(solves, 3)) : avg('ao5', 5, st.ao5, st.bestAo5),
-    moves ? card(t('count'), solves.length) : avg('ao12', 12, st.ao12, st.bestAo12),
-    card(t('best'), st.best, { sub: bestAt >= 0 ? t('solve {n}', { n: bestAt + 1 }) : '' }),
-    card(t('mean'), st.mean, { sub: t(solves.length === 1 ? '{n} solve' : '{n} solves', { n: solves.length }) }));
+  ui.statsCount.textContent = t(solves.length === 1 ? '{n} solve' : '{n} solves', { n: solves.length });
+  // The desktop's six, in its order. Fewest Moves is scored by mean of three,
+  // so there the first two are mo3 and the count, and the best mo3 takes mo3's place.
+  const cells = moves
+    ? [['mo3', f(st.mo3)], [t('count'), String(solves.length)], [`${t('best')} mo3`, f(bestMean(solves, 3))],
+      [t('best'), f(st.best), 'gold'], ['ao50', f(st.ao50)], [t('mean'), f(st.mean)]]
+    : [['ao5', f(st.ao5)], ['ao12', f(st.ao12)], ['mo3', f(st.mo3)],
+      [t('best'), f(st.best), 'gold'], ['ao50', f(st.ao50)], [t('mean'), f(st.mean)]];
+  ui.statsGrid.replaceChildren(...cells.map(([k, v, cls]) => el('div', { class: 'ph-scell' + (cls ? ` ${cls}` : '') },
+    el('div', { class: 'ph-scell-k', text: k }), el('div', { class: 'ph-scell-v', text: v }))));
 
-  const n = Math.min(22, solves.length);
-  ui.trendLbl.textContent = t('Last {n}', { n });
-  ui.trendSvg.setAttribute('aria-label', t('Last {n} solves with the rolling ao5', { n }));
+  const n = Math.min(TREND_N, solves.length);
+  ui.trendSvg.setAttribute('aria-label', t('Last {n} solves with the rolling ao5 and ao12 and your best', { n }));
   ui.trendSvg.hidden = false;
   const box = ui.trendSvg.getBoundingClientRect();
-  const drawn = renderDotTrend(ui.trendSvg, solves, { count: 22, width: Math.round(box.width) || 326, height: Math.round(box.height) || 84 });
+  const drawn = renderDotTrend(ui.trendSvg, solves, { count: TREND_N, width: Math.round(box.width) || 326, height: Math.round(box.height) || 78, lines: true });
   ui.trendSvg.hidden = !drawn;
   ui.trendEmpty.hidden = drawn;
+}
+
+/** How many solves the Times tab's trend draws. */
+const TREND_N = 60;
+
+/* ---- the list: swipe a row left for +2, DNF and delete ----
+   The row slides over three buttons that sit behind it. One row is open at a
+   time; a tap anywhere else in the list, or a scroll, closes it, and a tap on
+   a row that was just swiped is not also the tap that opens its sheet. */
+const ACTS_W = 186;
+
+function wireRowSwipe() {
+  const list = $('#hist-list');
+  if (!list) return;
+  list.style.position = 'relative';
+  const btn = (cls, label, html, act) => el('button', { class: `ph-ract ${cls}`, type: 'button', 'aria-label': label, title: label, html,
+    onclick: (e) => { e.stopPropagation(); const s = rowSolve(open); closeRow(); if (s) act(s); } });
+  ui.rowActs = el('div', { class: 'ph-row-acts', hidden: true },
+    btn('plus2', t('Plus two'), '+2', (s) => X.setPenalty(s, s.penalty === '+2' ? 'none' : '+2')),
+    btn('dnf', t('Did not finish'), 'DNF', (s) => X.setPenalty(s, s.penalty === 'DNF' ? 'none' : 'DNF')),
+    btn('del', t('Delete'), I.trash, (s) => X.deleteSolve(s)));
+  list.append(ui.rowActs);
+
+  let drag = null;
+  let open = null;
+  let swallow = 0;
+  const rowSolve = (row) => (row ? A.solves.find(s => s.id === row.dataset.id) : null);
+  const place = (row) => {
+    ui.rowActs.style.top = `${row.offsetTop}px`;
+    ui.rowActs.style.height = `${row.offsetHeight}px`;
+    ui.rowActs.hidden = false;
+    if (ui.rowActs.parentNode !== list || list.lastElementChild !== ui.rowActs) list.append(ui.rowActs);
+  };
+  const shift = (row, x, animate) => {
+    row.style.transition = animate ? 'translate 200ms var(--ease)' : 'none';
+    row.style.translate = x ? `${x}px 0` : '';
+  };
+  function closeRow() {
+    if (!open) return;
+    const row = open;
+    open = null;
+    shift(row, 0, true);
+    setTimeout(() => { if (open !== row) { row.classList.remove('ph-swiped'); if (!open && !drag) ui.rowActs.hidden = true; } }, 200);
+  }
+  ui.closeRow = closeRow;
+
+  list.addEventListener('pointerdown', (e) => {
+    if (!shellOn || !e.isPrimary || e.target.closest('.ph-row-acts')) return;
+    const row = e.target.closest('.solve-chip');
+    if (open && open !== row) { closeRow(); swallow = performance.now(); }
+    if (!row?.dataset.id) return;
+    drag = { row, x: e.clientX, y: e.clientY, id: e.pointerId, base: row === open ? -ACTS_W : 0, on: false };
+  });
+  list.addEventListener('pointermove', (e) => {
+    if (!drag || e.pointerId !== drag.id) return;
+    const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+    if (!drag.on) {
+      if (Math.abs(dy) > 10 && Math.abs(dy) > Math.abs(dx)) { drag = null; return; }   // a scroll
+      if (Math.abs(dx) < 10 || Math.abs(dx) < 1.5 * Math.abs(dy)) return;
+      drag.on = true;
+      drag.row.classList.add('ph-swiped');
+      place(drag.row);
+    }
+    shift(drag.row, Math.max(-ACTS_W - 24, Math.min(0, drag.base + dx)), false);
+  });
+  const end = (e) => {
+    if (!drag || e.pointerId !== drag.id) return;
+    const d = drag;
+    drag = null;
+    if (!d.on) return;
+    swallow = performance.now();
+    const x = parseFloat(d.row.style.translate) || 0;
+    if (e.type !== 'pointercancel' && x < -ACTS_W / 2) { open = d.row; shift(d.row, -ACTS_W, true); }
+    else { open = d.row; closeRow(); }
+  };
+  list.addEventListener('pointerup', end);
+  list.addEventListener('pointercancel', end);
+  // The list scrolling, or being redrawn under an open row, closes it.
+  list.addEventListener('scroll', () => closeRow(), { passive: true });
+  // A swipe, or the tap that closed another row, is not a tap on a row.
+  list.addEventListener('click', (e) => {
+    if (performance.now() - swallow < 400 && !e.target.closest('.ph-row-acts')) { e.stopPropagation(); e.preventDefault(); }
+  }, true);
+
+  // The teal edge on the solve last opened, kept through every redraw of the list.
+  new MutationObserver(() => {
+    if (open && !open.isConnected) { open = null; ui.rowActs.hidden = true; }
+    markCurrentRow();
+  }).observe(list, { childList: true });
+}
+
+function markCurrentRow() {
+  for (const row of $$('#hist-list .solve-chip.ph-cur')) if (row.dataset.id !== ui.curId) row.classList.remove('ph-cur');
+  if (ui.curId) $(`#hist-list .solve-chip[data-id="${CSS.escape(ui.curId)}"]`)?.classList.add('ph-cur');
 }
 
 /* =========================================================

@@ -3767,4 +3767,10 @@ export const es = {
   "Tagda": "Tagda",
   "Classic": "Clásico",
   "Tagda has the dock and the phone timer; Classic is the website’s own layout, as phones had it first": "Tagda tiene la barra inferior y el cronómetro para móvil; Clásico es el diseño de la web, como lo tenían los móviles al principio",
+  // Phones: the Times tab as the desktop's panels, and the solve sheet
+  "solve": "resolución",
+  "Trend — open Statistics": "Tendencia: abrir Estadísticas",
+  "Last {n} solves with the rolling ao5 and ao12 and your best": "Las últimas {n} resoluciones, con el ao5 y el ao12 móviles y tu mejor tiempo",
+  "best single": "mejor single",
+  "Same scramble": "Misma mezcla",
 };

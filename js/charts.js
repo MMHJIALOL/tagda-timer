@@ -132,7 +132,12 @@ export function renderMiniTrend(svg, solves) {
    a few labelled gridlines. Small enough to read at a glance; the stats drawer
    behind "Charts" has everything else. Colours come from classes, so the
    theme decides them (css/phone.css). */
-export function renderDotTrend(svg, solves, { count = 22, width = 326, height = 84 } = {}) {
+/*
+ * `lines`: the phone's Times tab (desktop-panel look) draws every time as a
+ * faint line instead of dots, adds the rolling ao12 and a dashed line at the
+ * best single, so the four read like the desktop's trend.
+ */
+export function renderDotTrend(svg, solves, { count = 22, width = 326, height = 84, lines = false } = {}) {
   svg.replaceChildren();
   svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
   const all = solves.map(eff);
@@ -142,7 +147,11 @@ export function renderDotTrend(svg, solves, { count = 22, width = 326, height = 
   if (finite.length < 2) return false;
 
   const ao = rollingSeries(solves, 5).slice(from);
-  const span = [...finite, ...ao.filter(v => v !== null && v !== DNF)];
+  const ao12 = lines ? rollingSeries(solves, 12).slice(from) : [];
+  const allFinite = all.filter(v => v !== DNF);
+  const best = Math.min(...allFinite);
+  const span = [...finite, ...ao.filter(v => v !== null && v !== DNF), ...ao12.filter(v => v !== null && v !== DNF),
+    ...(lines ? [best] : [])];
   let lo = Math.min(...span), hi = Math.max(...span);
   const moves = solves.some(isMoveResult);
   const unit = moves ? 1 : 1000;
@@ -166,11 +175,21 @@ export function renderDotTrend(svg, solves, { count = 22, width = 326, height = 
     tx.textContent = label(v);
     svg.append(tx);
   }
-  const line = [];
-  ao.forEach((v, i) => { if (v !== null && v !== DNF) line.push([x(i), y(v)]); });
+  const series = (vals) => { const pts = []; vals.forEach((v, i) => { if (v !== null && v !== DNF) pts.push([x(i), y(v)]); }); return pts; };
+  if (lines) {
+    svg.append(svgEl('line', { class: 'dt-pbline', x1: 0, x2: right, y1: y(best), y2: y(best) }));
+    // Every time, broken where a DNF has none.
+    let run = [];
+    const flush = () => { if (run.length > 1) svg.append(svgEl('path', { class: 'dt-solves', d: path(run) })); run = []; };
+    recent.forEach((v, i) => { if (v === DNF) flush(); else run.push([x(i), y(v)]); });
+    flush();
+    const l12 = series(ao12);
+    if (l12.length > 1) svg.append(svgEl('path', { class: 'dt-ao12', d: path(l12) }));
+  }
+  const line = series(ao);
   if (line.length > 1) svg.append(svgEl('path', { class: 'dt-ao', d: path(line) }));
-  const best = Math.min(...all.filter(v => v !== DNF));
   recent.forEach((v, i) => {
+    if (lines && v !== DNF) return;
     if (v === DNF) {
       const cx = x(i), cy = top - 4;
       svg.append(svgEl('path', { class: 'dt-dnf', d: `M${cx - 3} ${cy - 3}l6 6M${cx + 3} ${cy - 3}l-6 6` }));

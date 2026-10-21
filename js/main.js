@@ -3362,7 +3362,8 @@ function historyChip(i, data, grouped = false) {
       onclick: (e) => { e.stopPropagation(); openReplay(d.solve); },
     }));
   }
-  const chip = el('div', { class: `${d.cls}${grouped ? ' competition-set-attempt' : ''}`, role: 'listitem' },
+  // data-id: which solve the row is, for the phone's swipe and its selected row.
+  const chip = el('div', { class: `${d.cls}${grouped ? ' competition-set-attempt' : ''}`, role: 'listitem', dataset: { id: d.solve.id } },
     el('span', { class: 'idx', text: d.idx }),
     timeCell,
     ...cells,

@@ -3767,4 +3767,10 @@ export const ptbr = {
   "Tagda": "Tagda",
   "Classic": "Clássico",
   "Tagda has the dock and the phone timer; Classic is the website’s own layout, as phones had it first": "Tagda tem a barra inferior e o cronômetro para celular; Clássico é o layout do site, como os celulares tinham no começo",
+  // Phones: the Times tab as the desktop's panels, and the solve sheet
+  "solve": "resolução",
+  "Trend — open Statistics": "Tendência: abrir Estatísticas",
+  "Last {n} solves with the rolling ao5 and ao12 and your best": "As últimas {n} resoluções, com o ao5 e o ao12 móveis e o seu melhor tempo",
+  "best single": "melhor single",
+  "Same scramble": "Mesmo embaralhamento",
 };
