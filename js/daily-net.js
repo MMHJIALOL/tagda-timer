@@ -633,9 +633,10 @@ export class DailyTransport extends EventTarget {
    * Re-time somebody's result (an admin or a sotd mod: the rules refuse
    * anybody else): 'none', '+2' or 'DNF', for the +2 they forgot or a
    * Stackmat glitch. Logged as the console's 'retime', so Log › Moderation
-   * can set it back. Throws when the rules refuse.
+   * can set it back. Throws when the rules refuse. Not called setPenalty:
+   * that is the player's own above, which a second one by the name replaced.
    */
-  async setPenalty({ dayKey, event, uid, penalty, before = 'none' }) {
+  async retimeResult({ dayKey, event, uid, penalty, before = 'none' }) {
     if (!dayKey || !event || !uid || !['none', '+2', 'DNF'].includes(penalty)) throw new Error('nothing-to-retime');
     const path = `daily/${dayKey}/${event}/results/${uid}`;
     await logged(this._sdk, { [`${path}/penalty`]: penalty }, { action: 'retime', path, uid, before, note: penalty });

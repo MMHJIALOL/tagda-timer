@@ -1251,7 +1251,7 @@ export class Daily extends EventTarget {
   /** Set a time's penalty on a board, today's or a past day's ('none', '+2', 'DNF'). Throws when the rules refuse. */
   async setPenalty(row, penalty, dayKey = this.net?.target?.().dayKey, eventId = this.eventId) {
     if (!this.admin || !this.net || !row?.uid || !dayKey) throw new Error('not-admin');
-    await this.net.setPenalty({ dayKey, event: eventId, uid: row.uid, penalty, before: row.result?.penalty || 'none' });
+    await this.net.retimeResult({ dayKey, event: eventId, uid: row.uid, penalty, before: row.result?.penalty || 'none' });
   }
 
   /**

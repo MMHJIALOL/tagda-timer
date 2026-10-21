@@ -122,6 +122,13 @@ expect('ann cannot set bo\'s', await call('PUT', `${res('bo')}/penalty`, 'DNF', 
 expect('bo still adds a heavier one himself', await call('PUT', `${res('bo')}/penalty`, '+2', 'bo'), true);
 expect('…but cannot clear it an hour on', await call('PUT', `${res('bo')}/penalty`, 'none', 'bo'), false);
 expect('an admin cannot delete the penalty (no penalty is "none")', await call('DELETE', `${res('bo')}/penalty`, undefined, 'admin'), false);
+/* The clock check (a time no shorter than the solve took) is the row's owner's clock. It read
+   the writer's, so an admin who had played that day could not re-time anybody faster. */
+await call('PUT', `daily/${today}/333/progress/boss`, { startedAt: now - 120000, finishedAt: now - 60000 }, 'owner');
+expect('an admin who solved for a minute today still DNFs bo\'s 2.80', await call('PUT', `${res('bo')}/penalty`, 'DNF', 'admin'), true);
+expect('…and +2s it', await call('PUT', `${res('bo')}/penalty`, '+2', 'admin'), true);
+await call('PUT', `daily/${today}/222/progress/ann`, { startedAt: now - 120000, finishedAt: now - 60000 }, 'owner');
+expect('ann still cannot send 2.00 for a solve that took her a minute', await call('PUT', res('ann', '222'), row('Ann', 2000), 'ann'), false);
 
 /* ---------------- the featured replay ---------------- */
 await call('PATCH', '', { [`daily/${today}/333/replayClaim/ann`]: now, [`${res('ann')}/replay`]: true }, 'owner');
