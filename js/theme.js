@@ -154,6 +154,7 @@ export const DEFAULTS = {
   runningDigits: 'full',        // full | seconds | hidden — what the clock shows mid-solve
   showHint: true,               // "tap space, release to start" under the digits
   scramblesOnly: false,         // no timer at all: space / tap / swipe deal the next scramble
+  swipeEdit: true,              // phones: swipe the last time ↑ +2, ↓ DNF, ← delete, → no penalty
   showBpa: true,                // best and worst possible ao5 once four solves are in
   focusMode: true,
   paceGhost: false,           // opt-in — see SETTINGS_VERSION below

@@ -1013,6 +1013,10 @@ section('phone sheets');
   const keys = [...src.matchAll(/\bt\(\s*'((?:\\'|[^'])*)'/g)].map(m => m[1].replace(/\\'/g, "'"));
   const missing = keys.filter(k => !(k in es));
   check('every phone-shell string has its Spanish', keys.length > 30 && !missing.length, missing.join(' | ') || String(keys.length));
+  const swSrc = await (await fetch('./js/swipe-edit.js')).text();
+  const swKeys = [...swSrc.matchAll(/\bt\(\s*'((?:\\'|[^'])*)'/g)].map(m => m[1].replace(/\\'/g, "'"));
+  const swMissing = swKeys.filter(k => !(k in es));
+  check('every swipe-to-edit string has its Spanish', swKeys.length >= 10 && !swMissing.length, swMissing.join(' | ') || String(swKeys.length));
 
   // Portuguese has every string Spanish has, with the same {placeholders}.
   const { ptbr } = await import('./locales/ptbr.js');

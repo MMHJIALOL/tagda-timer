@@ -3741,4 +3741,17 @@ export const ptbr = {
   "Sign-in needs this site to store data, and this browser is blocking it": "Para entrar, este site precisa salvar dados, e este navegador está bloqueando isso",
   "Too many sign-in attempts — wait a minute, then try again": "Tentativas de entrada demais — espere um minuto e tente novamente",
   "This Google account has been disabled": "Esta conta do Google foi desativada",
+  // Phones: swipe the last time to edit it (js/swipe-edit.js)
+  "Swipe to edit times": "Deslizar para editar tempos",
+  "after a solve, swipe the time: ↑ +2 · ↓ DNF · ← delete · → no penalty": "depois de uma resolução, deslize o tempo: ↑ +2 · ↓ DNF · ← apagar · → sem penalidade",
+  "Let go to add +2": "Solte para adicionar +2",
+  "Let go to remove the +2": "Solte para tirar o +2",
+  "Let go to make it a DNF": "Solte para marcar como DNF",
+  "Let go to remove the DNF": "Solte para tirar o DNF",
+  "Let go to delete": "Solte para apagar",
+  "OK": "OK",
+  "No penalty to clear": "Não há penalidade para tirar",
+  "Let go to clear the penalty": "Solte para tirar a penalidade",
+  "Slide to a side to choose": "Deslize para um lado para escolher",
+  "slide back to the middle to cancel": "volte ao centro para cancelar",
 };

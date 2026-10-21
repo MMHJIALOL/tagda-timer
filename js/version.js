@@ -9,4 +9,4 @@
    sw.js's cache next turns over.
    =========================================================== */
 
-export const APP_VERSION = 152;
+export const APP_VERSION = 153;

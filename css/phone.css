@@ -431,6 +431,54 @@ body.ph.fmc-attempting :is(.ph-recent, #last-actions) { display: none; }
 body.ph.fmc-attempting #app { padding-bottom: max(12px, env(safe-area-inset-bottom)); }
 body.ph #manual-entry input { font-size: 16px; }
 
+/* ---------------- swipe to edit (js/swipe-edit.js) ----------------
+   Mid-swipe the digits follow the finger and the four edits sit round them,
+   on a dashed ring; the picked one grows and takes its colour, and the line
+   under where the averages were says what letting go will do. Everything else
+   steps back so the gesture is the one thing on the screen. The places are
+   measured from the digits when the swipe starts (--sw-*). */
+.ph-swipe {
+  position: absolute; inset: 0; z-index: 3; pointer-events: none;
+  opacity: 0; visibility: hidden;
+  transition: opacity 140ms var(--ease), visibility 0s linear 140ms;
+}
+body.ph.swiping .ph-swipe { opacity: 1; visibility: visible; transition: opacity 140ms var(--ease); }
+.ph-sw-ring {
+  position: absolute; left: var(--sw-cx); top: var(--sw-cy);
+  width: var(--sw-ring, 300px); height: var(--sw-ring, 300px); translate: -50% -50%;
+  border-radius: 50%; border: 1px dashed var(--border); opacity: .8;
+}
+.ph-sw-dir {
+  position: absolute; display: flex; flex-direction: column; align-items: center; gap: 2px;
+  /* --text-dim, not the mockup's --text-faint: faint sank into Paper's cells. */
+  font: 700 13px/16px var(--font-mono); color: var(--text-dim);
+  text-shadow: 0 1px 3px color-mix(in srgb, var(--bg) 85%, transparent);
+  transition: scale 140ms var(--ease), color 140ms var(--ease);
+}
+.ph-sw-dir b { font-size: 18px; line-height: 20px; font-weight: 700; }
+.ph-sw-dir[data-dir="up"] { left: var(--sw-cx); top: var(--sw-top); translate: -50% calc(-100% - var(--sw-gap)); }
+.ph-sw-dir[data-dir="down"] { left: var(--sw-cx); top: var(--sw-bot); translate: -50% var(--sw-gap); }
+.ph-sw-dir:is([data-dir="left"], [data-dir="right"]) { top: var(--sw-cy); width: 56px; translate: 0 -50%; }
+.ph-sw-dir[data-dir="left"] { left: 4px; }
+.ph-sw-dir[data-dir="right"] { right: 4px; }
+/* A time too wide for labels beside it: ← and → on the DNF label's row. */
+.ph-swipe.low .ph-sw-dir:is([data-dir="left"], [data-dir="right"]) { top: var(--sw-bot); translate: 0 var(--sw-gap); }
+.ph-sw-dir.on { scale: 1.15; }
+.ph-sw-dir.on[data-tone="warn"], .ph-sw-hint[data-tone="warn"] { color: var(--warn); }
+.ph-sw-dir.on[data-tone="danger"], .ph-sw-hint[data-tone="danger"] { color: var(--danger); }
+.ph-sw-dir.on[data-tone="accent-2"], .ph-sw-hint[data-tone="accent-2"] { color: var(--accent-2); }
+.ph-sw-hint, .ph-sw-sub {
+  position: absolute; left: var(--phone-gutter); right: var(--phone-gutter); margin: 0;
+  text-align: center; text-shadow: 0 1px 3px color-mix(in srgb, var(--bg) 85%, transparent);
+}
+.ph-sw-hint { top: var(--sw-hint); font: 600 15px/20px var(--font-ui); color: var(--text-dim); }
+.ph-sw-sub { top: calc(var(--sw-hint) + 26px); font: 500 13px/18px var(--font-ui); color: var(--text-faint); }
+.ph-sw-sub[hidden] { display: none; }
+/* The averages, the pills and the hint give their room to the DNF label and
+   the line under it; the top of the screen dims. */
+body.ph.swiping :is(#timer-avgs, #last-actions, #timer-hint, #last-row, .pb-marquee) { opacity: 0; transition: opacity 140ms var(--ease); }
+body.ph.swiping :is(#topbar, #scramble-zone) { opacity: .25; transition: opacity 140ms var(--ease); }
+
 /* ---------------- the recent strip ---------------- */
 .ph-recent { flex: none; padding: 6px 0 0 var(--phone-gutter); }
 .ph-recent-head {
@@ -879,4 +927,6 @@ body.ph .hist-end { padding: 14px 0 8px; font-size: 12px; }
 
 @media (prefers-reduced-motion: reduce) {
   .ph-dock, body.ph :is(#topbar, #scramble-zone, .ph-recent) { transition: none !important; }
+  .ph-swipe, .ph-sw-dir { transition: none !important; }
 }
+[data-motion="off"] :is(.ph-swipe, .ph-sw-dir) { transition: none !important; }

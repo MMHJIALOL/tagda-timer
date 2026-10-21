@@ -30,6 +30,7 @@ import { DEFAULT_SPEFFZ_MAP, DEFAULT_BLD, CORNER_STICKER_KEYS, EDGE_STICKER_KEYS
          pieceName, samePiece, diagnose } from './bldtrace.js';
 import { FACES } from './cube3.js';
 import { mountSettingsSearch } from './settings-search.js';
+import { isPhone, onPhoneChange } from './phone.js';
 import { searchSolves } from './solve-search.js';
 import { ACTIONS, MAX_KEYS, actionById, resolve, assign, reset, reservedWhy, keyOf, labelOf as keyLabelOf, keybindStore } from './keybinds.js';
 import { newsSection } from './news.js';
@@ -1026,7 +1027,18 @@ function step(n, title, ...detail) {
 /* =========================================================
    SETTINGS
    ========================================================= */
+/* Settings has a phone-only row (Swipe to edit times), and the drawer can
+   stay open while a phone turns to landscape, which is the tablet layout, or
+   back. Built again when that happens, at the same search, so the row is
+   there exactly when the gesture is. */
+let settingsApp = null;
+onPhoneChange(() => {
+  if (drawerName() !== 'Settings' || !settingsApp) return;
+  openDrawer('Settings', buildSettings(settingsApp, $('#drawer-body .settings-search-input')?.value || ''));
+});
+
 export function buildSettings(app, searchQuery = '') {
+  settingsApp = app;
   return (body) => {
     const health = buildDataHealthRow(() => openDataHealth(app));
     const S = app.settings;
@@ -1109,6 +1121,9 @@ export function buildSettings(app, searchQuery = '') {
         ], S.runningDigits || 'full', v => set('runningDigits', v)),
           t('what the clock shows mid-solve — the final time is always shown in full')),
         row(t('Show start hint'), toggle(S.showHint !== false, v => set('showHint', v)), t('the “tap space, release to start” line')),
+        // A phone's gesture (js/swipe-edit.js), so a phone's row: elsewhere it is not built at all.
+        isPhone() ? row(t('Swipe to edit times'), toggle(S.swipeEdit !== false, v => set('swipeEdit', v)),
+          t('after a solve, swipe the time: ↑ +2 · ↓ DNF · ← delete · → no penalty')) : null,
         row(t('Focus mode'), toggle(S.focusMode, v => set('focusMode', v)), t('everything but the digits fades out')),
         row(t('Scrambles only'), toggle(S.scramblesOnly, v => set('scramblesOnly', v)),
           t('no timer: space, a tap or a swipe deals the next scramble, ← goes back')),
