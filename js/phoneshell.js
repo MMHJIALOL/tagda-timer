@@ -3,11 +3,17 @@ import { t, lang } from './i18n.js';
    Tagda Timer — the phone shell
 
    On a phone (js/phone.js) the timer gets a layout of its own: a floating
-   dock with four tabs (Timer, Times, Train, More) in place of the top bar's
+   dock of four tabs (Timer, Times, Train, More) in place of the top bar's
    row of icons and its hamburger, one context pill for the event and the
-   session, a flat net of the scramble instead of the floating 3D preview, a
-   strip of recent times above the dock, and bottom sheets where the desktop
-   has popovers (the event and session pickers, the solve menu).
+   session, a small preview tile in the corner instead of the floating 3D
+   preview, a strip of recent times above the dock, and bottom sheets where
+   the desktop has popovers (the event and session pickers, the solve menu).
+
+   Appearance › Layout › Phone layout › Classic (settings.phoneLayout) turns
+   all of it off: the phone then gets the website's own layout, narrowed, as
+   it had before this shell existed. Cross + 1, Reconstruct and the Alg
+   library keep their phone layouts either way; those ask js/phone.js, not
+   this shell.
 
    It is all built on the existing page rather than beside it. The timer, the
    scramble, the history list and every drawer are the same elements and the
@@ -65,6 +71,7 @@ const I = {
   spotify: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.2"/><path d="M7 9.1c3.3-1 7.2-.7 10.2.9"/><path d="M7.7 12.3c2.7-.8 5.9-.5 8.4.8"/><path d="M8.3 15.4c2.2-.6 4.6-.4 6.5.6"/></svg>',
   globe: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 010 18M12 3a14 14 0 000 18"/></svg>',
   info: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5.5M12 7.8v.1"/></svg>',
+  expand: '<svg viewBox="0 0 24 24"><path d="M8 4H4v4M16 4h4v4M8 20H4v-4M16 20h4v-4"/></svg>',
 };
 
 /** Just the icon, with its label for assistive tech and a tooltip. */
@@ -81,8 +88,12 @@ function wordBtn(cls, icon, word, onclick) {
 let A = null;      // the app object
 let X = null;      // what main.js lends us
 let built = false;
+let shellOn = false;   // a phone, and the phone layout chosen (not Classic)
 const ui = {};
 let tab = 'timer';
+
+/** Is this the phone layout? A phone-sized screen, unless Classic is chosen. */
+const wanted = () => isPhone() && A.settings.phoneLayout !== 'classic';
 
 /* =========================================================
    Setting up
@@ -93,12 +104,15 @@ export function initPhoneShell(app, api) {
   X = api;
   mirrorPreview();
   const apply = () => {
-    const on = isPhone();
+    const on = wanted();
+    if (on === shellOn && (!on || built)) return;
+    if (!on && shellOn) { closeAllSheets(); setTab('timer'); }
+    shellOn = on;
     document.body.classList.toggle('ph', on);
     if (on) build();
-    if (!on) { closeAllSheets(); setTab('timer'); }
     syncThumbView();
     if (on) render();
+    X.layoutChanged?.();
   };
   apply();
   onPhoneChange(apply);
@@ -106,8 +120,10 @@ export function initPhoneShell(app, api) {
     render,
     openSolveSheet,
     setTab,
+    /** Settings changed: Classic chosen or put back. */
+    relayout: apply,
     tab: () => tab,
-    on: () => isPhone() && built,
+    on: () => shellOn && built,
   };
 }
 
@@ -138,33 +154,70 @@ function build() {
   new MutationObserver(count).observe(digits, { childList: true, characterData: true, subtree: true });
   count();
 
-  /* ---- the scramble card: a flat net of the scramble, which opens the 3D cube ---- */
+  /* ---- the preview tile: the scrambled puzzle in the corner, where the
+     desktop keeps its cube, so the scramble has the whole width. Flat or 3D,
+     and it opens the full-width preview. It sits in the stage's own flow, so
+     the clock is centred in what is left above it and never under it. ---- */
   ui.thumbHost = el('div', { class: 'ph-net-host', 'aria-hidden': 'true' });
   ui.thumbBtn = el('button', {
-    id: 'ph-net', class: 'ph-net', type: 'button', 'aria-label': t('Open the scrambled cube in 3D'),
-    onclick: openCubeSheet,
+    id: 'ph-net', class: 'ph-net', type: 'button', 'aria-label': t('Open the scramble preview'),
+    title: t('Open the scramble preview'), onclick: openCubeSheet,
   }, ui.thumbHost);
-  $('#scramble-wrap').append(ui.thumbBtn);
+  const viewBtn = (v) => el('button', {
+    class: 'ph-tile-btn', type: 'button', text: v, dataset: { view: v },
+    'aria-label': v === '3D' ? t('Show the preview in 3D') : t('Show the preview flat'),
+    onclick: () => setTileView(v),
+  });
+  ui.tileViews = [viewBtn('3D'), viewBtn('2D')];
+  ui.tile = el('div', { id: 'ph-tile', class: 'ph-tile' }, ui.thumbBtn,
+    el('div', { class: 'ph-tile-seg', role: 'group', 'aria-label': t('Scramble preview') }, ...ui.tileViews,
+      el('button', { class: 'ph-tile-btn', type: 'button', html: I.expand, 'aria-label': t('Open the scramble preview'),
+        title: t('Open the scramble preview'), onclick: openCubeSheet })));
+  $('#stage').append(ui.tile);
+  ui.tileView = A.settings.phPreview === '3D' ? '3D' : '2D';
+  syncTileButtons();
+
+  /* ---- the scramble: full width now. A big cube's scramble is set smaller
+     and held to six lines that scroll, with the whole of it a tap away;
+     a Megaminx is set in the rows WCA sheets print it in. ---- */
+  ui.allMoves = el('button', { id: 'ph-all-moves', class: 'ph-all-moves', type: 'button', hidden: true, onclick: openScrambleSheet });
+  $('#scramble-tools').append(ui.allMoves);
+  new MutationObserver(() => requestAnimationFrame(fitScramble))
+    .observe($('#scramble-text'), { childList: true, characterData: true, subtree: true });
+  fitScramble();
   for (const [id, label] of [['#btn-prev-scramble', t('Previous scramble')], ['#btn-next-scramble', t('Next scramble')],
     ['#btn-copy-scramble', t('Copy scramble')], ['#btn-custom-scramble', t('Use your own scrambles')]]) {
     $(id)?.setAttribute('aria-label', label);
   }
   ui.thumb = new CubeView(ui.thumbHost, null);
   ui.thumb.backView = 'none';
-  ui.thumb.init().then(() => { replayPreview(ui.thumb, '2D'); ui.thumb.setHints(false); });
+  ui.thumb.init().then(() => { replayPreview(ui.thumb, ui.tileView); ui.thumb.setHints(false); });
 
   /* ---- under the digits: the best badges, and the post-solve pills ---- */
   for (const k of ['ao5', 'ao12']) {
     const label = $(`#live-${k}`)?.previousElementSibling;
     if (label) label.append(ui[`badge${k}`] = el('span', { class: 'ph-best', text: t('best'), hidden: true }));
   }
+  /* One small row: +2 and DNF in words, then Note, Reconstruct and Cross + 1
+     as icons, then Delete on its own at the end, in red, so it is never
+     next to +2. Each pill is small to look at and 44px to hit. */
   const row = $('#last-actions');
-  ui.noteBtn = wordBtn('ghost-btn sm ph-only ph-pill', I.pencil, t('Note'), () => lastAct('note'));
-  ui.replayBtn = wordBtn('ghost-btn sm ph-only ph-pill', I.play, t('Replay'), () => lastAct('replay'));
-  ui.reconBtn = wordBtn('ghost-btn sm ph-only ph-pill', I.recon, t('Reconstruct'), () => lastAct('recon'));
+  const act = (cls, icon, label, onclick) =>
+    iconBtn(`ghost-btn sm ph-only ph-pill ph-ic ${cls}`, label, icon, onclick);
+  ui.noteBtn = act('ph-note-btn', I.pencil, t('Note'), () => lastAct('note'));
+  ui.replayBtn = act('ph-replay-btn', I.play, t('Replay'), () => lastAct('replay'));
+  ui.reconBtn = act('ph-recon-btn', I.recon, t('Reconstruct'), () => lastAct('recon'));
+  ui.xp1Btn = act('ph-xp1-btn', I.xp1, t('Cross + 1'), () => lastAct('xp1'));
   ui.replayBtn.hidden = true;
-  row.append(ui.noteBtn, ui.replayBtn, ui.reconBtn);
-  for (const b of row.querySelectorAll('[data-act="+2"], [data-act="DNF"]')) b.classList.add('ph-pill');
+  row.append(ui.noteBtn, ui.replayBtn, ui.reconBtn, ui.xp1Btn,
+    el('i', { class: 'ph-only ph-sep ph-sep-a', 'aria-hidden': 'true' }), el('i', { class: 'ph-only ph-sep ph-sep-b', 'aria-hidden': 'true' }));
+  const named = { '+2': t('Plus two'), DNF: t('Did not finish'), delete: t('Delete') };
+  for (const b of row.querySelectorAll('[data-act="+2"], [data-act="DNF"], [data-act="delete"]')) {
+    b.classList.add('ph-pill');
+    if (b.dataset.act === 'delete') b.classList.add('ph-ic', 'ph-del');
+    b.setAttribute('aria-label', named[b.dataset.act]);
+    b.title = named[b.dataset.act];
+  }
   /* The webcam Replay pill is replay.js's; this one only mirrors whether it is
      there, and presses it. Nothing about the replay itself changes here. */
   const pill = $('#last-replay');
@@ -200,9 +253,10 @@ function build() {
   $('#stage').after(ui.recent);
 
   /* ---- the dock ---- */
+  // Icons only; the name is each tab's label and tooltip.
   const tabBtn = (id, icon, label) => el('button', {
-    class: 'ph-tab', type: 'button', dataset: { tab: id }, onclick: () => setTab(id),
-  }, el('span', { class: 'ph-tab-ico', html: icon, 'aria-hidden': 'true' }), el('span', { class: 'ph-tab-lbl', text: label }));
+    class: 'ph-tab', type: 'button', dataset: { tab: id }, 'aria-label': label, title: label, onclick: () => setTab(id),
+  }, el('span', { class: 'ph-tab-ico', html: icon, 'aria-hidden': 'true' }));
   ui.dock = el('nav', { id: 'ph-dock', class: 'ph-dock', 'aria-label': t('Main') },
     tabBtn('timer', I.timer, t('Timer')), tabBtn('times', I.times, t('Times')),
     tabBtn('train', I.train, t('Train')), tabBtn('more', I.more, t('More')));
@@ -246,7 +300,7 @@ function mirrorPreview() {
     c[fn] = (...args) => {
       const r = orig(...args);
       last[fn] = args;
-      for (const [view, want] of [[ui.thumb, '2D'], [ui.sheetCube, ui.sheetView || '3D']]) {
+      for (const [view, want] of [[ui.thumb, ui.tileView || '2D'], [ui.sheetCube, ui.sheetView || '3D']]) {
         if (view?.ready) forward(view, fn, args, want);
       }
       return r;
@@ -268,36 +322,126 @@ function replayPreview(view, want) {
 }
 
 function syncThumbView() {
-  if (ui.thumb?.ready) ui.thumb.setView('2D');
+  if (ui.thumb?.ready) ui.thumb.setView(ui.tileView || '2D');
 }
 
-/** The 3D cube, from the net: drag to spin it, flat or 3D, back to the start. */
+/** The tile's 3D / 2D, kept as phPreview so it comes back next time. */
+function setTileView(v) {
+  if (ui.tileView === v) return;
+  ui.tileView = v;
+  syncTileButtons();
+  if (ui.thumb?.ready) replayPreview(ui.thumb, v);
+  X.saveSetting('phPreview', v);
+}
+
+function syncTileButtons() {
+  for (const b of ui.tileViews || []) {
+    const on = b.dataset.view === ui.tileView;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-pressed', String(on));
+  }
+}
+
+/* =========================================================
+   The scramble's size
+
+   A 3x3 or 4x4 scramble is set large and wraps in full. One that would run
+   past six lines (5x5 to 7x7, the bigger blind events) steps down a size,
+   and if it still runs past six it is held to six that scroll in place, with
+   a fade and "all N moves" to read the whole of it in a sheet, so the digits
+   below are never pushed down. Megaminx keeps its rows.
+   ========================================================= */
+
+const MAX_LINES = 6;
+
+function fitScramble() {
+  if (!built || !shellOn) return;
+  const node = $('#scramble-text');
+  const zone = $('#scramble-zone');
+  const text = node.textContent.trim();
+  const rows = node.classList.contains('multiline');
+  const minx = rows && A.settings.event === 'minx';
+  zone.classList.toggle('ph-minx', minx);
+  /* A Square-1 turn is a pair with a space in it, "(-3, 0)", and must never
+     be split across two lines. Each pair is kept whole in a span; the text,
+     and so what is copied, is unchanged. Done once per scramble: the spans
+     being there is how the next call knows. */
+  if (A.settings.event === 'sq1' && text.includes('(') && !node.querySelector('.ph-tup')) {
+    node.replaceChildren(...text.split(/(\([^)]*\))/).filter(Boolean)
+      .map(part => (part.startsWith('(') ? Object.assign(document.createElement('span'), { className: 'ph-tup', textContent: part })
+        : document.createTextNode(part))));
+  }
+  zone.classList.remove('ph-big', 'ph-capped');
+  const lines = () => node.scrollHeight / (parseFloat(getComputedStyle(node).lineHeight) || 30);
+  if (!minx && !node.classList.contains('race-hold')) {
+    if (lines() > MAX_LINES + 0.5) zone.classList.add('ph-big');
+    if (lines() > MAX_LINES + 0.5) zone.classList.add('ph-capped');
+  }
+  const capped = zone.classList.contains('ph-capped');
+  const n = text ? text.split(/\s+/).filter(m => m && m !== '/').length : 0;
+  ui.allMoves.hidden = !capped;
+  ui.moveCount = n;
+  if (capped) {
+    ui.allMoves.textContent = t('all {n} moves', { n }) + ' ⌄';
+    ui.allMoves.setAttribute('aria-label', t('Show all {n} moves', { n }));
+    node.scrollTop = 0;
+  }
+}
+
+/** The whole of a long scramble, to read and copy. */
+function openScrambleSheet() {
+  const text = $('#scramble-text').textContent.trim();
+  let sheet = null;
+  sheet = openSheet({
+    title: t('Scramble'), done: true, className: 'ph-scr-sheet',
+    content: [
+      el('p', { class: 'ph-scr-all mono', text }),
+      el('div', { class: 'ph-sv-main' },
+        wordBtn('ph-btn', I.copy, t('Copy scramble'), () => X.copyToast(text, 'Scramble')),
+        wordBtn('ph-btn', I.cube, t('Preview'), () => { sheet.close(); openCubeSheet(); })),
+    ],
+  });
+}
+
+/** The full-width preview, from the tile: flat or 3D (drag to spin it), as the tile was. */
 function openCubeSheet() {
   const host = el('div', { class: 'ph-cube3d' });
-  ui.sheetView = '3D';
-  const viewBtn = el('button', {
-    class: 'ph-seg-btn', type: 'button', text: '2D', 'aria-pressed': 'false',
-    onclick: () => {
-      ui.sheetView = ui.sheetView === '3D' ? '2D' : '3D';
-      ui.sheetCube?.setView(ui.sheetView);
-      viewBtn.setAttribute('aria-pressed', String(ui.sheetView === '2D'));
-      viewBtn.classList.toggle('on', ui.sheetView === '2D');
-    },
-  });
+  ui.sheetView = ui.tileView || '2D';
+  const views = ['3D', '2D'].map(v => el('button', {
+    class: 'ph-seg-btn', type: 'button', text: v, dataset: { view: v },
+    onclick: () => { ui.sheetView = v; ui.sheetCube?.setView(v); sync(); },
+  }));
+  const reset = wordBtn('ph-seg-btn', I.reset, t('Reset the view'), () => ui.sheetCube?.clearOrbit());
+  const note = el('p', { class: 'ph-note' });
+  const sync = () => {
+    for (const b of views) {
+      const on = b.dataset.view === ui.sheetView;
+      b.classList.toggle('on', on);
+      b.setAttribute('aria-pressed', String(on));
+    }
+    reset.hidden = ui.sheetView !== '3D';
+    note.textContent = ui.sheetView === '3D' ? t('Drag the cube to look round it.') : '';
+    note.hidden = ui.sheetView !== '3D';
+  };
+  sync();
+  const scramble = $('#scramble-text').textContent.trim();
   const sheet = openSheet({
-    title: t('Scrambled cube'), done: true, className: 'ph-cube-sheet',
+    title: t('Scramble preview'), done: true, className: 'ph-cube-sheet',
     content: [
-      host,
-      el('p', { class: 'ph-note', text: t('Drag the cube to look round it.') }),
-      el('div', { class: 'ph-cube-tools' }, viewBtn,
-        wordBtn('ph-seg-btn', I.reset, t('Reset the view'), () => ui.sheetCube?.clearOrbit())),
+      host, note,
+      el('div', { class: 'ph-cube-tools' }, ...views, reset),
+      el('div', { class: 'ph-sv-main' },
+        wordBtn('ph-btn', I.copy, t('Copy scramble'), () => X.copyToast(scramble, 'Scramble')),
+        ui.allMoves && !ui.allMoves.hidden
+          ? wordBtn('ph-btn', I.list, t('All {n} moves', { n: ui.moveCount }), () => { sheet.close(); openScrambleSheet(); })
+          : null),
     ],
     onClose: () => { ui.sheetCube?.player?.remove(); ui.sheetCube = null; },
   });
   ui.sheetCube = new CubeView(host, null);
   ui.sheetCube.init().then((ok) => {
     if (!ok || !ui.sheetCube) return;
-    replayPreview(ui.sheetCube, '3D');
+    replayPreview(ui.sheetCube, ui.sheetView);
     ui.sheetCube.setHints(!!A.settings.hintFacelets);
   });
   return sheet;
@@ -336,7 +480,7 @@ export function setTab(next) {
 const fmtSolve = (s) => fmtResult(eff(s), isMoveResult(s));
 
 export function render() {
-  if (!built || !isPhone()) return;
+  if (!built || !shellOn) return;
   const ev = eventOf(A.settings.event);
   ui.ctxEvent.textContent = ev.short;
   ui.ctxSession.textContent = A.session?.name || '';
@@ -348,6 +492,11 @@ export function render() {
   const best12 = st.ao12 != null && st.bestAo12 != null && isFinite(st.ao12) && st.ao12 === st.bestAo12 && solves.length > 12;
   if (ui.badgeao5) { ui.badgeao5.hidden = !best5; $('#live-ao5').classList.toggle('ph-is-best', best5); }
   if (ui.badgeao12) { ui.badgeao12.hidden = !best12; $('#live-ao12').classList.toggle('ph-is-best', best12); }
+
+  // Cross + 1 plans a 3x3's cross and first pair: a 3x3 solve's own scramble, nothing else.
+  const shown = X.shownSolve();
+  const sev = shown && eventOf(shown.event);
+  ui.xp1Btn.hidden = !(shown?.scramble && sev.puzzle === '3x3x3' && !sev.relay && !sev.multi && !shown.relay?.length);
 
   // The recent strip: newest first, the newest outlined, the best in teal, DNFs in red.
   ui.allBtn.textContent = t('All {n}', { n: solves.length });
@@ -377,6 +526,7 @@ function lastAct(act) {
   if (!s || !X.timerIdle()) return;
   if (act === 'note') openSolveSheet(s, { focusNote: true });
   else if (act === 'recon') X.reconstructSolve(s);
+  else if (act === 'xp1') X.openXp1(s.scramble);
   else if (act === 'replay') $('#last-replay')?.click();
 }
 
@@ -755,7 +905,7 @@ async function renderTrain() {
   ui.raceSub.textContent = $('#btn-race')?.classList.contains('live') ? t('in a room') : t('open a room');
   // The countdown is in minutes; keep it true while the tab is open.
   clearTimeout(trainTick);
-  trainTick = setTimeout(() => { if (tab === 'train' && isPhone()) renderTrain(); }, 30000);
+  trainTick = setTimeout(() => { if (tab === 'train' && shellOn) renderTrain(); }, 30000);
 
   const states = await loadStates().catch(() => ({}));
   const ids = modesForEvent(A.settings.event).filter(id => id !== 'wca');

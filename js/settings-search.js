@@ -65,6 +65,7 @@ const ALIASES = [
   ['Solve list', 'history times font size scale'],
   ['Preview position', 'cube move location reset angle rotation'],
   ['Panel style', 'cards widgets flat layout transparency'],
+  ['Phone layout', 'mobile classic old original website desktop dock tabs tagda redesign diseño antiguo clasico'],
   ['Statistics panel', 'stats averages show hide widget'],
   ['Times strip', 'history solve list show hide panel'],
   ['Hint facelets', 'ghost hidden stickers cube faces'],

@@ -178,11 +178,24 @@ body:has(.sheet) #toasts {
    =========================================================== */
 
 :root {
-  --ph-dock-h: 58px;
+  --ph-dock-h: 52px;
   --ph-dock-b: calc(12px + env(safe-area-inset-bottom));
+  /* The app's glass (.panel in components.css) for the phone's pills, chips,
+     tile and dock: the surface at the theme's panel alpha, blurred, behind a
+     1px edge, which is what keeps it readable over the background. The dock
+     keeps more of the surface: it floats over whatever scrolls under it. A
+     flat panel style leaves the pills bare, as it does the panels. */
+  --ph-glass: color-mix(in srgb, var(--surface) calc(var(--panel-alpha) * 100%), transparent);
+  --ph-glass-strong: color-mix(in srgb, var(--surface) calc(max(var(--panel-alpha), .82) * 100%), transparent);
+  --ph-edge: color-mix(in srgb, var(--border) 90%, transparent);
+  --ph-blur: blur(var(--panel-blur)) saturate(1.4);
   /* What the dock covers, plus a breath: the foot of every tab stops here. */
   --ph-dock-room: calc(var(--ph-dock-h) + var(--ph-dock-b) + 12px);
 }
+
+/* Reduce effects takes every blur away (components.css); the glass then
+   needs a near-solid fill to stay readable, as the panels get. */
+:root:not([data-panels="flat"]) body.lite { --ph-glass: color-mix(in srgb, var(--surface) 92%, transparent); }
 
 /* The whole screen is the timer, so none of it may be taken for a pan or a
    pull-to-refresh halfway through a hold — the browser cancels the touch when
@@ -201,8 +214,7 @@ body.ph.sotd #app { padding-bottom: max(12px, env(safe-area-inset-bottom)); }
 body.ph .topbar-left, body.ph .topbar-center, body.ph #btn-menu,
 body.ph #panel-cube, body.ph #creator-chip, body.ph #dock-bottom,
 body.ph #last-replay, body.ph .scramble-label,
-body.ph #last-actions [data-act="comment"], body.ph #last-actions [data-act="share"],
-body.ph #last-actions [data-act="delete"] { display: none !important; }
+body.ph #last-actions [data-act="comment"], body.ph #last-actions [data-act="share"] { display: none !important; }
 
 /* ---------------- top row: context pill · camera · Daily ---------------- */
 body.ph #topbar {
@@ -221,7 +233,8 @@ body.ph .topbar-right > #btn-camera, body.ph .topbar-right > #btn-daily { displa
   flex: 0 1 auto; min-width: 0;
   display: flex; align-items: center; gap: 8px;
   height: 38px; padding: 0 12px; border-radius: 19px;
-  background: var(--surface); border: 1px solid var(--border); color: var(--text);
+  background: var(--ph-glass); border: 1px solid var(--ph-edge); color: var(--text);
+  backdrop-filter: var(--ph-blur); -webkit-backdrop-filter: var(--ph-blur);
   font-family: var(--font-ui);
 }
 .ph-ctx-ico { flex: none; color: var(--accent-text); display: grid; }
@@ -238,7 +251,8 @@ body.ph .topbar-right > #btn-camera, body.ph .topbar-right > #btn-daily { displa
 
 body.ph #btn-camera {
   width: 38px; height: 38px; border-radius: 19px; justify-content: center;
-  background: var(--surface); border: 1px solid var(--border); color: var(--text-dim);
+  background: var(--ph-glass); border: 1px solid var(--ph-edge); color: var(--text-dim);
+  backdrop-filter: var(--ph-blur); -webkit-backdrop-filter: var(--ph-blur);
 }
 body.ph #btn-camera svg { width: 18px; height: 18px; }
 body.ph #btn-camera.on {
@@ -266,10 +280,14 @@ body.ph #btn-daily.done {
 body.ph #btn-daily.done .ph-daily-lbl { display: none; }
 
 /* ---------------- the scramble ----------------
-   Floating on the background, as it was before the shell: no card, just the
-   notation, small enough that a 3x3 scramble is two lines, with the tools and
-   the net in one short row under it. The shadow is the theme's own background
-   colour, so the letters keep an edge over a busy wallpaper on dark and light
+   Floating on the background with the whole width to itself (the preview is
+   the tile in the corner now), centred, in the mockups' sizes: 20/30 for a
+   3x3 or a 4x4, each move its own target. fitScramble() in phoneshell.js
+   steps a scramble that would run past six lines down to 16/24 (.ph-big),
+   and one that still would is held to six lines that scroll (.ph-capped),
+   with "all N moves" beside the tools. A Megaminx is its seven WCA rows,
+   left-aligned (.ph-minx). The shadow is the theme's own background colour,
+   so the letters keep an edge over a busy background on dark and light
    themes alike. */
 body.ph #scramble-zone {
   flex: none; align-items: stretch; gap: 6px;
@@ -278,47 +296,92 @@ body.ph #scramble-zone {
 }
 body.ph #scramble-wrap {
   width: auto; padding: 0;
-  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center;
-  column-gap: 8px; row-gap: 4px;
+  display: flex; flex-direction: column; align-items: stretch; gap: 2px;
 }
 body.ph #scramble-text {
-  grid-column: 1 / -1;
   padding: 0 2px; border: 0; border-radius: 0; background: none;
-  font-size: calc(15.5px * var(--scramble-scale));
-  font-weight: 600; line-height: 1.5; word-spacing: .08em; letter-spacing: 0;
+  font-size: calc(20px * var(--scramble-scale));
+  font-weight: 600; line-height: 1.5; word-spacing: .45em; letter-spacing: .02em;
   text-align: center; text-wrap: balance; white-space: pre-wrap;
   text-shadow: 0 1px 3px color-mix(in srgb, var(--bg) 85%, transparent), 0 0 10px color-mix(in srgb, var(--bg) 55%, transparent);
 }
 body.ph #scramble-text:hover { background: none; }
-body.ph #scramble-text.long { font-size: calc(13px * var(--scramble-scale)); }
-body.ph #scramble-text.multiline { font-size: calc(12px * var(--scramble-scale)); line-height: 1.4; text-align: left; text-wrap: initial; }
-body.ph #scramble-text.race-hold { font-family: var(--font-ui); font-size: 14px; color: var(--text-dim); }
-body.ph #scramble-tools {
-  grid-column: 1; justify-self: start;
-  position: static; transform: none; opacity: 1;
-  display: flex; gap: 0; margin: 0 0 0 -6px; color: var(--text-dim);
+body.ph #scramble-zone.ph-big #scramble-text { font-size: calc(16px * var(--scramble-scale)); word-spacing: .35em; }
+/* Six lines (9em at line-height 1.5), scrolled in place, fading out at the
+   foot so it reads as more to come. */
+body.ph #scramble-zone.ph-capped #scramble-text {
+  max-height: 9em; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y;
+  scrollbar-width: none; text-wrap: initial;
+  -webkit-mask-image: linear-gradient(180deg, #000 72%, transparent);
+  mask-image: linear-gradient(180deg, #000 72%, transparent);
 }
-/* Previous, next, copy, your own: the order the card reads them in. */
+body.ph #scramble-zone.ph-capped #scramble-text::-webkit-scrollbar { display: none; }
+/* 42 characters a row; never wider than the screen. */
+body.ph #scramble-zone.ph-minx #scramble-text {
+  align-self: center; max-width: 100%;
+  font-size: min(calc(13.5px * var(--scramble-scale)), calc((100vw - 2 * var(--phone-gutter)) / 27.4));
+  line-height: 1.63; word-spacing: .2em; letter-spacing: 0;
+  text-align: left; text-wrap: initial; white-space: pre;
+}
+.ph-tup { white-space: nowrap; word-spacing: 0; }
+body.ph #scramble-text.race-hold { font-family: var(--font-ui); font-size: 14px; color: var(--text-dim); word-spacing: 0; letter-spacing: 0; }
+body.ph #scramble-tools {
+  align-self: center;
+  position: static; transform: none; opacity: 1;
+  display: flex; gap: 4px; margin: 0; color: var(--text-dim);
+}
+/* Previous, next, copy, your own, and the rest of a long one. */
 body.ph #btn-prev-scramble { order: 1; }
 body.ph #btn-next-scramble { order: 2; }
 body.ph #btn-copy-scramble { order: 3; }
 body.ph #btn-custom-scramble { order: 4; }
 body.ph #scramble-tools .ghost-btn {
-  width: 40px; height: 40px; padding: 0; border: 0; border-radius: 20px; background: none;
+  width: 44px; height: 40px; padding: 0; border: 0; border-radius: 20px; background: none;
   display: grid; place-items: center; color: var(--text-dim);
 }
-body.ph #scramble-tools .ghost-btn svg { width: 19px; height: 19px; stroke-width: 1.7; }
+body.ph #scramble-tools .ghost-btn svg { width: 20px; height: 20px; stroke-width: 1.7; }
 body.ph #scramble-tools .ghost-btn:active { background: color-mix(in srgb, var(--text) 8%, transparent); }
-
-.ph-net {
-  grid-column: 2; justify-self: end;
-  padding: 4px; border-radius: 10px;
-  background: color-mix(in srgb, var(--bg) 70%, transparent); border: 1px solid var(--border);
+.ph-all-moves {
+  order: 5; height: 40px; padding: 0 12px; border-radius: 20px;
+  font: 600 13px/1 var(--font-ui); color: var(--accent-2); white-space: nowrap;
 }
-.ph-net-host { width: 60px; height: 45px; pointer-events: none; }
+.ph-all-moves[hidden] { display: none; }
+.ph-scr-all { margin: 0; font-family: var(--font-mono); font-size: 15px; line-height: 1.6; word-spacing: .3em; color: var(--text); overflow-wrap: anywhere; white-space: pre-wrap; }
+
+/* ---------------- the preview tile ----------------
+   Bottom right, above the recent strip, where the desktop keeps its cube: a
+   glance at the scrambled puzzle, 3D or flat, and a tap for the full-width
+   preview. In the stage's flow, so the clock centres in what is left above. */
+.ph-tile {
+  flex: none; align-self: flex-end;
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  margin-top: 4px;
+  transition: opacity 160ms var(--ease);
+}
+.ph-net {
+  width: 116px; height: 88px; padding: 6px; border-radius: 16px;
+  display: grid; place-items: center;
+  background: var(--ph-glass); border: 1px solid var(--ph-edge);
+  backdrop-filter: var(--ph-blur); -webkit-backdrop-filter: var(--ph-blur);
+  box-shadow: var(--shadow);
+}
+.ph-net-host { width: 100%; height: 100%; pointer-events: none; }
 .ph-net-host twisty-player { width: 100%; height: 100%; }
-body.no-cube .ph-net { display: none; }
-body.sotd .ph-net { grid-column: 1 / -1; justify-self: center; }
+.ph-tile-seg {
+  display: inline-flex; gap: 2px; padding: 2px; border-radius: 10px;
+  background: color-mix(in srgb, var(--surface-2) 85%, transparent);
+}
+.ph-tile-btn {
+  position: relative; min-width: 28px; height: 22px; padding: 0 8px; border-radius: 8px;
+  display: grid; place-items: center;
+  font: 700 11px/1 var(--font-mono); color: var(--text-faint);
+}
+/* 22px to look at, 44px to hit. */
+.ph-tile-btn::before { content: ''; position: absolute; inset: -11px -1px; }
+.ph-tile-btn.on { background: var(--accent-tint); color: var(--text); }
+.ph-tile-btn svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+body.no-cube .ph-tile, body.ph.fmc-attempting .ph-tile { display: none; }
+body.ph:has(#panel-race:not([hidden])) .ph-tile { visibility: hidden; }
 
 /* The lines that hang under the scramble on a phone are the same ones the
    desktop has; they only get tighter. */
@@ -380,12 +443,13 @@ body.ph #timer-avgs > span > i {
 body.ph #timer-avgs.no-avg > span, body.ph #timer-avgs.solo > :is(.a12, .sep) { display: none; }
 body.ph #timer-avgs #timer-bpa i { font-size: 13px; }
 body.ph #timer-bpa b { display: inline; color: var(--text-faint); }
-body.ph #timer-avgs i.ph-is-best { color: var(--accent-2); }
+/* A best average is marked in gold, the colour every PB has. */
+body.ph #timer-avgs i.ph-is-best { color: var(--text); }
 body.ph #timer-avgs .sep { width: 1px; height: auto; align-self: stretch; background: var(--border); }
 .ph-best {
   font-family: var(--font-ui); font-size: 10.5px; font-weight: 600; line-height: 17px;
   padding: 0 6px; border-radius: 6px;
-  color: var(--accent-2); background: color-mix(in srgb, var(--accent-2) 14%, transparent);
+  color: var(--gold); background: color-mix(in srgb, var(--gold) 16%, transparent);
 }
 .ph-best[hidden] { display: none; }
 body.ph #timer-bpa { grid-column: auto; margin-top: 2px; }
@@ -399,19 +463,35 @@ body.ph #last-row {
 }
 body.ph #last-delta { font-size: 13px; }
 
+/* One compact row under the averages: +2 and DNF in words, a gap, Note (or
+   Replay), Reconstruct and Cross + 1 as icons, a gap, and Delete in red at
+   the end. 32px pills, each with a 44px hit area round it. */
 body.ph #last-actions {
   order: 3;
-  display: flex; flex-wrap: wrap; justify-content: center; gap: 6px;
+  display: flex; flex-wrap: nowrap; justify-content: center; align-items: center; gap: 6px;
   max-width: none; margin-top: 14px;
 }
 body.ph #last-actions .ph-pill, body.ph #last-actions .ghost-btn.ph-pill {
-  display: inline-flex; align-items: center; gap: 6px;
-  height: 32px; padding: 0 12px; border-radius: 16px;
-  background: var(--surface); border: 1px solid var(--border);
-  font-family: var(--font-ui); font-size: 13px; font-weight: 600; color: var(--text);
+  position: relative; display: inline-flex; align-items: center; justify-content: center;
+  height: 32px; min-width: 40px; padding: 0 11px; border-radius: 999px;
+  background: var(--ph-glass); border: 1px solid var(--ph-edge);
+  backdrop-filter: var(--ph-blur); -webkit-backdrop-filter: var(--ph-blur);
+  font: 700 13px/1 var(--font-mono); color: var(--text);
 }
+body.ph #last-actions .ph-pill::before { content: ''; position: absolute; inset: -6px -4px; }
+body.ph #last-actions .ph-pill.ph-ic { width: 36px; min-width: 36px; padding: 0; color: var(--text-dim); }
+body.ph #last-actions .ph-pill.ph-del { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 35%, transparent); }
 body.ph #last-actions .ph-pill[hidden] { display: none; }
-body.ph #last-actions .ph-pill svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+body.ph #last-actions .ph-pill svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+body.ph #last-actions .ph-sep { flex: none; width: 6px; }
+body.ph #last-actions [data-act="+2"] { order: 1; }
+body.ph #last-actions [data-act="DNF"] { order: 2; }
+body.ph #last-actions .ph-sep-a { order: 3; }
+body.ph #last-actions :is(.ph-note-btn, .ph-replay-btn) { order: 4; }
+body.ph #last-actions .ph-recon-btn { order: 5; }
+body.ph #last-actions .ph-xp1-btn { order: 6; }
+body.ph #last-actions .ph-sep-b { order: 7; }
+body.ph #last-actions [data-act="delete"] { order: 8; }
 body.ph #last-actions .ph-pill svg .fill, body.ph .ph-tab-ico .fill, .ph-sheet-ico .fill { fill: currentColor; stroke: none; }
 body.ph #last-actions [aria-pressed="true"] {
   color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, transparent);
@@ -442,7 +522,7 @@ body.ph #manual-entry input { font-size: 16px; }
   opacity: 0; visibility: hidden;
   transition: opacity 140ms var(--ease), visibility 0s linear 140ms;
 }
-body.ph.swiping .ph-swipe { opacity: 1; visibility: visible; transition: opacity 140ms var(--ease); }
+body.swiping .ph-swipe { opacity: 1; visibility: visible; transition: opacity 140ms var(--ease); }
 .ph-sw-ring {
   position: absolute; left: var(--sw-cx); top: var(--sw-cy);
   width: var(--sw-ring, 300px); height: var(--sw-ring, 300px); translate: -50% -50%;
@@ -476,8 +556,8 @@ body.ph.swiping .ph-swipe { opacity: 1; visibility: visible; transition: opacity
 .ph-sw-sub[hidden] { display: none; }
 /* The averages, the pills and the hint give their room to the DNF label and
    the line under it; the top of the screen dims. */
-body.ph.swiping :is(#timer-avgs, #last-actions, #timer-hint, #last-row, .pb-marquee) { opacity: 0; transition: opacity 140ms var(--ease); }
-body.ph.swiping :is(#topbar, #scramble-zone) { opacity: .25; transition: opacity 140ms var(--ease); }
+body.swiping :is(#timer-avgs, #last-actions, #timer-hint, #last-row, .pb-marquee, #panel-cube) { opacity: 0; transition: opacity 140ms var(--ease); }
+body.swiping :is(#topbar, #scramble-zone, #ph-tile) { opacity: .25; transition: opacity 140ms var(--ease); }
 
 /* ---------------- the recent strip ---------------- */
 .ph-recent { flex: none; padding: 6px 0 0 var(--phone-gutter); }
@@ -497,40 +577,48 @@ body.ph.swiping :is(#topbar, #scramble-zone) { opacity: .25; transition: opacity
   touch-action: pan-x;
 }
 .ph-chips::-webkit-scrollbar { display: none; }
+/* Glass chips: the solve on the digits edged in teal, the best in gold. */
 .ph-chip {
-  flex: none; display: flex; align-items: center;
-  height: 38px; padding: 0 12px; border-radius: 12px;
-  background: var(--surface); border: 1px solid var(--border);
-  font-family: var(--font-mono); font-size: 14px; font-weight: 600; color: var(--text);
+  flex: none; display: flex; align-items: center; justify-content: center;
+  height: 44px; min-width: 72px; padding: 0 14px; border-radius: 14px;
+  background: var(--ph-glass); border: 1px solid var(--ph-edge);
+  backdrop-filter: var(--ph-blur); -webkit-backdrop-filter: var(--ph-blur);
+  font: 700 17px/1 var(--font-mono); color: var(--text);
   font-variant-numeric: tabular-nums;
 }
-.ph-chip.latest { border-color: var(--accent); }
-.ph-chip.best { color: var(--accent-2); }
+.ph-chip.latest { border-color: var(--accent-2); box-shadow: inset 0 0 0 1px var(--accent-2); }
+.ph-chip.best { color: var(--gold); }
 .ph-chip.dnf { color: var(--danger); }
 .ph-chip:active { background: var(--surface-2); }
-.ph-chips-empty { display: flex; align-items: center; height: 38px; font-size: 13.5px; color: var(--text-faint); }
+.ph-chips-empty { display: flex; align-items: center; height: 44px; font-size: 13.5px; color: var(--text-faint); }
 
 /* ---------------- the dock ---------------- */
+/* A small glass capsule of four icons, centred. The tab you are on is the
+   bright one with a teal dot under it; the names are the tabs' labels. */
 .ph-dock {
   position: fixed; z-index: 40;
-  left: var(--phone-gutter); right: var(--phone-gutter); bottom: var(--ph-dock-b);
-  height: var(--ph-dock-h); padding: 5px; border-radius: 22px;
-  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px;
-  background: var(--surface); border: 1px solid var(--border);
-  box-shadow: 0 18px 40px -10px rgba(0, 0, 0, .7);
+  left: 50%; bottom: var(--ph-dock-b);
+  width: 216px; margin-left: -108px;
+  height: var(--ph-dock-h); padding: 4px; border-radius: 26px;
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0;
+  background: var(--ph-glass-strong); border: 1px solid var(--ph-edge);
+  backdrop-filter: var(--ph-blur); -webkit-backdrop-filter: var(--ph-blur);
+  box-shadow: var(--shadow);
   font-family: var(--font-ui);
   touch-action: none;
 }
 .ph-tab {
-  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
-  min-width: 0; border-radius: 17px; color: var(--text-dim);
+  position: relative; display: grid; place-items: center;
+  min-width: 0; border-radius: 22px; color: var(--text-faint);
   -webkit-tap-highlight-color: transparent;
 }
-.ph-tab.on { background: var(--accent-tint); color: var(--accent-text); }
+.ph-tab.on { color: var(--text); }
+.ph-tab.on::after {
+  content: ''; position: absolute; left: 50%; bottom: 5px;
+  width: 4px; height: 4px; margin-left: -2px; border-radius: 2px; background: var(--accent-2);
+}
 .ph-tab-ico { display: grid; }
-.ph-tab-ico svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
-.ph-tab.on .ph-tab-ico svg { stroke-width: 1.9; }
-.ph-tab-lbl { font-size: 10.5px; font-weight: 600; letter-spacing: .01em; }
+.ph-tab-ico svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
 .ph-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 
 /* An attempt is nothing but the clock: from the press, through inspection and
@@ -544,7 +632,7 @@ body.ph:is(.focus, .inspecting, .holding, .armed, .timing, .sotd, .fmc-attemptin
 body.ph:is(.focus, .inspecting, .holding, .armed, .timing, .sotd, .fmc-attempting, .recon-open, .xp1-open) .ph-dock {
   transition: transform 220ms var(--ease), visibility 0s linear 220ms;
 }
-body.ph:is(.focus, .inspecting, .holding, .armed, .timing) :is(#topbar, #scramble-zone, .ph-recent) {
+body.ph:is(.focus, .inspecting, .holding, .armed, .timing) :is(#topbar, #scramble-zone, .ph-recent, .ph-tile) {
   opacity: 0; pointer-events: none;
   transition: opacity 160ms var(--ease);
 }
@@ -907,9 +995,10 @@ body.ph .hist-end { padding: 14px 0 8px; font-size: 12px; }
   body.ph #topbar, body.ph .topbar-right { gap: 6px; }
   .ph-ctx { gap: 6px; padding: 0 10px; }
   body.ph #btn-daily { padding: 0 12px 0 10px; gap: 6px; }
-  body.ph #scramble-text { font-size: calc(14.5px * var(--scramble-scale)); }
-  body.ph #last-actions .ph-pill, body.ph #last-actions .ghost-btn.ph-pill { padding: 0 11px; font-size: 12.5px; }
-  body.ph #last-actions .ph-pill svg { display: none; }
+  body.ph #scramble-text { font-size: calc(18px * var(--scramble-scale)); }
+  body.ph #last-actions { gap: 4px; }
+  body.ph #last-actions .ph-pill:not(.ph-ic) { padding: 0 9px; }
+  body.ph #last-actions .ph-sep { width: 2px; }
 }
 @media (max-height: 780px) {
   body.ph #timer-avgs { margin-top: 8px; }
@@ -922,7 +1011,15 @@ body.ph .hist-end { padding: 14px 0 8px; font-size: 12px; }
 @media (max-height: 620px) {
   body.ph #timer-core:has(#timer-avgs:not([hidden], .no-avg)) #timer-hint { display: none; }
   body.ph #timer-display { font-size: min(calc(var(--timer-size) * 1.45), calc((100vw - 2 * var(--phone-gutter)) / (var(--ph-chars, 5) * .58)), 11vh); }
-  .ph-net-host { width: 52px; height: 39px; }
+}
+/* A short phone has no band to spare for the tile above the strip: it gets
+   smaller and floats over the stage's corner instead, out of the clock's
+   way, and the 3D/2D switch goes (the full preview still has it). */
+@media (max-height: 700px) {
+  .ph-tile { position: absolute; right: var(--phone-gutter); bottom: 4px; margin: 0; z-index: 2; }
+  body.ph #stage { position: relative; }
+  .ph-net { width: 84px; height: 64px; padding: 4px; border-radius: 13px; }
+  .ph-tile-seg { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {

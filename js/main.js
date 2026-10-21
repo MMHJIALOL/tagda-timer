@@ -454,12 +454,13 @@ const closeXp1    = () => _xp1 ? _xp1.closeXp1() : false;
  * to "use the timer's scramble" and pressing N on the timer screen behind
  * should hand it the new one, not the one that was there when it opened.
  */
-async function openXp1() {
+async function openXp1(scramble = '') {
   let m;
   try { m = await loadXp1(); }
   catch (err) { return lazyFailed(t('the Cross + 1 trainer'), err); }
   timer.reset?.();
-  return m.openXp1({ timerScramble: () => app.scramble?.scramble || '', library: reconLibrary() });
+  // `scramble`: a solve's own (the phone's post-solve pill), which wins over the timer's.
+  return m.openXp1({ scramble, timerScramble: () => app.scramble?.scramble || '', library: reconLibrary() });
 }
 
 /**
@@ -1531,11 +1532,11 @@ function fitScrambleToLine(node) {
   if (!node) return;
   node.style.fontSize = '';
   node.classList.remove('oneline', 'wrapped');
-  /* A phone sets the scramble at one size in a card and lets it wrap,
-     balanced (css/phone.css); squeezing it onto one line there is unreadable.
-     Only a very long one (a 7x7, a megaminx) is made smaller, to stay clear of
-     the clock. */
-  if (isPhone()) { fitScrambleHeight(node); return; }
+  /* The phone layout sets the scramble's size itself, by how many lines it
+     runs to (fitScramble in js/phoneshell.js); squeezing it onto one line
+     there is unreadable. A phone in the Classic layout is fitted here, like
+     any narrow window. */
+  if (phoneShell?.on()) return;
   // Scrambles with real line breaks in them (megaminx, multi-blind) mean it.
   if (node.classList.contains('multiline')) { fitScrambleHeight(node); return; }
   /* A hold is a sentence standing in for a scramble, and the whole of this
@@ -5416,6 +5417,7 @@ function applyAll(changed) {
   }
   if (!changed || changed === 'callouts') setCalloutMode(app.settings.callouts);
   if (changed === 'scramblesOnly') { timer?.reset(); measureLayout(); }
+  if (changed === 'phoneLayout') phoneShell?.relayout();
   if (changed === 'showBpa') renderStats();
   if (changed === 'hintFacelets') cube.setHints(app.settings.hintFacelets);
   if (!changed || changed === 'showCube') syncPreviewCube();
@@ -6203,13 +6205,14 @@ function wireInput() {
      after a solve may be a swipe, so it asks first and may hold the press back
      for a moment. Only with the timer idle, a solve on the digits, touch the
      thing that times (not a Stackmat, typed times, the virtual cube or Fewest
-     Moves), and nothing open over the timer tab. It is not refused in a race,
+     Moves), and nothing open; in either phone layout, on the Timer tab when
+     it is the one with tabs. It is not refused in a race,
      a 1v1 or the Scramble of the Day: the +2 and DNF pills work there once the
      time is in, the late-penalty sync carries the edit to the board, and an
      attempt under way is never idle. Cooldown does not count: that is the
      press that stopped the solve, still down. */
-  const swipeEditOK = (e) => !!phoneShell?.on() && app.settings.swipeEdit !== false
-    && phoneShell.tab() === 'timer' && e.pointerType !== 'mouse'
+  const swipeEditOK = (e) => isPhone() && app.settings.swipeEdit !== false
+    && (!phoneShell?.on() || phoneShell.tab() === 'timer') && e.pointerType !== 'mouse'
     && timer.state === 'idle' && !!shownSolve() && !modalOpen()
     && !app.settings.scramblesOnly && inputMode() === 'timer' && !movesMode();
   const swipe = wireSwipeEdit({
@@ -6549,6 +6552,11 @@ function wirePhoneShell() {
     sessionSolves: (id) => Solves.bySession(id),
     spotifyLinked: () => !!spotify?.connected && !accessDenied,
     click: (sel) => $(sel)?.click(),
+    openXp1: (scramble) => openXp1(scramble),
+    saveSetting: (k, v) => app.setSetting(k, v),
+    // The phone layout came or went (a rotation, or Classic): everything a
+    // resize re-measures has to be measured again for the other layout.
+    layoutChanged: () => requestAnimationFrame(() => dispatchEvent(new Event('resize'))),
   });
 }
 
