@@ -1881,7 +1881,9 @@ export async function openXp1({ scramble = '', timerScramble = null, onExit = nu
 
   buildSettings();
   if (S.settings.view === '3d') mountPlayer();
-  const start = (S.settings.scrambleSource === 'timer' && timerScramble && timerScramble()) || scramble;
+  // A scramble handed over (a solve's own, from the phone's post-solve row) is
+  // the one to plan, whichever source the next ones come from.
+  const start = scramble || (S.settings.scrambleSource === 'timer' && timerScramble && timerScramble()) || '';
   if (start) setScramble(start);
   else if (!S.scramble) await nextScramble();
   else { render(); paintClock(); showCube(); }

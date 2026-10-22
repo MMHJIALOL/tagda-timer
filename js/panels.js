@@ -379,6 +379,7 @@ export function webcamControls(app, { onWatch = null, compact = false } = {}) {
    APPEARANCE
    ========================================================= */
 export function buildAppearance(app, searchQuery = '') {
+  settingsApp = app;
   return (body) => {
     const S = app.settings;
     const set = (k, v) => app.setSetting(k, v);
@@ -666,6 +667,12 @@ export function buildAppearance(app, searchQuery = '') {
       ),
 
       group(t('Layout'),
+        // A phone's choice (js/phoneshell.js), so a phone's row, like Swipe to edit times.
+        isPhone() ? row(t('Phone layout'), chips([
+          { value: 'tagda', label: t('Tagda') },
+          { value: 'classic', label: t('Classic') },
+        ], S.phoneLayout === 'classic' ? 'classic' : 'tagda', v => set('phoneLayout', v)),
+          t('Tagda has the dock and the phone timer; Classic is the website’s own layout, as phones had it first')) : null,
         row(t('Panel style'), chips([
           { value: 'widget', label: t('Widget') },
           { value: 'flat', label: t('Flat') },
@@ -1027,14 +1034,16 @@ function step(n, title, ...detail) {
 /* =========================================================
    SETTINGS
    ========================================================= */
-/* Settings has a phone-only row (Swipe to edit times), and the drawer can
-   stay open while a phone turns to landscape, which is the tablet layout, or
-   back. Built again when that happens, at the same search, so the row is
-   there exactly when the gesture is. */
+/* Settings and Appearance each have a phone-only row (Swipe to edit times,
+   Phone layout), and the drawer can stay open while a phone turns to
+   landscape, which is the tablet layout, or back. Built again when that
+   happens, at the same search, so the row is there exactly when it applies. */
 let settingsApp = null;
 onPhoneChange(() => {
-  if (drawerName() !== 'Settings' || !settingsApp) return;
-  openDrawer('Settings', buildSettings(settingsApp, $('#drawer-body .settings-search-input')?.value || ''));
+  const name = drawerName();
+  const build = { Settings: buildSettings, Appearance: buildAppearance }[name];
+  if (!build || !settingsApp) return;
+  openDrawer(name, build(settingsApp, $('#drawer-body .settings-search-input')?.value || ''));
 });
 
 export function buildSettings(app, searchQuery = '') {

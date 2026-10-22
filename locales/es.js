@@ -3754,4 +3754,17 @@ export const es = {
   "Let go to clear the penalty": "Suelta para quitar la penalización",
   "Slide to a side to choose": "Desliza hacia un lado para elegir",
   "slide back to the middle to cancel": "vuelve al centro para cancelar",
+  // Phones: the timer screen (preview tile, post-solve row, long scrambles) and Phone layout
+  "Open the scramble preview": "Abrir la vista previa de la mezcla",
+  "Show the preview in 3D": "Mostrar la vista previa en 3D",
+  "Show the preview flat": "Mostrar la vista previa plana",
+  "all {n} moves": "los {n} movimientos",
+  "Show all {n} moves": "Mostrar los {n} movimientos",
+  "All {n} moves": "Los {n} movimientos",
+  "Plus two": "Más dos",
+  "Did not finish": "No terminado",
+  "Phone layout": "Diseño en el móvil",
+  "Tagda": "Tagda",
+  "Classic": "Clásico",
+  "Tagda has the dock and the phone timer; Classic is the website’s own layout, as phones had it first": "Tagda tiene la barra inferior y el cronómetro para móvil; Clásico es el diseño de la web, como lo tenían los móviles al principio",
 };

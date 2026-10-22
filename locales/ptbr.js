@@ -3754,4 +3754,17 @@ export const ptbr = {
   "Let go to clear the penalty": "Solte para tirar a penalidade",
   "Slide to a side to choose": "Deslize para um lado para escolher",
   "slide back to the middle to cancel": "volte ao centro para cancelar",
+  // Phones: the timer screen (preview tile, post-solve row, long scrambles) and Phone layout
+  "Open the scramble preview": "Abrir a prévia do embaralhamento",
+  "Show the preview in 3D": "Mostrar a prévia em 3D",
+  "Show the preview flat": "Mostrar a prévia plana",
+  "all {n} moves": "todos os {n} movimentos",
+  "Show all {n} moves": "Mostrar todos os {n} movimentos",
+  "All {n} moves": "Todos os {n} movimentos",
+  "Plus two": "Mais dois",
+  "Did not finish": "Não terminou",
+  "Phone layout": "Layout no celular",
+  "Tagda": "Tagda",
+  "Classic": "Clássico",
+  "Tagda has the dock and the phone timer; Classic is the website’s own layout, as phones had it first": "Tagda tem a barra inferior e o cronômetro para celular; Clássico é o layout do site, como os celulares tinham no começo",
 };

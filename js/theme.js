@@ -155,6 +155,8 @@ export const DEFAULTS = {
   showHint: true,               // "tap space, release to start" under the digits
   scramblesOnly: false,         // no timer at all: space / tap / swipe deal the next scramble
   swipeEdit: true,              // phones: swipe the last time ↑ +2, ↓ DNF, ← delete, → no penalty
+  phoneLayout: 'tagda',         // phones: tagda (the dock and the phone timer) | classic (the website's layout)
+  phPreview: '2D',              // phones: the preview tile in the corner, 2D or 3D
   showBpa: true,                // best and worst possible ao5 once four solves are in
   focusMode: true,
   paceGhost: false,           // opt-in — see SETTINGS_VERSION below

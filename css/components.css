@@ -4817,7 +4817,7 @@ body.relay .scramble-label { display: none; }
    exist only once a phone has built them, and show only while body.ph says
    the phone layout is on: a window widened past 640px keeps the elements and
    never shows them. */
-body:not(.ph) :is(.ph-only, .ph-best, #ph-context, #ph-net, #ph-recent, #ph-dock, .ph-screen) { display: none !important; }
+body:not(.ph) :is(.ph-only, .ph-best, #ph-context, #ph-net, #ph-tile, #ph-all-moves, #ph-recent, #ph-dock, .ph-screen) { display: none !important; }
 
 
 /* Competition Mode: a compact timer strip and paper-inspired results. */
