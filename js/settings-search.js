@@ -16,6 +16,7 @@ const ALIASES = [
   ['While running', 'hide time clock invisible running display seconds distraction'],
   ['Show start hint', 'instructions help spacebar start text'],
   ['Scrambles only', 'hide timer practice scramble generator'],
+  ['Swipe to edit times', 'swipe gesture slide drag edit penalty plus two dnf delete ok cstimer phone deslizar gesto penalización'],
   ['Show BPA / WPA', 'best worst possible average prediction ao5'],
   ['Focus mode', 'zen distraction minimal fade concentration'],
   ['Pace ghost', 'progress speed target personal best race comparison'],

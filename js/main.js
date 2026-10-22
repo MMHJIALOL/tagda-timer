@@ -44,6 +44,7 @@ import { getConfig, loadConfig, readOnlyText } from './config.js';
 import { featureOn, featureOff } from './audience.js';
 import { APP_VERSION } from './version.js';
 import { initPhoneShell } from './phoneshell.js';
+import { wireSwipeEdit } from './swipe-edit.js';
 // The *.vercel.app "we moved" banner, and the tagdatimer.me end of its data move.
 import './moved.js';
 import { captureErrors, startHealth, noteHeal } from './health.js';
@@ -2861,9 +2862,14 @@ function sharePenalty(solve) {
   dailyCtl()?.onPenalty?.(solve);
 }
 
-/** The 2 / D / 0 keys, and the touch row under the digits. */
+/**
+ * The 2 / D / 0 keys, the touch row under the digits and the phone's swipe.
+ * It acts on the solve the digits are showing, which the pills and the swipe
+ * check for: in the Scramble of the Day before the attempt that is none at
+ * all, not the practice session's last solve that happens to be in memory.
+ */
 async function penalizeLast(p) {
-  const last = app.solves.at(-1);
+  const last = shownSolve();
   if (!last) return toast('No solves yet');
   if (last.competitionSetId) last.penaltyUpdatedAt=Date.now();
   last.penalty = last.penalty === p ? 'none' : p;
@@ -6192,9 +6198,47 @@ function wireInput() {
   // says "the press this release belongs to was one we acted on", which is what
   // stops a pointerup that began life on a panel from starting a solve.
   let tracking = false;
+
+  /* Swipe to edit (js/swipe-edit.js): on a phone, a press on the digits right
+     after a solve may be a swipe, so it asks first and may hold the press back
+     for a moment. Only with the timer idle, a solve on the digits, touch the
+     thing that times (not a Stackmat, typed times, the virtual cube or Fewest
+     Moves), and nothing open over the timer tab. It is not refused in a race,
+     a 1v1 or the Scramble of the Day: the +2 and DNF pills work there once the
+     time is in, the late-penalty sync carries the edit to the board, and an
+     attempt under way is never idle. Cooldown does not count: that is the
+     press that stopped the solve, still down. */
+  const swipeEditOK = (e) => !!phoneShell?.on() && app.settings.swipeEdit !== false
+    && phoneShell.tab() === 'timer' && e.pointerType !== 'mouse'
+    && timer.state === 'idle' && !!shownSolve() && !modalOpen()
+    && !app.settings.scramblesOnly && inputMode() === 'timer' && !movesMode();
+  const swipe = wireSwipeEdit({
+    eligible: swipeEditOK,
+    penalty: () => shownSolve()?.penalty || 'none',
+    act: (dir) => {
+      const s = shownSolve();
+      if (!s || timer.state !== 'idle') return;
+      if (dir === 'left') deleteThrottled(s);
+      else penalizeLast(dir === 'up' ? '+2' : dir === 'down' ? 'DNF' : 'none');
+    },
+    // Not a swipe after all: the press the timer would have had, as it landed.
+    handoff: (at) => {
+      if (timer.state !== 'idle') return;
+      tracking = true;
+      timer.down(at);
+    },
+    tap: (at, upAt) => {
+      if (timer.state !== 'idle') return;
+      timer.down(at);
+      timer.up(upAt);
+    },
+  });
+
   const down = (e) => {
     if (!e.isPrimary) return;
-    if (!pointerOK(e) || !touchOK(e)) { tracking = false; return; }
+    const ours = pointerOK(e) && touchOK(e);
+    if (swipe.press(e, ours)) { tracking = false; return; }
+    if (!ours) { tracking = false; return; }
     tracking = true;
     e.preventDefault();
     timer.down(e.timeStamp);
@@ -6229,6 +6273,7 @@ function wireInput() {
   window.addEventListener('blur', () => {
     spaceDown = false;
     tracking = false;
+    swipe.cancel();
     stopKeys.clear();
     if (timer.state !== 'running') timer.reset();
   });

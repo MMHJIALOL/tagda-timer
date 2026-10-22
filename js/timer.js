@@ -64,6 +64,19 @@ export class Timer extends EventTarget {
     return this.cfg.inspection && this.cfg.useInspection;
   }
 
+  /**
+   * When a press landed: its own timeStamp when that is a believable one, the
+   * clock otherwise. A press can reach down() a little after it landed — the
+   * phone's swipe-to-edit holds one back for up to 120 ms to see whether it is
+   * a swipe — and inspection and the hold are timed from the finger, not from
+   * the handler. Anything in the future or over a second old is not a
+   * timestamp from this clock, so it is not trusted.
+   */
+  _landed(at) {
+    const now = performance.now();
+    return at != null && at <= now && now - at < 1000 ? at : now;
+  }
+
   /* ---------------- input ---------------- */
 
   /**
@@ -87,15 +100,15 @@ export class Timer extends EventTarget {
 
       case 'idle':
         if (this.inspectionEnabled) {
-          this._startInspection();
+          this._startInspection(at);
           this._ignoreUp = true;
         } else {
-          this._beginHold();
+          this._beginHold(at);
         }
         break;
 
       case 'inspecting':
-        this._beginHold();
+        this._beginHold(at);
         break;
 
       default:
@@ -177,8 +190,8 @@ export class Timer extends EventTarget {
 
   /* ---------------- inspection ---------------- */
 
-  _startInspection() {
-    this.inspectStart = performance.now();
+  _startInspection(at) {
+    this.inspectStart = this._landed(at);
     this.inspectElapsed = 0;
     this._warned = { w1: false, w2: false };
     this._setState('inspecting');
@@ -194,11 +207,13 @@ export class Timer extends EventTarget {
 
   /* ---------------- hold / arm ---------------- */
 
-  _beginHold() {
+  _beginHold(at) {
     this._returnTo = this.state;
     this._setState('holding');
     clearTimeout(this._holdTimer);
-    const wait = Math.max(0, this.cfg.holdTime);
+    // Counted from when the finger landed (see _landed), so a press that
+    // reached us late has not been made to hold for longer.
+    const wait = Math.max(0, this.cfg.holdTime - (performance.now() - this._landed(at)));
     // A hold time of zero still arms and still starts on the release — it just
     // arms the instant your finger lands instead of making you wait for it.
     if (wait === 0) this._setState('ready');

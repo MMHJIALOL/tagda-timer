@@ -3741,4 +3741,17 @@ export const es = {
   "Sign-in needs this site to store data, and this browser is blocking it": "Para iniciar sesión, este sitio necesita guardar datos y este navegador lo está bloqueando",
   "Too many sign-in attempts — wait a minute, then try again": "Demasiados intentos de inicio de sesión: espera un minuto y vuelve a intentarlo",
   "This Google account has been disabled": "Esta cuenta de Google está desactivada",
+  // Phones: swipe the last time to edit it (js/swipe-edit.js)
+  "Swipe to edit times": "Deslizar para editar tiempos",
+  "after a solve, swipe the time: ↑ +2 · ↓ DNF · ← delete · → no penalty": "tras una resolución, desliza el tiempo: ↑ +2 · ↓ DNF · ← borrar · → sin penalización",
+  "Let go to add +2": "Suelta para añadir +2",
+  "Let go to remove the +2": "Suelta para quitar el +2",
+  "Let go to make it a DNF": "Suelta para marcarlo como DNF",
+  "Let go to remove the DNF": "Suelta para quitar el DNF",
+  "Let go to delete": "Suelta para borrar",
+  "OK": "OK",
+  "No penalty to clear": "No hay penalización que quitar",
+  "Let go to clear the penalty": "Suelta para quitar la penalización",
+  "Slide to a side to choose": "Desliza hacia un lado para elegir",
+  "slide back to the middle to cancel": "vuelve al centro para cancelar",
 };
