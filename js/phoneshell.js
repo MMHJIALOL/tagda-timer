@@ -585,7 +585,7 @@ export function openSolveSheet(solve, { focusNote = false } = {}) {
         el('div', { class: 'ph-lbl', text: t('Relay · {events}', { events: solve.relay.map(p => eventOf(p.event).short).join(' · ') }) }),
         el('div', { class: 'relay-legs' }, ...solve.relay.map((p, n) =>
           el('div', { class: 'relay-leg' },
-            el('div', { class: 'rl-head' }, el('b', { text: `${n + 1}. ${eventOf(p.event).short}` }), el('i', { text: fmt(p.splitMs) })),
+            el('div', { class: 'rl-head' }, el('b', { text: `${n + 1}. ${eventOf(p.event).short}` }), el('i', { text: Number.isFinite(p.splitMs) ? fmt(p.splitMs) : '—' })),
             el('div', { class: 'rl-scramble', text: p.scramble }))))));
     }
     if (extra.length) out.push(sheetRows(extra, () => sheet));

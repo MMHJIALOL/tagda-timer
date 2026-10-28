@@ -363,10 +363,12 @@ const runs=s=>section==='all'||section===s;
    });
    await check('Relay builds, records ordered splits and switches back to an ordinary session',async()=>{
     const old=await page.evaluate(()=>tagdatimer.session.id);
+     await page.evaluate(()=>tagdatimer.setSetting('relaySplitEach',true));
     await page.evaluate(()=>tagdatimer.startRelay(['222','333']));await page.waitForFunction(()=>tagdatimer.scramble?.parts?.length===2,null,{timeout:60000});
     await page.evaluate(()=>tagdatimer.recordSolve({timeMs:20000,splits:[8000]}));
     const r=await page.evaluate(()=>tagdatimer.solves.at(-1).relay);assert.deepEqual(r.map(x=>x.event),['222','333']);assert.deepEqual(r.map(x=>x.splitMs),[8000,12000]);
     await page.evaluate(id=>tagdatimer.switchSession(id),old);
+     await page.evaluate(()=>tagdatimer.setSetting('relaySplitEach',false));
    });
    await check('A delayed FMC import cannot reopen the workspace after an event switch',async()=>{
     const isolated=await browser.newContext({serviceWorkers:'block'}),probe=await isolated.newPage();

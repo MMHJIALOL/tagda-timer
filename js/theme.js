@@ -186,6 +186,7 @@ export const DEFAULTS = {
   stackmatMicLabel: '',         // its name, for finding it again when the id changes
   sotdInput: '',                // the Scramble of the Day's own: '' = follow inputMode | 'stackmat' | 'timer'
   virtualReturnSession: null,   // the session to go back to when the virtual cube is switched off
+  relaySplitEach: false,        // off: one stop records the whole relay
   /* 0/1 = off. 2-6 splits every solve into that many phases: the split key
      (same one that ends the solve) advances to the next phase instead, the
      way BLD's memo/exec split already does with a fixed count of 1 — this is

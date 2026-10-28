@@ -920,9 +920,9 @@ function bootAnimation() {
    puzzle lists can never end up inside the same average.
 
    The timing itself is the split primitive that already exists for BLD
-   memo/exec and multiphase: phaseSplits is set to one less than the number of
-   puzzles, and res.splits comes back cumulative. There is deliberately no
-   second split system in here.
+   memo/exec and multiphase: optional per-puzzle presses set phaseSplits to one
+   less than the number of puzzles, and res.splits comes back cumulative.
+   There is deliberately no second split system in here.
    ========================================================= */
 
 /** The active session's relay list, or null when it is not a relay session. */
@@ -2188,10 +2188,10 @@ app.bldChanged = () => { bldEpoch++; syncBldTimer(); renderBld(); };
 
 function syncBldTimer() {
   if (!timer) return;
-  /* One press per puzzle boundary: five puzzles means four splits and a fifth
-     press that stops the clock. Same primitive as memo/exec and multiphase. */
+  /* Optional per-puzzle presses use the same primitive as memo/exec and
+     multiphase. With them off, the first press ends the whole relay. */
   timer.cfg.phaseSplits = bldSplitOn() ? 1
-    : relayOn() ? Math.max(0, relayList().length - 1)
+    : relayOn() ? (app.settings.relaySplitEach ? Math.max(0, relayList().length - 1) : 0)
     : multiphaseOn() ? phaseCount() - 1
     : 0;
 }
@@ -2444,6 +2444,10 @@ function relayNow() {
   const list = relayList();
   if (!now || !list) return;
   now.hidden = false;
+  if (!app.settings.relaySplitEach) {
+    now.textContent = t('Relay · press Space once when all puzzles are solved');
+    return;
+  }
   now.textContent = t('on {event} · {i} of {n}', { event: eventOf(list[relayPos])?.short, i: relayPos + 1, n: list.length });
 }
 
@@ -2675,13 +2679,15 @@ async function recordSolve({ timeMs, penalty = 'none', inspectionMs = 0, splits 
      whatever is left of the total. They add up to timeMs exactly.
        +2 and DNF stay attributes of the whole attempt, as they are in a WCA
      relay; there is deliberately no per-puzzle penalty.
-       A typed time and a Stackmat time arrive with no splits at all, and an
-     attempt whose split count does not match the list is not a relay anyone
-     can read — either way the field is left off rather than written half-made. */
+       With per-puzzle presses off, retain the scrambles without splitMs:
+     no individual puzzle times were measured. When splits are requested,
+     only save a complete matching breakdown. */
   const relaySplitMs = relayOn() ? multiphaseSplitsOf(splits, timeMs) : null;
-  const relayParts = (relaySplitMs && app.scramble?.parts?.length === relaySplitMs.length)
+  const relayParts = (relayOn() && app.scramble?.parts?.length &&
+    (!app.settings.relaySplitEach || app.scramble.parts.length === relaySplitMs?.length))
     ? app.scramble.parts.map((p, i) => ({
-        event: p.event, scramble: p.scramble, splitMs: relaySplitMs[i],
+        event: p.event, scramble: p.scramble,
+        ...(app.settings.relaySplitEach ? { splitMs: relaySplitMs[i] } : {}),
       }))
     : null;
 
@@ -3932,7 +3938,7 @@ function solveMenu(solve, anchor) {
           el('div', { class: 'relay-leg' },
             el('div', { class: 'rl-head' },
               el('b', { text: `${i + 1}. ${eventOf(p.event).short}` }),
-              el('i', { text: fmt(p.splitMs) })),
+              el('i', { text: Number.isFinite(p.splitMs) ? fmt(p.splitMs) : '—' })),
             el('div', { class: 'rl-scramble', text: p.scramble })))) },
     ] : []),
     { sep: true },
@@ -5444,6 +5450,7 @@ function applyAll(changed) {
   if (!changed || String(changed).startsWith('webcam')) syncReplay();
   if (!changed || changed === 'bld') { bldEpoch++; syncBldTimer(); renderBld(); }
   if (!changed || changed === 'multiphase') { syncBldTimer(); syncPhaseZoneVisibility(); phaseReset(); }
+  if (changed === 'relaySplitEach') syncBldTimer();
   // The window shows the same bpm the settings slider writes, so a change in
   // either place has to reach the other one.
   if (!changed || changed === 'metroOpen' || changed === 'metronomeBpm') app.applyMetro?.();
@@ -5732,7 +5739,7 @@ app.exportSessionCSV = () => {
     i + 1, (s.timeMs / 1000).toFixed(3), s.penalty, s.scramble.replace(/\n/g, ' '),
     s.caseName || '', s.comment || '', new Date(s.createdAt).toISOString(),
     ...(hasRelay ? [(s.relay || []).map(p =>
-      `${eventOf(p.event).short} ${(p.splitMs / 1000).toFixed(3)}`).join(' | ')] : []),
+      `${eventOf(p.event).short}${Number.isFinite(p.splitMs) ? ` ${(p.splitMs / 1000).toFixed(3)}` : ''}`).join(' | ')] : []),
   ]));
   download(`${app.session.name.replace(/\W+/g, '-')}.csv`, toCSV(rows), 'text/csv');
   toast('CSV downloaded', { kind: 'good' });
