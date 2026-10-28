@@ -204,10 +204,10 @@ two 3x3s, five 2x2s, anything up to ten puzzles. The relay builder has presets (
 reorder. Only ordinary single-scramble events can go in (no blindfolded, FMC or
 multi-blind), and scrambles are always random-state.
 
-- **One attempt, one timer run.** Space starts it, every press in the middle records a
-  split and moves to the next puzzle, and the last press stops the clock. The result is
-  the total; each puzzle's own time is stored with the solve. +2 and DNF apply to the
-  whole attempt, as in a WCA relay.
+- **One attempt, one timer run.** Start normally, then press Space once after solving
+  every puzzle to save the total. In the relay builder, **Press Space after every
+  puzzle** defaults off; turn it on to record per-puzzle splits instead. Every puzzle's
+  scramble is stored in either mode. +2 and DNF apply to the whole attempt.
 - **One puzzle on screen at a time.** A row of chips replaces the single scramble line,
   each showing upcoming, active, or done with its split. The scramble box and the 3D preview
   show only the active puzzle. Before the run, **<** / **>** or a click on a chip steps
