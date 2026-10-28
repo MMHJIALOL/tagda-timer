@@ -95,8 +95,9 @@ function row(label, control, sub) {
   return el('div', { class: 'row', dataset: { searchLabel: label } }, lbl, control);
 }
 
-function toggle(value, onChange) {
+function toggle(value, onChange, label) {
   const input = el('input', { type: 'checkbox' });
+  if (label) input.setAttribute('aria-label', label);
   input.checked = !!value;
   input.addEventListener('change', () => onChange(input.checked));
   return el('label', { class: 'switch' }, input, el('span', { class: 'track' }), el('span', { class: 'thumb' }));
@@ -2674,7 +2675,7 @@ const FIXED_SHORTCUTS = [
   ['Timer', [
     [t('hold Space'), t('start / stop the timer')],
     ['Esc', t('cancel inspection')],
-    ['Space', t('on a relay: split to the next puzzle')],
+    ['Space', t('on a relay: stop the total, or split if per-puzzle presses are on')],
   ]],
   [t('With Ctrl'), [
     [t('Ctrl + Z'), t('undo the delete')],
@@ -3068,6 +3069,13 @@ export function buildRelay(app) {
       );
 
       host.replaceChildren(
+        group(t('Timing'),
+          row(t('Press Space after every puzzle'),
+            toggle(app.settings.relaySplitEach, value => {
+              app.setSetting('relaySplitEach', value);
+            }, t('Press Space after every puzzle')),
+            t('Off by default: start normally, then press Space once after solving all puzzles to save the total. Turn on to record a split after every puzzle.')),
+        ),
         group(t('Presets'),
           el('div', { class: 'chips' }, ...RELAY_PRESETS.map(p =>
             el('button', {
@@ -3108,7 +3116,7 @@ export function buildRelay(app) {
           }),
         ),
         el('div', { class: 'hint-note', text:
-          t('One attempt runs through every puzzle in order. Space starts it, each press after that records a split and moves on, and the last press stops the clock — the result is the total, with every puzzle stored too. Inspection, if it is on, happens once before the first puzzle. Before the run, > and < step through the puzzles so you can scramble each one against its own preview.') }),
+          t('One attempt runs through every puzzle in order. By default, press Space once at the end to save the total. Enable per-puzzle presses above to record splits. Every scramble is stored with the result. Inspection, if it is on, happens once before the first puzzle. Before the run, > and < step through the puzzles so you can scramble each one against its own preview.') }),
         app.relayEditable() ? null : el('div', { class: 'hint-note', text:
           t('This session already has solves, so its relay is fixed: times done on different puzzle lists must never average together.') }),
       );
