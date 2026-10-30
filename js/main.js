@@ -1,3 +1,4 @@
+import { restorePreset } from './settings-presets.js';
 import { t, translateDOM } from './i18n.js';
 /* ===========================================================
    Tagda Timer — application wiring
@@ -5349,7 +5350,7 @@ const RESET_KEEPS = [
   // The reset is a new inspection choice, newer than even a device whose
   // clock was ahead of ours when its last choice synced.
   'inspectionUpdatedAt',
-  'spotifyClientId', 'featuredReel',
+  'spotifyClientId', 'featuredReel', 'settingsPresets',
   // A buffer and a letter scheme are years of memorisation, not a look.
   'bld',
   // Learn mode is where you are in a set, not how the app looks. Its schedule
@@ -5386,6 +5387,15 @@ app.resetSettings = () => {
   renderStats();
   measureLayout();
   toast('Settings back to their defaults', { kind: 'good' });
+};
+
+// Reload after a confirmed local save so every subsystem uses the restored preferences.
+app.applySettingsPreset = async (id) => {
+  if (!timerIdle()) throw new Error('Finish the current attempt before applying a preset.');
+  const restored = restorePreset(app.settings, DEFAULTS, id);
+  chooseInspection(restored, restored.inspection);
+  await saveSettings(restored, { immediate: true, throwOnError: true });
+  location.reload();
 };
 
 app.setSetting = (k, v) => {

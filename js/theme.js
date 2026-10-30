@@ -146,6 +146,7 @@ const MIGRATIONS = {
 };
 
 export const DEFAULTS = {
+  settingsPresets: {},
   // behaviour
   inspection: true,
   holdTime: 0,                  // 0 = the press starts the solve, no arming hold
@@ -335,7 +336,7 @@ let saveTimer = null;
 // screen. Keep provenance outside the stored record so that echo cannot undo it.
 const ownSettingsWrites = new WeakSet();
 export const isOwnSettingsWrite = value => ownSettingsWrites.has(value);
-export function saveSettings(s, { immediate = false, replace = false } = {}) {
+export function saveSettings(s, { immediate = false, replace = false, throwOnError = false } = {}) {
   clearTimeout(saveTimer);
   const save = async () => {
     try {
@@ -348,7 +349,10 @@ export function saveSettings(s, { immediate = false, replace = false } = {}) {
         return value;
       });
       inspectionCommitted(saved);
-    } catch (error) { console.warn('[db] settings save failed', error); }
+    } catch (error) {
+      console.warn('[db] settings save failed', error);
+      if (throwOnError) throw error;
+    }
   };
   if (immediate) return save();
   saveTimer = setTimeout(save, 220);
