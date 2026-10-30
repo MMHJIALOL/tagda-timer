@@ -1,5 +1,6 @@
 // Run against a local static server. Uses a fresh, signed-out browser context.
 const assert = require('node:assert/strict');
+require('node:fs').mkdirSync('audit-qa', { recursive: true });
 const { chromium } = require('playwright');
 const base = process.env.TAGDA_QA_URL || 'http://127.0.0.1:5186';
 (async () => {
