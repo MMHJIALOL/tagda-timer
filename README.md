@@ -670,6 +670,14 @@ Details in [DAILY.md](DAILY.md).
 
 ## Making it yours
 
+**Settings presets:** open Settings, enter a preset name, and choose **Save current settings**.
+Use **Apply** to restore it (the page reloads), **Update** to replace it with your current
+preferences, or **Delete** to remove it. Presets survive refresh, are included in JSON
+backups and follow your settings when signed in. Your current event, session, solves,
+account details and saved presets are kept when applying. Uploaded background files
+remain local to the device that uploaded them.
+
+
 | Nebula | Vaporwave |
 |---|---|
 | ![Nebula theme on the Cells background](docs/screenshots/timer.webp) | ![Vaporwave theme on the Cells background](docs/screenshots/theme-vaporwave.webp) |

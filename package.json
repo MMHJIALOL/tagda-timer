@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "test:settings-presets": "node --test js/settings-presets.check.mjs",
     "test:settings-search": "node --test js/settings-search.check.mjs",
     "test:solve-search": "node --test js/solve-search.check.mjs",
     "test:stats-session": "node --test js/stats-session.check.mjs",

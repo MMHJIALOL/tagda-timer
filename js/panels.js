@@ -1,3 +1,4 @@
+import { buildSettingsPresets } from './settings-presets-ui.js';
 import { t, lang, setLang } from './i18n.js';
 /* ===========================================================
    Tagda Timer — drawer contents
@@ -1063,6 +1064,7 @@ export function buildSettings(app, searchQuery = '') {
     };
 
     body.append(
+      buildSettingsPresets(app, DEFAULTS),
       group(t('Inspection'),
         row(t('WCA inspection'), toggle(S.inspection, v => set('inspection', v)), t('15s, +2 after 15, DNF after 17')),
         row(t('Callouts'), chips([
