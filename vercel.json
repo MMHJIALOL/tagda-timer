@@ -3,6 +3,11 @@
   "cleanUrls": true,
   "redirects": [
     {
+      "source": "/",
+      "destination": "https://tagdatimer.me/",
+      "permanent": true
+    },
+    {
       "source": "/:path*",
       "destination": "https://tagdatimer.me/:path*",
       "permanent": true

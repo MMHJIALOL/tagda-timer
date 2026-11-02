@@ -2,6 +2,11 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "redirects": [
     {
+      "source": "/",
+      "destination": "https://tagdatimer.me/",
+      "permanent": true
+    },
+    {
       "source": "/:path*",
       "destination": "https://tagdatimer.me/:path*",
       "permanent": true
