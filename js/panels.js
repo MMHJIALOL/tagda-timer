@@ -1,4 +1,5 @@
 import { buildSettingsPresets } from './settings-presets-ui.js';
+import { buildVercelImport } from './vercel-import.js';
 import { t, lang, setLang } from './i18n.js';
 /* ===========================================================
    Tagda Timer — drawer contents
@@ -1216,6 +1217,7 @@ export function buildSettings(app, searchQuery = '') {
 
       group(t('Data'),
         health.row,
+        ...(location.hostname === 'tagdatimer.me' || location.hostname === 'localhost' ? [buildVercelImport()] : []),
         el('div', { class: 'row' },
           el('div', { class: 'lbl' }, el('span', { text: t('Backup') }), el('span', { class: 'sub', text: t('every session and solve as JSON') })),
           el('button', {

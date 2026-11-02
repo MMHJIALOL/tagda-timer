@@ -977,13 +977,19 @@ what keeps R2 free. [ADMIN.md](ADMIN.md) and [DAILY.md](DAILY.md) have the detai
 
 ### The old tagdatimer.vercel.app
 
-The app now lives on Cloudflare at tagdatimer.me. The Vercel project serves only
-`vercel-mover/` (set **Root Directory** to `vercel-mover` in the project's
-settings): one page that reads the old origin's IndexedDB, carries it to
-tagdatimer.me in the URL fragment (`js/moved.js` merges it in), and retires the
-old service worker so the browser stops calling Vercel. A history too long for a
-URL gets a one-click button instead. `.assetsignore` keeps the folder off
-Cloudflare.
+The app lives on Cloudflare at tagdatimer.me. The Vercel project's **Root
+Directory** is `vercel-mover`. Normal visits permanently redirect to the same
+path on tagdatimer.me. The `/import-from-vercel` route is an exception: it serves
+`import-data.html` so the browser can still read data saved under the old origin.
+`.assetsignore` keeps this folder off Cloudflare.
+
+On tagdatimer.me, open **Settings → Data → Import from .vercel.app** in the same
+browser and profile used on the old site. A temporary tab reads the old
+IndexedDB and sends a backup directly to the requesting tab using `postMessage`.
+Both sides check the exact origin, window and request token. Sessions and solves
+are merged by ID, keeping existing records, and the old copy stays intact.
+**Include old settings** is optional and off by default. Recorded video files
+and custom background files are not part of this backup transfer.
 
 Any static host can serve the timer, trainers and offline mode, and the `.nojekyll` file stops
 Jekyll from touching anything on GitHub Pages. Sign-in on a custom domain, shared replays and
@@ -1025,7 +1031,8 @@ Solves and settings live in IndexedDB, which the browser keys by origin, so
 `tagdatimer.me` starts empty for someone who has only ever used
 `tagdatimer.vercel.app`. Signing in on the new domain pulls synced solves back;
 anything unsynced has to come across as a Settings → backup export and import.
-That is why the old domain serves the mover page instead of just redirecting.
+The import option above can recover this local data even though normal visits
+to the old domain now redirect.
 
 Whatever the host, it must serve the whole folder (`vendor/` included) with
 JavaScript files as `text/javascript`. Every host above does that by default.

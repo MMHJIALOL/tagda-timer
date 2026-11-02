@@ -8,12 +8,13 @@
       "permanent": true
     },
     {
-      "source": "/:path*",
-      "destination": "https://tagdatimer.me/:path*",
+      "source": "/:path((?!import-from-vercel$).+)",
+      "destination": "https://tagdatimer.me/:path",
       "permanent": true
     }
   ],
   "rewrites": [
+    { "source": "/import-from-vercel", "destination": "/vercel-mover/import-data.html" },
     {
       "source": "/__/auth/:path*",
       "destination": "https://tagda-timer.firebaseapp.com/__/auth/:path*"

@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "test:vercel-import": "node tools/verify-vercel-import.cjs",
     "test:settings-presets": "node --test js/settings-presets.check.mjs",
     "test:settings-search": "node --test js/settings-search.check.mjs",
     "test:solve-search": "node --test js/solve-search.check.mjs",

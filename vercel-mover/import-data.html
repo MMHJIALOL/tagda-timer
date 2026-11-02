@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Import old Tagda Timer data</title>
+<link rel="icon" href="data:,">
+<style>
+  :root { color-scheme: light dark; }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; font: 16px/1.5 system-ui, sans-serif; }
+  main { max-width: 30rem; padding: 24px; text-align: center; }
+  h1 { font-size: 1.4rem; }
+</style>
+<main>
+  <h1>Import your old Tagda Timer data</h1>
+  <p id="status" role="status">Connecting to tagdatimer.me…</p>
+  <p>Your saved data stays on this browser. Nothing on the old site is deleted.</p>
+  <a href="https://tagdatimer.me/">Open tagdatimer.me</a>
+</main>
+<script>
+const TARGET = 'https://tagdatimer.me';
+const request = new URLSearchParams(location.search).get('request');
+const receiver = window.opener;
+const status = document.getElementById('status');
+const req = r => new Promise((resolve, reject) => { r.onsuccess = () => resolve(r.result); r.onerror = () => reject(r.error); });
+
+async function readData() {
+  const db = await new Promise((resolve, reject) => {
+    const r = indexedDB.open('tagdatimer');
+    let missing = false;
+    r.onupgradeneeded = () => { missing = true; r.transaction.abort(); };
+    r.onsuccess = () => resolve(r.result);
+    r.onerror = () => missing ? resolve(null) : reject(r.error);
+    r.onblocked = () => reject(new Error('Close other old timer tabs and try again.'));
+  });
+  if (!db) return { app: 'tagdatimer', version: 2, sessions: [], solves: [] };
+  try {
+    const names = ['sessions', 'solves', 'competitionSets', 'letterPairs', 'gear', 'gearLog', 'kv'].filter(n => db.objectStoreNames.contains(n));
+    const snapshot = db.transaction(names, 'readonly');
+    const all = name => names.includes(name) ? req(snapshot.objectStore(name).getAll()) : Promise.resolve([]);
+    const kv = (key, fallback) => names.includes('kv') ? req(snapshot.objectStore('kv').get(key)).then(v => v ?? fallback) : Promise.resolve(fallback);
+    const [sessions, solves, competitionSets, letterPairs, gear, gearLog, settings, gearActive, learn] = await Promise.all([
+      all('sessions'), all('solves'), all('competitionSets'), all('letterPairs'), all('gear'), all('gearLog'),
+      kv('settings', {}), kv('gear.active', null), kv('learn', {})
+    ]);
+    return { app: 'tagdatimer', version: 2, exportedAt: Date.now(), sessions, solves, competitionSets, letterPairs, gear, gearLog, settings, gearActive, learn };
+  } finally { db.close(); }
+}
+
+if (!receiver || !request) {
+  status.textContent = 'Open Settings → Data on tagdatimer.me and choose “Import from .vercel.app”.';
+} else {
+  let sent = false;
+  addEventListener('message', async event => {
+    if (sent || event.origin !== TARGET || event.source !== receiver
+      || event.data?.type !== 'tagda-export-request' || event.data.request !== request) return;
+    sent = true;
+    try {
+      const data = await readData();
+      receiver.postMessage({ type: 'tagda-export-data', request, data }, TARGET);
+      status.textContent = 'Your data was sent to tagdatimer.me. Wait for the import to finish in the original tab.';
+    } catch (error) {
+      status.textContent = 'Could not read the old data. Close other old timer tabs and try again.';
+      receiver.postMessage({ type: 'tagda-export-error', request }, TARGET);
+    }
+  });
+  receiver.postMessage({ type: 'tagda-export-ready', request }, TARGET);
+}
+</script>
+</html>
