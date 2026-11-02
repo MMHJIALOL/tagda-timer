@@ -1,6 +1,13 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "cleanUrls": true,
+  "redirects": [
+    {
+      "source": "/:path*",
+      "destination": "https://tagdatimer.me/:path*",
+      "permanent": true
+    }
+  ],
   "rewrites": [
     {
       "source": "/__/auth/:path*",
