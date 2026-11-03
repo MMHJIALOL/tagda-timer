@@ -18,7 +18,7 @@ import { Timer, INSPECT_MS } from './timer.js';
 import { Background, softwareGL } from './bg.js';
 import { CubeView } from './cube.js';
 import { makeDraggable } from './drag.js';
-import { flash, shockwave, confetti, chime, callout, beep, setCalloutMode } from './fx.js';
+import { flash, shockwave, confetti, stopConfetti, chime, callout, beep, setCalloutMode } from './fx.js';
 import { mountMetro, metroExternal } from './metro.js';
 import { keepAwake } from './wakelock.js';
 import { initReplay, syncReplay, takeClip, hasReplay, openReplay, replayOpen, replayEnabled,
@@ -1641,6 +1641,14 @@ function wireTimer() {
 
   timer.addEventListener('state', (e) => {
     const st = e.detail.state;
+    if (FOCUS_STATES.has(st)) stopConfetti();
+    // Freeze and reveal the result before replay, network and layout work.
+    if (st === 'cooldown') {
+      main.textContent = fmt(timer.elapsed);
+      main.style.opacity = '';
+      display.classList.remove('hidden-digits');
+      pace.hidden = true;
+    }
     keepAwake();
     // Starting the next attempt answers a still-open misfire prompt: keep it.
     if (st !== 'idle' && st !== 'cooldown') pendingMisfire?.dismiss();
@@ -6114,7 +6122,8 @@ function wireInput() {
   document.addEventListener('keydown', (e) => {
     // Typed times and a Stackmat both own the timer outright; leaving the
     // spacebar live alongside them is how you get two records for one solve.
-    if (!timerInputLive()) return;
+    // Locks prevent a new attempt, never the stop of an existing attempt.
+    if (inputMode() !== 'timer' || movesMode()) return;
     if (timer.state === 'running') {
       e.preventDefault();
       e.stopImmediatePropagation();
@@ -6125,6 +6134,7 @@ function wireInput() {
       }
       return;
     }
+    if (!timerInputLive() || e.repeat || stopKeys.has(e.code || e.key)) return;
     if (isTyping() || e.metaKey || e.ctrlKey || e.altKey) return;
     // The metronome window's own buttons keep the spacebar: pressing Start with
     // the keyboard must not also start a solve.
@@ -6186,7 +6196,8 @@ function wireInput() {
   // second down() took inspecting -> holding -> ready, and the second up()
   // started the solve. On a phone -- the one place touch is the only input --
   // inspection was therefore skipped entirely and the timer just ran.
-  const pointerOK = (e) => timerInputLive() && ((e.pointerType !== 'mouse') || app.settings.mouseTimer);
+  const pointerOK = (e) => (timerInputLive() || (timer.state === 'running' && inputMode() === 'timer' && !movesMode()))
+    && ((e.pointerType !== 'mouse') || app.settings.mouseTimer);
   /* On a phone the whole empty screen is the timer, not only the stage — but
      never a control, a sheet, the dock, the recent strip, the scramble card or
      another tab. Above that the stage is the timer, exactly as it always was. */

@@ -40,6 +40,8 @@ export function shockwave(color) {
    used to slow the confetti down, which is exactly what "it lags" looks like.
    --------------------------------------------------------- */
 let confettiRunning = false;
+let cancelConfetti = null;
+export function stopConfetti() { cancelConfetti?.(); }
 
 /* Told about the celebration so the things underneath it can get out of the
    way — main.js turns the background shader down while this is true. */
@@ -50,12 +52,13 @@ function celebrating(on) {
 
 export function confetti(colors, { count = 130, power = 1 } = {}) {
   const cv = $('#confetti');
-  if (!cv || confettiRunning) return;
+  if (!cv || confettiRunning || !colors?.length) return;
   /* A hidden tab does not run requestAnimationFrame, so a celebration started
      there would never draw a frame and never finish — leaving the page in its
      celebrating state, with the background shader turned down, for as long as
      the tab stayed open. There is also nobody looking at it. */
-  if (document.hidden) return;
+  if (document.hidden || document.body.classList.contains('timing') ||
+      matchMedia('(prefers-reduced-motion: reduce)').matches) return;
   // `desynchronized` lets the compositor skip a round trip on canvases nothing
   // reads back — which this never does.
   const ctx = cv.getContext('2d', { alpha: true, desynchronized: true });
@@ -67,8 +70,8 @@ export function confetti(colors, { count = 130, power = 1 } = {}) {
      frame, which is where the stutter came from. Capped by total pixels, so a
      laptop keeps its crisp flakes and a big display stops paying for them. */
   const w = innerWidth, h = innerHeight;
-  const PIXEL_BUDGET = 2.6e6;
-  const dpr = Math.min(window.devicePixelRatio || 1, 1.5,
+  const PIXEL_BUDGET = 1.3e6;
+  const dpr = Math.min(window.devicePixelRatio || 1, 1,
                        Math.sqrt(PIXEL_BUDGET / Math.max(1, w * h)));
   const bw = Math.round(w * dpr), bh = Math.round(h * dpr);
   // Resizing a canvas reallocates its backing store; same size, same buffer.
@@ -100,19 +103,29 @@ export function confetti(colors, { count = 130, power = 1 } = {}) {
       vr: (Math.random() - 0.5) * 0.34,
     });
   }
+  for (const g of groups) for (const p of g.parts) {
+    p.x0 = p.x; p.y0 = p.y; p.rot0 = p.rot;
+  }
 
   let over = false;
+  let frame = null;
   const finish = () => {
     if (over) return;
     over = true;
+    cancelAnimationFrame(frame);
     clearTimeout(watchdog);
+    document.removeEventListener('visibilitychange', onVisibility);
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, cv.width, cv.height);
     cv.classList.remove('on');
     cv.style.opacity = '';
     celebrating(false);
     confettiRunning = false;
+    cancelConfetti = null;
   };
+  const onVisibility = () => { if (document.hidden) finish(); };
+  document.addEventListener('visibilitychange', onVisibility);
+  cancelConfetti = finish;
 
   /* The rectangle the last frame painted into, in CSS pixels. Clearing that
      instead of the whole viewport is most of a full-screen clear saved on every
@@ -122,13 +135,23 @@ export function confetti(colors, { count = 130, power = 1 } = {}) {
   let elapsed = 0;
   let life = 1;
   let last = performance.now();
+  const started = last;
+  let slowFrames = 0;
   const step = (now) => {
-    /* Time, not frames. Everything below is in 60ths of a second so the
-       constants are the ones that were tuned, and a long frame is clamped
-       rather than teleporting every flake off screen. */
-    const dt = Math.min(2.5, (now - last) / 16.667);
+    if (over) return;
+    // Positions and lifetime use the same wall clock, in 60ths of a second.
+    const gap = now - last;
     last = now;
-    elapsed += dt;
+    // The lifetime must follow real time even on a slow or suspended device.
+    elapsed = (now - started) / 16.667;
+    life = Math.max(0, 1 - Math.max(0, elapsed - 55) * 0.016);
+    if (life <= 0) { finish(); return; }
+    // Adapt to measured frame delivery, not just the reported CPU core count.
+    if (gap > 34) slowFrames++; else slowFrames = 0;
+    if (slowFrames >= 3) {
+      for (const g of groups) g.parts = g.parts.filter((_, i) => i % 2 === 0);
+      slowFrames = 0;
+    }
 
     // Work in CSS pixels; the transform carries the device scale.
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -137,15 +160,17 @@ export function confetti(colors, { count = 130, power = 1 } = {}) {
 
     let alive = 0;
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    const travelX = (1 - Math.pow(0.992, elapsed)) / -Math.log(0.992);
+    const fall = 0.21 * elapsed * elapsed;
     for (const g of groups) {
       if (!g.parts.length) continue;
       ctx.fillStyle = g.c;
       let keep = 0;
       for (let i = 0; i < g.parts.length; i++) {
         const p = g.parts[i];
-        p.vy += 0.42 * dt;
-        p.vx *= Math.pow(0.992, dt);
-        p.x += p.vx * dt; p.y += p.vy * dt; p.rot += p.vr * dt;
+        p.x = p.x0 + p.vx * travelX;
+        p.y = p.y0 + p.vy * elapsed + fall;
+        p.rot = p.rot0 + p.vr * elapsed;
         if (p.y > h + 60) continue;               // gone; drop it from the array
         g.parts[keep++] = p;
         if (p.x < x0) x0 = p.x;
@@ -174,18 +199,17 @@ export function confetti(colors, { count = 130, power = 1 } = {}) {
     // the same frame — so it is the same picture for one composited opacity on
     // the canvas instead of a globalAlpha write per flake.
     if (elapsed > 55) {
-      life -= 0.016 * dt;
       cv.style.opacity = String(Math.max(0, life));
     }
 
     if (over) return;
-    if (alive > 0 && life > 0 && elapsed < 260) requestAnimationFrame(step);
+    if (alive > 0 && life > 0 && elapsed < 260) frame = requestAnimationFrame(step);
     else finish();
   };
   /* Switching tabs mid-flight stops the frames from coming, and the celebration
      has to end anyway — a second past the longest it can run. */
   const watchdog = setTimeout(finish, 5500);
-  requestAnimationFrame(step);
+  frame = requestAnimationFrame(step);
 }
 
 /* ---------------- audio ---------------- */
