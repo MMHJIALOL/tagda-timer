@@ -1,3 +1,4 @@
+import { COLOR_PUZZLES, validColor, puzzleColorPreview } from './puzzle-colors.js';
 import { buildSettingsPresets } from './settings-presets-ui.js';
 import { buildVercelImport } from './vercel-import.js';
 import { t, lang, setLang } from './i18n.js';
@@ -602,6 +603,7 @@ export function buildAppearance(app, searchQuery = '') {
     renderText();
 
     const glassLiquid = liquidGlassOK();
+    const puzzleColors = puzzleColorControls(app);
 
     body.append(
       group(t('Theme'), grid,
@@ -651,6 +653,8 @@ export function buildAppearance(app, searchQuery = '') {
         row('Size', slider(S.timerSize, 50, 160, 5, v => set('timerSize', v), v => v + '%')),
         row('Glow', slider(S.timerGlow, 0, 60, 1, v => set('timerGlow', v), v => v + 'px')),
       ),
+
+      puzzleColors.element,
 
       group(t('Sizes'),
         row(t('Scramble'), slider(S.scrambleSize, 60, 220, 5, v => set('scrambleSize', v), v => v + '%')),
@@ -724,6 +728,7 @@ export function buildAppearance(app, searchQuery = '') {
       ),
     );
     mountSettingsSearch(body, { query: searchQuery });
+    return puzzleColors.dispose;
   };
 }
 
@@ -1040,6 +1045,65 @@ onPhoneChange(() => {
   openDrawer('Settings', buildSettings(settingsApp, $('#drawer-body .settings-search-input')?.value || ''));
 });
 
+function puzzleColorControls(app) {
+  let family = 'nxn', revision = 0, disposed = false;
+  const preview = el('div', { class: 'puzzle-color-preview', role: 'img', 'aria-label': 'NxN cubes solved color preview' });
+  const renderPreview = async () => {
+    const request = ++revision;
+    try {
+      const source = await puzzleColorPreview(family);
+      if (disposed || request !== revision) return;
+      // Trusted, bundled SVG; prefix IDs so its <use> references cannot collide
+      // with other inline puzzle diagrams on the page.
+      const svg = new DOMParser().parseFromString(source, 'image/svg+xml').documentElement;
+      const ids = new Map([...svg.querySelectorAll('[id]')].map(n => [n.id, `scheme-preview-${n.id}`]));
+      for (const node of [svg, ...svg.querySelectorAll('*')]) {
+        if (ids.has(node.id)) node.id = ids.get(node.id);
+        for (const attr of [...node.attributes]) {
+          if (attr.localName === 'href' && ids.has(attr.value.slice(1))) attr.value = '#' + ids.get(attr.value.slice(1));
+          else attr.value = attr.value.replace(/url\(#([^)]+)\)/g, (all, id) => ids.has(id) ? `url(#${ids.get(id)})` : all);
+        }
+      }
+      svg.setAttribute('aria-hidden', 'true');
+      preview.setAttribute('aria-label', `${COLOR_PUZZLES[family].label} solved color preview`);
+      preview.replaceChildren(document.importNode(svg, true));
+    } catch {
+      if (!disposed && request === revision) preview.textContent = t('Preview unavailable');
+    }
+  };
+  const faces = el('div', { class: 'puzzle-color-grid' });
+  const saved = () => app.settings.puzzleColors?.[family] ?? (family === 'nxn' ? app.settings.cubeColors : null) ?? {};
+  const save = colors => {
+    app.setSetting('puzzleColors', { ...app.settings.puzzleColors, [family]: colors });
+    renderPreview();
+  };
+  const render = () => {
+    faces.replaceChildren();
+    for (const [face, fallback] of Object.entries(COLOR_PUZZLES[family].colors)) {
+      const value = validColor(saved()[face]) ? saved()[face] : fallback;
+      const picker = el('input', { type: 'color', value, 'aria-label': `${face} face color` });
+      const hex = el('input', { class: 'inp', value, type: 'text', maxlength: 7, 'aria-label': `${face} face hex`, spellcheck: 'false' });
+      const commit = value => { save({ ...saved(), [face]: value }); picker.value = hex.value = value; hex.removeAttribute('aria-invalid'); };
+      picker.addEventListener('input', () => commit(picker.value));
+      picker.addEventListener('change', () => { if (saved()[face] !== picker.value) commit(picker.value); });
+      hex.addEventListener('input', () => { if (validColor(hex.value)) commit(hex.value.toLowerCase()); });
+      hex.addEventListener('change', () => { if (validColor(hex.value)) commit(hex.value.toLowerCase()); else { hex.value = picker.value; hex.setAttribute('aria-invalid', 'true'); } });
+      faces.append(el('div', { class: 'puzzle-color-face' }, el('span', { text: face }), picker, hex));
+    }
+  };
+  const dropdown = select(Object.entries(COLOR_PUZZLES).map(([value, p]) => ({ value, label:p.label })), family, value => { family = value; render(); renderPreview(); });
+  dropdown.setAttribute('aria-label', 'Color scheme puzzle');
+  render();
+  renderPreview();
+  const element = group(t('Puzzle color schemes'),
+    row(t('Puzzle'), dropdown, t('Edit each face to match your puzzle. NxN applies to all cube sizes.')),
+    el('div', { class: 'puzzle-color-editor' },
+      el('div', { class: 'puzzle-color-preview-wrap' }, preview, el('span', { class: 'puzzle-color-caption', text: t('Solved preview · all faces') })),
+      faces),
+    el('button', { class: 'ghost-btn sm', text: t('Reset this color scheme'), onclick: () => { save({ ...COLOR_PUZZLES[family].colors }); render(); } }));
+  return { element, dispose: () => { disposed = true; revision++; } };
+}
+
 export function buildSettings(app, searchQuery = '') {
   settingsApp = app;
   return (body) => {
@@ -1212,7 +1276,7 @@ export function buildSettings(app, searchQuery = '') {
         row(t('Theme, background and layout'), el('button', {
           class: 'ghost-btn', text: 'open',
           onclick: () => openDrawer('Appearance', buildAppearance(app, searchQuery)),
-        }), t('colours, fonts, sizes and panels')),
+        }), t('colours, puzzle color schemes, fonts, sizes and panels')),
       ),
 
       group(t('Data'),

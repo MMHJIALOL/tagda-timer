@@ -1,3 +1,4 @@
+import { netColors } from './puzzle-colors.js';
 import { t } from './i18n.js';
 /* ===========================================================
    Tagda Timer — NxN cube state + flat-net drawing
@@ -14,7 +15,7 @@ import { t } from './i18n.js';
    face, every depth and every cube size — nothing to get subtly wrong.
    =========================================================== */
 
-export const SCHEME = { U: '#ffffff', D: '#ffe100', F: '#00b04a', B: '#0051ba', R: '#ec0000', L: '#ff8b00' };
+export const SCHEME = netColors;
 
 const FACES = ['U', 'R', 'F', 'D', 'L', 'B'];
 
