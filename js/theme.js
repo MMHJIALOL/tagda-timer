@@ -1,3 +1,4 @@
+import { updatePuzzleColors } from './puzzle-colors.js';
 import { t } from './i18n.js';
 /* ===========================================================
    Tagda Timer — settings model + live theme application
@@ -268,6 +269,7 @@ export const DEFAULTS = {
   showHistory: true,
   cubeView: '3D',
   hintFacelets: true,
+  puzzleColors: null,            // Per-puzzle face color overrides
   cubeColors: null,             // {U,L,F,R,B,D: '#rrggbb'} once edited; null = the stock colours
   yellowTop: true,              // trainer cases previewed with the cross on the bottom
   autoContrast: true,           // flip to dark text when the background is bright
@@ -366,6 +368,7 @@ export function saveSettings(s, { immediate = false, replace = false, throwOnErr
 let onAccentPending = false;
 
 export function applyTheme(s) {
+  updatePuzzleColors(s);
   const root = document.documentElement;
   root.dataset.theme = s.theme;
   root.dataset.density = s.density;

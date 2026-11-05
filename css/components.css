@@ -5011,3 +5011,15 @@ body.focus #app-banner { opacity: 0; transition: opacity 220ms var(--ease); }
 /* Appearance → Text: the × sits before the picker so the pickers line up. */
 .text-colour { display: flex; align-items: center; gap: 6px; }
 .text-colour .ghost-btn[hidden] { display: none; }
+
+/* Per-puzzle sticker colors. */
+.puzzle-color-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 12px 0; }
+.puzzle-color-face { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.puzzle-color-face > span { min-width: 24px; font-weight: 600; font-size: .85rem; }
+.puzzle-color-face input[type=color] { width: 34px; height: 34px; padding: 2px; border: 1px solid var(--border); border-radius: 7px; background: var(--surface); cursor: pointer; flex-shrink: 0; }
+.puzzle-color-face .inp { width: 100%; min-width: 0; padding: 6px; font-family: var(--font-mono); font-size: .8rem; }
+
+.puzzle-color-preview-wrap { margin-top: 12px; padding: 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); text-align: center; }
+.puzzle-color-preview { height: 185px; display: flex; align-items: center; justify-content: center; }
+.puzzle-color-preview > svg { display: block; width: 100%; height: 100%; max-width: 340px; }
+.puzzle-color-caption { display: block; margin-top: 8px; font-size: .75rem; color: var(--text-dim); }
