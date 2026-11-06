@@ -2068,7 +2068,7 @@ export const es = {
   "Landscape  ·  16:9": "Horizontal  ·  16:9",
   "the whole picture, with the clock, the cube and the scramble in a panel beside it": "la imagen entera, con el reloj, el cubo y la mezcla en un panel al lado",
   "Original  ·  as filmed": "Original  ·  tal como se grabó",
-  "just the video, with a small tagdatimer.me in the corner": "solo el vídeo, con un pequeño tagdatimer.me en la esquina",
+  "Full picture with the clock in a bar below": "La imagen completa con el reloj en una barra debajo",
   "The square the reel shows": "El cuadrado que muestra el reel",
   "Size of the square": "Tamaño del cuadrado",
   "Drag the square over your solve. That is what the reel shows.": "Arrastra el cuadrado sobre tu resolución. Es lo que mostrará el reel.",

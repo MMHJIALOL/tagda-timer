@@ -8,7 +8,7 @@ import { t } from './i18n.js';
    (muted until you unmute once; then remembered, webcamUnmute), and two menus: ⋯ (keep forever, clock delay,
    delete) and Save video, made by replay-media.js: a Reel (after you choose
    the square of the picture it shows, remembered per camera), a 16:9 with a
-   panel beside the picture, or the clip as filmed with only a watermark.
+   panel beside the picture, or the full picture with a clock bar below it.
 
    Two ways in: openPlayer, a solve's clip on this device, and
    openSharedPlayer, somebody's shared Scramble of the Day clip
@@ -206,7 +206,7 @@ function show({ id, m, blob, sv, timeMs, pen, camName, adj, shared = null, compe
     onclick: () => openMenu(saveBtn, [
       { label: t('Reel  ·  9:16'), sub: competition ? t('Square video with the attempt clock below. For Instagram, TikTok, Shorts') : t('choose a square of the picture; the clock, the scrambled cube and the scramble go under it. For Instagram, TikTok, Shorts'), run: () => chooseCrop('reel') },
       { label: t('Landscape  ·  16:9'), sub: competition ? t('Video with the attempt clock in the side panel') : t('choose the part of the picture that fills the left, with the clock, the cube and the scramble in a panel beside it'), run: () => chooseCrop('wide') },
-      { label: t('Original  ·  as filmed'), sub: t('just the video, with a small tagdatimer.me in the corner'), run: () => makeVideo('clean') },
+      { label: t('Original  ·  as filmed'), sub: t('Full picture with the clock in a bar below'), run: () => makeVideo('clean') },
     ]),
   });
   const controls = el('div', { class: 'rp-controls' },
