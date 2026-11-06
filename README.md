@@ -522,7 +522,7 @@ sound too (AAC where the browser can make it, otherwise Opus).
   and @cubingngagng.
 - **Landscape** (1920×1080, 16:9): the whole picture as filmed, with the clock, the cube, the
   scramble and the links in a panel beside it.
-- **Original**: just the video as filmed, with a small tagdatimer.me in the corner.
+- **Original**: the full video with a small tagdatimer.me in the corner and a clock bar below.
 
 On a phone it offers **Share**, straight into Instagram or a chat. The videos are made in the
 browser with [Mediabunny](https://mediabunny.dev) (vendor/mediabunny, MPL-2.0) over the

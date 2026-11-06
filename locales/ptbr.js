@@ -2068,7 +2068,7 @@ export const ptbr = {
   "Landscape  ·  16:9": "Horizontal  ·  16:9",
   "the whole picture, with the clock, the cube and the scramble in a panel beside it": "a imagem inteira, com o relógio, o cubo e o scramble em um painel ao lado",
   "Original  ·  as filmed": "Original  ·  como foi gravado",
-  "just the video, with a small tagdatimer.me in the corner": "somente o vídeo, com um pequeno tagdatimer.me no canto",
+  "Full picture with the clock in a bar below": "Imagem completa com o cronômetro em uma barra abaixo",
   "The square the reel shows": "O quadrado que o reel mostra",
   "Size of the square": "Tamanho do quadrado",
   "Drag the square over your solve. That is what the reel shows.": "Arraste o quadrado sobre sua solve. É isso que o reel vai mostrar.",

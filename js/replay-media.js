@@ -17,8 +17,7 @@ import { t } from './i18n.js';
      reel   1080x1920, the share card with a square of the picture in it (the
             square you chose in the player, or the middle)
      wide   1920x1080, the whole picture as filmed with a panel beside it
-     clean  the picture as filmed and nothing else, but tagdatimer.me in a
-            corner
+     clean  the full picture with a watermark and a clock bar underneath
    The clock comes from clockAt() in replay.js, the same function the player
    draws with, so the download says exactly what the player said.
 
@@ -505,17 +504,23 @@ function reelLayout(vw, vh, info, c, logo) {
   return { W, H, base, video, bps: 8_000_000, over, clock: (ctx, k) => paintClock(ctx, c, k, clock) };
 }
 
-/* As filmed, at the camera's own size, with nothing on it but the site's name
-   in the bottom-right corner: small, translucent, shadowed so it reads on a
-   light or a dark picture. */
+/* Keep the full picture at the camera's size and put the clock below it,
+   like the player. The watermark stays in the corner of the picture. */
 function cleanLayout(vw, vh, info, c, logo) {
-  const W = even(vw), H = even(vh);
-  const video = { x: 0, y: 0, w: W, h: H, crop: false };
+  const W = even(vw), pictureH = even(vh);
+  const shortSide = Math.min(W, pictureH);
+  const barH = even(shortSide * 0.15);
+  const H = pictureH + barH;
+  const video = { x: 0, y: 0, w: W, h: pictureH, crop: false };
   const base = canvas(W, H);
   const g = base.getContext('2d');
   g.fillStyle = '#000';
-  g.fillRect(0, 0, W, H);
-  const size = Math.max(16, Math.round(Math.min(W, H) * 0.036));
+  g.fillRect(0, 0, W, pictureH);
+  g.fillStyle = c.bg;
+  g.fillRect(0, pictureH, W, barH);
+  g.fillStyle = hex(c.text, 0.12);
+  g.fillRect(0, pictureH, W, Math.max(1, Math.round(shortSide / 540)));
+  const size = Math.max(16, Math.round(shortSide * 0.036));
   const pad = Math.round(size * 0.9);
   const over = (ctx) => {
     ctx.save();
@@ -526,15 +531,45 @@ function cleanLayout(vw, vh, info, c, logo) {
     ctx.textAlign = 'right';
     ctx.font = `700 ${size}px ${SANS}`;
     ctx.fillStyle = '#fff';
-    ctx.fillText(SITE, W - pad, H - pad);
+    ctx.fillText(SITE, W - pad, pictureH - pad);
     if (logo) {
       const w = ctx.measureText(SITE).width, l = Math.round(size * 1.35);
       ctx.shadowBlur = 0;
-      ctx.drawImage(logo, W - pad - w - l - size * 0.35, H - pad - l * 0.8, l, l);
+      ctx.drawImage(logo, W - pad - w - l - size * 0.35, pictureH - pad - l * 0.8, l, l);
     }
     ctx.restore();
   };
-  return { W, H, base, video, bps: Math.max(2_500_000, Math.round(W * H * 6)), over, clock: () => {} };
+  const clock = (ctx, k) => {
+    const digits = Math.max(1, Math.round(barH * 0.58));
+    const label = Math.max(1, Math.round(digits * 0.3));
+    const gap = digits * 0.24;
+    const phase = k.phase.toUpperCase();
+    const y = pictureH + barH / 2 + digits * 0.35;
+    ctx.textBaseline = 'alphabetic';
+    ctx.textAlign = 'left';
+    const labelSize = fitFont(ctx, phase, W * 0.36, 700, label, SANS);
+    const phaseW = ctx.measureText(phase).width;
+    const penFont = `700 ${Math.max(1, Math.round(digits * 0.42))}px ${MONO}`;
+    ctx.font = penFont;
+    const penW = k.pen ? ctx.measureText(k.pen).width + gap : 0;
+    fitFont(ctx, k.text, W - 3 * gap - phaseW - penW, 600, digits, MONO);
+    const timeFont = ctx.font;
+    const timeW = ctx.measureText(k.text).width;
+    const x = (W - phaseW - gap - timeW - penW) / 2;
+
+    ctx.font = `700 ${labelSize}px ${SANS}`;
+    ctx.fillStyle = hex(c.text, 0.55);
+    ctx.fillText(phase, x, y);
+    ctx.font = timeFont;
+    ctx.fillStyle = clockColour(c, k.kind);
+    ctx.fillText(k.text, x + phaseW + gap, y);
+    if (k.pen) {
+      ctx.font = penFont;
+      ctx.fillStyle = c.danger;
+      ctx.fillText(k.pen, x + phaseW + timeW + 2 * gap, y);
+    }
+  };
+  return { W, H, base, video, bps: Math.max(2_500_000, Math.round(W * H * 6)), over, clock };
 }
 
 /* 16:9: the picture on the left, in a 4:3 box (WIDE_ASPECT): the part chosen
