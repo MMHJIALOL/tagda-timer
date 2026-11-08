@@ -276,7 +276,95 @@ function sortable(list, onDrop) {
    State
    --------------------------------------------------------- */
 
-const state = { event: '333', set: 'PLL', q: '', group: null };
+const state = { event: '333', set: 'PLL', q: '', group: null, learning: 'all' };
+
+// Learning progress is independent of the temporary practice selection.
+const LEARNT_KEY = 'tagda.alglib.learnt.v1';
+let learnt = new Set();
+try {
+  const saved = JSON.parse(localStorage.getItem(LEARNT_KEY) || '[]');
+  if (Array.isArray(saved)) learnt = new Set(saved.filter(x => typeof x === 'string'));
+} catch { /* A blocked store or damaged value starts with an empty list. */ }
+const learntKey = (setId, caseId) => `${setId}:${caseId}`;
+const isLearnt = (setId, caseId) => learnt.has(learntKey(setId, caseId));
+
+function saveLearningProgress(setId, ids, done) {
+  const previous = new Set(learnt);
+  for (const id of ids) {
+    const key = learntKey(setId, id);
+    if (done) learnt.add(key); else learnt.delete(key);
+  }
+  try { localStorage.setItem(LEARNT_KEY, JSON.stringify([...learnt])); }
+  catch {
+    learnt = previous;
+    toast('Could not save learning progress in this browser', { kind: 'bad' });
+    return false;
+  }
+  return true;
+}
+
+function learningButton(set, c) {
+  const button = el('button', { type: 'button', class: 'case-learn' });
+  const paint = () => {
+    const done = isLearnt(set.id, c.id);
+    button.classList.toggle('learnt', done);
+    button.setAttribute('aria-pressed', String(done));
+    button.setAttribute('aria-label', `${set.caseLabel(c)}: ${done ? 'Learnt. Mark as not learnt' : 'Mark as learnt'}`);
+    button.replaceChildren(icon('M5 12l4 4L19 6'), el('span', { text: done ? 'Learnt' : 'Mark as learnt' }));
+  };
+  paint();
+  button.addEventListener('click', () => {
+    const done = !isLearnt(set.id, c.id);
+    if (!saveLearningProgress(set.id, [c.id], done)) return;
+    paint();
+    if (openId === null && state.learning !== 'all') {
+      const next = button.closest('.case-card')?.nextElementSibling?.querySelector('.case-learn');
+      const nextId = next?.closest('.case-card')?.dataset.case;
+      renderGrid();
+      const target = nextId && [...document.querySelectorAll('.case-card')].find(n => n.dataset.case === nextId);
+      (target?.querySelector('.case-learn') || $('#alglib-progress .learning-filter.on'))?.focus({ preventScroll: true });
+    } else {
+      button.closest('.case-card')?.classList.toggle('is-learnt', done);
+      renderProgress();
+      if (openId === null) renderTrainBar();
+    }
+    $('#alglib-status').textContent = `${set.caseLabel(c)} ${done ? 'marked as learnt' : 'marked as not learnt'}.`;
+  });
+  return button;
+}
+
+function renderProgress() {
+  const set = SETS[state.set];
+  const host = $('#alglib-progress');
+  if (!set) return;
+  const count = set.cases.filter(c => isLearnt(set.id, c.id)).length;
+  const total = set.cases.length;
+  const percent = total ? Math.round(count / total * 100) : 0;
+  const filters = el('div', { class: 'learning-filters', role: 'group', 'aria-label': 'Filter by learning progress' });
+  for (const [value, label, n] of [['all', 'All cases', total], ['unlearnt', 'Not learnt', total - count], ['learnt', 'Learnt', count]]) {
+    const b = el('button', { type: 'button', class: `learning-filter${state.learning === value ? ' on' : ''}`,
+      'aria-pressed': String(state.learning === value), 'data-learning': value }, label, el('span', { text: String(n) }));
+    b.addEventListener('click', () => {
+      state.learning = value;
+      anchor = null;
+      if (openId !== null) openId = null;
+      renderGrid();
+      host.querySelector(`[data-learning="${value}"]`)?.focus({ preventScroll: true });
+    });
+    filters.append(b);
+  }
+  host.replaceChildren(
+    el('div', { class: 'learning-summary' },
+      el('div', {}, el('p', { class: 'learning-kicker', text: `${set.label} · YOUR PROGRESS` }),
+        el('p', { class: 'learning-count' }, el('strong', { text: String(count) }), ` / ${total} learnt`)),
+      el('span', { class: 'learning-percent', text: `${percent}%` })),
+    el('div', { class: 'learning-meter', role: 'progressbar', 'aria-label': `${set.label} cases learnt`,
+      'aria-valuemin': '0', 'aria-valuemax': String(total), 'aria-valuenow': String(count) },
+      el('span', { style: { width: `${percent}%` } })),
+    el('div', { class: 'learning-bottom' }, filters,
+      el('p', { text: 'Know a case? Mark it as learnt below. Saved in this browser.' })),
+  );
+}
 
 /* Selections per set, kept while you move between sets and events — clicking
    over to look at PLL must not throw away the twelve OLLs you picked. */
@@ -321,8 +409,10 @@ function matches(c, set, q) {
    exist because a different subset was picked. */
 function visibleCases(set) {
   const q = state.q.trim().toLowerCase();
-  if (q) return set.cases.filter(c => matches(c, set, q));
-  return set.cases.filter(c => !state.group || set.groupOf?.(c) === state.group);
+  return set.cases.filter(c => {
+    const learningMatch = state.learning === 'all' || isLearnt(set.id, c.id) === (state.learning === 'learnt');
+    return learningMatch && (q ? matches(c, set, q) : !state.group || set.groupOf?.(c) === state.group);
+  });
 }
 
 /* ---------------------------------------------------------
@@ -363,12 +453,13 @@ function renderGrid() {
   const set = SETS[state.set];
   if (!set) return;
   renderGroups(set);
+  renderProgress();
 
   const list = visibleCases(set);
   const shown = list.slice(0, MAX_CARDS);
   shownIds = shown.map(c => c.id);
   if (!list.length) {
-    host.appendChild(el('p', { class: 'alglib-empty', text: t('No {set} case matches “{q}”.', { set: set.label, q: state.q }) }));
+    host.appendChild(el('p', { class: 'alglib-empty', text: state.q ? t('No {set} case matches “{q}”.', { set: set.label, q: state.q }) : state.learning === 'learnt' ? 'No learnt cases here yet. Mark a case as learnt to see it here.' : 'No cases left in this view. Try All cases or another subset.' }));
   }
   for (const c of shown) host.appendChild(card(set, c));
   if (list.length > shown.length) {
@@ -406,7 +497,7 @@ function card(set, c) {
   );
   open.addEventListener('click', () => openCase(c.id));
 
-  const node = el('div', { class: `case-card${on ? ' on' : ''}`, 'data-case': c.id }, pick, open);
+  const node = el('div', { class: `case-card${on ? ' on' : ''}${isLearnt(set.id, c.id) ? ' is-learnt' : ''}`, 'data-case': c.id }, pick, open, learningButton(set, c));
   if (hasCustomOrder(c.id)) node.appendChild(el('span', { class: 'case-flag', text: t('your order') }));
   return node;
 }
@@ -455,7 +546,35 @@ function renderTrainBar() {
   const set = SETS[state.set];
   if (!set) return;
   const sel = picks();
-  const n = set.cases.filter(c => sel.has(c.id)).length;
+  const selectedIds = set.cases.filter(c => sel.has(c.id)).map(c => c.id);
+  const n = selectedIds.length;
+  const learningActions = $('#alglib-learning-actions');
+  learningActions.replaceChildren();
+  learningActions.hidden = n === 0;
+  if (n) {
+    const mark = (done) => {
+      const button = el('button', {
+        type: 'button', class: `btn small${done ? ' bulk-learnt' : ' ghost'}`,
+        text: done ? `Mark ${n} as learnt` : `Mark ${n} as not learnt`,
+        'data-mark-learnt': String(done),
+        disabled: selectedIds.every(id => isLearnt(set.id, id) === done),
+      });
+      button.addEventListener('click', () => {
+        if (!saveLearningProgress(set.id, selectedIds, done)) return;
+        renderGrid();
+        const message = `${n} ${n === 1 ? 'case' : 'cases'} marked as ${done ? 'learnt' : 'not learnt'}.`;
+        toast(message);
+        $('#alglib-status').textContent = message;
+        // Keep the selection for training or reversing the batch change.
+        learningActions.querySelector(`[data-mark-learnt="${!done}"]`)?.focus({ preventScroll: true });
+      });
+      return button;
+    };
+    learningActions.append(
+      el('span', { class: 'bulk-learning-label', text: 'Update selected cases' }),
+      mark(true), mark(false),
+    );
+  }
   /* Only a changed count is written, so a screen reader is not told the same
      number again after every search keystroke. */
   const status = t('{n} of {total} selected', { n, total: set.cases.length });
@@ -528,7 +647,7 @@ function openCase(caseId) {
   const back = el('button', { class: 'btn back', type: 'button' }, icon('M15 18l-6-6 6-6'), el('span', { text: t('All {set}', { set: set.label }) }));
   back.addEventListener('click', closeCase);
 
-  const actions = el('div', { class: 'case-actions' });
+  const actions = el('div', { class: 'case-actions' }, learningButton(set, c));
   if (set.trainerMode) {
     const one = el('button', { class: 'btn primary small', type: 'button', text: t('Train this case') });
     one.addEventListener('click', () => train(set, [caseId]));
@@ -742,6 +861,8 @@ function buildTabs() {
 
 function clearSearch() {
   state.q = '';
+  state.learning = 'all';
+  openId = null;
   $('#alglib-q').value = '';
   anchor = null;
 }
@@ -773,9 +894,12 @@ async function showSet() {
   writeUrl();
   const want = state.set;
   $('#alglib-detail').hidden = true;
+  $('#alglib-progress').replaceChildren();
   /* The bar belongs to the set on screen. Left up while the next one loads,
      its Train button would still send the previous set to the timer. */
   $('#alglib-train').textContent = '';
+  $('#alglib-learning-actions').replaceChildren();
+  $('#alglib-learning-actions').hidden = true;
   $('#alglib-groups').hidden = true;
   $('#alglib-sub').textContent = '';
   $('#alglib-grid').replaceChildren(el('p', { class: 'alglib-empty', text: t('Loading…') }));

@@ -323,3 +323,51 @@ body.alglib-page ::selection { background: color-mix(in srgb, var(--accent) 42%,
   #alglib-train { margin-left: 0; width: 100%; justify-content: space-between; }
   .train-go { flex: 1 1 auto; }
 }
+/* Learning progress stays separate from the practice checkboxes. */
+#alglib-progress {
+  max-width: 1180px; margin: 0 auto 18px; padding: 20px 22px 16px;
+  border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--border));
+  border-radius: 16px;
+  background: linear-gradient(115deg, color-mix(in srgb, var(--accent) 8%, var(--surface)), color-mix(in srgb, var(--surface) 75%, transparent));
+}
+#alglib-progress:empty { display: none; }
+.learning-summary { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.learning-kicker { color: var(--text-dim); font-size: .65rem; font-weight: 700; letter-spacing: .12em; margin-bottom: 6px; }
+.learning-count { font-size: .9rem; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.learning-count strong { color: var(--text); font-size: 1.75rem; font-weight: 650; letter-spacing: -.04em; margin-right: 3px; }
+.learning-percent { font-family: var(--font-mono); font-size: .85rem; color: var(--accent); }
+.learning-meter { height: 5px; margin: 14px 0 16px; border-radius: 99px; overflow: hidden; background: color-mix(in srgb, var(--text) 10%, transparent); }
+.learning-meter > span { display: block; height: 100%; border-radius: inherit; background: var(--accent); }
+.learning-bottom { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.learning-bottom > p { font-size: .73rem; color: var(--text-faint); line-height: 1.5; }
+.learning-filters { display: flex; flex-wrap: wrap; gap: 5px; }
+.learning-filter { display: inline-flex; align-items: center; gap: 8px; padding: 7px 10px; border: 1px solid transparent; border-radius: 8px; color: var(--text-dim); font-size: .75rem; }
+.learning-filter span { font-size: .65rem; font-variant-numeric: tabular-nums; opacity: .7; }
+.learning-filter:hover { color: var(--text); background: var(--surface); }
+.learning-filter.on { background: color-mix(in srgb, var(--accent) 12%, transparent); border-color: color-mix(in srgb, var(--accent) 28%, transparent); color: var(--accent); }
+.case-learn { display: flex; align-items: center; justify-content: center; gap: 7px; min-height: 40px; padding: 9px 12px; font-size: .74rem; font-weight: 550; color: var(--text-dim); border-top: 1px solid var(--border); }
+.case-learn svg { width: 14px; height: 14px; border: 1px solid currentColor; border-radius: 50%; padding: 2px; }
+.case-learn:not(.learnt) svg path { visibility: hidden; }
+.case-learn:hover { color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.case-learn.learnt { color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.case-learn.learnt svg { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+.case-card.is-learnt .case-name::after { content: ' · Learnt'; font-size: .64rem; font-weight: 500; color: var(--accent); }
+.case-actions .case-learn { border: 1px solid var(--border); border-radius: 8px; }
+.case-learn:focus-visible, .learning-filter:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; }
+@media (max-width: 640px) {
+  #alglib-progress { padding: 16px 14px 12px; }
+  .learning-bottom { gap: 10px; }
+  .learning-filter { padding: 7px 8px; gap: 6px; }
+}
+
+#alglib-learning-actions {
+  display: flex; flex: 1 1 100%; align-items: center; flex-wrap: wrap; gap: 8px;
+  padding: 10px 3px 2px; border-top: 1px solid var(--border);
+}
+#alglib-learning-actions[hidden] { display: none; }
+.bulk-learning-label { font-size: .74rem; color: var(--text-dim); margin-right: auto; }
+.bulk-learnt { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+@media (max-width: 640px) {
+  .bulk-learning-label { flex-basis: 100%; }
+  #alglib-learning-actions .btn { flex: 1; padding-inline: 8px; }
+}
