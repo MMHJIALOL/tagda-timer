@@ -11,11 +11,11 @@
 <!-- Same ?v= discipline as index.html: bump every stylesheet here whenever
      anything under css/ changes, or a returning visitor renders this page
      against a year-old cached stylesheet. -->
-<link rel="stylesheet" href="css/fonts.css?v=153">
-<link rel="stylesheet" href="css/tokens.css?v=153">
-<link rel="stylesheet" href="css/base.css?v=153">
-<link rel="stylesheet" href="css/components.css?v=153">
-<link rel="stylesheet" href="css/alglibrary.css?v=153">
+<link rel="stylesheet" href="css/fonts.css?v=154">
+<link rel="stylesheet" href="css/tokens.css?v=154">
+<link rel="stylesheet" href="css/base.css?v=154">
+<link rel="stylesheet" href="css/components.css?v=154">
+<link rel="stylesheet" href="css/alglibrary.css?v=154">
 <link rel="icon" href="assets/favicon.ico" sizes="any">
 <link rel="icon" type="image/png" sizes="32x32" href="assets/logo-32.png">
 <link rel="icon" type="image/png" sizes="192x192" href="assets/logo-192.png">
@@ -39,6 +39,8 @@
 <nav id="alglib-events" aria-label="Puzzle"></nav>
 <nav id="alglib-tabs" aria-label="Algorithm set"></nav>
 
+<section id="alglib-progress" aria-label="Learning progress"></section>
+
 <!-- Search, subset, and the selection you are about to train — one sticky bar,
      so the count and the Train button stay in reach however far you scroll. -->
 <div id="alglib-bar">
@@ -48,6 +50,7 @@
   </label>
   <div id="alglib-groups" hidden></div>
   <div id="alglib-train"></div>
+  <div id="alglib-learning-actions" role="group" aria-label="Mark selected cases" hidden></div>
 </div>
 
 <!-- Not a live region: a search keystroke would read out every card again.
@@ -65,6 +68,6 @@
 
 <div id="toasts"></div>
 
-<script type="module" src="js/alglibrary-ui.js?v=153"></script>
+<script type="module" src="js/alglibrary-ui.js?v=154"></script>
 </body>
 </html>
