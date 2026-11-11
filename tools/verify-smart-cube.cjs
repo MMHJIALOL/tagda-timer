@@ -25,13 +25,17 @@ const base = process.argv[2] || 'http://localhost:5186';
     await page.evaluate(async()=> {
       const app=window.tagdatimer;
       document.querySelectorAll('.an-dlg[open]').forEach(d=>d.dispatchEvent(new Event('cancel',{cancelable:true})));
-      app.setSetting('inspection',false);app.setSetting('confirmShortSolves',false);app.setSetting('soundOnPB',false);
+      app.setSetting('inspection',true);app.setSetting('confirmShortSolves',false);app.setSetting('soundOnPB',false);
       const {scrambleState}=await import('/js/smart-cube-core.js');
       app.scramble.scramble='R U F';window.__cubeInitial=scrambleState('R U F');
       app.setSetting('inputMode','smart');
     });
     const connect=page.getByRole('button',{name:'Connect cube',exact:true});await connect.waitFor({timeout:10000}).catch(async e=>{await page.screenshot({path:'docs/smart-cube-debug.png'});console.log(await page.evaluate(()=>({errors:document.querySelector('#boot-error')?.textContent,input:document.body.dataset.input,wrap:document.querySelector('#smart-cube-wrap')?.outerHTML.slice(0,1000),zone:document.querySelector('#timer-zone')?.getBoundingClientRect().toJSON()})));console.log(errors);throw e;});await page.waitForFunction(()=>!document.querySelector('#smart-cube-wrap button').disabled);await connect.click();
-    await page.waitForFunction(()=>document.querySelector('#smart-cube-wrap').dataset.attempt==='armed');
+    await page.waitForFunction(()=>document.querySelector('#smart-cube-wrap').dataset.attempt==='inspection');
+    assert.deepEqual(await page.evaluate(()=>{
+      const c=tagdatimer.smartCubeController();
+      return {state:c.timer.state,moves:c.active.moves.length};
+    }),{state:'inspecting',moves:0});
     await page.evaluate(()=> { for(const [i,move]of ["F'","U'","R'"].entries())window.__cubeEmit({type:'MOVE',serial:++window.__cubeSerial,move,cubeTimestamp:1000+i*100,localTimestamp:2000+i*100}); });
     await page.waitForFunction(()=>tagdatimer.solves.some(s=>s.smartCube));
     const saved = await page.evaluate(async()=> {const s=tagdatimer.solves.find(s=>s.smartCube);const db=await import('/js/db.js');return {s,c:await db.SmartCaptures.get(s.id)};});
@@ -105,7 +109,7 @@ const base = process.argv[2] || 'http://localhost:5186';
           && host.dataset.correcting==='true' && timer.state==='idle'
           && scrambleHost.querySelectorAll('.is-done').length===1;
         turn("B'"); turn("U'"); turn('F');
-        const corrected = c.attemptState==='scramble matched' && timer.state==='idle'
+        const corrected = c.attemptState==='inspection' && timer.state==='inspecting' && c.active.moves.length===0
           && scrambleHost.querySelectorAll('.is-done').length===3;
         await c.disconnect();
         facelets = scrambleState('L B D F2 R U'); serial = 0;
@@ -118,11 +122,11 @@ const base = process.argv[2] || 'http://localhost:5186';
         route.forEach(turn);
         const restored = facelets===SOLVED && c.guide.completed===0 && c.guide.anchored && timer.state==='idle';
         ['R','U','F'].forEach(turn);
-        return { wrong, corrected, restored, ready:c.attemptState==='scramble matched', saves };
+        return { wrong, corrected, restored, ready:c.attemptState==='inspection' && timer.state==='inspecting' && c.active.moves.length===0, saves };
       } finally { c.dispose(); host.remove(); scrambleHost.remove(); }
     });
     assert.deepEqual(guidance,{wrong:true,corrected:true,restored:true,ready:true,saves:0});
-    console.log('PASS: green scramble progress, half-turn mistakes, corrective moves, idle timer and worker recovery from an arbitrary cube');
+    console.log('PASS: green scramble progress, half-turn mistakes, corrective moves, automatic inspection and worker recovery from an arbitrary cube');
     // Exercise lifecycle and timing independently of the main UI's next-scramble
     // worker, then measure coalesced event-to-visible latency in this browser.
     const soak = await page.evaluate(async()=> {
@@ -154,23 +158,33 @@ const base = process.argv[2] || 'http://localhost:5186';
       c.protocol=await import('/vendor/gan/gan-3.0.2.js');c.sync();
       const connect=async()=>{window.__cubeInitial=scrambleState(ctx.scramble);window.__cubeSerial=0;await c.connect();};
       const move=(m,i=0,skip=1)=>window.__cubeEmit({type:'MOVE',serial:window.__cubeSerial+=skip,move:m,cubeTimestamp:100+i*100,localTimestamp:200+i*100});
-      await connect();move("F'");const unarmed=timer.state==='idle'&&records.length===0;await c.disconnect();
-      await connect();c.inspect();timer.inspectStart=performance.now()-16000;move("F'");move("U'",1);move("R'",2);await Promise.resolve();const plus2=result.penalty;
-      await c.disconnect();await connect();c.inspect();timer.inspectStart=performance.now()-18000;move("F'");move("U'",1);move("R'",2);await Promise.resolve();const dnf=result.penalty;const before=records.length;
+      await connect();
+      const automaticallyInspecting=c.attemptState==='inspection'&&timer.state==='inspecting'&&c.active.moves.length===0;
+      const inspectStart=timer.inspectStart, captureId=c.active.id;
+      window.__cubeEmit({type:'FACELETS',serial:window.__cubeSerial,facelets:window.__cubeInitial});
+      c.sync();c.match();c.inspect();
+      const startedOnce=timer.inspectStart===inspectStart&&c.active.id===captureId;
+      timer.cancel();c.match();
+      const cancelled=timer.state==='idle'&&!c.active&&c.attemptState==='scramble matched';
+      c.armButton.click();
+      const restarted=timer.state==='inspecting'&&c.active.id!==captureId;
+      await c.disconnect();
+      await connect();timer.inspectStart=performance.now()-16000;move("F'");move("U'",1);move("R'",2);await Promise.resolve();const plus2=result.penalty;
+      await c.disconnect();await connect();timer.inspectStart=performance.now()-18000;move("F'");move("U'",1);move("R'",2);await Promise.resolve();const dnf=result.penalty;const before=records.length;
       window.__cubeEmit({type:'MOVE',serial:window.__cubeSerial,move:"R'",cubeTimestamp:300,localTimestamp:400});await Promise.resolve();const exactlyOnce=before===records.length;
-      await c.disconnect();await connect();c.inspect();move("F'");await new Promise(r=>setTimeout(r,600));const checkpoint=await KV.get('smartCube.active');
+      await c.disconnect();await connect();move("F'");await new Promise(r=>setTimeout(r,600));const checkpoint=await KV.get('smartCube.active');
       ctx.sessionId='changed';c.sync();await Promise.resolve();const frozen=result.context.sessionId==='original'&&result.completeness==='interrupted'&&checkpoint.moves.length===1;
       await c.disconnect();ctx.inspection=false;ctx.sessionId='original';c.sync();await connect();c.preview.set=()=>{throw new Error('Renderer crash');};move("F'");move("U'",1);move("R'",2);await Promise.resolve();const rendererIndependent=result.completeness==='complete'&&result.moves.length===3;
       window.__cubeEmit({type:'FACELETS',serial:window.__cubeSerial,facelets:scrambleState('R')});
       await new Promise(r=>setTimeout(r,50));const lateInvalidated=result.completeness==='interrupted'&&result.postSolveEvidence?.length===1;
       c.dispose();host.remove();await KV.del('smartCube.active');localStorage.removeItem('tagda:smartCube.active');
-      return {unarmed,plus2,dnf,exactlyOnce,frozen,rendererIndependent,lateInvalidated};
+      return {automaticallyInspecting,startedOnce,cancelled,restarted,plus2,dnf,exactlyOnce,frozen,rendererIndependent,lateInvalidated};
     });
-    assert.deepEqual(boundaries,{unarmed:true,plus2:'+2',dnf:'DNF',exactlyOnce:true,frozen:true,rendererIndependent:true,lateInvalidated:true});
-    console.log('PASS: explicit inspection, +2/DNF, exactly-once completion, 500ms journal, frozen session, renderer isolation and late mismatch invalidation');
+    assert.deepEqual(boundaries,{automaticallyInspecting:true,startedOnce:true,cancelled:true,restarted:true,plus2:'+2',dnf:'DNF',exactlyOnce:true,frozen:true,rendererIndependent:true,lateInvalidated:true});
+    console.log('PASS: automatic inspection, repeated snapshots, cancellation/restart, +2/DNF, exactly-once completion, 500ms journal, frozen session, renderer isolation and late mismatch invalidation');
     assert.equal(soak.saves,200);assert.equal(soak.applied,600);assert.equal(soak.lastMoves,3);assert.equal(soak.listeners,0);assert.ok(soak.p95<100);
     console.log('PASS: 200 capture/connect/disconnect cycles; exact counts, no retained subscriptions; preview p95',soak.p95.toFixed(2),'ms');
-    await page.evaluate(()=>tagdatimer.setSetting('inputMode','timer'));await page.keyboard.press('Space');await page.waitForTimeout(100);await page.keyboard.press('Space');
+    await page.evaluate(()=>{tagdatimer.setSetting('inspection',false);tagdatimer.setSetting('inputMode','timer');});await page.keyboard.press('Space');await page.waitForTimeout(100);await page.keyboard.press('Space');
     assert.equal(await page.evaluate(()=>document.body.classList.contains('timing')),false);
     assert.deepEqual(errors,[]);console.log('PASS: phone layout and keyboard fallback; no uncaught browser errors');
   } finally {await browser.close();}

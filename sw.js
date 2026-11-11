@@ -30,7 +30,7 @@ const STAMP = '/__sw-filled-at';
    it (and the page reports what it loaded at boot — see 'cache' below), so
    there is no list of every module here to fall out of date. */
 const PRECACHE = ['/', '/index.html',
-  '/css/smart-cube.css?v=159', '/js/smart-cube.js', '/js/smart-cube-core.js', '/js/smart-cube-preview.js', '/js/smart-cube-scramble.js',
+  '/css/smart-cube.css?v=160', '/js/smart-cube.js', '/js/smart-cube-core.js', '/js/smart-cube-preview.js', '/js/smart-cube-scramble.js',
   '/js/smart-cube-analysis.js', '/js/smart-cube-algorithms.js', '/js/cube3.js',
   '/js/sync-auth.js', '/js/sync.js', '/js/sync-queue.js', '/js/inspection-setting.js',
   '/js/algs.js', '/js/algsets.js', '/vendor/gan/gan-3.0.2.js'];

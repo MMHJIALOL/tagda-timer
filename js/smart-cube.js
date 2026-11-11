@@ -47,7 +47,7 @@ export class SmartCubeController {
     this.onFreeze = () => this.interrupt('Browser suspended during attempt');
     document.addEventListener('freeze',this.onFreeze);
     document.addEventListener('visibilitychange', this.onVisibility);
-    this.onTimerCancel = () => { if (this.active) { this.interrupt('Timer reset during attempt'); this.match(); } };
+    this.onTimerCancel = () => { if (this.active) { this.interrupt('Timer reset during attempt'); this.match(false); this.render(); } };
     this.timer.addEventListener('cancel',this.onTimerCancel);
     this.configurePreview();
     this.preview.set(null);
@@ -89,12 +89,16 @@ export class SmartCubeController {
     }
     this.render();
   }
-  match() {
+  match(autoInspect = true) {
     if (this.active || this.attemptState === 'finalising' || !this.allowed || !this.stream?.state || !this.target) return;
     this.guide?.synchronize(this.stream.state);
     if (this.guide?.anchored) this.recoveryGuide = null;
     else void this.planGuidance();
+    const wasMatched = this.attemptState === 'scramble matched';
     this.attemptState = this.stream.state === this.target ? (this.frozen.inspection ? 'scramble matched' : 'armed') : 'scrambling';
+    // State notifications may repeat; only entering the matched state starts inspection.
+    // A cancelled inspection stays ready until another turn or an explicit restart.
+    if (autoInspect && !wasMatched && this.attemptState === 'scramble matched') this.inspect();
   }
   async planGuidance() {
     if (!this.guide || this.guide.anchored || this.recoveryGuide || this.guidancePlanning || this.active || !this.allowed || !this.stream?.state) return;
@@ -126,7 +130,7 @@ export class SmartCubeController {
     }
   }
   inspect() {
-    if (this.attemptState !== 'scramble matched' || !this.allowed) return;
+    if (this.attemptState !== 'scramble matched' || !this.allowed || this.timer.state !== 'idle' || !this.timer.inspectionEnabled) return;
     this.begin(); this.attemptState = 'inspection'; this.timer.startInspection(); this.render();
   }
   begin(initial = this.stream.state, at = performance.now()) {
@@ -216,7 +220,7 @@ export class SmartCubeController {
       this.recoveryGuide?.observe(raw.move, before, after);
       if (this.guide?.anchored) this.recoveryGuide = null;
     }
-    if (this.attemptState === 'scramble matched') { this.match(); return; } // inspection must be started explicitly
+    if (this.attemptState === 'scramble matched') { this.match(); return; } // a cancelled inspection waits for a new scramble or an explicit restart
     if (this.attemptState === 'armed' && !this.active) { this.begin(before, raw.receivedMonotonic); }
     if (!this.active) return;
     if (!this.active.moves.length) {
