@@ -283,6 +283,28 @@ export function facelets(s) {
   return f;
 }
 
+/** Decode a physical cube in URFDLB order, rejecting impossible positions. */
+export function fromFacelets(input) {
+  const f = typeof input === 'string' ? [...input] : input;
+  if (!f || f.length !== 54 || !FACES.every((face, i) => f[i * 9 + 4] === face && f.filter(c => c === face).length === 9)) throw new Error('Invalid facelets');
+  const s = new Uint8Array(40);
+  for (const [slots, pieces, offset, orientationOffset] of [[CF, CC, 0, 8], [EF, EC, 16, 28]]) {
+    for (let i = 0; i < slots.length; i++) {
+      let found = false;
+      for (let p = 0; p < pieces.length; p++) for (let o = 0; o < pieces[p].length; o++) {
+        if (pieces[p].every((c, k) => f[slots[i][(k + o) % pieces[p].length]] === c)) {
+          s[offset + i] = p; s[orientationOffset + i] = o; found = true;
+        }
+      }
+      if (!found) throw new Error('Invalid cube piece');
+    }
+    if (new Set(s.slice(offset, offset + slots.length)).size !== slots.length) throw new Error('Duplicate cube piece');
+  }
+  const parity = a => a.reduce((n, v, i) => n + a.slice(i + 1).filter(w => w < v).length, 0) % 2;
+  if (s.slice(8, 16).reduce((a, b) => a + b, 0) % 3 || s.slice(28).reduce((a, b) => a + b, 0) % 2 || parity(s.slice(0, 8)) !== parity(s.slice(16, 28))) throw new Error('Impossible cube state');
+  return s;
+}
+
 /* ---------------- phases ----------------
    The cross face is never assumed. Whichever face has its four edges home is
    the cross; before that, the solver picks whichever is closest. That is what

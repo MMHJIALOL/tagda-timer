@@ -106,7 +106,7 @@ neutral to amber to red, and the digits breathe faster as time runs out.
 Inspection is turned off automatically for the blindfolded events and FMC.
 
 ### Timing input
-Four sources, one at a time, chosen in Settings → Timing input:
+Five sources, one at a time, chosen in Settings → Timing input:
 
 - **Keyboard / touch**: the spacebar, or a tap anywhere on a phone.
 - **Typed times**: type under the clock and press Enter. It reads `12.34`, `1:05.67`,
@@ -123,6 +123,13 @@ Four sources, one at a time, chosen in Settings → Timing input:
   (`I`/`K` are R/R', `J`/`F` are U/U', and so on, mapped by physical key so it works on
   any layout). The first real turn starts the clock and a solved cube stops it. The cube
   sits in the middle of the screen with the clock on the right.
+- **Smart cube (GAN)**: standard 3×3 practice with first-turn-to-solved timing.
+  Completed scramble moves turn green; a wrong turn shows corrective moves.
+  Click a saved time for move playback and solve analysis. While connected,
+  Settings → Smart cube controls preview size and rear sticker visibility.
+  Run `npm run demo:smart-cube` for a hardware-free local demo; see
+  [the demo instructions](docs/smart-cube-demo.md) and
+  [capture and analysis details](docs/smart-cube-implementation.md).
 
 Bluetooth smart timers are deliberately **not** supported. Every model speaks its own
 encrypted protocol, and code that has never been tested on one would be a button that fails silently.
@@ -1056,7 +1063,7 @@ enforced: [ADMIN.md](ADMIN.md).
 
 ## Not in this version
 
-Bluetooth smart cubes and Bluetooth smart timers.
+Bluetooth smart timers and smart-cube protocols other than GAN.
 
 Fewest Moves has no NISS helper, insertion finder or skeleton tools. It gives you the
 clock, the box, the move count and an honest verdict; the thinking is yours. It is also

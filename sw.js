@@ -18,7 +18,7 @@
    index.html on every deploy so users get it on their next visit instead.
    =========================================================== */
 
-const CACHE = 'tagda-v4'; // Data Health and the durable sync queue ship together.
+const CACHE = 'tagda-v9'; // Phone rails ignore the saved expanded statistics state.
 
 /* ponytail: time-based pickup of JS-only deploys; a build-step version file
    would make it instant if 3 days ever feels too slow. */
@@ -29,7 +29,11 @@ const STAMP = '/__sw-filled-at';
    everything else lands in the cache the first time the page actually fetches
    it (and the page reports what it loaded at boot — see 'cache' below), so
    there is no list of every module here to fall out of date. */
-const PRECACHE = ['/', '/index.html'];
+const PRECACHE = ['/', '/index.html',
+  '/css/smart-cube.css?v=159', '/js/smart-cube.js', '/js/smart-cube-core.js', '/js/smart-cube-preview.js', '/js/smart-cube-scramble.js',
+  '/js/smart-cube-analysis.js', '/js/smart-cube-algorithms.js', '/js/cube3.js',
+  '/js/sync-auth.js', '/js/sync.js', '/js/sync-queue.js', '/js/inspection-setting.js',
+  '/js/algs.js', '/js/algsets.js', '/vendor/gan/gan-3.0.2.js'];
 
 /** Content-hashed or never-edited-in-place: safe to serve from cache forever. */
 function isImmutable(url) {

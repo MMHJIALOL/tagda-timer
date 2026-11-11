@@ -6,7 +6,7 @@ import { t, translateDOM } from './i18n.js';
 
 import { $, $$, el, uid, fmt, fmtLive, fmtResult, clamp, copy, download, toCSV, debounce,
          parseTimeInput, parseScrambleList, parseGoal, hasWebGL } from './util.js';
-import { Solves, Sessions, KV, Assets, LetterPairs, importAll, onWrite, onLocalStatus, memoryOnly } from './db.js';
+import { Solves, SmartCaptures, Sessions, KV, Assets, LetterPairs, importAll, onWrite, onLocalStatus, memoryOnly } from './db.js';
 import { initCompetition, competitionOpen, competitionTiming, recordCompetitionSolve, rememberCompetitionScramble, leaveCompetition } from './competition.js';
 import { competitionResult } from './competition-stats.js';
 import { activeGearId, Gear, gearLabel } from './gear.js';
@@ -563,7 +563,12 @@ let cubeDrag = null;
 /* =========================================================
    Boot
    ========================================================= */
-init().catch(bootFailure);
+init().then(async()=> {
+  if (['localhost','127.0.0.1'].includes(location.hostname) && new URLSearchParams(location.search).get('smartCubeDemo')==='1') {
+    const {mountSmartCubeDemo}=await import('./smart-cube-demo.js');
+    await mountSmartCubeDemo({app,loadSmartCube,showScramble: scramble => { ++scrambleToken; showScramble(scramble,true); }});
+  }
+}).catch(bootFailure);
 
 /**
  * A rejected init() is otherwise an unhandled promise rejection: the page sits
@@ -782,7 +787,7 @@ async function init() {
  * boot graph in sw.js for someone to forget to update.
  */
 function registerServiceWorker() {
-  if (!('serviceWorker' in navigator)) return;
+  if (!('serviceWorker' in navigator) || (['localhost','127.0.0.1'].includes(location.hostname) && new URLSearchParams(location.search).get('smartCubeDemo')==='1')) return;
   navigator.serviceWorker.register('/sw.js').then(async () => {
     const reg = await navigator.serviceWorker.ready;
     // After load, so the late arrivals — the cube module, the shader, the
@@ -1368,6 +1373,8 @@ function revealMoves(node, text) {
 
 function showScramble(s, silent = false) {
   app.scramble = s;
+  smartCube?.sync();
+  queueMicrotask(() => smartCube?.render());
   rememberCompetitionScramble(s);
   const ev = eventOf(app.settings.event);
   const node = $('#scramble-text');
@@ -2655,7 +2662,16 @@ async function onSolveFinished(res) {
  * no second version of the PB logic to drift.
  */
 async function recordSolve({ timeMs, penalty = 'none', inspectionMs = 0, splits = null,
-                             scramble = null, fmcMoves = null, fmcSolution = '', fmcNotes = '', clip = null }) {
+                             scramble = null, fmcMoves = null, fmcSolution = '', fmcNotes = '', clip = null, smartCapture = null }) {
+  if (smartCapture && app.solves.some(s => s.id === smartCapture.id)) {
+    const existing=app.solves.find(s => s.id === smartCapture.id);
+    existing.smartCube={...existing.smartCube,completeness:smartCapture.completeness};
+    if (smartCapture.completeness !== 'complete') existing.penalty='DNF';
+    await Solves.put(existing, smartCapture);
+    renderAll();
+    if (app.session.id === smartCapture.context.sessionId && app.scramble?.scramble === smartCapture.context.scramble) nextScramble();
+    return;
+  }
   const comparable = resultsFor(app.solves, fmcMoves !== null);
   const prevBest = bestSingle(comparable);
   const prevAo5  = bestAvg(comparable, 5).value;
@@ -2664,7 +2680,7 @@ async function recordSolve({ timeMs, penalty = 'none', inspectionMs = 0, splits 
   const prevAo100 = bestAvg(comparable, 100).value;
 
   const race = raceCtl();
-  const racing = !!(race?.inRoom && app.scramble?.race);
+  const racing = !smartCapture && !!(race?.inRoom && app.scramble?.race);
 
   /* The breakdown is computed once, here, and stored with the solve rather
      than recomputed during review: it is what the DNF post-mortem back-traces
@@ -2733,6 +2749,14 @@ async function recordSolve({ timeMs, penalty = 'none', inspectionMs = 0, splits 
     ...(bld ? { bld } : {}),
     ...(phasesMs ? { phases: phasesMs } : {}),
     ...(relayParts ? { relay: relayParts } : {}),
+    ...(smartCapture ? {
+      id: smartCapture.id, sessionId: smartCapture.context.sessionId, event: '333', mode: 'wca',
+      scramble: smartCapture.context.scramble, createdAt: smartCapture.createdAt, caseId: null, caseName: null,
+      smartCube: { schemaVersion: 1, captureId: smartCapture.id, source: smartCapture.simulated ? 'simulation' : 'gan',
+        deviceModel: smartCapture.connections[0]?.deviceModel || 'GAN', completeness: smartCapture.completeness,
+        timingMethod: smartCapture.timingMethod, timingQuality: smartCapture.timingQuality,
+        qtm: smartCapture.moves.reduce((n,m)=>n+(m.move.endsWith('2') ? 2 : 1),0), analysisVersion: 1 },
+    } : {}),
   };
   if (bld?.memoMs != null) {
     $('#phase-times').textContent = t('memo {m} · exec {e}', { m: fmt(bld.memoMs), e: fmt(bld.execMs) });
@@ -2745,7 +2769,7 @@ async function recordSolve({ timeMs, penalty = 'none', inspectionMs = 0, splits 
   }
   // Membership and the solve commit atomically before any UI or replay keeps it.
   let inCompetition = false;
-  try { inCompetition = await recordCompetitionSolve(solve); }
+  try { if (!smartCapture) inCompetition = await recordCompetitionSolve(solve); }
   catch (err) {
     // Concurrent tabs or a changed context cannot cost the measured time.
     // Preserve it as ordinary practice and ask the user to resume the set.
@@ -2754,10 +2778,14 @@ async function recordSolve({ timeMs, penalty = 'none', inspectionMs = 0, splits 
   }
   let locallySaved = true;
   if (!inCompetition) {
-    try { await Solves.put(solve); }
+    try { await Solves.put(solve, smartCapture); }
     catch (error) { locallySaved = false; console.warn('[db] solve retained for recovery', error); }
   }
-  app.solves.push(solve);
+  if (smartCapture && smartCapture.context.sessionId !== app.session.id) {
+    if (!locallySaved) throw new Error(t('Solve is unsaved. Retry or export recovery.'));
+    return;
+  }
+  if (!app.solves.some(s => s.id === solve.id)) app.solves.push(solve);
 
   // Once saved, this list entry must not return if a reload interrupts the
   // remaining UI work before the next scramble is dealt.
@@ -2822,6 +2850,7 @@ async function recordSolve({ timeMs, penalty = 'none', inspectionMs = 0, splits 
   /* Only a Competition attempt waits for the next scramble, so the set has
      saved it before the next attempt. Anything else must not: a typed time
      or an FMC submit would sit behind a big-cube or Square-1 scrambler. */
+  if (smartCapture && !locallySaved) throw new Error(t('Solve is unsaved. Retry or export recovery.'));
   const next = nextScramble();
   if (inCompetition) { await next; await app.competitionScrambleSaved; }
 }
@@ -3363,6 +3392,12 @@ function historyChip(i, data, grouped = false) {
     class: 't', text: d.time,
     title: d.solve.phases?.length ? t('Has a phase breakdown — click for the split') : '',
   });
+  if (d.solve.smartCube) {
+    timeCell.tabIndex = 0; timeCell.setAttribute('role','button'); timeCell.title = t('Open smart cube analysis');
+    const open = e => { e.stopPropagation(); app.openSmartAnalysis(d.solve); };
+    timeCell.addEventListener('click',open);
+    timeCell.addEventListener('keydown',e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(e); } });
+  }
   if (d.solve.competitionSetId && !grouped) timeCell.append(el('button', {
     class: 'competition-badge', text: `C${d.solve.competitionAttempt}`, title: t('Competition Mode · attempt {n}', { n:d.solve.competitionAttempt }),
     onclick: e => { e.stopPropagation(); app.openCompetitionSet(d.solve.competitionSetId); },
@@ -3905,6 +3940,7 @@ function solveMenu(solve, anchor) {
       { label: t('Copy solution'), onSelect: () => copyToast(solve.fmcSolution, 'Solution') },
       { sep: true },
     ] : []),
+    ...(solve.smartCube ? [{ label: t('Open smart cube analysis'), onSelect: () => app.openSmartAnalysis(solve) }] : []),
     { label: t('Copy scramble'), badge: '', onSelect: () => copyToast(solve.scramble, 'Scramble') },
     { label: t('Share as a card'), badge: 'S', onSelect: () => app.shareSolveCard(solve) },
     ...(hasReplay(solve.id) ? [{ label: t('Watch replay'), badge: 'W', onSelect: () => openReplay(solve) }] : []),
@@ -4010,9 +4046,10 @@ async function deleteSolve(solve) {
   if (solve.competitionSetId) { toast(t('Competition attempts belong to a set. Delete the entire average.'), { hold: true }); return; }
   const i = app.solves.indexOf(solve);
   if (i === -1) return;
+  const capture = solve.smartCube ? await SmartCaptures.get(solve.id) : null;
   try { await Solves.del(solve.id); } catch (error) { console.warn('[db] deletion retained for retry', error); return; }
   app.solves.splice(i, 1);
-  app.lastDeleted = { solves: [solve], sessionId: app.session.id, label: t('1 solve') };
+  app.lastDeleted = { solves: [solve], captures: capture ? [capture] : [], sessionId: app.session.id, label: t('1 solve') };
   app.sessionCounts.set(app.session.id, app.solves.length);
   renderAll();
   syncTimerDisplay();
@@ -4032,6 +4069,14 @@ async function deleteSolve(solve) {
 async function undoDelete() {
   const rec = app.lastDeleted;
   if (!rec) { toast('Nothing to undo'); return; }
+  // Smart replay undo is a copy with a fresh identity: durable cloud deletion
+  // markers continue to reject delayed uploads of the deleted original.
+  for (const capture of rec.captures || []) {
+    const solve = rec.solves.find(s => s.id === capture.id); if (!solve) continue;
+    const id = uid(); solve.id = id; solve.smartCube = { ...solve.smartCube, captureId:id };
+    capture.id = capture.solveId = id;
+    try { await Solves.put(solve,capture); } catch(error) { console.warn('[db] restore retained for retry',error); return; }
+  }
   try { await Solves.putMany(rec.solves); } catch (error) { console.warn('[db] restore retained for retry', error); return; }
   app.lastDeleted = null;
   // Restoring into a session you have since navigated away from would silently
@@ -4055,6 +4100,7 @@ async function refreshCounts() {
 }
 
 app.switchSession = async (id) => {
+  smartCube?.interrupt('Session changed');
   const s = app.sessions.find(x => x.id === id);
   if (!s) return;
   /* Whether the scramble on screen is about to become the wrong one. Read
@@ -4251,6 +4297,7 @@ async function clearSession() {
   if (hasCompetition && !await confirmToast(t('This also removes every Competition set and its local replays. Whole-set deletion cannot be undone.'), t('Clear session'), { timeout: 15000 })) return;
   if (hasCompetition) await leaveCompetition();
   const backup = [...app.solves];
+  const captures = (await Promise.all(backup.filter(s=>s.smartCube).map(s=>SmartCaptures.get(s.id)))).filter(Boolean);
   await Solves.clearSession(app.session.id);
   app.solves = [];
   app.sessionCounts.set(app.session.id, 0);
@@ -4413,6 +4460,9 @@ function applyInputView() {
   updateHint();
   syncStackmatButtons();
   $('#vcube-wrap').hidden = mode !== 'virtual';
+  $('#smart-cube-wrap').hidden = mode !== 'smart';
+  if (mode === 'smart') loadSmartCube().then(c => c.sync()).catch(err => toast(err.message, { kind: 'bad' }));
+  else smartCube?.sync();
   if (mode === 'virtual') {
     loadVcube().then(resetVcube).catch((err) => {
       console.warn('[vcube] could not start', err);
@@ -4427,6 +4477,7 @@ function applyInputMode(changed) {
 
   // Anything half-armed on the old source has to go, or a stale hold survives
   // the switch and starts a solve nobody asked for.
+  smartCube?.sync();
   timer?.reset();
 
   if (mode === 'stackmat') startStackmat();
@@ -4446,6 +4497,38 @@ function applyInputMode(changed) {
   }).catch(err => console.warn('[vcube] session switch failed', err));
 }
 app.applyInputMode = applyInputMode;
+
+let smartCube = null;
+const loadSmartCube = lazy(async () => {
+  const { SmartCubeController } = await import('./smart-cube.js');
+  const { currentUser } = await import('./sync-auth.js');
+  smartCube = new SmartCubeController({ host: $('#smart-cube-wrap'), timer, scrambleHost: $('#scramble-text'),
+    preferences: () => app.settings,
+    openSettings: () => app.openSmartCubeSettings(),
+    context: () => ({ sessionId: app.session.id, event: app.settings.event, mode: app.settings.mode,
+      scramble: app.scramble?.scramble || '', inspection: timer.inspectionEnabled, ownerUid: currentUser()?.uid || null,
+      allowed: inputMode() === 'smart' && app.settings.event === '333' && app.settings.mode === 'wca'
+        && !competitionTiming() && !competitionOpen() && !raceCtl()?.inRoom && !dailyCtl()?.engaged
+        && !relayOn() && !multiphaseOn() && !app.settings.scramblesOnly && !app.session.virtual && !app.session.race }),
+    save: async capture => {
+      await recordSolve({ timeMs: capture.measuredDurationMs, penalty: capture.penalty,
+        inspectionMs: capture.inspectionMs || 0, smartCapture: capture });
+      syncTimerDisplay();
+    },
+    notice: message => toast(message, { kind: 'bad', hold: true }),
+    switchInput: () => { app.settings.inputMode = 'timer'; persist(); applyInputMode('inputMode'); },
+  });
+  await smartCube.load();
+  return smartCube;
+});
+app.smartCubeController = () => smartCube;
+app.openSmartCubeSettings = () => openPanel('Settings', 'buildSmartCubeSettings', undefined, app);
+app.openSmartAnalysis = async solve => {
+  try {
+    const { openSmartAnalysis } = await import('./smart-cube-analysis.js');
+    await openSmartAnalysis(solve, { details: anchor => solveMenu(solve, anchor), notice: message => toast(message, { kind: 'bad' }) });
+  } catch (e) { toast(e.message, { kind:'bad', hold:true }); }
+};
 
 /* ---------------- virtual cube ----------------
    Loaded the first time it is switched on: a second twisty-player and the
@@ -5409,7 +5492,7 @@ app.applySettingsPreset = async (id) => {
 app.setSetting = (k, v) => {
   if (k === 'inspection') chooseInspection(app.settings, v);
   else app.settings[k] = v;
-  const saved = persist({ immediate: k === 'inspection' });
+  const saved = persist({ immediate: k === 'inspection' || ['smartCubeSize','smartCubeHints','smartCubeNet'].includes(k) });
   applyAll(k);
   return saved;
 };
@@ -5443,6 +5526,7 @@ function applyAll(changed) {
   if (changed === 'showBpa') renderStats();
   if (changed === 'hintFacelets') cube.setHints(app.settings.hintFacelets);
   if (!changed || changed === 'showCube') syncPreviewCube();
+  if (!changed || ['smartCubeSize','smartCubeHints','smartCubeNet'].includes(changed)) smartCube?.configurePreview();
   if (!changed || changed === 'cubeColors') {
     cube.setColors(app.settings.cubeColors);
     vcube?.view.setColors(app.settings.cubeColors);
@@ -5569,6 +5653,7 @@ const openRelayBuilder = () => openPanel('Relay', 'buildRelay', {}, app);
 app.openRelayBuilder = openRelayBuilder;
 
 async function setEvent(id) {
+  smartCube?.interrupt('Event changed');
   if (competitionTiming()) await leaveCompetition();
   /* Relay is not an event you can simply switch to: it is a relay, and a
      relay is a list of puzzles that has to exist before there is anything to
@@ -5760,7 +5845,7 @@ app.exportSessionCSV = () => {
       `${eventOf(p.event).short}${Number.isFinite(p.splitMs) ? ` ${(p.splitMs / 1000).toFixed(3)}` : ''}`).join(' | ')] : []),
   ]));
   download(`${app.session.name.replace(/\W+/g, '-')}.csv`, toCSV(rows), 'text/csv');
-  toast('CSV downloaded', { kind: 'good' });
+  toast(app.solves.some(s=>s.smartCube) ? t('CSV includes results only. Use a native backup or capture JSON to keep timed moves.') : t('CSV downloaded'), { kind: 'good', long:true });
 };
 
 /* ---------------- csTimer import ----------------

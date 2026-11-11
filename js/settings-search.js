@@ -68,6 +68,7 @@ const ALIASES = [
   ['Statistics panel', 'stats averages show hide widget'],
   ['Times strip', 'history solve list show hide panel'],
   ['Hint facelets', 'ghost hidden stickers cube faces'],
+  ['Smart cube', 'bluetooth GAN connected device preview size rear hidden stickers'],
   ['Yellow on top', 'cube orientation white cross trainer'],
   ['Density', 'spacing compact comfortable spacious layout'],
   ['Motion', 'animation reduce disable movement accessibility'],

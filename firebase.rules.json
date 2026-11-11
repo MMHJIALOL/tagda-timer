@@ -10,7 +10,7 @@
 
         "solves": {
           "$id": {
-            ".validate": "newData.hasChildren(['id', 'createdAt']) && newData.child('id').val() === $id",
+            ".validate": "newData.hasChildren(['id', 'createdAt']) && newData.child('id').val() === $id && (!newData.child('smartCube').exists() || !root.child('users').child($uid).child('smartCubeDeleted').child($id).exists())",
             "id":           { ".validate": "newData.isString() && newData.val().length <= 64" },
             "sessionId":    { ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 64)" },
             "event":        { ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 24)" },
@@ -28,6 +28,7 @@
             "roomId":       { ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 16)" },
             "bld":          { ".validate": true },
             "phases":       { ".validate": true },
+            "smartCube": {".validate": "newData.hasChildren(['schemaVersion', 'captureId', 'completeness']) && newData.child('schemaVersion').val() === 1 && newData.child('captureId').val() === $id"},
             "recon":        { ".validate": true },
             "competitionSetId": { ".validate": "!newData.exists() || (newData.isString() && root.child('users').child($uid).child('competitionSets').child(newData.val()).child('status').val() !== 'discarded')" },
             "competitionAttempt": { ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 1 && newData.val() % 1 === 0)" },
@@ -67,6 +68,31 @@
         },
         "learn": { ".validate": "newData.hasChildren() || !newData.exists()" },
 
+        "smartCubeDeleted": {
+          "$id": {
+            ".validate": "newData.val() === true"
+          }
+        },
+        "smartCubeCaptures": {
+          "$id": {
+            ".validate": "!root.child('users').child($uid).child('smartCubeDeleted').child($id).exists() && newData.hasChildren(['id', 'revision', 'payload']) && newData.child('id').val() === $id && (!data.exists() || newData.child('revision').val() > data.child('revision').val() || (newData.child('revision').val() === data.child('revision').val() && newData.child('payload').val() === data.child('payload').val()))",
+            "id": {
+              ".validate": "newData.isString() && newData.val().length <= 64"
+            },
+            "revision": {
+              ".validate": "newData.isNumber() && newData.val() >= 0"
+            },
+            "updatedAt": {
+              ".validate": "newData.isNumber()"
+            },
+            "payload": {
+              ".validate": "newData.isString() && newData.val().length <= 1800000"
+            },
+            "$other": {
+              ".validate": false
+            }
+          }
+        },
         "competitionSets": {
           "$id": {
             ".validate": "newData.hasChildren(['id', 'status', 'size', 'sessionId', 'event', 'createdAt']) && newData.child('id').val() === $id && newData.child('size').isNumber() && newData.child('size').val() >= 5 && newData.child('size').val() % 1 === 0 && (data.child('status').val() !== 'discarded' || newData.child('status').val() === 'discarded')"

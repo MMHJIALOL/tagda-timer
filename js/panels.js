@@ -1104,12 +1104,60 @@ function puzzleColorControls(app) {
   return { element, dispose: () => { disposed = true; revision++; } };
 }
 
+export function buildSmartCubeSettings(app) {
+  return body => {
+    const controller = app.smartCubeController?.();
+    const back = () => openDrawer('Settings', buildSettings(app));
+    if (controller?.connectionState !== 'connected') {
+      body.append(el('button', { class:'ghost-btn', text:t('Back to settings'), onclick:back }),
+        el('p', { class:'hint-note', text:t('Connect your cube to begin') }));
+      return;
+    }
+    const settings = app.settings;
+    const size = slider(settings.smartCubeSize ?? 100, 65, 140, 5,
+      value => app.setSetting('smartCubeSize', value), value => `${value}%`);
+    size.querySelector('input').setAttribute('aria-label', t('Cube size'));
+    const rear = toggle(settings.smartCubeHints !== false, value => app.setSetting('smartCubeHints', value));
+    rear.querySelector('input').setAttribute('aria-label', t('Show rear stickers'));
+    const net = toggle(!!settings.smartCubeNet, value => {
+      app.setSetting('smartCubeNet', value);
+      rear.querySelector('input').disabled = value;
+    });
+    net.querySelector('input').setAttribute('aria-label', t('Use sticker net'));
+    rear.querySelector('input').disabled = !!settings.smartCubeNet;
+    const action = (label, onclick) => el('button', { class:'ghost-btn sm', text:t(label), onclick });
+    body.append(
+      el('button', { class:'ghost-btn smart-settings-back', text:`← ${t('Back to settings')}`, onclick:back }),
+      el('div', { class:'smart-settings-heading' }, el('h2', { text:t('Smart cube') }),
+        el('p', { text:`${controller.deviceName || 'GAN'}${controller.battery == null ? '' : ` · ${controller.battery}%`}` })),
+      group(t('Cube preview'),
+        row(t('Cube size'), size, t('fits the available space on every screen')),
+        row(t('Show rear stickers'), rear, t('see the colours on the hidden faces')),
+        row(t('Use sticker net'), net, t('flat view of all six faces'))),
+      group(t('Cube controls'),
+        row(t('Camera'), action('Reset camera', () => controller.preview.reset())),
+        row(t('Cube state'), action('Refresh cube state', () => controller.requestState())),
+        row(t('Calibration'), action('Calibrate solved cube', () => controller.calibrate()), t('only after physically solving all six faces')),
+        row(t('Timing input'), action('Switch to keyboard', () => { controller.switchInput(); back(); }))),
+    );
+    const connectionChanged = () => { if (controller.connectionState !== 'connected') back(); };
+    document.addEventListener('smart-cube-connection-change', connectionChanged);
+    return () => document.removeEventListener('smart-cube-connection-change', connectionChanged);
+  };
+}
+
 export function buildSettings(app, searchQuery = '') {
   settingsApp = app;
   return (body) => {
     const health = buildDataHealthRow(() => openDataHealth(app));
     const S = app.settings;
     const set = (k, v) => app.setSetting(k, v);
+    const smartSettings = group(t('Smart cube'), row(t('Cube preview'),
+      el('button', { class:'ghost-btn', text:t('Configure'), onclick:() => openDrawer('Settings', buildSmartCubeSettings(app)) }),
+      t('size, rear stickers and device controls')));
+    const syncSmartSettings = () => { smartSettings.hidden = app.smartCubeController?.()?.connectionState !== 'connected'; };
+    syncSmartSettings();
+    document.addEventListener('smart-cube-connection-change', syncSmartSettings);
 
     /* "Confirm misfires" and how short a misfire is. The slider is greyed out
        while the toggle is off, and the toggle's own line reads its value. */
@@ -1145,6 +1193,7 @@ export function buildSettings(app, searchQuery = '') {
           { value: 'manual', label: t('Type them') },
           { value: 'stackmat', label: t('Stackmat (aux)') },
           { value: 'virtual', label: t('Virtual cube') },
+          { value: 'smart', label: t('Smart cube (GAN)') },
         ], S.inputMode || 'timer', (v) => {
           set('inputMode', v);
           // The note under this row is different for every mode, so redraw.
@@ -1174,6 +1223,8 @@ export function buildSettings(app, searchQuery = '') {
         el('div', { class: 'hint-note', html:
             t('<b>Bluetooth smart timers are not supported.</b> Every model (GAN, QiYi, MoYu) speaks its own encrypted protocol, and shipping an implementation that has never been near the hardware would just be a button that fails silently. The aux route above works with any Stackmat, which is what the Bluetooth timers emulate anyway.') }),
       ),
+
+      smartSettings,
 
       group(t('Timer'),
         row(t('Hold time'), chips([
@@ -1380,7 +1431,7 @@ export function buildSettings(app, searchQuery = '') {
       ),
     );
     mountSettingsSearch(body, { query: searchQuery, onQuery: value => { searchQuery = value; } });
-    return () => { health.dispose(); disposeAccountRow(); };
+    return () => { document.removeEventListener('smart-cube-connection-change', syncSmartSettings); health.dispose(); disposeAccountRow(); };
   };
 }
 
@@ -2502,6 +2553,11 @@ export function buildHistory(app) {
         el('span', { class: 'st-s', text: s.scramble.replace(/\n/g, t(' | ')) }),
         el('span', { class: 'st-d', text: fmtDate(s.createdAt) }),
       );
+      if (s.smartCube) {
+        const time = r.querySelector('.st-t'); time.tabIndex = 0; time.setAttribute('role','button'); time.title = t('Open smart cube analysis');
+        const open = e => { e.stopPropagation(); app.openSmartAnalysis(s); };
+        time.addEventListener('click',open); time.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();open(e);}});
+      }
       r.addEventListener('click', (e) => app.solveMenu(s, e.currentTarget));
       table.append(r);
     });

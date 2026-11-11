@@ -33,15 +33,16 @@
      import hint in Settings over a main.js that has never heard of CubeDesk.
      vercel.json also serves /css/ as `max-age=31536000, immutable`, so a
      stylesheet there will not even be asked about for a year without it. -->
-<link rel="modulepreload" href="js/main.js?v=158">
-<link rel="stylesheet" href="css/fonts.css?v=158">
-<link rel="stylesheet" href="css/tokens.css?v=158">
-<link rel="stylesheet" href="css/base.css?v=158">
-<link rel="stylesheet" href="css/components.css?v=158">
-<link rel="stylesheet" href="css/announce.css?v=158">
+<link rel="modulepreload" href="js/main.js?v=159">
+<link rel="stylesheet" href="css/fonts.css?v=159">
+<link rel="stylesheet" href="css/tokens.css?v=159">
+<link rel="stylesheet" href="css/base.css?v=159">
+<link rel="stylesheet" href="css/components.css?v=159">
+<link rel="stylesheet" href="css/smart-cube.css?v=159">
+<link rel="stylesheet" href="css/announce.css?v=159">
 <!-- Phones only: the same query as js/phone.js. A desktop or tablet never
      applies a rule from it, and does not wait on it to paint. -->
-<link rel="stylesheet" href="css/phone.css?v=158" media="(max-width: 640px)">
+<link rel="stylesheet" href="css/phone.css?v=159" media="(max-width: 640px)">
 <link rel="icon" href="assets/favicon.ico" sizes="any">
 <link rel="icon" type="image/png" sizes="32x32" href="assets/logo-32.png">
 <link rel="icon" type="image/png" sizes="192x192" href="assets/logo-192.png">
@@ -477,6 +478,7 @@
     <section id="timer-zone">
       <!-- Virtual cube. On screen only when the input is "Virtual cube" and the
            event is a 2x2–7x7; the clock then sits beside it, as on csTimer. -->
+      <section id="smart-cube-wrap" aria-label="Smart cube" hidden></section>
       <div id="vcube-wrap" hidden><div id="vcube-holder"></div></div>
       <!-- Everything the eye reads as "the timer" lives in one box, so it can be
            centred on the screen rather than on the space the header left over. -->
@@ -811,7 +813,7 @@
   </div>
 </div>
 
-<script type="module" src="js/main.js?v=158"></script>
+<script type="module" src="js/main.js?v=159"></script>
 <script>
 (function () {
   var isFile = location.protocol === 'file:';
