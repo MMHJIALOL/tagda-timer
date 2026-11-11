@@ -175,9 +175,9 @@ export class Timer extends EventTarget {
    * turn, and the cube coming out solved. Stopping goes straight back to idle,
    * because there is no key still held down to release.
    */
-  start() {
+  start(at) {
     if (this.cfg.off) return;
-    if (this.state === 'idle' || this.state === 'inspecting') this._start();
+    if (this.state === 'idle' || this.state === 'inspecting') this._start(at);
   }
 
   /** `timeMs` overrides our clock — a Stackmat's own display is the real time. */
@@ -186,6 +186,11 @@ export class Timer extends EventTarget {
     this._stop(timeMs == null ? undefined : this.solveStart + timeMs);
     this._ignoreUp = false;
     this.up();
+  }
+
+  /** Begin inspection without a press or a timed turn (smart cubes). */
+  startInspection() {
+    if (this.state === 'idle' && this.inspectionEnabled && !this.cfg.off) this._startInspection();
   }
 
   /* ---------------- inspection ---------------- */

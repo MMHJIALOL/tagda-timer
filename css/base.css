@@ -824,9 +824,10 @@ body.inspecting #last-delta, body.focus #last-delta { display: none; }
      for as long as they have it. Two half-width tiles cannot both be useful —
      the stat grid alone is taller than a phone's whole lower third. The list is
      back the moment the stats collapse, and the full Statistics drawer is on
-     the chart button either way. */
-  #stage:has(#panel-stats[data-collapsed="false"]) #sidebar { display: none; }
-  #stage:has(#panel-stats[data-collapsed="false"]) #sidebar-right {
+     the chart button either way. Phones hide these rails entirely, so a saved
+     expanded state must not reserve their tablet height there. */
+  body:not(.ph) #stage:has(#panel-stats[data-collapsed="false"]) #sidebar { display: none; }
+  body:not(.ph) #stage:has(#panel-stats[data-collapsed="false"]) #sidebar-right {
     grid-column: 1 / -1; height: 46vh;
   }
 

@@ -7,7 +7,7 @@ import { t } from './i18n.js';
    =========================================================== */
 
 const DB_NAME = 'tagdatimer';
-const DB_VER  = 4;
+const DB_VER  = 5;
 let _db = null;
 
 // Health follows transaction completion, never an IDBRequest's success event.
@@ -76,13 +76,14 @@ export function exportRecovery() {
   }
   return { app: 'tagdatimer', version: 1, exportedAt: Date.now(),
     sessions: [...sessions.values()], solves,
+    smartCubeCaptures: [...recovery.values()].filter(r => r.capture).map(r => r.capture),
     recoveryOnly: true };
 }
 export const hasUnsavedLocalChange = (store, id) => recovery.has(`${store}:${id}`);
 export async function retryLocalWrites() {
   for (const r of [...recovery.values()]) {
     const store = r.store === 'solves' ? Solves : Sessions;
-    await (r.value === null ? store.del(r.id) : store.put(r.value));
+    await (r.value === null ? store.del(r.id) : store.put(r.value, r.capture));
   }
 }
 if (typeof window !== 'undefined') window.addEventListener('beforeunload', e => {
@@ -146,6 +147,7 @@ function openWith(factory) {
         c.createIndex('bySession', 'sessionId');
         c.createIndex('byStatus', 'status');
       }
+      if (!db.objectStoreNames.contains('smartCubeCaptures')) db.createObjectStore('smartCubeCaptures', { keyPath: 'id' });
       const solves = req.transaction.objectStore('solves');
       if (!solves.indexNames.contains('byCompetition')) solves.createIndex('byCompetition', 'competitionSetId');
       void e;
@@ -210,7 +212,7 @@ export const wrap = (req) => new Promise((res, rej) => {
    subscriber, and it reaches in through this tiny pub-sub instead of db.js
    importing Firebase. Fired after the local write has already succeeded, so
    a hook throwing or a slow cloud push can never affect what IndexedDB has. */
-const hooks = { solves: [], solvesBatch: [], sessions: [], solvesDel: [], sessionsDel: [], kv: [], rec: [], recDel: [], competition: [] };
+const hooks = { solves: [], solvesBatch: [], sessions: [], solvesDel: [], sessionsDel: [], kv: [], rec: [], recDel: [], competition: [], smartCube: [] };
 
 export function onWrite(store, fn) {
   hooks[store].push(fn);
@@ -327,8 +329,10 @@ async function savedRows(entries) {
 }
 
 export const Solves = {
-  async put(solve)      {
-    const r = await atomic(['solves', 'competitionSets'], async tr => {
+  async put(solve, capture = null) {
+    if (capture) { const {validateCapture}=await import('./smart-cube-core.js');validateCapture(capture); }
+    if (capture && (capture.id !== solve.id || capture.solveId !== solve.id)) throw new Error('Capture ID mismatch');
+    const r = await atomic(capture ? ['solves', 'competitionSets', 'smartCubeCaptures'] : ['solves', 'competitionSets'], async tr => {
       const os = tr.objectStore('solves'), previous = await wrap(os.get(solve.id));
       if (previous?.competitionSetId && (solve.competitionSetId !== previous.competitionSetId || solve.competitionAttempt !== previous.competitionAttempt || solve.timeMs !== previous.timeMs || solve.scramble !== previous.scramble)) {
         throw new Error(t('Competition attempt membership and raw time cannot be changed'));
@@ -337,10 +341,12 @@ export const Solves = {
         const c = await wrap(tr.objectStore('competitionSets').get(solve.competitionSetId));
         if (!c || c.solveIds[solve.competitionAttempt-1] !== solve.id) throw new Error(t('This Competition average was deleted or is still syncing'));
       }
+      if (capture) tr.objectStore('smartCubeCaptures').put(capture);
       return wrap(os.put(solve));
     });
     await Tombstones.clear('solves', [solve.id]);
-    emit('solves', solve);
+    if (capture) emit('smartCube', { solve, capture });
+    else emit('solves', solve);
     return r;
   },
   async putMany(list)   {
@@ -366,13 +372,16 @@ export const Solves = {
   },
   async delMany(ids)    {
     if (!ids.length) return;
-    await atomic(['solves'], async tr => {
+    await atomic(['solves', 'smartCubeCaptures', 'kv'], async tr => {
       const store = tr.objectStore('solves');
       const rows = await Promise.all(ids.map(id => wrap(store.get(id))));
       if (rows.some(s => s?.competitionSetId)) throw new Error(t('Competition attempts belong to a set. Delete the entire average.'));
-      ids.forEach(id => store.delete(id));
+      ids.forEach(id => { store.delete(id); tr.objectStore('smartCubeCaptures').delete(id); });
+      const active = await wrap(tr.objectStore('kv').get('smartCube.active'));
+      if (active && ids.includes(active.id)) tr.objectStore('kv').delete('smartCube.active');
     });
     await Tombstones.record('solves', ids);
+    try { const active = JSON.parse(localStorage.getItem('tagda:smartCube.active') || 'null'); if (active && ids.includes(active.id)) localStorage.removeItem('tagda:smartCube.active'); } catch {}
     emit('solvesDel', ids);
   },
   /** Chronological (oldest first) list for a session. */
@@ -481,17 +490,17 @@ for (const [name, api] of [['solves', Solves], ['sessions', Sessions]]) {
   for (const method of ['put', 'putMany', 'del', 'delMany']) {
     if (!api[method]) continue;
     const original = api[method];
-    api[method] = async function (arg) {
+    api[method] = async function (arg, capture = null) {
       const values = method.endsWith('Many') ? arg : [arg];
       const entries = values.map(value => {
         const id = method.startsWith('put') ? value.id : value;
         const key = `${name}:${id}`;
         const version = (mutationVersions.get(key) || 0) + 1;
         mutationVersions.set(key, version);
-        return { key, version, entry: { store: name, id, value: method.startsWith('put') ? structuredClone(value) : null } };
+        return { key, version, entry: { store: name, id, value: method.startsWith('put') ? structuredClone(value) : null, ...(capture ? { capture: structuredClone(capture) } : {}) } };
       });
       try {
-        const result = await original.call(this, arg);
+        const result = await original.call(this, arg, capture);
         for (const { key, version } of entries) if (mutationVersions.get(key) === version) recovery.delete(key);
         if (![...recovery.values()].some(r => r.store === name)) localErrors.delete(name);
         if (entries.length) saveRecovery();
@@ -620,11 +629,19 @@ export const LetterPairs = {
 export async function exportAll() {
   // Solves and their set boundaries must come from the same snapshot, even
   // when another tab records an attempt while a backup is being downloaded.
-  const snapshot = (await openDB()).transaction(['sessions','solves','competitionSets']);
-  const [sessions, solves, sets] = await Promise.all(['sessions','solves','competitionSets'].map(name=>wrap(snapshot.objectStore(name).getAll())));
+  const snapshot = (await openDB()).transaction(['sessions','solves','competitionSets','smartCubeCaptures']);
+  const [sessions, solves, sets, captures] = await Promise.all(['sessions','solves','competitionSets','smartCubeCaptures'].map(name=>wrap(snapshot.objectStore(name).getAll())));
+  for (const solve of overlay('solves',solves)) {
+    if (!solve.smartCube || captures.some(c => c.id === solve.id) || recovery.get(`solves:${solve.id}`)?.capture) continue;
+    const { downloadSmartCapture } = await import('./sync.js');
+    const capture = await downloadSmartCapture(solve.id);
+    if (!capture) throw new Error(t('A smart cube capture is missing. Connect to your account and retry the full backup.'));
+    captures.push(capture);
+  }
   return {
     app: 'tagdatimer',
-    version: 2,
+    version: 3,
+    smartCubeCaptures: [...new Map([...captures, ...[...recovery.values()].filter(r => r.capture).map(r => r.capture)].map(c => [c.id,c])).values()].filter(c => overlay('solves',solves).some(s => s.id === c.id)),
     exportedAt: Date.now(),
     sessions: overlay('sessions', sessions).sort((a,b)=>(a.order??0)-(b.order??0)||a.createdAt-b.createdAt),
     solves: overlay('solves', solves).sort((a,b)=>a.createdAt-b.createdAt),
@@ -646,6 +663,10 @@ export async function exportAll() {
 
 export async function importAll(data, { merge = true } = {}) {
   if (!data || !Array.isArray(data.solves)) throw new Error(t('Not a Tagda Timer backup'));
+  const captures = data.smartCubeCaptures || [];
+  if (captures.length) { const { validateCapture } = await import('./smart-cube-core.js'); captures.forEach(validateCapture); }
+  for (const c of captures) if (!data.solves.some(s => s.id === c.id && s.smartCube?.captureId === c.id)) throw new Error('Capture has no solve');
+  for (const s of data.solves) if (s.smartCube && !captures.some(c => c.id === s.id)) throw new Error('Backup is missing a smart cube capture');
   // Validate the complete backup before any destructive replacement or write.
   const incomingSets = Array.isArray(data.competitionSets) ? data.competitionSets.map(normalizeCompetition) : [];
   const known = new Map(incomingSets.map(c => [c.id,c]));
@@ -670,8 +691,9 @@ export async function importAll(data, { merge = true } = {}) {
      one it restores would queue its videos for cleanup and push a 'discarded'
      record the rules never let it come back from. */
   if (!merge) for (const c of await CompetitionSets.all()) if (!known.has(c.id)) await CompetitionSets.delete(c.id);
-  await atomic(['solves', 'competitionSets', 'sessions', 'kv'], async tr => {
-    if (!merge) { tr.objectStore('solves').clear(); tr.objectStore('sessions').clear(); tr.objectStore('competitionSets').clear(); }
+  await atomic(['solves', 'competitionSets', 'sessions', 'kv', 'smartCubeCaptures'], async tr => {
+    if (!merge) { tr.objectStore('smartCubeCaptures').clear(); tr.objectStore('solves').clear(); tr.objectStore('sessions').clear(); tr.objectStore('competitionSets').clear(); }
+    for (const c of captures) tr.objectStore('smartCubeCaptures').put(c);
     for (const s of (data.sessions || [])) tr.objectStore('sessions').put(s);
     for (let i=0;i<sets.length;i++) {
       const c=sets[i], current=await wrap(tr.objectStore('competitionSets').get(c.id));
@@ -702,6 +724,7 @@ export async function importAll(data, { merge = true } = {}) {
      update with Competition records would let unpublished rules refuse them all. */
   const ordinary = solves.filter(s => !s.competitionSetId);
   if (ordinary.length) emit('solvesBatch', ordinary);
+  for (const capture of captures) emit('smartCube', { solve: solves.find(s => s.id === capture.id), capture });
   emit('competition', { sets, solves: solves.filter(s => s.competitionSetId) });
   // Backups written before the dictionary existed simply have no key here.
   if (Array.isArray(data.letterPairs) && data.letterPairs.length) {
@@ -869,5 +892,48 @@ export const CompetitionSets = {
       emit('competition', { deleted: result });
     }
     return result;
+  },
+};
+
+
+// Captures are fetched only when a solve is opened. Failed atomic writes share
+// the solve recovery journal, so no summary can outlive its unsaved evidence.
+export const SmartCaptures = {
+  async applyMerged(capture) {
+    await atomic(['solves','smartCubeCaptures'], async tr => {
+      const solve=await wrap(tr.objectStore('solves').get(capture.id));
+      if(!solve)return;
+      solve.smartCube={...solve.smartCube,completeness:capture.completeness};
+      if(capture.completeness!=='complete')solve.penalty='DNF';
+      tr.objectStore('solves').put(solve);tr.objectStore('smartCubeCaptures').put(capture);
+    });
+  },
+  async claimOwner(id, uid) {
+    let capture;
+    await atomic(['smartCubeCaptures'], async tr => {
+      const os = tr.objectStore('smartCubeCaptures'); capture = await wrap(os.get(id));
+      if (capture && !capture.ownerUid) { capture = { ...capture, ownerUid:uid }; os.put(capture); }
+    });
+    return capture;
+  },
+  async get(id) {
+    const pending = recovery.get(`solves:${id}`);
+    if (pending?.value === null) return null;
+    return pending?.capture || wrap((await tx('smartCubeCaptures')).get(id));
+  },
+  async annotate(id, patch) {
+    let capture, solve;
+    await atomic(['smartCubeCaptures','solves'], async tr => {
+      capture = await wrap(tr.objectStore('smartCubeCaptures').get(id));
+      solve = await wrap(tr.objectStore('solves').get(id));
+      if (!capture || !solve) throw new Error('Capture is missing or unsaved');
+      capture = { ...capture, ...patch, revision: (capture.revision || 0) + 1, updatedAt: Date.now() };
+      // Only editable metadata may change through this API.
+      const allowed = ['annotations', 'analysisConfig'];
+      if (Object.keys(patch).some(k => !allowed.includes(k))) throw new Error('Recorded evidence cannot be edited');
+      tr.objectStore('smartCubeCaptures').put(capture);
+    });
+    emit('smartCube', { solve, capture });
+    return capture;
   },
 };

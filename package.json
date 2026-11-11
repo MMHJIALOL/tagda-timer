@@ -12,9 +12,23 @@
     "test:stats-cache": "node --test js/stats-cache.check.mjs",
     "test:elo": "node --test js/elo.check.mjs",
     "test:site": "node tools/verify-site.cjs",
-    "test:subsets": "node tools/verify-subsets.mjs"
+    "test:subsets": "node tools/verify-subsets.mjs",
+    "build:smart-cube": "node tools/build-smart-cube.mjs",
+    "test:smart-cube": "node --test js/smart-cube.check.mjs",
+    "test:smart-cube-ui": "node tools/verify-smart-cube.cjs",
+    "test:smart-cube-demo": "node tools/verify-smart-cube-demo.cjs",
+    "test:smart-cube-sync": "node tools/verify-smart-cube-sync.mjs",
+    "test:smart-cube-offline": "node tools/verify-smart-cube-offline.cjs",
+    "test:smart-cube-rules": "node tools/verify-smart-cube-rules.mjs",
+    "demo:smart-cube": "python tools/smart-cube-demo.py"
   },
   "devDependencies": {
-    "jsdom": "26.1.0"
+    "jsdom": "26.1.0",
+    "@playwright/test": "1.56.1",
+    "esbuild": "0.25.12",
+    "fake-indexeddb": "6.2.5"
+  },
+  "dependencies": {
+    "gan-web-bluetooth": "3.0.2"
   }
 }

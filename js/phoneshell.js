@@ -363,7 +363,7 @@ export function render() {
       class: 'ph-chip' + (i === 0 ? ' latest' : '') + (v === DNF ? ' dnf' : (bestV != null && v === bestV ? ' best' : '')),
       type: 'button', text: label,
       'aria-label': t('Solve {n}, {time}', { n, time: label }),
-      onclick: () => openSolveSheet(s),
+      onclick: () => s.smartCube ? A.openSmartAnalysis(s) : openSolveSheet(s),
     });
   }));
   if (!solves.length) ui.chips.append(el('span', { class: 'ph-chips-empty', text: t('Your times will line up here.') }));

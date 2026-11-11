@@ -24,7 +24,7 @@ import { t } from './i18n.js';
    solve as something the other side is missing.
    =========================================================== */
 
-import { Solves, Sessions, KV, Tombstones, onWrite, tx, wrap, CompetitionSets, normalizeCompetition, LocalMetadata, hasUnsavedLocalChange } from './db.js';
+import { Solves, Sessions, KV, Tombstones, onWrite, tx, wrap, CompetitionSets, normalizeCompetition, LocalMetadata, hasUnsavedLocalChange, SmartCaptures } from './db.js';
 import { createSyncQueue } from './sync-queue.js';
 import { mergeInspection, pendingInspection, inspectionCommitted } from './inspection-setting.js';
 import { onAuthChange, getDatabaseHandle, hasPersistedSession, hasPendingRedirect } from './sync-auth.js';
@@ -310,16 +310,22 @@ export function splitCompetition(updates, setsPath) {
   return competition;
 }
 
-function pushSolve(solve) {
+async function pushSolve(solve) {
   if (isEcho(`solves:${solve.id}`, solve)) return;
-  pushOrQueue(userPath('solves', solve.id), solve);
+  const uid = _uid, gen = _generation;
+  if (solve.smartCube) { const capture = await SmartCaptures.get(solve.id); if (capture?.simulated || (capture?.ownerUid && capture.ownerUid !== uid)) return; }
+  if (gen !== _generation) return;
+  pushOrQueue(['users',uid,'solves',solve.id].join('/'), solve);
 }
 
-function pushSolvesBatch(list) {
+async function pushSolvesBatch(list) {
+  const uid = _uid, gen = _generation;
   const updates = {};
   for (const solve of list) {
     if (isEcho(`solves:${solve.id}`, solve)) continue;
-    updates[userPath('solves', solve.id)] = solve;
+    if (solve.smartCube) { const capture = await SmartCaptures.get(solve.id); if (capture?.simulated || (capture?.ownerUid && capture.ownerUid !== uid)) continue; }
+    if (gen !== _generation) return;
+    updates[['users',uid,'solves',solve.id].join('/')] = solve;
   }
   pushUpdateOrQueue(updates);
 }
@@ -338,7 +344,44 @@ function pushDeletes(store, ids) {
   pushUpdateOrQueue(updates);
 }
 
-const pushSolvesDel = (ids) => pushDeletes('solves', ids);
+const pushSolvesDel = ids => {
+  const updates = {};
+  for (const id of ids) {
+    if (isEcho(`solvesDel:${id}`, null)) continue;
+    updates[userPath('solves', id)] = null;
+    updates[userPath('smartCubeCaptures', id)] = null;
+    updates[userPath('smartCubeDeleted', id)] = true;
+  }
+  pushUpdateOrQueue(updates);
+};
+
+async function pushSmartCube({ solve, capture }) {
+  const uid = _uid, gen = _generation;
+  if (!uid || capture.simulated || (capture.ownerUid && capture.ownerUid !== uid)) return;
+  if (!capture.ownerUid) capture = await SmartCaptures.claimOwner(capture.id, uid);
+  if (gen !== _generation || !capture || capture.ownerUid !== uid || await Tombstones.has('solves',capture.id)) return;
+  const updates = {
+    [['users',uid,'solves',solve.id].join('/')]: solve,
+    [['users',uid,'smartCubeCaptures',capture.id].join('/')]: { id: capture.id, revision: capture.revision || 0, updatedAt: capture.updatedAt || 0, payload: JSON.stringify(capture) },
+  };
+  pushUpdateOrQueue(updates);
+}
+
+// No listener on the full capture tree: ordinary history/averages stay light.
+export async function downloadSmartCapture(id) {
+  const uid = _uid, sdk = _sdk, gen = _generation;
+  if (!uid || !sdk) return null;
+  const snap = await sdk.get(sdk.ref(sdk.db, userPath('smartCubeCaptures', id)));
+  if (gen !== _generation || !snap.exists() || await Tombstones.has('solves', id)) return null;
+  const { validateCapture } = await import('./smart-cube-core.js');
+  const capture = validateCapture(JSON.parse(snap.val().payload));
+  if (capture.ownerUid && capture.ownerUid !== uid) throw new Error('Capture belongs to another account');
+  const local = await SmartCaptures.get(id);
+  if (local && (local.revision || 0) > (capture.revision || 0)) return local;
+  if (local && local.revision === capture.revision && local.updatedAt > capture.updatedAt) return local;
+  await wrap((await tx('smartCubeCaptures', 'readwrite')).put(capture));
+  return capture;
+}
 const pushSessionsDel = (ids) => pushDeletes('sessions', ids);
 
 function pushSession(session) {
@@ -738,13 +781,29 @@ async function performMerge({ localSolves, localSessions, cloudSolves, cloudSess
   }
   // Same batch, so the account's leftovers go in the one round trip that
   // uploads the union rather than a second pass that could half-apply.
-  for (const id of dead.solves) updates[userPath('solves', id)] = null;
+  for (const id of dead.solves) { updates[userPath('solves', id)] = null; updates[userPath('smartCubeCaptures',id)] = null; updates[userPath('smartCubeDeleted',id)] = true; }
   for (const id of dead.sessions) updates[userPath('sessions', id)] = null;
   if (gen !== _generation) return;
   for (const path of Object.keys(updates)) if (outbound.protects(path)) delete updates[path];
+  const captureUploads=[];
+  for (const solve of solves.up) {
+    if (!solve.smartCube) continue;
+    const solvePath=userPath('solves',solve.id);
+    if (outbound.protects(solvePath)) continue;
+    let capture = await SmartCaptures.get(solve.id);
+    if (gen !== _generation) return;
+    if (capture && !capture.ownerUid) capture = await SmartCaptures.claimOwner(solve.id,uid);
+    if (gen !== _generation) return;
+    if (capture?.simulated || (capture?.ownerUid && capture.ownerUid!==uid)) {delete updates[solvePath];continue;}
+    if (capture && updates[solvePath]) {
+      captureUploads.push({[solvePath]:updates[solvePath],[userPath('smartCubeCaptures',solve.id)]:{id:solve.id,revision:capture.revision||0,updatedAt:capture.updatedAt||0,payload:JSON.stringify(capture)}});
+      delete updates[solvePath];
+    }
+  }
   const competition = splitCompetition(updates, userPath('competitionSets'));
   await pushUpdateOrQueue(updates);
   await pushUpdateOrQueue(competition);
+  for(const captureUpdate of captureUploads) {if(gen!==_generation)return;await pushUpdateOrQueue(captureUpdate);}
   // Stamped here rather than by the dialog, so the silent path counts too:
   // once this browser and this account have been reconciled, every later
   // sign-in — including the one a page reload performs for you — goes
@@ -758,8 +817,9 @@ let _writeUnsubs = [];
 
 function watchWrites() {
   _writeUnsubs = [
-    onWrite('solves', pushSolve),
-    onWrite('solvesBatch', pushSolvesBatch),
+    onWrite('solves', solve => { pushSolve(solve).catch(e=>outbound.problem('storage')); }),
+    onWrite('smartCube', payload => { pushSmartCube(payload).catch(e => { outbound.problem('storage'); console.warn('[sync] capture queue failed', e); }); }),
+    onWrite('solvesBatch', list => { pushSolvesBatch(list).catch(e=>outbound.problem('storage')); }),
     onWrite('sessions', pushSession),
     onWrite('solvesDel', pushSolvesDel),
     onWrite('competition', pushCompetition),
@@ -854,18 +914,44 @@ function handleUser(user, force = false) {
       await outbound.activate(user.uid, async entry => {
         if (gen !== _generation || !_sdk) throw new Error('Account changed');
         const sdk = _sdk;
-        let write;
-        // The SDK checks paths and values before sending and throws on the
-        // spot. Sending the same entry again cannot change that answer.
-        try {
-          if (entry.kind === 'update') {
-            const updates = {};
-            for (const [path, v] of Object.entries(entry.updates)) updates[path] = cloudSafe(v) ?? null;
-            write = sdk.update(sdk.ref(sdk.db), updates);
-          } else if (entry.kind === 'remove') write = sdk.remove(sdk.ref(sdk.db, entry.path));
-          else write = sdk.set(sdk.ref(sdk.db, entry.path), cloudSafe(entry.value) ?? null);
-        } catch (err) { err.permanent = true; throw err; }
-        await write;
+        const updateCloud = updates => {
+          const safe = {};
+          for (const [path,value] of Object.entries(updates)) safe[path] = cloudSafe(value) ?? null;
+          try { return sdk.update(sdk.ref(sdk.db), safe); }
+          catch (error) { error.permanent = true; throw error; }
+        };
+        if (entry.kind === 'update') {
+          try { await updateCloud(entry.updates); }
+          catch (error) {
+            const captures = Object.entries(entry.updates).filter(([path,value]) => path.includes('/smartCubeCaptures/') && value?.payload);
+            if (!captures.length || !String(error.code || error.message).toLowerCase().includes('permission')) throw error;
+            const updates = { ...entry.updates }, merged = [];
+            for (const [path,envelope] of captures) {
+              const snap = await sdk.get(sdk.ref(sdk.db,path));
+              if (!snap.exists()) throw error; // Missing rules or a durable deletion.
+              const { mergeCaptureEdits } = await import('./smart-cube-core.js');
+              const capture = mergeCaptureEdits(JSON.parse(envelope.payload), JSON.parse(snap.val().payload));
+              updates[path] = {id:capture.id,revision:capture.revision,updatedAt:capture.updatedAt,payload:JSON.stringify(capture)};
+              const solvePath=path.replace('/smartCubeCaptures/','/solves/'),row=updates[solvePath];
+              if(row?.smartCube) updates[solvePath]={...row, ...(capture.completeness!=='complete'?{penalty:'DNF'}:{}),smartCube:{...row.smartCube,completeness:capture.completeness}};
+              merged.push(capture);
+            }
+            await updateCloud(updates);
+            if (gen === _generation) for (const capture of merged) {
+              const local = await SmartCaptures.get(capture.id);
+              if (local && (local.revision || 0) <= capture.revision && !await Tombstones.has('solves',capture.id)) await SmartCaptures.applyMerged(capture);
+            }
+          }
+        }
+        else {
+          let write;
+          try {
+            write = entry.kind === 'remove'
+              ? sdk.remove(sdk.ref(sdk.db, entry.path))
+              : sdk.set(sdk.ref(sdk.db, entry.path), cloudSafe(entry.value) ?? null);
+          } catch (error) { error.permanent = true; throw error; }
+          await write;
+        }
       });
       if (gen !== _generation) return;
       const sdk = await getDatabaseHandle();

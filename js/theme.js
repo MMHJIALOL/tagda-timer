@@ -250,6 +250,9 @@ export const DEFAULTS = {
   panelStyle: 'widget',         // widget = frosted card | flat = no card at all
   scrambleSize: 100,            // % of the responsive default
   cubeSize: 120,
+  smartCubeSize: 100,
+  smartCubeHints: true,
+  smartCubeNet: false,
   sidebarWidth: 290,            // px — wide enough for times + two averages
   sidebarText: 100,             // % — stats + panel labels
   timesSize: 100,               // % — the solve list
@@ -383,6 +386,7 @@ export function applyTheme(s) {
   st.setProperty('--timer-glow', `${s.timerGlow}px`);
   st.setProperty('--scramble-scale', (s.scrambleSize / 100).toFixed(3));
   st.setProperty('--cube-scale', (s.cubeSize / 100).toFixed(3));
+  st.setProperty('--smart-cube-scale', (Math.min(140, Math.max(65, Number(s.smartCubeSize) || 100)) / 100).toFixed(2));
   st.setProperty('--sidebar-w', `${s.sidebarWidth}px`);
   st.setProperty('--sidebar-text', (s.sidebarText / 100).toFixed(3));
   st.setProperty('--times-scale', (s.timesSize / 100).toFixed(3));
