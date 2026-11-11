@@ -11,10 +11,11 @@ scrambles-only and Scramble of the Day do not arm smart-cube timing. Their
 screen offers Keyboard input. Connection and preview can remain active.
 
 Connect one GAN cube, with other cube apps closed. Apply the displayed scramble
-until the state matches. With inspection enabled, press Start inspection; a turn
-before that action disarms the match rather than starting a timer. Without
-inspection, matching arms directly. The first accepted execution turn starts the
-timer; the turn producing solved ends it. Inspection uses the existing Timer
+until the state matches. With inspection enabled, matching starts inspection
+automatically; the next turn starts the solve. Without inspection, matching arms
+directly. Cancelling inspection leaves the cube ready for an explicit restart
+or for moving away from and returning to the scramble. The first accepted
+execution turn starts the timer; the turn producing solved ends it. Inspection uses the existing Timer
 penalty thresholds. The execution interval excludes picking up and putting down
 the cube. Result penalties never enter replay timing or execution TPS.
 
@@ -191,7 +192,8 @@ Before release, validate the GAN i3 in the main timer:
    the physical cube. Disconnect/reconnect, and test the local address fallback
    if the browser requests it. Never calibrate a scrambled physical cube.
 2. Solve physically, apply the displayed scramble, confirm the matched state,
-   start inspection, then solve. Repeat with inspection disabled, +2 and DNF.
+   check that inspection starts automatically, then solve. Repeat with inspection
+   disabled, +2 and DNF.
    Include a fast solve and a longer turning session.
 3. Click each saved time. Verify every move/state, pauses, first/final timestamps,
    range timings and final solved state. Review after reload and disconnect.

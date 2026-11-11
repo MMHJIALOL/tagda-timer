@@ -75,7 +75,7 @@ export async function mountSmartCubeDemo({app,loadSmartCube,showScramble}) {
           if (!await wait(900, token)) return;
         }
       }
-      if(controller.attemptState!=='scramble matched')throw new Error('Demo scramble did not match');
+      if(controller.attemptState!=='inspection')throw new Error('Demo scramble did not match');
       publish('Scramble verified. Starting inspection…');controller.inspect();
       if(!await wait(1500,token))return;
       const start=performance.now();
