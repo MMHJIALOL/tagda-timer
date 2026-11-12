@@ -5492,7 +5492,7 @@ app.applySettingsPreset = async (id) => {
 app.setSetting = (k, v) => {
   if (k === 'inspection') chooseInspection(app.settings, v);
   else app.settings[k] = v;
-  const saved = persist({ immediate: k === 'inspection' || ['smartCubeSize','smartCubeHints','smartCubeNet'].includes(k) });
+  const saved = persist({ immediate: k === 'inspection' || ['smartCubeSize','smartCubeHints','smartCubeNet','smartCubeGyro'].includes(k) });
   applyAll(k);
   return saved;
 };
@@ -5526,7 +5526,7 @@ function applyAll(changed) {
   if (changed === 'showBpa') renderStats();
   if (changed === 'hintFacelets') cube.setHints(app.settings.hintFacelets);
   if (!changed || changed === 'showCube') syncPreviewCube();
-  if (!changed || ['smartCubeSize','smartCubeHints','smartCubeNet'].includes(changed)) smartCube?.configurePreview();
+  if (!changed || ['smartCubeSize','smartCubeHints','smartCubeNet','smartCubeGyro'].includes(changed)) smartCube?.configurePreview();
   if (!changed || changed === 'cubeColors') {
     cube.setColors(app.settings.cubeColors);
     vcube?.view.setColors(app.settings.cubeColors);

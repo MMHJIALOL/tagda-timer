@@ -253,6 +253,7 @@ export const DEFAULTS = {
   smartCubeSize: 100,
   smartCubeHints: true,
   smartCubeNet: false,
+  smartCubeGyro: true,
   sidebarWidth: 290,            // px — wide enough for times + two averages
   sidebarText: 100,             // % — stats + panel labels
   timesSize: 100,               // % — the solve list

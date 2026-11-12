@@ -1,8 +1,9 @@
 import { t } from './i18n.js';
-import { SmartStream, SOLVED, SCHEMA, MAX_MOVES, MAX_RAW, MAX_BYTES, scrambleState, timeline, validateCapture } from './smart-cube-core.js';
+import { SmartStream, SOLVED, SCHEMA, MAX_MOVES, MAX_RAW, MAX_BYTES, scrambleState, timeline, validateCapture, ganCubeInfo } from './smart-cube-core.js';
 import { SmartPreview, faceletsTransformation } from './smart-cube-preview.js';
 import { ScrambleGuide, highlightScramble } from './smart-cube-scramble.js';
 import { KV, Solves, SmartCaptures, hasUnsavedLocalChange } from './db.js';
+import { normalizeQuaternion, orientationTimeline, MAX_ORIENTATION_SAMPLES, ORIENTATION_INTERVAL_MS } from './smart-cube-gyro.js';
 
 const JOURNAL = 'smartCube.active';
 const text = (node, value) => { node.textContent = t(value); };
@@ -40,7 +41,7 @@ export class SmartCubeController {
     const footer=document.createElement('div');footer.className='smart-live-footer';footer.append(this.guidanceBox,this.message,this.progress,this.armButton,this.cancelButton);
     this.recovery=document.createElement('div');this.recovery.className='smart-recovery';
     host.append(header,previewHost,footer,this.recovery);
-    this.checkpointTimer = setInterval(() => { if (this.active?.moves.length) this.checkpoint(); this.sync(); }, 500);
+    this.checkpointTimer = setInterval(() => { this.stream?.flushPending(); if (this.active?.moves.length) this.checkpoint(); this.sync(); }, 500);
     this.onPageHide = () => { if (this.active?.moves.length) this.emergency(); };
     window.addEventListener('pagehide', this.onPageHide);
     this.onVisibility = () => { if (!document.hidden) { if (this.active) void this.requestState(); this.render(); } };
@@ -56,17 +57,14 @@ export class SmartCubeController {
   configurePreview() {
     const settings = this.preferences();
     this.preview.hints(settings.smartCubeHints !== false);
+    this.preview.gyro(settings.smartCubeGyro !== false);
     this.preview.net(!!settings.smartCubeNet || matchMedia('(prefers-reduced-motion: reduce)').matches);
   }
   async calibrate() {
     if (!this.connection || !window.confirm(t('Physically solve the cube first. Confirm that all six faces are solved before resetting its internal state.'))) return;
     this.interrupt('Cube calibration');
     this.lastCapture = null;
-    this.stream.state = null;
-    this.stream.serial = null;
-    this.stream.history.clear();
-    this.stream.moveHistory.clear();
-    this.stream.positions.clear();
+    this.stream.reset();
     this.connectionState = 'reading initial state';
     try {
       await this.connection.sendCubeCommand({ type:'REQUEST_RESET' });
@@ -91,13 +89,14 @@ export class SmartCubeController {
   }
   match(autoInspect = true) {
     if (this.active || this.attemptState === 'finalising' || !this.allowed || !this.stream?.state || !this.target) return;
+    // With inspection off, a verified target can arm before a later snapshot's
+    // turn notifications catch up. Those ordered turns still define execution.
+    if (!this.stream.synchronized && !(this.stream.state === this.target && !this.frozen.inspection)) { this.attemptState = 'synchronizing'; return; }
     this.guide?.synchronize(this.stream.state);
     if (this.guide?.anchored) this.recoveryGuide = null;
     else void this.planGuidance();
     const wasMatched = this.attemptState === 'scramble matched';
     this.attemptState = this.stream.state === this.target ? (this.frozen.inspection ? 'scramble matched' : 'armed') : 'scrambling';
-    // State notifications may repeat; only entering the matched state starts inspection.
-    // A cancelled inspection stays ready until another turn or an explicit restart.
     if (autoInspect && !wasMatched && this.attemptState === 'scramble matched') this.inspect();
   }
   async planGuidance() {
@@ -130,19 +129,19 @@ export class SmartCubeController {
     }
   }
   inspect() {
-    if (this.attemptState !== 'scramble matched' || !this.allowed || this.timer.state !== 'idle' || !this.timer.inspectionEnabled) return;
+    if (this.attemptState !== 'scramble matched' || !this.allowed || !this.stream?.synchronized || this.timer.state !== 'idle' || !this.timer.inspectionEnabled) return;
     this.begin(); this.attemptState = 'inspection'; this.timer.startInspection(); this.render();
   }
   begin(initial = this.stream.state, at = performance.now()) {
     this.active = { id: crypto.randomUUID(), solveId: '', schemaVersion: SCHEMA, revision: 0,
       ownerUid: this.frozen.ownerUid || null, createdAt: Date.now(), createdMonotonic: at, context: structuredClone(this.frozen),
       initialFacelets: initial, scrambleVerified: initial === this.target,
-      timingConvention: 'first-turn-to-final-turn', connections: [{ epoch: this.epoch, deviceModel: this.deviceName || 'GAN', hardware: this.hardware || {} }],
-      moves: [], rawEvents: [], qualityIssues: [], annotations: [], analysisConfig: { profile: 'unknown', crossFace: 'D', pauseThresholdMs: 500 }, analysisVersion: 1 };
+      timingConvention: 'first-turn-to-final-turn', connections: [{ epoch: this.epoch, deviceModel: this.deviceInfo.name, hardware: structuredClone(this.hardware || {}) }],
+      moves: [], rawEvents: [...this.stream.pendingSnapshots.values()].map(p=>p.raw), qualityIssues: [], annotations: [], analysisConfig: { profile: 'unknown', crossFace: 'D', pauseThresholdMs: 500 }, analysisVersion: 1 };
     this.active.solveId = this.active.id;
   }
   async connect() {
-    if (!this.protocol || this.connectionState === 'requesting permission') return;
+    if (!this.protocol || this.connection || ['requesting permission','connecting'].includes(this.connectionState)) return;
     const epoch = ++this.epoch; this.connectionState = 'requesting permission'; this.render();
     try {
       // No await before this call: requestDevice retains click activation.
@@ -157,7 +156,7 @@ export class SmartCubeController {
       });
       const conn = await pending;
       if (epoch !== this.epoch) { await conn.disconnect(); return; }
-      this.connection = conn; this.deviceName = conn.deviceName; this.hardware = null;
+      this.connection = conn; this.deviceName = conn.deviceName; this.hardware = null; this.battery = null;
       this.connectionState = 'reading initial state';
       this.stream = new SmartStream({ epoch, onMove: (raw, before, after) => this.move(raw, before, after),
         onState: state => { this.connectionState = 'connected'; try { this.preview.set(state); } catch { if (!this.previewFailed) this.notice(t('Preview unavailable; capture continues.')); this.previewFailed = true; } this.match(); this.render(); },
@@ -173,14 +172,19 @@ export class SmartCubeController {
         if (epoch !== this.epoch) return;
         this.lastReceived = performance.now();
         if (event.type === 'DISCONNECT') { void this.disconnect('Bluetooth disconnected'); return; }
+        if (event.type === 'GYRO') { this.gyroSample(event); this.stream.flushPending(); return; }
         if (this.active && event.type !== 'GYRO') {
           this.active.rawCount = (this.active.rawCount || 0) + 1;
           this.active.rawBytes = (this.active.rawBytes || 0) + JSON.stringify(event).length + 100;
           if (this.active.rawCount >= MAX_RAW - 1 || this.active.rawBytes > MAX_BYTES * .4) this.interrupt('Capture evidence limit reached');
         }
-        if (event.type === 'HARDWARE') this.hardware = structuredClone(event);
+        if (event.type === 'HARDWARE') {
+          this.hardware = structuredClone(event);
+          if (this.active) Object.assign(this.active.connections[0], { deviceModel: this.deviceInfo.name, hardware: structuredClone(this.hardware) });
+        }
         if (event.type === 'BATTERY') this.battery = event.batteryLevel;
         this.stream.ingest(event);
+        if (event.type === 'HARDWARE' || event.type === 'BATTERY') this.render();
       });
       // Subscribe before ANY command: FACELETS can precede command resolution.
       await conn.sendCubeCommand({ type: 'REQUEST_FACELETS' });
@@ -201,10 +205,23 @@ export class SmartCubeController {
     catch (e) { this.notice(t('Could not read cube state. Reconnect and retry.')); }
     finally { this.requestPending = false; }
   }
+  gyroSample(event,at=performance.now()) {
+    const quaternion=normalizeQuaternion(event.quaternion);
+    if(!quaternion)return;
+    this.latestGyro=quaternion;this.gyroSamples=(this.gyroSamples||0)+1;
+    try {this.preview.orientation(quaternion);} catch { /* Gyro rendering never owns recording. */ }
+    if(!this.active?.moves.length)return;
+    const orientation=this.active.orientation||={schemaVersion:1,reference:{...(this.preview.orientationReference||quaternion)},samples:[]};
+    if(at-(orientation.samples.at(-1)?.receivedMonotonic??-Infinity)<ORIENTATION_INTERVAL_MS)return;
+    if(orientation.samples.length>=MAX_ORIENTATION_SAMPLES){orientation.truncated=true;return;}
+    orientation.samples.push({quaternion,receivedMonotonic:at});
+  }
   async disconnect(reason = 'Cube disconnected') {
     this.interrupt(reason); ++this.epoch;
     this.subscription?.unsubscribe(); this.subscription = null;
     const conn = this.connection; this.connection = null; this.stream = null;
+    this.hardware = null; this.deviceName = ''; this.battery = null;
+    this.latestGyro=null;this.gyroSamples=0;this.preview.clearOrientation();
     this.connectionState = 'disconnected';
     this.guide?.synchronize(null);
     this.recoveryGuide = null;
@@ -212,7 +229,7 @@ export class SmartCubeController {
     try { await conn?.disconnect(); } catch { /* Already disconnected. */ }
   }
   move(raw, before, after) {
-    this.preview.turn?.(raw.move,before,after);
+    try { this.preview.turn?.(raw.move,before,after); } catch { /* Rendering cannot own capture. */ }
     this.sync();
     if (!this.allowed) return;
     if (!this.active && this.attemptState !== 'armed') {
@@ -220,7 +237,7 @@ export class SmartCubeController {
       this.recoveryGuide?.observe(raw.move, before, after);
       if (this.guide?.anchored) this.recoveryGuide = null;
     }
-    if (this.attemptState === 'scramble matched') { this.match(); return; } // a cancelled inspection waits for a new scramble or an explicit restart
+    if (this.attemptState === 'scramble matched') { this.match(); return; } // inspection must be started explicitly
     if (this.attemptState === 'armed' && !this.active) { this.begin(before, raw.receivedMonotonic); }
     if (!this.active) return;
     if (!this.active.moves.length) {
@@ -228,6 +245,8 @@ export class SmartCubeController {
       this.timer.start(raw.receivedMonotonic); this.attemptState = 'running';
       this.active.inspectionMs = this.timer.inspectElapsed;
       this.active.penalty = this.timer.pendingPenalty || 'none';
+      if(this.latestGyro)this.active.orientation={schemaVersion:1,reference:{...(this.preview.orientationReference||this.latestGyro)},
+        samples:[{quaternion:{...this.latestGyro},receivedMonotonic:raw.receivedMonotonic}]};
     }
     this.active.moves.push({ ...raw, index: this.active.moves.length });
     this.active.moveBytes = (this.active.moveBytes || 0) + JSON.stringify(raw).length;
@@ -237,7 +256,7 @@ export class SmartCubeController {
   checkpoint() {
     if (!this.active) return;
     const value = structuredClone(this.active);
-    value.rawEvents = this.stream.raw.filter(e => e.receivedMonotonic >= this.active.createdMonotonic);
+    value.rawEvents = this.evidence(this.active);
     this.emergency(value);
     this.pendingJournal = value;
     if (this.journalWriting) return;
@@ -245,6 +264,13 @@ export class SmartCubeController {
     this.journalLock = this.journalLock.catch(() => {}).then(async () => {
       while (this.pendingJournal) { const latest = this.pendingJournal; this.pendingJournal = null; await KV.set(JOURNAL, latest); }
     }).catch(() => this.notice(t('Active capture is unsaved. Export recovery before closing.'))).finally(() => { this.journalWriting = false; });
+  }
+  evidence(active) {
+    if (!this.stream) return active.rawEvents;
+    // A snapshot may describe execution before its first MOVE notification.
+    // Keep that earlier evidence alongside the later accepted turns.
+    return [...active.rawEvents.filter(e => e.receivedMonotonic < active.createdMonotonic),
+      ...this.stream.raw.filter(e => e.receivedMonotonic >= active.createdMonotonic)];
   }
   emergency(value = this.active) { try { localStorage.setItem('tagda:smartCube.active', JSON.stringify(value)); } catch { this.notice(t('Active capture is unsaved. Export recovery before closing.')); } }
   interrupt(reason) {
@@ -256,7 +282,9 @@ export class SmartCubeController {
   async finish(completeness) {
     const active = this.active; if (!active) return;
     this.active = null; this.attemptState = 'finalising'; this.timer.reset();
-    const capture = { ...active, ...timeline(active.moves, this.protocol?.cubeTimestampLinearFit), completeness, rawEvents: this.stream?.raw.filter(e => e.receivedMonotonic >= active.createdMonotonic) || active.rawEvents, endedAt: Date.now() };
+    const capture = { ...active, ...timeline(active.moves, this.protocol?.cubeTimestampLinearFit), completeness, rawEvents: this.evidence(active), endedAt: Date.now() };
+    const orientation=orientationTimeline(active.orientation,active.moves,capture.measuredDurationMs);
+    if(orientation)capture.orientation=orientation;
     if (completeness !== 'complete') capture.penalty = 'DNF';
     try { validateCapture(capture); } catch(e) { this.notice(e.message); this.showRecovery(capture); this.emergency(capture); return; }
     // Stage evidence before the central solve path. Stable ID survives retries.
@@ -292,6 +320,8 @@ export class SmartCubeController {
       const raw = emergency || db;
       if (!raw || await Solves.get(raw.id)) return;
       const capture = { ...raw, ...timeline(raw.moves, null), completeness: 'interrupted', penalty: 'DNF', qualityIssues: [...raw.qualityIssues, 'Recovered after reload; hardware interval unknown'] };
+      const orientation=orientationTimeline(raw.orientation,raw.moves,capture.measuredDurationMs);
+      if(orientation)capture.orientation=orientation;
       this.showRecovery(capture);
     } catch (e) { this.notice(t('Recovery could not be read. Export local data before clearing storage.')); }
   }
@@ -299,11 +329,12 @@ export class SmartCubeController {
     try { this.protocol = await import('../vendor/gan/gan-3.0.2.js'); this.render(); }
     catch { this.notice(t('Bluetooth code could not load. Check the connection and retry.')); }
   }
+  get deviceInfo() { return ganCubeInfo(this.hardware, this.deviceName); }
   render() {
     if(document.hidden)return;
     this.host.dataset.attempt=this.attemptState;this.host.dataset.connected=String(!!this.connection);
     const connected=this.connectionState==='connected';
-    const label=connected?(this.deviceName?.includes('Simulated')?'Demo cube':this.deviceName||'GAN connected'):t(this.connectionState);
+    const label=connected?(this.deviceName?.includes('Simulated')?'Demo cube':this.deviceInfo.name):t(this.connectionState);
     this.status.textContent=`${label}${connected&&this.battery!=null?` · ${this.battery}%`:''}`;
     this.status.classList.toggle('on',connected);
     text(this.connectButton,this.connection?'Disconnect':'Connect cube');
@@ -345,6 +376,7 @@ export class SmartCubeController {
       !this.connection?t('Connect your cube to begin'):
       this.attemptState==='running'?t('Recording every turn'):
       this.attemptState==='inspection'?t('First turn starts the timer'):
+      this.attemptState==='synchronizing'?t('Waiting for matching turns from the cube…'):
       ['armed','scramble matched'].includes(this.attemptState)?t('Scramble matched · ready to solve'):
       this.attemptState==='saved'?t('Solve saved · click the time to analyse'):
       fixing ? t('Follow the correction above') :

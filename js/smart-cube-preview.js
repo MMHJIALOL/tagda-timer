@@ -1,6 +1,7 @@
 import { netColors, onPuzzleColorsChanged } from './puzzle-colors.js';
 import { CubeView } from './cube.js';
 import { fromFacelets, CORNER_NAMES, EDGE_NAMES, FACES } from './cube3.js';
+import { normalizeQuaternion, relativeQuaternion, rendererQuaternion, multiplyQuaternion, IDENTITY_QUATERNION } from './smart-cube-gyro.js';
 
 const maps = new WeakMap();
 let canRender3D;
@@ -46,6 +47,7 @@ export function faceletsTransformation(kpuzzle, facelets) {
 export class SmartPreview {
   constructor(host) {
     this.host=host;this.state=null;this.pending=0;this.frame=0;this.disposed=false;
+    this.gyroEnabled=true;
     this.root=document.createElement('div');this.root.className='smart-preview';
     this.stage=document.createElement('div');this.stage.className='smart-twisty-stage';
     this.netRoot=document.createElement('div');this.netRoot.className='smart-sticker-net';
@@ -83,6 +85,13 @@ export class SmartPreview {
       for (const canvas of await player.experimentalCurrentCanvases()) {
         canvas.addEventListener('webglcontextlost', () => this.net(true), { once: true });
       }
+      const object=await player.experimentalCurrentThreeJSPuzzleObject?.();
+      if(this.disposed||player!==this.view.player)return;
+      if(object!==this.orientationObject) {
+        this.orientationObject=object;
+        this.baseOrientation=object?.quaternion.clone();
+      }
+      this.paintOrientation();
       if(!this.disposed){this.root.classList.add('smart-3d-ready');this.paint();}
     } catch {if(!this.disposed)this.net(true);}
   }
@@ -117,6 +126,7 @@ export class SmartPreview {
   net(on) {
     const useNet = on || !supports3D();
     this.root.classList.toggle('smart-net', useNet);
+    this.paintOrientation();
     if (!useNet) {
       if (!this.view.ready && !this.starting) {
         this.starting = true;
@@ -130,6 +140,27 @@ export class SmartPreview {
     this.showHints = !!on;
     this.view.setHints(this.showHints);
   }
-  reset() {this.view.setOrbit({ latitude:24, longitude:32, distance:6 });}
-  dispose() {this.disposed=true;cancelAnimationFrame(this.pending);this.unsubscribe();this.view.dispose();this.root.remove();}
+  orientation(value,reference=null) {
+    const q=normalizeQuaternion(value);
+    if(!q||this.disposed)return false;
+    this.latestOrientation=q;
+    this.orientationReference=normalizeQuaternion(reference)||this.orientationReference||q;
+    if(this.orientationObject&&this.gyroEnabled&&!this.root.classList.contains('smart-net')&&!matchMedia('(prefers-reduced-motion: reduce)').matches&&!this.orientationFrame)
+      this.orientationFrame=requestAnimationFrame(()=>{this.orientationFrame=0;this.paintOrientation();});
+    return true;
+  }
+  paintOrientation() {
+    if(!this.orientationObject||this.disposed)return;
+    try {
+      const enabled=this.gyroEnabled&&!this.root.classList.contains('smart-net')&&!matchMedia('(prefers-reduced-motion: reduce)').matches;
+      const relative=enabled&&this.latestOrientation?rendererQuaternion(relativeQuaternion(this.orientationReference,this.latestOrientation)):IDENTITY_QUATERNION;
+      const q=multiplyQuaternion(this.baseOrientation,relative);
+      this.orientationObject.quaternion.set(q.x,q.y,q.z,q.w);
+      this.orientationObject.scheduleRenderCallback?.();
+    } catch { this.orientationObject=null; }
+  }
+  gyro(on) {this.gyroEnabled=!!on;this.paintOrientation();}
+  clearOrientation() {this.latestOrientation=null;this.orientationReference=null;this.paintOrientation();}
+  reset() {this.view.setOrbit({ latitude:24, longitude:32, distance:6 });this.orientationReference=this.latestOrientation;this.paintOrientation();}
+  dispose() {this.disposed=true;cancelAnimationFrame(this.pending);cancelAnimationFrame(this.orientationFrame);this.unsubscribe();this.orientationObject=null;this.view.dispose();this.root.remove();}
 }

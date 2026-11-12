@@ -1125,17 +1125,23 @@ export function buildSmartCubeSettings(app) {
     });
     net.querySelector('input').setAttribute('aria-label', t('Use sticker net'));
     rear.querySelector('input').disabled = !!settings.smartCubeNet;
+    const gyro = toggle(settings.smartCubeGyro !== false, value => app.setSetting('smartCubeGyro', value));
+    gyro.querySelector('input').setAttribute('aria-label', t('Follow gyroscope'));
     const action = (label, onclick) => el('button', { class:'ghost-btn sm', text:t(label), onclick });
     body.append(
       el('button', { class:'ghost-btn smart-settings-back', text:`← ${t('Back to settings')}`, onclick:back }),
       el('div', { class:'smart-settings-heading' }, el('h2', { text:t('Smart cube') }),
-        el('p', { text:`${controller.deviceName || 'GAN'}${controller.battery == null ? '' : ` · ${controller.battery}%`}` })),
+        el('p', { text:`${controller.deviceInfo.name}${controller.battery == null ? '' : ` · ${controller.battery}%`}` }),
+        el('p', { text:[controller.deviceInfo.hardwareName,
+          controller.deviceInfo.firmware ? t('Firmware {version}', { version:controller.deviceInfo.firmware }) : '',
+          controller.deviceInfo.gyroSupported === false ? t('No gyroscope · turn tracking is available') : ''].filter(Boolean).join(' · ') })),
       group(t('Cube preview'),
         row(t('Cube size'), size, t('fits the available space on every screen')),
         row(t('Show rear stickers'), rear, t('see the colours on the hidden faces')),
+        row(t('Follow gyroscope'), gyro, t('rotate the preview with your cube; recording continues when off')),
         row(t('Use sticker net'), net, t('flat view of all six faces'))),
       group(t('Cube controls'),
-        row(t('Camera'), action('Reset camera', () => controller.preview.reset())),
+        row(t('Camera'), action('Reset camera', () => controller.preview.reset()), t('also re-centres the gyroscope view')),
         row(t('Cube state'), action('Refresh cube state', () => controller.requestState())),
         row(t('Calibration'), action('Calibrate solved cube', () => controller.calibrate()), t('only after physically solving all six faces')),
         row(t('Timing input'), action('Switch to keyboard', () => { controller.switchInput(); back(); }))),

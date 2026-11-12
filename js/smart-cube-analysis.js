@@ -2,6 +2,7 @@ import { t } from './i18n.js';
 import { SmartCaptures, hasUnsavedLocalChange } from './db.js';
 import { validateCapture, checkpoints, seekState, rangeStats, phases, qtm, tpsWindows } from './smart-cube-core.js';
 import { SmartPreview } from './smart-cube-preview.js';
+import { orientationAt } from './smart-cube-gyro.js';
 import { fmt, download, copy } from './util.js';
 
 let current=null,generation=0;
@@ -62,6 +63,19 @@ export async function openSmartAnalysis(solve,{details,notice}) {
     const viewMode=select('Cube view',[['3d','3D cube'],['net','Sticker net']],'3d');viewMode.className='sa-view-select';replayTop.append(viewMode);
     const stage=n('div',null,'sa-cube-stage');preview=new SmartPreview(stage);preview.set(capture.initialFacelets);viewMode.onchange=async()=>{await preview.net(viewMode.value==='net');viewMode.value=preview.root.classList.contains('smart-net')?'net':'3d';};
     const drag=n('span','Drag to rotate','sa-drag-hint');stage.append(drag);
+    let orientationReference=capture.orientation?.reference;
+    const gyroControl=n('label',null,'sa-gyro-control');
+    if(capture.orientation?.samples.length){
+      const follow=n('input');follow.type='checkbox';follow.checked=true;follow.setAttribute('aria-label',t('Replay gyroscope'));
+      follow.onchange=()=>preview.gyro(follow.checked);
+      gyroControl.append(follow,n('span','Replay gyroscope'),n('small',t('{n} samples · estimated alignment',{n:capture.orientation.samples.length})));
+      const recenter=()=>{
+        orientationReference=orientationAt(capture.orientation,atMs);
+        preview.reset();preview.orientation(orientationReference,orientationReference);
+      };
+      gyroControl.append(btn('Re-centre gyro',recenter,'sa-btn sa-quiet'));
+      dialog.addEventListener('smart-cube-recenter',recenter);
+    }
     preview.ready.then(()=>{viewMode.value=preview.root.classList.contains('smart-net')?'net':'3d';});
     const controls=n('div',null,'sa-playback'),readout=n('div',null,'sa-readout'),position=n('output'),moveCounter=n('span');readout.append(position,moveCounter);
     let index=-1,atMs=0,speed=1,originTime=0,originMs=0,rangeAnchor=0;
@@ -73,6 +87,8 @@ export async function openSmartAnalysis(solve,{details,notice}) {
       index=Math.max(-1,Math.min(i,capture.moves.length-1));
       atMs=at;slider.value=String(at);slider.style.setProperty('--sa-progress',`${duration?at/duration*100:0}%`);
       position.textContent=`${(at/1000).toFixed(2)} / ${(duration/1000).toFixed(2)}`;moveCounter.textContent=`${index+1}/${capture.moves.length} ${t('moves')}`;
+      const orientation=orientationAt(capture.orientation,at);
+      if(orientation)preview.orientation(orientation,orientationReference);
       if(index===previous)return;
       rows[previous]?.classList.remove('on');rows[index]?.classList.add('on');
       const state=seekState(capture,index,points);
@@ -92,7 +108,7 @@ export async function openSmartAnalysis(solve,{details,notice}) {
     const speeds=select('Playback speed',[[.25,'0.25×'],[.5,'0.5×'],[1,'1×'],[2,'2×']],'1');speeds.onchange=()=>{speed=Number(speeds.value);originTime=performance.now();originMs=atMs;};
     const transport=n('div',null,'sa-transport');transport.append(btn('Restart',()=>{stop();seek(-1,0);},'sa-icon-btn','restart'),btn('Previous turn',()=>{stop();seek(index-1);},'sa-icon-btn','previous'),play,btn('Next turn',()=>{stop();seek(index+1);},'sa-icon-btn','next'));
     controls.append(readout,slider,markerBand,markers,transport,speeds);slider.oninput=()=>{stop();seekTime(Number(slider.value));};
-    replay.append(replayTop,stage,controls);
+    replay.append(replayTop,stage,gyroControl,controls);
 
     const tabs=n('div',null,'sa-tabs');tabs.setAttribute('role','tablist');tabs.setAttribute('aria-label',t('Analysis sections'));
     const phasePane=n('div',null,'sa-tab-panel'),movePane=n('div',null,'sa-tab-panel sa-move-pane'),segmentPane=n('div',null,'sa-tab-panel sa-segment-pane');
@@ -143,13 +159,17 @@ export async function openSmartAnalysis(solve,{details,notice}) {
       if(!capture.annotations?.length)segmentPane.append(n('p','No saved segments yet. Select moves below to name a sequence.','sa-muted'));
       for(const ann of capture.annotations||[]){const r=rangeStats(capture,ann.startIndex,ann.endIndex),card=btn(`${ann.label}: ${ann.startIndex+1}–${ann.endIndex+1}`,()=>{a.value=String(ann.startIndex+1);b.value=String(ann.endIndex+1);updateRange();stop();seek(ann.endIndex);},'sa-segment');card.replaceChildren();card.append(n('strong',ann.label),n('span',`${ann.startIndex+1}–${ann.endIndex+1} · ${r.qtm} QTM`),n('b',seconds(r.spanMs)+'s'));segmentPane.append(card);}
     };
+    const reconstruction=n('details',null,'sa-advanced');
+    reconstruction.append(n('summary','Full reconstruction'));
+    const notation=n('pre',null,'sa-reconstruction');
+    reconstruction.append(notation);
     const advanced=n('details',null,'sa-advanced'),advancedTitle=n('summary','Scramble, timing & phase corrections');
     const advancedBody=n('div',null,'sa-advanced-body'),scramble=n('code',capture.context?.scramble||'','sa-scramble-code');
     const phaseChoice=select('Phase boundary',[['Cross','Cross'],['F2L','F2L'],['OLL','OLL']],'Cross');
     const correction=btn('Use selected end as phase boundary',async()=>{
       const[,end]=selection(),boundaries={...(capture.analysisConfig?.phaseBoundaries||{}),[phaseChoice.value]:end+1},ordered=['Cross','F2L','OLL'].map(p=>boundaries[p]).filter(Number.isInteger);
       if(ordered.some((v,i)=>i&&v<ordered[i-1]))return report(t('Phase boundaries must follow Cross, F2L, OLL order.'));
-      try{capture=await SmartCaptures.annotate(solve.id,{analysisConfig:{...capture.analysisConfig,phaseBoundaries:boundaries}});updatePhases();}catch(e){report(e.message);}
+      try{capture=await SmartCaptures.annotate(solve.id,{analysisConfig:{...capture.analysisConfig,phaseBoundaries:boundaries,boundarySource:'user'}});updatePhases();}catch(e){report(e.message);}
     });
     const threshold=n('input');threshold.type='number';threshold.min='100';threshold.max='10000';threshold.step='100';threshold.value=String(capture.analysisConfig?.pauseThresholdMs||500);threshold.setAttribute('aria-label',t('Pause threshold (ms)'));
     const saveConfig=async()=>{try{capture=await SmartCaptures.annotate(solve.id,{analysisConfig:{...capture.analysisConfig,profile:profile.value,crossFace:face.value,lastLayerLandmarks:{},pauseThresholdMs:Math.max(100,Math.min(10000,Number(threshold.value)||500))}});updatePhases();}catch(e){report(e.message);}};
@@ -161,13 +181,15 @@ export async function openSmartAnalysis(solve,{details,notice}) {
 
     function updatePhases(){
       const result=phases(capture,face.value);tbody.replaceChildren();markerBand.replaceChildren();markers.replaceChildren();algorithmCards.replaceChildren();
+      notation.textContent=result.length?result.filter(p=>p.endIndex>=p.startIndex).map(p=>`// ${p.name}\n${capture.moves.slice(p.startIndex,p.endIndex+1).map(m=>m.move).join(' ')}`).join('\n\n'):capture.moves.map(m=>m.move).join(' ');
       phaseNote.textContent=result.length?t('Click a phase to jump to its final turn.'):t('Choose CFOP to see phase timings. Replay and range timing work for any method.');
+      if(capture.analysisConfig?.boundarySource==='scripted-demo')phaseNote.textContent=t('Scripted demo phases, checked against the cube state. Click a phase to jump to its final turn.');
       for(const p of result){const tr=n('tr');tr.tabIndex=0;tr.style.setProperty('--phase-color',phaseColor(p.inferredPhase||p.name));const name=n('td'),dot=n('i',null,'sa-phase-dot');name.append(dot,n('span',p.name));const progress=n('span',null,'sa-phase-row-bar');progress.style.width=`${duration?p.durationMs/duration*100:0}%`;name.append(progress);tr.append(name,n('td',(p.durationMs/1000).toFixed(2)+'s'),n('td',String(p.qtm)),n('td',p.durationMs>0?(p.qtm*1000/p.durationMs).toFixed(2):'—'));tr.onclick=()=>{stop();seek(p.endIndex);};tr.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();tr.click();}};tbody.append(tr);
         const marker=btn(`${p.name} ${(p.endMs/1000).toFixed(2)} s`,()=>{stop();seek(p.endIndex);},'sa-phase-slice');marker.style.setProperty('--phase-color',phaseColor(p.inferredPhase||p.name));marker.style.flex=String(Math.max(.03,duration?p.durationMs/duration:0));marker.textContent=p.inferredPhase||p.name;markerBand.append(marker);
       }
       for(const r of capture.analysisConfig?.algorithmMatches||[]){const card=n('div',null,'sa-alg-card'),range=rangeStats(capture,r.startIndex,r.endIndex);card.append(n('strong',`${r.phase} · ${r.caseIds.join(' / ')}`),n('span',seconds(range.spanMs)+'s'),n('code',r.observed));algorithmCards.append(card);markers.append(btn(`${r.caseIds.join(' / ')} ${(range.startMs/1000).toFixed(2)} s`,()=>{stop();seek(r.startIndex);},'sa-alg-marker'));}
       rows.forEach((row,i)=>row.classList.toggle('smart-pause',gaps[i]>=Number(threshold.value)));
     }
-    content.append(metrics,workspace,chartPanel,range,advanced,footer);updatePhases();updateRange();paintAnnotations();seek(-1,0);
+    content.append(metrics,workspace,reconstruction,chartPanel,range,advanced,footer);updatePhases();updateRange();paintAnnotations();seek(-1,0);
   }catch(e){status.textContent=`${t('Replay unavailable')}: ${e.message}`;status.classList.add('sa-warning');}
 }

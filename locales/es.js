@@ -1,6 +1,17 @@
 /* Spanish for Tagda Timer. Keys are the English source text exactly as it is
    written in js/ and in the HTML; {name} placeholders are filled by t(). */
 export const es = {
+  "Re-centre gyro": "Recentrar el giroscopio",
+  "Follow gyroscope": "Seguir el giroscopio",
+  "Replay gyroscope": "Reproducir el giroscopio",
+  "rotate the preview with your cube; recording continues when off": "rota la vista con el cubo; la grabación continúa al desactivarlo",
+  "also re-centres the gyroscope view": "también recentra la vista del giroscopio",
+  "{n} samples · estimated alignment": "{n} muestras · alineación estimada",
+  "Full reconstruction": "Reconstrucción completa",
+  "Scripted demo phases, checked against the cube state. Click a phase to jump to its final turn.": "Fases de demostración programadas y comprobadas con el estado del cubo. Pulsa una fase para ir a su último giro.",
+  "Waiting for matching turns from the cube…": "Esperando los giros correspondientes del cubo…",
+  "Firmware {version}": "Firmware {version}",
+  "No gyroscope · turn tracking is available": "Sin giroscopio · seguimiento de giros disponible",
   // Races: the Stackmat button
   "Race on a Stackmat": "Competir con un Stackmat",
   "Racing on a Stackmat": "Compitiendo con un Stackmat",

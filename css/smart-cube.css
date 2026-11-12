@@ -8,6 +8,11 @@
 .smart-face-R { grid-area:2 / 3; } .smart-face-B { grid-area:2 / 4; } .smart-face-D { grid-area:3 / 2; }
 .smart-3d-ready:not(.smart-net) .smart-sticker-net { display:none; }
 .smart-net .smart-twisty-stage { visibility:hidden; }
+.sa-gyro-control { display:flex; align-items:center; flex-wrap:wrap; gap:7px; padding:4px 16px; color:var(--text-dim); font:11px var(--font-ui); }
+.sa-gyro-control:empty { display:none; }
+.sa-gyro-control input { accent-color:var(--accent); }
+.sa-gyro-control small { margin-left:auto; color:var(--text-faint); font-size:10px; }
+.sa-reconstruction { white-space:pre-wrap; overflow-wrap:anywhere; margin:16px; color:var(--text); font:12px/1.8 var(--font-mono,monospace); }
 
 #smart-cube-wrap { width:min(49vh,calc(430px * var(--smart-cube-scale,1))); flex:none; margin:0; padding:0; border:0; background:none; }
 #smart-cube-wrap[hidden] { display:none; }

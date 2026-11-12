@@ -9,7 +9,7 @@ const os = require('node:os');
     const context = await browser.newContext({ serviceWorkers:'block', viewport:{width:1440,height:1000} });
     const page = await context.newPage(), errors = [];
     page.on('pageerror', error => errors.push(error.message));
-    const url = `${process.argv[2] || 'http://127.0.0.1:5387'}/smart-cube-demo.html?ui=159`;
+    const url = `${process.argv[2] || 'http://127.0.0.1:5387'}/smart-cube-demo.html?ui=106`;
     const load = async () => {
       await page.goto(url);
       await page.waitForFunction(() => !document.querySelector('#run').disabled, null, {timeout:60000});
@@ -22,6 +22,43 @@ const os = require('node:os');
     assert.equal(scramble.displayed, scramble.expected);
     assert.ok(scramble.displayed.split(' ').length <= 30);
     assert.match(scramble.displayed, /2/);
+
+    const stateBeforeGyro=await frame.evaluate(()=>({state:smartCubeDemo.controller.stream.state,serial:smartCubeDemo.controller.stream.serial}));
+    await page.locator('#gyro').click();
+    await frame.waitForFunction(()=>{
+      const p=smartCubeDemo.controller.preview;
+      return p.orientationObject&&Math.abs(p.orientationObject.quaternion.x)>.05;
+    });
+    assert.match(await page.locator('#gyro-readout').textContent(),/samples/);
+    const stateDuringGyro=await frame.evaluate(()=>({state:smartCubeDemo.controller.stream.state,serial:smartCubeDemo.controller.stream.serial}));
+    assert.deepEqual(stateDuringGyro,stateBeforeGyro);
+    await page.waitForFunction(()=>!document.querySelector('#gyro').disabled);
+    console.log('PASS: gyro rotates the actual 3D puzzle without changing the sticker state, serial or timer');
+
+    await page.locator('#review').click();
+    await frame.getByRole('dialog',{name:'Smart cube analysis'}).waitFor();
+    const follow=frame.getByRole('checkbox',{name:'Replay gyroscope',exact:true});
+    await follow.waitFor();assert.equal(await follow.isChecked(),true);
+    await frame.locator('.sa-phase-table tbody tr').nth(3).waitFor();
+    assert.equal(await frame.locator('.sa-alg-card').count(),2);
+    await frame.getByText('Full reconstruction',{exact:true}).click();
+    assert.match(await frame.locator('.sa-reconstruction').textContent(),/\/\/ Cross[\s\S]*\/\/ F2L[\s\S]*\/\/ OLL[\s\S]*\/\/ PLL/);
+    const replayOrientation=await frame.evaluate(async()=>{
+      const timeline=document.querySelector('.sa-seek');timeline.value='4500';timeline.dispatchEvent(new Event('input',{bubbles:true}));
+      await new Promise(requestAnimationFrame);await new Promise(requestAnimationFrame);
+      const player=document.querySelector('.smart-analysis twisty-player');
+      const object=await player.experimentalCurrentThreeJSPuzzleObject();return object.quaternion.toArray();
+    });
+    assert.ok(replayOrientation.slice(0,3).some(v=>Math.abs(v)>.05));
+    await follow.uncheck();
+    const fixed=await frame.evaluate(async()=>{
+      const player=document.querySelector('.smart-analysis twisty-player');return (await player.experimentalCurrentThreeJSPuzzleObject()).quaternion.toArray();
+    });
+    assert.ok(fixed.slice(0,3).every(v=>Math.abs(v)<1e-8));
+    await follow.check();
+    await page.screenshot({path:path.join(os.tmpdir(),'smart-cube-gyro-reconstruction-desktop.png')});
+    await frame.getByRole('button',{name:'Close',exact:true}).click();
+    console.log('PASS: saved gyro seeking and toggle, four checked phases, Sune/T-perm matches and full reconstruction');
 
     await frame.locator('#btn-settings').click();
     const smartGroup = frame.locator('#drawer-body .group').filter({has:frame.getByRole('heading',{name:'Smart cube',exact:true})});
@@ -83,13 +120,13 @@ const os = require('node:os');
         assert.equal(boxes.statsExpanded,true);
         assert.ok(boxes.statsRail.height<=1,JSON.stringify(boxes));
       }
-      if([1440,528,390].includes(width)) await page.screenshot({path:path.join(os.tmpdir(),`smart-cube-159-${stage}-${width}.png`)});
+      if([1440,528,390].includes(width)) await page.screenshot({path:path.join(os.tmpdir(),`smart-cube-106-${stage}-${width}.png`)});
     };
     const sizes = [[1440,1000],[1366,768],[1024,768],[768,1024],[528,1160],[460,929],[390,844],[360,740],[320,568]];
     for(const [width,height] of sizes) await checkLayout(width,height,'before');
 
     await page.setViewportSize({width:528,height:1160});
-    await page.locator('#mistake').click();
+    await page.locator('#run').click();
     await frame.locator('#smart-cube-wrap[data-correcting=true]').waitFor({timeout:15000});
     const mistake = await frame.evaluate(() => ({
       timer:smartCubeDemo.controller.timer.state,
@@ -109,9 +146,13 @@ const os = require('node:os');
     await page.waitForFunction(()=>!document.querySelector('#run').disabled,null,{timeout:30000});
     const capture = await frame.evaluate(async()=>{
       const capture=await (await import('/js/db.js')).SmartCaptures.get(smartCubeDemo.lastSolve.id);
-      return {moves:capture.moves.length,expected:smartCubeDemo.scenario.moves.length,duration:capture.measuredDurationMs,completeness:capture.completeness};
+      return {moves:capture.moves.length,expected:smartCubeDemo.scenario.moves.length,duration:capture.measuredDurationMs,completeness:capture.completeness,gyro:capture.orientation?.samples.length||0};
     });
     assert.equal(capture.moves,capture.expected);assert.equal(capture.duration,11220);assert.equal(capture.completeness,'complete');
+    assert.ok(capture.gyro>=80);
+    await frame.getByRole('checkbox',{name:'Replay gyroscope',exact:true}).waitFor();
+    await page.screenshot({path:path.join(os.tmpdir(),'smart-cube-gyro-reconstruction-phone.png')});
+    await frame.getByRole('button',{name:'Close',exact:true}).click();
     for(const [width,height] of sizes) await checkLayout(width,height,'after');
     await page.setViewportSize({width:460,height:929});
     frame = await load();

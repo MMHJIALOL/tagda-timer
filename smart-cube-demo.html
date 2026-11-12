@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Smart cube · local demo</title>
+  <title>Smart cube · full test solve</title>
   <style>
     *{box-sizing:border-box}html,body{height:100%;margin:0}body{display:flex;flex-direction:column;background:#101019;color:#f0eefb;font:14px system-ui,sans-serif}
     header{flex:none;padding:16px 24px;background:#191826;border-bottom:1px solid #ffffff20;display:flex;gap:16px;align-items:center;flex-wrap:wrap}
@@ -15,13 +15,18 @@
     .intro{min-width:0}.intro .badge{display:none}h1{font-size:14px;display:flex;align-items:center;gap:9px;margin:0}h1::before{content:'LOCAL DEMO';font-size:8px;letter-spacing:1px;padding:3px 5px;border:1px solid #80b69a55;border-radius:4px;color:#a0d5b8}p{font-size:11px;margin-top:2px}
     .buttons{grid-column:2;grid-row:1 / 3}button{font-size:11px;padding:8px 11px;border-radius:7px}#status{grid-column:1;font-size:10px;min-height:14px}
     @media(max-width:640px){header{padding:9px 10px;gap:7px;grid-template-columns:1fr}.intro p{display:none}.buttons{grid-column:1;grid-row:2;flex-wrap:nowrap;gap:6px}.buttons button{font-size:10px;padding:8px 7px;white-space:nowrap}#status{grid-row:3}h1{font-size:13px}}
+    .sensor{grid-column:1/-1;display:flex;align-items:center;gap:10px;color:#9edec0;font:10px ui-monospace,monospace;min-width:0}.sensor output{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.sensor button{margin-left:auto;padding:3px 7px;font-size:10px;font-weight:400}.sensor .dot{width:5px;height:5px;border-radius:50%;background:#9edec0;flex:none}
+    @media(max-width:640px){.buttons button{padding:8px 5px;font-size:10px}.sensor{grid-row:4;gap:6px;font-size:9px}.sensor button{font-size:9px}}
+    @media(max-width:640px){#status{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}}
+    @media(max-width:640px) and (max-height:650px){header{padding:6px 10px;gap:5px}.intro{display:none}.buttons{grid-row:1}#status{grid-row:2}.sensor{grid-row:3}}
   </style>
 </head>
 <body>
   <header>
-    <div class="intro"><span class="badge">LOCAL SIMULATION</span><h1>Try the smart cube.</h1><p>Simulated turns in the real timer. No cube or Bluetooth needed.</p></div>
-    <div class="buttons"><button class="primary" id="run" disabled>Watch a solve</button><button id="mistake" disabled>Test a wrong turn</button><button id="review" disabled>Open analysis</button><button id="stop" disabled>Stop</button></div>
+    <div class="intro"><span class="badge">LOCAL SIMULATION</span><h1>A complete test solve.</h1><p>Gyro → scramble correction → inspection → solve → reconstruction. Simulated data; no Bluetooth needed.</p></div>
+    <div class="buttons"><button class="primary" id="run" disabled>Full test</button><button id="gyro" disabled>Gyro</button><button id="mistake" disabled>Wrong turn</button><button id="review" disabled>Recon</button><button id="stop" disabled>Stop</button></div>
     <div id="status" role="status" aria-live="polite">Preparing the sample solve…</div>
+    <div class="sensor"><span class="dot"></span><output id="gyro-readout" aria-label="Simulated gyroscope readings">Gyro · waiting for a sample</output><button id="center" disabled>Re-centre</button></div>
   </header>
   <script>
     if(!['localhost','127.0.0.1'].includes(location.hostname)){
@@ -36,13 +41,18 @@
           const registrations=await navigator.serviceWorker.getRegistrations();
           await Promise.all(registrations.filter(registration=>registration.scope===`${location.origin}/`).map(registration=>registration.unregister()));
         }
-        frame.src='./index.html?smartCubeDemo=1&ui=159';document.body.append(frame);
+        frame.src='./index.html?smartCubeDemo=1&ui=gyro-showcase-2';document.body.append(frame);
       })().catch(error=>{document.getElementById('status').textContent=`Could not load the preview: ${error.message}`;});
-      const run=document.getElementById('run'),mistake=document.getElementById('mistake'),review=document.getElementById('review'),stop=document.getElementById('stop');
-      for(const [button,action]of [[run,'run'],[mistake,'mistake'],[review,'review'],[stop,'stop']])button.onclick=()=>frame.contentWindow.postMessage({type:`smart-cube-demo-${action}`},location.origin);
+      const run=document.getElementById('run'),mistake=document.getElementById('mistake'),review=document.getElementById('review'),stop=document.getElementById('stop'),gyro=document.getElementById('gyro'),center=document.getElementById('center');
+      for(const [button,action]of [[run,'run'],[mistake,'mistake'],[review,'review'],[stop,'stop'],[gyro,'gyro'],[center,'center']])button.onclick=()=>frame.contentWindow.postMessage({type:`smart-cube-demo-${action}`},location.origin);
       addEventListener('message',event=>{
-        if(event.origin!==location.origin||event.source!==frame.contentWindow||event.data?.type!=='smart-cube-demo-status')return;
-        document.getElementById('status').textContent=event.data.text;run.disabled=event.data.busy;mistake.disabled=event.data.busy;review.disabled=!event.data.ready||event.data.busy;stop.disabled=!event.data.busy;
+        if(event.origin!==location.origin||event.source!==frame.contentWindow)return;
+        if(event.data?.type==='smart-cube-demo-gyro'){
+          const q=event.data.quaternion;if(!q)return;
+          document.getElementById('gyro-readout').textContent=`Gyro · x ${q.x.toFixed(2)}  y ${q.y.toFixed(2)}  z ${q.z.toFixed(2)}  w ${q.w.toFixed(2)} · ${event.data.samples} samples`;center.disabled=false;return;
+        }
+        if(event.data?.type!=='smart-cube-demo-status')return;
+        document.getElementById('status').textContent=event.data.text;run.disabled=event.data.busy;mistake.disabled=event.data.busy;gyro.disabled=event.data.busy;review.disabled=!event.data.ready||event.data.busy;stop.disabled=!event.data.busy;
       });
     }
   </script>

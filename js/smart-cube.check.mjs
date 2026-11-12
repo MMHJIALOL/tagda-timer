@@ -7,6 +7,8 @@ import { SOLVED, turnState, scrambleState, SmartStream, timeline, qtm, phases, r
 import { fromFacelets, facelets, SOLVED as CUBE_SOLVED, applyAlg } from './cube3.js';
 import { faceletsFor } from './cubenet.js';
 import { cubeTimestampLinearFit } from '../vendor/gan/gan-3.0.2.js';
+import { readFile } from 'node:fs/promises';
+import { SNAPSHOT_WAIT_MS, ganCubeInfo } from './smart-cube-core.js';
 
 const inverse = alg => alg.trim().split(/\s+/).reverse().map(m=>m.endsWith('2')?m:m.endsWith("'")?m[0]:m+"'").join(' ');
 const makeCapture = (alg = 'R U F', options = {}) => {
@@ -47,6 +49,86 @@ test('sequence wrapping, duplicate provenance, late snapshots, gaps and epochs',
   assert.equal(s.state,scrambleState('R U'));assert.equal(accepted.length,2);assert.equal(s.raw.filter(e=>e.type==='MOVE').length,4);
   s.ingest({type:'MOVE',serial:2,move:'F'},7);assert.equal(s.state,null);assert.equal(issues.length,1);
   const fresh=new SmartStream({epoch:2});fresh.ingest({type:'FACELETS',serial:0,facelets:scrambleState('F')},8);assert.equal(fresh.state,scrambleState('F'));
+});
+
+test('ahead-of-turn snapshots wait for matching turns without skipping or double-applying them', () => {
+  const accepted = [], issues = [];
+  const s = new SmartStream({ epoch:1, onMove:m=>accepted.push(m), onIssue:r=>issues.push(r) });
+  s.ingest({ type:'FACELETS', serial:254, facelets:SOLVED }, 0);
+  s.ingest({ type:'FACELETS', serial:0, facelets:scrambleState('R U') }, 10);
+  assert.equal(s.synchronized, false);
+  assert.equal(s.serial, 254);
+  s.ingest({ type:'MOVE', serial:255, move:'R', cubeTimestamp:100, localTimestamp:200 }, 100);
+  s.ingest({ type:'MOVE', serial:0, move:'U', cubeTimestamp:200, localTimestamp:300 }, 1100);
+  assert.equal(s.synchronized, true);
+  assert.equal(s.state, scrambleState('R U'));
+  assert.equal(accepted.length, 2);
+  assert.deepEqual(issues, []);
+  s.ingest({ type:'FACELETS', serial:255, facelets:scrambleState('R') }, 1200);
+  assert.deepEqual(issues, []);
+  assert.equal(s.state, scrambleState('R U'));
+  // A conflicting older snapshot is still evidence against a prior capture.
+  s.ingest({ type:'FACELETS', serial:255, facelets:SOLVED }, 1201);
+  assert.deepEqual(issues, ['Older cube snapshot disagrees']);
+});
+
+test('missing history has a fixed deadline; mismatching pending snapshots cannot complete a solve', () => {
+  const accepted = [], issues = [];
+  const s = new SmartStream({ epoch:1, onMove:m=>accepted.push(m), onIssue:(r,e)=>issues.push([r,e.serial]) });
+  s.ingest({ type:'FACELETS', serial:0, facelets:SOLVED }, 0);
+  s.ingest({ type:'FACELETS', serial:2, facelets:scrambleState('R U') }, 10);
+  s.ingest({ type:'FACELETS', serial:2, facelets:scrambleState('R U') }, SNAPSHOT_WAIT_MS);
+  s.flushPending(SNAPSHOT_WAIT_MS + 9);
+  assert.equal(s.serial, 0);
+  s.flushPending(SNAPSHOT_WAIT_MS + 10);
+  assert.deepEqual(issues, [['Snapshot includes unknown turns',2]]);
+  assert.equal(s.state, scrambleState('R U'));
+  assert.equal(accepted.length, 0);
+  s.reset();
+  s.ingest({ type:'FACELETS', serial:5, facelets:scrambleState('R') }, 3000);
+  s.ingest({ type:'FACELETS', serial:6, facelets:scrambleState('F') }, 3010);
+  s.ingest({ type:'MOVE', serial:6, move:"R'" }, 3020);
+  assert.equal(s.state, scrambleState('F'));
+  assert.equal(accepted.length, 0, 'an unconfirmed solved turn must not finalize a capture');
+  assert.deepEqual(issues.at(-1), ['Cube state mismatch',6]);
+  s.reset();
+  assert.equal(s.pendingSnapshots.size, 0);
+  assert.equal(s.synchronized, false);
+});
+
+test('recorded GAN hardware traces preserve turns and flag the i carry E inconsistencies', async () => {
+  for (const [name, moveCount, expectedIssues] of [
+    ['gan-i3x3s',935,[]], ['gan-i3',668,[]],
+    ['gan-icarry-e',479,[['Cube state mismatch',0],['Cube state mismatch',4]]],
+  ]) {
+    const fixture = JSON.parse(await readFile(new URL(`../tools/fixtures/smart-cube/${name}.json`, import.meta.url)));
+    const accepted = [], issues = [];
+    const stream = new SmartStream({ epoch:1, onMove:m=>accepted.push(m), onIssue:(r,e)=>issues.push([r,e.serial]) });
+    for (const [type,at,serial,a,b,c] of fixture.events) {
+      stream.ingest(type==='M' ? { type:'MOVE', serial, move:a, cubeTimestamp:b, localTimestamp:c }
+        : { type:'FACELETS', serial, facelets:a }, at);
+    }
+    stream.flushPending(Infinity);
+    assert.equal(accepted.length, moveCount, name);
+    assert.deepEqual(issues, expectedIssues, name);
+    assert.equal(stream.pendingSnapshots.size, 0);
+    for (const solve of fixture.solves) {
+      const raw = solve.moves.map(([serial,move,cubeTimestamp,localTimestamp])=>({ serial,move,cubeTimestamp,localTimestamp,receivedMonotonic:localTimestamp }));
+      const c = { ...makeCapture(), initialFacelets:solve.initialFacelets, ...timeline(raw,cubeTimestampLinearFit) };
+      validateCapture(c);
+      // The diagnostic page used event-handler elapsed time for one-turn tests;
+      // the canonical first-to-last-turn interval is exactly zero for those.
+      assert.ok(Math.abs(c.measuredDurationMs-solve.durationMs)<1, name);
+    }
+  }
+});
+
+test('hardware names identify tested models without inventing gyro support', () => {
+  assert.equal(ganCubeInfo({hardwareName:'GANi30Mc',softwareVersion:'7.76',gyroSupported:true}).name, 'GAN356 i3');
+  assert.deepEqual(ganCubeInfo({hardwareName:'GANicE2',softwareVersion:'2.9',gyroSupported:false}),
+    {name:'GAN i carry E',hardwareName:'GANicE2',firmware:'2.9',gyroSupported:false});
+  assert.equal(ganCubeInfo({},'GANi3x3s').name, 'GANi3x3s');
+  assert.equal(ganCubeInfo({},'Unknown GAN').gyroSupported, null);
 });
 test('200 complete captures validate and deterministic bounded seeks match the original engine', () => {
   for(let n=0;n<200;n++) {
@@ -193,4 +275,43 @@ test('demo preserves standard scramble notation while simulating every reported 
   assert.equal(seekState(capture, capture.moves.length - 1), SOLVED);
   assert.equal(capture.measuredDurationMs, 11220);
   assert.equal(capture.analysisConfig.phaseBoundaries, undefined);
+});
+
+test('gyro orientation changes renderer axes without touching the logical cube state', async () => {
+  const {normalizeQuaternion,relativeQuaternion,rendererQuaternion,orientationAt,orientationTimeline}=await import('./smart-cube-gyro.js');
+  assert.equal(normalizeQuaternion({x:NaN,y:0,z:0,w:1}),null);
+  assert.equal(normalizeQuaternion({x:0,y:0,z:0,w:0}),null);
+  const identity={x:0,y:0,z:0,w:1},y={x:0,y:Math.SQRT1_2,z:0,w:Math.SQRT1_2};
+  assert.deepEqual(rendererQuaternion(y),{x:0,y:0,z:-Math.SQRT1_2,w:Math.SQRT1_2});
+  assert.ok(Math.abs(relativeQuaternion(y,y).w-1)<1e-10);
+  const source={reference:identity,samples:[{receivedMonotonic:100,quaternion:identity},{receivedMonotonic:200,quaternion:y}]};
+  const original=structuredClone(source),recorded=orientationTimeline(source,[{receivedMonotonic:100},{receivedMonotonic:300}],1000);
+  assert.deepEqual(source,original);
+  assert.equal(recorded.samples[1].timeMs,500);
+  assert.deepEqual(orientationAt(recorded,1000),y);
+  const halfway=orientationAt(recorded,250);
+  assert.ok(halfway.y>0&&halfway.y<y.y);
+  const signEquivalent={reference:identity,samples:[{timeMs:0,quaternion:y},{timeMs:100,quaternion:Object.fromEntries(Object.entries(y).map(([k,v])=>[k,-v]))}]};
+  assert.ok(Math.abs(orientationAt(signEquivalent,50).y-y.y)<1e-10);
+});
+
+test('showcase reconstruction has valid CFOP boundaries, recognized algorithms and independently replayable gyro', async () => {
+  const {makeShowcaseScenario,makeSampleCapture}=await import('./smart-cube-demo-fixture.js');
+  const {analyse}=await import('./cube3.js');
+  const scenario=makeShowcaseScenario(),capture=makeSampleCapture('showcase',cubeTimestampLinearFit,scenario);
+  const rows=phases(capture);
+  assert.equal(rows.length,4);
+  for(const row of rows) {
+    assert.ok(row.durationMs>0,row.name);
+    const state=analyse(fromFacelets(seekState(capture,row.endIndex)),'D');
+    assert.equal(state[{Cross:'cross',F2L:'f2l',OLL:'oll',PLL:'solved'}[row.name]],true,row.name);
+  }
+  assert.ok(capture.analysisConfig.algorithmMatches.some(r=>r.caseIds.includes('OLL27')));
+  assert.ok(capture.analysisConfig.algorithmMatches.some(r=>r.caseIds.includes('T')));
+  assert.ok(capture.orientation.samples.length>100);
+  const edited=structuredClone(capture);edited.orientation.samples[0].quaternion.x=.1;
+  assert.throws(()=>mergeCaptureEdits(capture,edited),/evidence conflict/);
+  const invalid=structuredClone(capture);invalid.orientation.samples[1].timeMs=-1;
+  assert.throws(()=>validateCapture(invalid),/orientation/);
+  assert.equal(seekState(capture,capture.moves.length-1),SOLVED);
 });
