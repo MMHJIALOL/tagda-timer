@@ -6287,7 +6287,7 @@ function wireInput() {
      never a control, a sheet, the dock, the recent strip, the scramble card or
      another tab. Above that the stage is the timer, exactly as it always was. */
   const PHONE_NOT = 'button, a, input, select, textarea, label, [role="button"], [contenteditable], .solve-chip, .panel, '
-    + '#topbar, #scramble-zone, #ph-recent, #ph-dock, .ph-screen, .sheet, .sheet-scrim, #panel-cube';
+    + '#topbar, #scramble-zone, #timer-avgs, #timer-hint, #last-actions, #ph-recent, #ph-dock, .ph-screen, .sheet, .sheet-scrim, #panel-cube';
   /* Once an attempt is under way (inspection, the hold, the solve) the phone
      has hidden everything but the clock, and any tap is the timer's — bar the
      ✕ that cancels inspection and a sheet somebody opened from a shortcut. */

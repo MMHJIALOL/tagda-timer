@@ -184,15 +184,14 @@ body:has(.sheet) #toasts {
   --ph-dock-room: calc(var(--ph-dock-h) + var(--ph-dock-b) + 12px);
 }
 
-/* The whole screen is the timer, so none of it may be taken for a pan or a
-   pull-to-refresh halfway through a hold — the browser cancels the touch when
-   it does. Strips and tabs that scroll say so themselves. */
+/* Idle content can scroll on short screens; active attempts retain touch. */
 body.ph #app {
   display: flex; flex-direction: column; gap: 0;
   height: 100dvh;
   padding: max(8px, env(safe-area-inset-top)) 0 var(--ph-dock-room);
-  touch-action: none;
+  overflow-y: auto; overscroll-behavior-y: contain; touch-action: pan-y;
 }
+body.ph:is(.focus, .inspecting, .holding, .armed, .timing) #app { touch-action: none; overflow-y: hidden; }
 body.ph.sotd #app { padding-bottom: max(12px, env(safe-area-inset-bottom)); }
 
 /* What a phone does not have: the wordmark, the pickers, the menu, the icon
@@ -327,7 +326,7 @@ body.ph #bld-zone, body.ph #phase-zone, body.ph #learn-bar { margin-top: 0; }
 
 /* ---------------- the clock ---------------- */
 body.ph #stage {
-  flex: 1 1 auto; min-height: 0;
+  flex: 1 0 auto; min-height: min-content;
   display: flex; flex-direction: column; gap: 0;
   padding: 0 var(--phone-gutter);
 }
@@ -336,7 +335,8 @@ body.ph #stage {
    too tall for the space (the clock on an iPhone 8, a Fewest Moves attempt, a
    long multiphase readout) spilled upwards over the scramble. Spacers can
    only ever push it down from the top of its box. */
-body.ph #timer-zone { flex: 1 1 auto; min-height: 0; justify-content: flex-start; }
+body.ph #timer-zone { flex: 1 1 auto; min-height: 0; justify-content: flex-start; touch-action: pan-y; }
+body.ph #timer-display { touch-action: none; }
 body.ph #timer-zone::before, body.ph #timer-zone::after { content: ''; flex: 1 1 0; min-height: 0; }
 body.ph #sidebar { display: none; }
 /* The right rail holds the race panel while a room is open (it docks itself
@@ -352,7 +352,13 @@ body.ph.sotd #panel-race, body.ph:is(.focus, .inspecting, .timing) #panel-race {
 
 body.ph #timer-core {
   position: relative; left: auto; top: auto; transform: none;
-  gap: 0;
+  gap: 0; flex: none; width: 100%;
+}
+body.ph:not([data-input="smart"], [data-input="virtual"], .fmc) #timer-zone::before,
+body.ph:not([data-input="smart"], [data-input="virtual"], .fmc) #timer-zone::after { content: none; }
+body.ph:not([data-input="smart"], [data-input="virtual"], .fmc) #timer-core {
+  --ph-clock-space: max(26px, calc(50dvh - var(--ph-stage-top, 250px) - var(--ph-digit-height, 85px) / 2));
+  padding-top: var(--ph-clock-space);
 }
 body.ph #timer-display {
   order: 1;
@@ -394,7 +400,7 @@ body.ph #timer-bpa { grid-column: auto; margin-top: 2px; }
    whether or not it is showing, so the clock does not move when it lands. */
 body.ph #timer-core { padding-top: 26px; }
 body.ph #last-row {
-  position: absolute; left: 0; right: 0; top: 0; height: 22px;
+  position: absolute; left: 0; right: 0; top: calc(var(--ph-clock-space, 26px) - 26px); height: 22px;
   display: flex; justify-content: center; align-items: center; pointer-events: none;
 }
 body.ph #last-delta { font-size: 13px; }
@@ -402,13 +408,13 @@ body.ph #last-delta { font-size: 13px; }
 body.ph #last-actions {
   order: 3;
   display: flex; flex-wrap: wrap; justify-content: center; gap: 6px;
-  max-width: none; margin-top: 14px;
+  max-width: 100%; margin-top: 14px;
 }
 body.ph #last-actions .ph-pill, body.ph #last-actions .ghost-btn.ph-pill {
   display: inline-flex; align-items: center; gap: 6px;
-  height: 32px; padding: 0 12px; border-radius: 16px;
+  min-height: 44px; padding: 0 8px; border-radius: 22px;
   background: var(--surface); border: 1px solid var(--border);
-  font-family: var(--font-ui); font-size: 13px; font-weight: 600; color: var(--text);
+  font-family: var(--font-ui); font-size: 12.5px; font-weight: 600; color: var(--text);
 }
 body.ph #last-actions .ph-pill[hidden] { display: none; }
 body.ph #last-actions .ph-pill svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
@@ -860,7 +866,7 @@ body.ph .hist-end { padding: 14px 0 8px; font-size: 12px; }
   .ph-ctx { gap: 6px; padding: 0 10px; }
   body.ph #btn-daily { padding: 0 12px 0 10px; gap: 6px; }
   body.ph #scramble-text { font-size: calc(14.5px * var(--scramble-scale)); }
-  body.ph #last-actions .ph-pill, body.ph #last-actions .ghost-btn.ph-pill { padding: 0 11px; font-size: 12.5px; }
+  body.ph #last-actions .ph-pill, body.ph #last-actions .ghost-btn.ph-pill { padding: 0 8px; font-size: 12.5px; }
   body.ph #last-actions .ph-pill svg { display: none; }
 }
 @media (max-height: 780px) {
@@ -880,3 +886,21 @@ body.ph .hist-end { padding: 14px 0 8px; font-size: 12px; }
 @media (prefers-reduced-motion: reduce) {
   .ph-dock, body.ph :is(#topbar, #scramble-zone, .ph-recent) { transition: none !important; }
 }
+
+
+/* The clock stays at the viewport center; other rows may scroll below it. */
+body.ph #scramble-zone {
+  max-height: max(100px, min(32dvh, calc(50dvh - max(8px, env(safe-area-inset-top)) - 44px - 14px - 26px - var(--ph-digit-height, 85px) / 2 - 4px)));
+  overflow-y: auto; overscroll-behavior-y: contain;
+}
+body.ph :is(#timer-avgs, #last-actions, #timer-hint, .ph-recent) { touch-action: pan-y; }
+body.ph #timer-avgs { pointer-events: auto; }
+body.ph:not([data-input="smart"], [data-input="virtual"], .fmc):is(.focus, .timing, .holding, .armed) #timer-core {
+  position: fixed; left: var(--phone-gutter); right: var(--phone-gutter);
+  top: calc(50dvh - var(--ph-digit-height, 85px) / 2 - 26px);
+  width: auto; padding-top: 26px; --ph-clock-space: 26px;
+}
+/* A phone-width in-app window can have a mouse rather than a touch pointer. */
+body.ph #last-actions.empty,
+body.ph #timer-display:not(.state-idle) ~ #last-actions,
+body.ph:is(.focus, .inspecting, .holding, .armed, .timing) #last-actions { visibility: hidden; }

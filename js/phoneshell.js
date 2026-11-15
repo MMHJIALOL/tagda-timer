@@ -138,6 +138,23 @@ function build() {
   new MutationObserver(count).observe(digits, { childList: true, characterData: true, subtree: true });
   count();
 
+  // Anchor the digits, rather than the combined height of averages and buttons.
+  // Keep the rest in normal flow so short screens can scroll to every control.
+  const appRoot = $('#app');
+  const stage = $('#stage');
+  const placeClock = () => {
+    if (!isPhone()) return;
+    const top = stage.getBoundingClientRect().top - appRoot.getBoundingClientRect().top + appRoot.scrollTop;
+    const height = display.getBoundingClientRect().height;
+    for (const [key, value] of [['--ph-stage-top', top], ['--ph-digit-height', height]]) {
+      const px = `${value}px`;
+      if (appRoot.style.getPropertyValue(key) !== px) appRoot.style.setProperty(key, px);
+    }
+  };
+  const clockObserver = new ResizeObserver(placeClock);
+  for (const node of [stage, display, $('#topbar'), $('#scramble-zone')]) clockObserver.observe(node);
+  addEventListener('resize', placeClock);
+
   /* ---- the scramble card: a flat net of the scramble, which opens the 3D cube ---- */
   ui.thumbHost = el('div', { class: 'ph-net-host', 'aria-hidden': 'true' });
   ui.thumbBtn = el('button', {
