@@ -165,9 +165,9 @@ rules enforce takes effect at once, whatever any tab has cached.
 | `sotd.frozen` | switch | off | | rules | On: no new result on any event today. The board, its chat and replays stay (§18) |
 | `sotd.frozenMessage` | text | empty | 200 characters | app | Shown in place of today's scramble while the board is closed |
 | `support.enabled` | switch | on | | app | The "Enjoying Tagda Timer?" card at all |
-| `support.oddsPct` | % | 1 | 0 to 100 | app | Page loads that ask, after the first ask and the quiet days |
-| `support.quietDays` | days | 30 | 1 to 365 | app | Quiet after somebody answers it |
-| `support.shows` | times | 2 | 0 to 10 | app | Times it may come back on one page load |
+| `support.oddsPct` | % | 10 | 0 to 100 | app | Returning-visit frequency after the first ask: 10% = every 10 page loads, 0 = no repeats. The first ask follows the second saved solve, including on the first visit. Visits accumulate during quiet days; due reminders appear after a saved solve once the quiet period ends. |
+| `support.quietDays` | days | 14 | 1 to 365 | app | Minimum quiet period after a card appears or somebody answers it |
+| `support.shows` | times | 1 | 0 to 10 | app | Times it may come back on one page load |
 | `feedback.url` | https link | the current form | 300 characters | app | The built-in feedback announcement's button (§7) |
 | `feedback.endAt` | date and time | 1 Oct 2026 | | app | When that announcement stops |
 | `feedback.mode` | choice | form | form, inbox, both | app | Where About sends feedback: the form, Send feedback (People › Feedback), or both (§21) |
