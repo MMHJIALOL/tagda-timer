@@ -18,7 +18,7 @@ export function createSolveMotion({ element, settings, canPlay }) {
     cancel();
     const node = element();
     const config = settings();
-    if (!node?.animate || !canPlay() || config.motion !== 'full' ||
+    if (!node?.animate || !canPlay() || config.solveAnimations === false || config.motion !== 'full' ||
         config.reduceEffects || reduced.matches || document.visibilityState !== 'visible') {
       refresh();
       return;
