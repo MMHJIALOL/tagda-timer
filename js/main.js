@@ -6312,7 +6312,7 @@ function wireInput() {
   // stops a pointerup that began life on a panel from starting a solve.
   let tracking = false;
 
-  /* Swipe to edit (js/swipe-edit.js): on a phone, a press on the digits right
+  /* Swipe to edit (js/swipe-edit.js): on a touch screen, a press on the digits right
      after a solve may be a swipe, so it asks first and may hold the press back
      for a moment. Only with the timer idle, a solve on the digits, touch the
      thing that times (not a Stackmat, typed times, the virtual cube or Fewest
@@ -6321,8 +6321,8 @@ function wireInput() {
      time is in, the late-penalty sync carries the edit to the board, and an
      attempt under way is never idle. Cooldown does not count: that is the
      press that stopped the solve, still down. */
-  const swipeEditOK = (e) => !!phoneShell?.on() && app.settings.swipeEdit !== false
-    && phoneShell.tab() === 'timer' && e.pointerType !== 'mouse'
+  const swipeEditOK = (e) => touchOK(e) && app.settings.swipeEdit !== false
+    && e.pointerType !== 'mouse'
     && timer.state === 'idle' && !!shownSolve() && !modalOpen()
     && !app.settings.scramblesOnly && inputMode() === 'timer' && !movesMode();
   const swipe = wireSwipeEdit({

@@ -1,8 +1,8 @@
-"""Swipe to edit times on a phone (js/swipe-edit.js), in real browsers.
+"""Swipe to edit times on touch screens (js/swipe-edit.js), in real browsers.
 
-    python -I tools/verify-swipe-edit.py <base url> [chromium|firefox] [shots dir]
+    python -I tools/verify-swipe-edit.py <base url> [chromium|firefox] [shots dir] [width] [height]
 
-A 390x844 touch phone. Chrome gets real touches through CDP's
+Defaults to a 390x844 touch phone; pass dimensions for tablets. Chrome gets real touches through CDP's
 Input.dispatchTouchEvent; Firefox has no CDP, so it gets PointerEvents with
 pointerType 'touch' dispatched where the finger would be. Does a solve, then
 swipes the digits up, down, left and right, and checks that each edit landed
@@ -23,6 +23,8 @@ sys.stdout.reconfigure(encoding='utf-8')
 BASE = sys.argv[1].rstrip('/') if len(sys.argv) > 1 else 'http://127.0.0.1:5173'
 BROWSER = sys.argv[2] if len(sys.argv) > 2 else 'chromium'
 SHOTS = sys.argv[3] if len(sys.argv) > 3 else os.path.join(tempfile.gettempdir(), 'swipe-edit-shots')
+WIDTH = int(sys.argv[4]) if len(sys.argv) > 4 else 390
+HEIGHT = int(sys.argv[5]) if len(sys.argv) > 5 else 844
 PROD = re.compile(r'(firebaseio\.com|firebasedatabase\.app|firebaseapp\.com|identitytoolkit\.googleapis\.com|securetoken\.googleapis\.com)$')
 os.makedirs(SHOTS, exist_ok=True)
 
@@ -148,17 +150,23 @@ def solve(page, f):
 def run(p):
     launch = {'channel': 'chrome'} if BROWSER == 'chromium' else {}
     b = getattr(p, BROWSER).launch(**launch)
-    opts = {'viewport': {'width': 390, 'height': 844}, 'has_touch': True, 'service_workers': 'block', 'device_scale_factor': 2}
+    opts = {'viewport': {'width': WIDTH, 'height': HEIGHT}, 'has_touch': True, 'service_workers': 'block', 'device_scale_factor': 2}
     if BROWSER == 'chromium': opts['is_mobile'] = True
     ctx = b.new_context(**opts)
     ctx.route('**/*', guard)
     ctx.route_web_socket(re.compile('.*'), ws_guard)
+    ctx.add_init_script("""localStorage.setItem('tdt-ann', JSON.stringify({
+      'random-1v1': {v: 2, answer: 'dismissed', shows: 3},
+      'webcam-replay': {v: 1, answer: 'dismissed', shows: 3},
+      feedback: {v: 1, answer: 'dismissed', shows: 1}
+    }));""")
     page = ctx.new_page()
     errors = []
     page.on('pageerror', lambda e: errors.append(str(e)))
     page.goto(f'{BASE}/?emu=1')
-    page.wait_for_function("() => window.tagdatimer && document.body.classList.contains('ph') && document.getElementById('scramble-text').textContent.trim().length > 5", timeout=30000)
+    page.wait_for_function("() => window.tagdatimer && document.getElementById('scramble-text').textContent.trim().length > 5", timeout=60000)
     page.wait_for_timeout(800)
+    page.evaluate("() => document.querySelectorAll('.an-dlg[open]').forEach(d => d.dispatchEvent(new Event('cancel', { cancelable: true })))")
     f = Finger(page)
     set_settings(page, inspection=False, holdTime=0, swipeEdit=True, theme='nebula', confirmShortSolves=False)
     page.evaluate("() => document.querySelector('.coffee-nudge')?.remove()")
@@ -241,7 +249,7 @@ def run(p):
           all(boxes[k] and boxes[k]['w'] > 0 for k in ('up', 'down', 'left', 'right'))
           and boxes['up']['y'] + boxes['up']['h'] <= d['y'] and boxes['down']['y'] >= d['y'] + d['h']
           and not any(meet(boxes[k], d) for k in ('up', 'down', 'left', 'right'))
-          and boxes['right']['x'] + boxes['right']['w'] <= 390 and boxes['left']['x'] >= 0
+          and boxes['right']['x'] + boxes['right']['w'] <= WIDTH and boxes['left']['x'] >= 0
           and boxes['hint']['y'] >= boxes['down']['y'] + boxes['down']['h'], boxes)
     check('the hint says what letting go will do', boxes['hintText'] in ('Let go to add +2', 'Let go to remove the +2'), boxes['hintText'])
     check('the picked label takes its colour', lbl and lbl != page.evaluate("() => getComputedStyle(document.querySelector('.ph-sw-dir[data-dir=down]')).color"), lbl)
@@ -250,7 +258,7 @@ def run(p):
     sb = page.locator('#scramble-text').bounding_box()
     before = state(page)
     f.swipe(sb['x'] + sb['width'] * .75, sb['y'] + sb['height'] / 2, -140, 0)
-    page.wait_for_timeout(600)
+    page.wait_for_function("old => document.getElementById('scramble-text').textContent.trim() !== old", arg=before['scramble'], timeout=15000)
     after = state(page)
     check('a swipe on the scramble still deals the next scramble', after['scramble'] != before['scramble'] and after['n'] == before['n'] and after['penalty'] == before['penalty'], (before['scramble'][:30], after['scramble'][:30]))
     check('...and never touches the timer', after['display'] == 'state-idle' and not after['busy'], after)
@@ -310,22 +318,22 @@ def run(p):
     wait_idle(page); settle(page, 700)
     check('setting off: the overlay was never built', page.evaluate("() => !document.getElementById('ph-swipe') || getComputedStyle(document.getElementById('ph-swipe')).visibility === 'hidden'"))
 
-    # ---- the setting's row: phones only ----
+    # ---- the setting stays available across phone/tablet layouts ----
     set_settings(page, swipeEdit=True)
     page.evaluate("() => document.getElementById('btn-settings').click()")
     page.wait_for_selector('#drawer:not([hidden])')
     page.wait_for_timeout(300)
     row = page.locator('#drawer .row', has_text='Swipe to edit times')
-    check('Settings has the Swipe to edit times row on a phone', row.count() == 1 and row.first.is_visible())
+    check('Settings has the Swipe to edit times row on a touch screen', row.count() == 1 and row.first.is_visible())
     if row.count():
         row.first.scroll_into_view_if_needed()
         page.screenshot(path=os.path.join(SHOTS, f'{BROWSER}-settings-row.png'))
     page.set_viewport_size({'width': 1024, 'height': 768})
     page.wait_for_timeout(500)
-    check('...and not once the screen is a tablet (Settings rebuilt while open)', page.locator('#drawer .row', has_text='Swipe to edit times').count() == 0 and not page.locator('#drawer').is_hidden())
-    page.set_viewport_size({'width': 390, 'height': 844})
+    check('...and stays available on a tablet', page.locator('#drawer .row', has_text='Swipe to edit times').count() == 1 and not page.locator('#drawer').is_hidden())
+    page.set_viewport_size({'width': WIDTH, 'height': HEIGHT})
     page.wait_for_timeout(500)
-    check('...and back on a phone', page.locator('#drawer .row', has_text='Swipe to edit times').count() == 1)
+    check('...and after returning to the original size', page.locator('#drawer .row', has_text='Swipe to edit times').count() == 1)
     search = page.locator('#drawer .settings-search-input')
     search.fill('cstimer swipe')
     page.wait_for_timeout(200)
