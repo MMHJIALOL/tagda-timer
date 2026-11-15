@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "test:cube-playback": "node tools/verify-cube-playback.cjs",
     "test:vercel-import": "node tools/verify-vercel-import.cjs",
     "test:settings-presets": "node --test js/settings-presets.check.mjs",
     "test:settings-search": "node --test js/settings-search.check.mjs",
