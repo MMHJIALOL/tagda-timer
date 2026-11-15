@@ -1,9 +1,9 @@
 import { t } from './i18n.js';
 /* ===========================================================
-   Tagda Timer — swipe to edit the last time (phones)
+   Tagda Timer — swipe to edit the last time (touch screens)
 
    csTimer's gesture: right after a solve, drag the time up for +2, down for
-   DNF, left to delete it and right to clear its penalty. Only on the phone,
+   DNF, left to delete it and right to clear its penalty. On phones and tablets,
    only on the band the digits and the averages under them sit in, and only
    while the timer is idle with a solve on it. main.js decides all of that
    (`eligible`) and makes the edit (`act`), through the same functions the
