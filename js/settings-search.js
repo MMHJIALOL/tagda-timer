@@ -10,6 +10,7 @@ const ALIASES = [
   ['WCA inspection', 'countdown preparation warmup pre solve 15 seconds penalty'],
   ['Callouts', 'sound audio voice beep warning alert inspection countdown sonido voz pitido aviso'],
   ['Where times come from', 'input manual entry typing keyboard spacebar hardware stackmat microphone aux virtual cube'],
+  ['Solve animation speed', 'timer penalty +2 dnf delete slide motion animation speed faster slower'],
   ['Hold time', 'start delay press release spacebar sensitivity wait activation'],
   ['Decimals', 'precision digits decimal places milliseconds rounding accuracy digitos milisegundos'],
   ['Hide time while solving', 'hide clock invisible running display distraction'],

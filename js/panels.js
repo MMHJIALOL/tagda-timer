@@ -1170,6 +1170,10 @@ export function buildSettings(app, searchQuery = '') {
       return el('div', {}, sw, sl);
     };
 
+    const solveAnimationSpeed = slider(S.solveAnimationSpeed ?? 1.75, 1, 3, 0.25,
+      v => set('solveAnimationSpeed', v), v => v + '×');
+    solveAnimationSpeed.querySelector('input').setAttribute('aria-label', t('Solve animation speed'));
+
     body.append(
       buildSettingsPresets(app, DEFAULTS),
       group(t('Inspection'),
@@ -1221,6 +1225,8 @@ export function buildSettings(app, searchQuery = '') {
       smartSettings,
 
       group(t('Timer'),
+        row(t('Solve animation speed'), solveAnimationSpeed,
+          t('speed of desktop +2, DNF and delete animations')),
         row(t('Hold time'), chips([
           { value: 0, label: t('Instant') },
           { value: 300, label: t('300 ms') },

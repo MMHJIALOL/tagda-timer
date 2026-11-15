@@ -15,6 +15,7 @@ import { EVENTS, EVENT_ORDER, MODES, modesForEvent, eventOf, modeOf, virtualSize
 import { ScrambleQueue, setFor, loadSetFor, previewOf, generate } from './scramble.js';
 import { createLearn } from './learnmode.js';
 import { Timer, INSPECT_MS } from './timer.js';
+import { createSolveMotion } from './solve-motion.js';
 import { Background, softwareGL } from './bg.js';
 import { CubeView } from './cube.js';
 import { makeDraggable } from './drag.js';
@@ -1648,6 +1649,7 @@ function wireTimer() {
 
   timer.addEventListener('state', (e) => {
     const st = e.detail.state;
+    if (st !== 'idle') solveMotion.cancel();
     if (FOCUS_STATES.has(st)) stopConfetti();
     // Freeze and reveal the result before replay, network and layout work.
     if (st === 'cooldown') {
@@ -2855,6 +2857,13 @@ async function recordSolve({ timeMs, penalty = 'none', inspectionMs = 0, splits 
   if (inCompetition) { await next; await app.competitionScrambleSaved; }
 }
 
+const solveMotion = createSolveMotion({
+  element: () => $('#timer-display'),
+  settings: () => app.settings,
+  canPlay: () => timer && (timer.state === 'idle' || timer.state === 'cooldown')
+    && !app.settings.scramblesOnly && !matchMedia('(pointer: coarse)').matches,
+});
+
 /**
  * Put the digits back to whatever the session now ends with.
  *
@@ -2862,7 +2871,8 @@ async function recordSolve({ timeMs, penalty = 'none', inspectionMs = 0, splits 
  * that is no longer in the session is the one you are looking at. Anything that
  * changes which solve is last calls this instead.
  */
-function syncTimerDisplay() {
+function syncTimerDisplay({ fromMotion = false } = {}) {
+  if (!fromMotion) solveMotion.cancel();
   if (timer && timer.state !== 'idle' && timer.state !== 'cooldown') return;
   const last = shownSolve();
   const v = last ? eff(last) : null;
@@ -2916,11 +2926,15 @@ async function penalizeLast(p) {
   const last = shownSolve();
   if (!last) return toast('No solves yet');
   if (last.competitionSetId) last.penaltyUpdatedAt=Date.now();
+  const previousPenalty = last.penalty;
   last.penalty = last.penalty === p ? 'none' : p;
   await Solves.put(last).catch(error => console.warn('[db] penalty retained for recovery', error));
   sharePenalty(last);
   renderAll();
-  syncTimerDisplay();
+  if (shownSolve() === last && previousPenalty !== last.penalty) {
+    void solveMotion.play(last.penalty === 'none' ? previousPenalty : last.penalty,
+      () => syncTimerDisplay({ fromMotion: true }));
+  } else syncTimerDisplay();
   toast(last.penalty === 'none' ? t('Penalty cleared') : t('{p} applied', { p: last.penalty }));
 }
 
@@ -4048,11 +4062,13 @@ async function deleteSolve(solve) {
   if (i === -1) return;
   const capture = solve.smartCube ? await SmartCaptures.get(solve.id) : null;
   try { await Solves.del(solve.id); } catch (error) { console.warn('[db] deletion retained for retry', error); return; }
+  const wasShown = shownSolve() === solve;
   app.solves.splice(i, 1);
   app.lastDeleted = { solves: [solve], captures: capture ? [capture] : [], sessionId: app.session.id, label: t('1 solve') };
   app.sessionCounts.set(app.session.id, app.solves.length);
   renderAll();
-  syncTimerDisplay();
+  if (wasShown) void solveMotion.play('delete', () => syncTimerDisplay({ fromMotion: true }));
+  else syncTimerDisplay();
   toast(t('Deleted {what} — Ctrl+Z', { what: eff(solve) === DNF ? 'DNF' : fmt(eff(solve)) }), {
     action: 'undo',
     onAction: undoDelete,
@@ -5521,6 +5537,7 @@ function applyAll(changed) {
     timer.cfg.useInspection = !eventOf(app.settings.event).noInspection;
     timer.cfg.off = !!app.settings.scramblesOnly;
   }
+  if (!changed || changed === 'motion' || changed === 'reduceEffects') solveMotion.cancel();
   if (!changed || changed === 'callouts') setCalloutMode(app.settings.callouts);
   if (changed === 'scramblesOnly') { timer?.reset(); measureLayout(); }
   if (changed === 'showBpa') renderStats();
@@ -6778,9 +6795,9 @@ function wireShortcuts() {
         if (!last) toast('No solves yet');
         else if (!deleteThrottled(last)) toast('One at a time — undo is Ctrl+Z');
         break;
-      case 'plus2': e.preventDefault(); penalizeLast('+2'); break;
-      case 'dnf': e.preventDefault(); penalizeLast('DNF'); break;
-      case 'noPenalty': e.preventDefault(); penalizeLast('none'); break;
+      case 'plus2': e.preventDefault(); if (!e.repeat) penalizeLast('+2'); break;
+      case 'dnf': e.preventDefault(); if (!e.repeat) penalizeLast('DNF'); break;
+      case 'noPenalty': e.preventDefault(); if (!e.repeat) penalizeLast('none'); break;
       case 'comment': e.preventDefault(); if (last) commentOn(last); break;
       case 'replay':
         e.preventDefault();

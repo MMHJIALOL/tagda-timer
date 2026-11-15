@@ -1,5 +1,5 @@
 /* ===========================================================
-   Tagda Timer — which deploy this is
+   Tagda Timer â€” which deploy this is
 
    The same number as ?v= in index.html, and bumped with it on every deploy
    (test.html fails if the two disagree). The admin console's
@@ -9,4 +9,4 @@
    sw.js's cache next turns over.
    =========================================================== */
 
-export const APP_VERSION = 164;
+export const APP_VERSION = 165;
