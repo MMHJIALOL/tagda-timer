@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "test:cube-playback": "node tools/verify-cube-playback.cjs",
+    "test:solve-motion": "node tools/verify-solve-motion.cjs",
     "test:vercel-import": "node tools/verify-vercel-import.cjs",
     "test:settings-presets": "node --test js/settings-presets.check.mjs",
     "test:settings-search": "node --test js/settings-search.check.mjs",

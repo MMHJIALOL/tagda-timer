@@ -1,6 +1,8 @@
 /* Spanish for Tagda Timer. Keys are the English source text exactly as it is
    written in js/ and in the HTML; {name} placeholders are filled by t(). */
 export const es = {
+  "Solve animation speed": "Velocidad de animación de tiempos",
+  "speed of desktop +2, DNF and delete animations": "velocidad de las animaciones de +2, DNF y borrado en escritorio",
   "Re-centre gyro": "Recentrar el giroscopio",
   "Follow gyroscope": "Seguir el giroscopio",
   "Replay gyroscope": "Reproducir el giroscopio",
