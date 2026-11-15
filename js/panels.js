@@ -1173,6 +1173,11 @@ export function buildSettings(app, searchQuery = '') {
     const solveAnimationSpeed = slider(S.solveAnimationSpeed ?? 1.75, 1, 3, 0.25,
       v => set('solveAnimationSpeed', v), v => v + '×');
     solveAnimationSpeed.querySelector('input').setAttribute('aria-label', t('Solve animation speed'));
+    const syncSolveAnimationSpeed = () => {
+      solveAnimationSpeed.querySelector('input').disabled = S.solveAnimations === false;
+      solveAnimationSpeed.classList.toggle('off', S.solveAnimations === false);
+    };
+    syncSolveAnimationSpeed();
 
     body.append(
       buildSettingsPresets(app, DEFAULTS),
@@ -1225,6 +1230,10 @@ export function buildSettings(app, searchQuery = '') {
       smartSettings,
 
       group(t('Timer'),
+        row(t('Solve animations'), toggle(S.solveAnimations !== false, v => {
+          set('solveAnimations', v);
+          syncSolveAnimationSpeed();
+        }), t('animate desktop +2, DNF and delete edits')),
         row(t('Solve animation speed'), solveAnimationSpeed,
           t('speed of desktop +2, DNF and delete animations')),
         row(t('Hold time'), chips([

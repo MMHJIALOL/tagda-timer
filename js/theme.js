@@ -182,6 +182,7 @@ export const DEFAULTS = {
   metroOpen: false,             // the floating beat meter, for drilling algs
   metroPos: null,
   keybinds: {},                 // only the shortcuts somebody changed: { actionId: 'k1 k2' } (keybinds.js)
+  solveAnimations: true,       // desktop penalty/delete motion
   solveAnimationSpeed: 1.75,   // desktop penalty/delete motion, 1x to 3x
   mouseTimer: false,            // click-to-time; off so a stray click cannot start a solve
   inputMode: 'timer',           // timer = spacebar/touch | manual = typed | stackmat = aux jack | virtual = keyboard cube

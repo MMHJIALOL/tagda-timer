@@ -9,6 +9,7 @@ test('related words, prefixes, plurals and typos find specific options', () => {
     ['inspeciton', 'WCA inspection'], ['countdown', 'WCA inspection'],
     ['sounds', 'Sound on PB'], ['rhythm', 'Metronome'], ['start delay', 'Hold time'],
     ['penalty animation', 'Solve animation speed'], ['delete speed', 'Solve animation speed'],
+    ['disable animation', 'Solve animations'],
     ['factory reset', 'Restore defaults'], ['spreadsheet', 'Session as CSV'],
     ['wallpaper', 'Theme, background and layout'], ['FONT', 'Font'],
     ['saturat', 'Saturation'], ['espáñol', 'Interface language'],

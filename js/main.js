@@ -5537,7 +5537,7 @@ function applyAll(changed) {
     timer.cfg.useInspection = !eventOf(app.settings.event).noInspection;
     timer.cfg.off = !!app.settings.scramblesOnly;
   }
-  if (!changed || changed === 'motion' || changed === 'reduceEffects') solveMotion.cancel();
+  if (!changed || ['motion', 'reduceEffects', 'solveAnimations'].includes(changed)) solveMotion.cancel();
   if (!changed || changed === 'callouts') setCalloutMode(app.settings.callouts);
   if (changed === 'scramblesOnly') { timer?.reset(); measureLayout(); }
   if (changed === 'showBpa') renderStats();
