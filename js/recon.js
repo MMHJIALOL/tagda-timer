@@ -21,6 +21,7 @@ import { toast } from './toast.js';
 import { isPhone, onPhoneChange } from './phone.js';
 import { openSheet, sheetRows, closeAllSheets, sheetOpen } from './sheet.js';
 import { createMovePad } from './movepad.js';
+import { createCubePlayback } from './cube-playback.js';
 
 /* twisty-player, loaded the same way the scramble preview loads it. */
 const SOURCES = [
@@ -423,29 +424,21 @@ function renderStrip(a) {
    twisty-player restarts itself for each attribute it is handed. Writing the
    new position and then immediately writing a move to play made it re-seat
    itself mid-turn — the jump you saw when a suggestion was clicked while the
-   previous one was still turning. Stopping first, writing once, and only
-   starting the animation on the next frame makes a click mid-turn look like
-   what it is: the cube changing its mind, cleanly.
+   previous one was still turning. Stop first, write the new position, and
+   let cube-playback wait for the position model and lazy renderer before
+   starting the animation clock. A slower phone must see the whole move too.
 
    Everything is spelt the way twisty-player spells it on the way in. RW is a
    wide turn to this app and a syntax error to the player, and a player that
    cannot read its alg does not turn slowly, it stops. */
-let cubeToken = 0;
+let cubePlayback = null;
 
 function showCube({ setup = '', alg = '', controls = 'none' } = {}) {
   if (!player) return;
-  const token = ++cubeToken;
   const setupText = canonical(setup) ?? '';
   const algText = canonical(alg) ?? '';
-  try {
-    player.pause?.();
-    player.setAttribute('control-panel', controls);
-    player.setAttribute('experimental-setup-alg', setupText);
-    player.setAttribute('alg', algText);
-    if (!algText) return;
-    player.jumpToStart?.();
-    requestAnimationFrame(() => { if (token === cubeToken) { try { player.play?.(); } catch { /* ignore */ } } });
-  } catch (err) { console.warn('[recon] player', err); }
+  cubePlayback.show({ setup: setupText, alg: algText, controls })
+    .catch(err => console.warn('[recon] player', err));
 }
 
 /* ---------------- which way round am I holding it? ----------------
@@ -1935,6 +1928,7 @@ async function mountPlayer() {
   /* After the letters, which are already in the stage and sit on top of the
      cube by z-index rather than by being later in the document. */
   ui.stage.append(player);
+  cubePlayback = createCubePlayback(player);
   watchCamera();
   watchTimeline();
 }
@@ -1987,6 +1981,7 @@ export async function openRecon({ scramble = '', title = 'Reconstruct', moves = 
 
 export function closeRecon() {
   if (!host || host.hidden) return false;
+  cubePlayback?.cancel();
   if (host.contains(document.activeElement)) document.activeElement.blur();
   closeAllSheets();
   resetPhone();

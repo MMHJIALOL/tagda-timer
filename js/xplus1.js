@@ -42,6 +42,7 @@ import { toast } from './toast.js';
 import { isPhone, onPhoneChange } from './phone.js';
 import { openSheet, sheetRows, closeAllSheets } from './sheet.js';
 import { createMovePad } from './movepad.js';
+import { createCubePlayback } from './cube-playback.js';
 
 /* The panel's own stylesheet, fetched on the first open — most sessions never
    come in here. The version query is read off a sheet index.html already asked
@@ -238,6 +239,7 @@ function setSetting(key, value) {
 
 /** Swap between the turnable cube and the flat net. */
 function setView(v) {
+  if (v !== '3d') cubePlayback?.cancel();
   setSetting('view', v);
   if (v === '3d') mountPlayer().then(showCube);
 }
@@ -480,7 +482,7 @@ function renderTop() {
    is still the only view that shows all six faces at once, which is what you
    want when you are hunting for where a pair has ended up. */
 let player = null;
-let cubeToken = 0;
+let cubePlayback = null;
 
 async function mountPlayer() {
   if (player || !ui.cube3d) return;
@@ -504,6 +506,7 @@ async function mountPlayer() {
   player.setAttribute('visualization', '3D');
   player.setAttribute('tempo-scale', '2');
   ui.cube3d.append(player);
+  cubePlayback = createCubePlayback(player);
   watchCamera();
   showCube();
 }
@@ -548,23 +551,12 @@ function watchCamera() {
  */
 function showCube() {
   if (!player || S.settings.view !== '3d') return;
-  const token = ++cubeToken;
   /* Checking a planned line on a phone: the cube is where that line leaves it. */
   const planned = phoneOn() && phoneView() === 'check' && XP.checked ? (canonical(S.plan.trim()) ?? '') : '';
   const sel = S.phase === 'reveal' && !planned && !(phoneOn() && phoneView() === 'check') ? selected() : null;
   const setup = canonical([S.scramble, S.rot, planned].filter(Boolean).join(' ')) ?? '';
   const alg = sel ? (canonical(sel.alg) ?? '') : '';
-  try {
-    player.pause?.();
-    player.setAttribute('experimental-setup-alg', setup);
-    player.setAttribute('alg', alg);
-    if (!alg) return;
-    player.jumpToStart?.();
-    // Next frame, so a click mid-turn re-seats cleanly instead of jumping.
-    requestAnimationFrame(() => {
-      if (token === cubeToken) { try { player.play?.(); } catch { /* ignore */ } }
-    });
-  } catch (err) { console.warn('[xp1] player', err); }
+  cubePlayback.show({ setup, alg }).catch(err => console.warn('[xp1] player', err));
 }
 
 const FACE_WORD = {
@@ -1892,6 +1884,7 @@ export async function openXp1({ scramble = '', timerScramble = null, onExit = nu
 
 export function closeXp1() {
   if (!host || host.hidden) return false;
+  cubePlayback?.cancel();
   if (host.contains(document.activeElement)) document.activeElement.blur();
   document.removeEventListener('keydown', onKeyDown, KEY_OPTS);
   document.removeEventListener('keyup', onKeyUp, KEY_OPTS);
