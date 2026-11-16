@@ -614,6 +614,8 @@ async function init() {
 
   // sessions
   app.sessions = await Sessions.all();
+  // Capture this before boot creates a session for a first-time visitor.
+  const returningVisitor = app.sessions.length > 0;
   if (!app.sessions.length) {
     const s = { id: uid(), name: t('Session 1'), event: app.settings.event, createdAt: Date.now(), order: 0 };
     await Sessions.put(s);
@@ -658,7 +660,7 @@ async function init() {
   wireTimer();
   wireReplayUI();
   wireSotdStackmat();
-  wireSupportNudge();
+  wireSupportNudge(returningVisitor);
   wireInput();
   wireScrambleSwipe();
   wireChrome();
@@ -2010,9 +2012,13 @@ function wireReplayUI() {
 const COFFEE_KEY = 'coffeeNudgeAt';
 const COFFEE_ASKED_KEY = 'coffeeAsked';    // the once-for-everyone ask has been shown
 const COFFEE_VISITS_KEY = 'coffeeVisitsSinceAsk';
+// Calendar dates in India: Nov 17 and 18 only. No later deployment is needed.
+const COFFEE_CAMPAIGN_START = Date.parse('2026-11-17T00:00:00+05:30');
+const COFFEE_CAMPAIGN_END = Date.parse('2026-11-19T00:00:00+05:30');
+const COFFEE_CAMPAIGN_KEY = 'coffeeCampaign20261117Seen';
 const supportSolves = new EventTarget();
 
-function wireSupportNudge() {
+function wireSupportNudge(returningVisitor = false) {
   let firstAsk = false;
   let eligible = false;
   let answeredAt = 0;
@@ -2020,20 +2026,40 @@ function wireSupportNudge() {
   let card = null;
   let shown = 0;
   let done = false;
-  const hide = () => { card?.remove(); card = null; };
-  const answer = () => { done = true; hide(); KV.set(COFFEE_KEY, Date.now()).catch(() => {}); };
-  const show = () => {
-    if (!eligible || completedSolves < 2 || done || card || shown >= getConfig('support', 'shows') || !getConfig('support', 'enabled')) return;
-    if (!shown && !firstAsk && Date.now() - answeredAt < getConfig('support', 'quietDays') * 86_400_000) return;
+  let campaignSeen = false;
+  let campaignCard = false;
+  const campaignActive = () => Date.now() >= COFFEE_CAMPAIGN_START && Date.now() < COFFEE_CAMPAIGN_END;
+  const hide = () => { card?.remove(); card = null; campaignCard = false; };
+  const answer = () => {
+    const wasCampaign = campaignCard;
+    hide();
+    // This one-off campaign must not reset the usual reminder schedule.
+    if (!wasCampaign) { done = true; KV.set(COFFEE_KEY, Date.now()).catch(() => {}); }
+  };
+  const show = (campaign = false) => {
+    if (card || !getConfig('support', 'enabled')) return;
+    if (campaign) {
+      if (!campaignActive() || !returningVisitor || campaignSeen) return;
+    } else {
+      // First-time visitors receive no donation prompt during the campaign.
+      if (campaignActive() || !eligible || completedSolves < 2 || done || shown >= getConfig('support', 'shows')) return;
+      if (!shown && !firstAsk && Date.now() - answeredAt < getConfig('support', 'quietDays') * 86_400_000) return;
+    }
     if (!timerIdle() || modalOpen() || document.hidden || announcementShowing()) return;
     // Reset only when the card actually appears, never when it is blocked.
-    if (!shown) {
+    if (campaign) {
+      campaignSeen = true;
+      campaignCard = true;
+      KV.set(COFFEE_CAMPAIGN_KEY, true).catch(() => {});
+    } else if (!shown) {
       KV.set(COFFEE_VISITS_KEY, 0).catch(() => {});
       // Ignoring the card also gets a quiet period.
       KV.set(COFFEE_KEY, Date.now()).catch(() => {});
     }
-    shown++;
-    if (firstAsk) { firstAsk = false; KV.set(COFFEE_ASKED_KEY, true).catch(() => {}); }
+    if (!campaign) {
+      shown++;
+      if (firstAsk) { firstAsk = false; KV.set(COFFEE_ASKED_KEY, true).catch(() => {}); }
+    }
     card = el('div', { class: 'cam-hint coffee-nudge', role: 'status', 'aria-live': 'polite' },
       el('button', { class: 'cam-hint-x', 'aria-label': t('Not now'), title: t('Not now'), html: '&times;', onclick: answer }),
       el('b', { text: t('Enjoying Tagda Timer?') }),
@@ -2044,7 +2070,7 @@ function wireSupportNudge() {
     document.body.append(card);
   };
   // Counted now, during boot, before this load's own first solve can land.
-  Promise.all([KV.get(COFFEE_KEY, 0), KV.get(COFFEE_ASKED_KEY, false), Solves.count(), KV.get(COFFEE_VISITS_KEY, 0)]).then(([at, asked, solves, savedVisits]) => {
+  Promise.all([KV.get(COFFEE_KEY, 0), KV.get(COFFEE_ASKED_KEY, false), Solves.count(), KV.get(COFFEE_VISITS_KEY, 0), KV.get(COFFEE_CAMPAIGN_KEY, false)]).then(([at, asked, solves, savedVisits, seen]) => {
     completedSolves = solves;
     answeredAt = at;
     firstAsk = !asked && !at;
@@ -2052,7 +2078,18 @@ function wireSupportNudge() {
     if (!firstAsk) KV.set(COFFEE_VISITS_KEY, visits).catch(() => {});
     const frequency = getConfig('support', 'oddsPct');
     eligible = firstAsk || (frequency > 0 && visits >= Math.ceil(100 / frequency));
-    if (!eligible) return;
+    campaignSeen = !!seen;
+    if (campaignActive()) {
+      // Also remove a still-open campaign card at expiry in a long-lived tab.
+      setTimeout(() => { if (campaignCard) hide(); }, COFFEE_CAMPAIGN_END - Date.now());
+      const tryCampaign = () => {
+        if (!campaignActive() || !returningVisitor || campaignSeen) return;
+        show(true);
+        // Another announcement, a panel or a running solve can delay the card.
+        if (!campaignSeen) setTimeout(tryCampaign, 2000);
+      };
+      setTimeout(tryCampaign, 2000);
+    }
     supportSolves.addEventListener('solve', () => {
       completedSolves++;
       setTimeout(show, 2000);

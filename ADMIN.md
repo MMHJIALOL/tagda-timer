@@ -1575,3 +1575,7 @@ Installed to a home screen (`admin.webmanifest`), the console's icon shows a cou
 has badges (`navigator.setAppBadge`): open reports and held times, and for an admin unread feedback
 and stuck syncs. Real notifications are phase 6.
 
+
+### Temporary coffee reminder: November 17–18, 2026
+
+Returning visitors (a session existed before this page load) receive the coffee card once per browser during November 17–18 in Asia/Kolkata, without a solve requirement and regardless of the ordinary frequency or quiet period. First-time visitors receive no coffee card during this campaign. The campaign has its own seen marker and does not reset the normal schedule. At 00:00 IST on November 19 it expires, including in open tabs, and the normal solve-triggered reminders resume automatically.

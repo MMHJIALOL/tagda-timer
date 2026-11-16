@@ -9,19 +9,20 @@ import { CONFIG } from './config-table.js';
 const main = readFileSync(new URL('./main.js', import.meta.url), 'utf8');
 const source = main.slice(main.indexOf("const COFFEE_KEY ="), main.indexOf('/**\n * Fills over', main.indexOf("const COFFEE_KEY =")));
 const DAY = 86_400_000;
-async function visit(store, { now = 100 * DAY, solves = 2, config = {}, blocked = false } = {}) {
+async function visit(store, { now = 100 * DAY, solves = 2, config = {}, blocked = false, returningVisitor = true } = {}) {
   const dom = new JSDOM('<body></body>', { pretendToBeVisual: true });
   const { document, EventTarget, Event, CustomEvent } = dom.window;
   const timer = new EventTarget();
   const pending = [];
   const settings = { ...Object.fromEntries(Object.entries(CONFIG.support.keys).map(([key, spec]) => [key, spec.def])), ...config };
   const context = vm.createContext({
-    document, timer, EventTarget, Event, Date: { now: () => now },
+    document, timer, EventTarget, Event, Date: class extends Date { static now() { return now; } },
+    returningVisitor,
     KV: { get: async (key, fallback) => store.get(key) ?? fallback, set: async (key, value) => store.set(key, value) },
     Solves: { count: async () => solves },
     getConfig: (_, key) => settings[key],
     timerIdle: () => true, modalOpen: () => blocked, announcementShowing: () => false,
-    setTimeout: fn => pending.push(fn), t: text => text, app: {}, openPanel: () => {},
+    setTimeout: (fn, delay) => pending.push({ fn, at: now + delay }), t: text => text, app: {}, openPanel: () => {},
     el: (tag, attrs, ...children) => {
       const node = document.createElement(tag);
       for (const [key, value] of Object.entries(attrs)) {
@@ -34,10 +35,21 @@ async function visit(store, { now = 100 * DAY, solves = 2, config = {}, blocked 
       return node;
     },
   });
-  vm.runInContext(`${source}\nwireSupportNudge();`, context);
+  vm.runInContext(`${source}\nwireSupportNudge(returningVisitor);`, context);
   await new Promise(resolve => setImmediate(resolve));
+  const advance = ms => {
+    const target = now + ms;
+    for (;;) {
+      pending.sort((a, b) => a.at - b.at);
+      if (!pending.length || pending[0].at > target) break;
+      const next = pending.shift(); now = next.at; next.fn();
+    }
+    now = target;
+  };
   return {
-    stop() { vm.runInContext("supportSolves.dispatchEvent(new Event('solve'))", context); pending.splice(0).forEach(fn => fn()); },
+    stop() { vm.runInContext("supportSolves.dispatchEvent(new Event('solve'))", context); advance(2000); },
+    advance,
+    unblock() { blocked = false; },
     start() { timer.dispatchEvent(new CustomEvent('state', { detail: { state: 'running' } })); },
     get card() { return document.querySelector('.coffee-nudge'); },
     close() { dom.window.close(); },
@@ -81,7 +93,7 @@ test('one saved solve survives a reload; ignoring the card starts the quiet peri
   let page = await visit(store, { solves: 1 });
   assert.equal(page.card, null);
   page.stop(); assert.ok(page.card);
-  assert.equal(store.get('coffeeNudgeAt'), 100 * DAY);
+  assert.equal(store.get('coffeeNudgeAt'), 100 * DAY + 2000);
   page.start(); page.stop(); assert.equal(page.card, null);
   page.close();
   store.set('coffeeVisitsSinceAsk', 9);
@@ -98,5 +110,63 @@ test('existing users migrate, configured frequency works, disabled reminders sta
     page.stop(); assert.equal(page.card, null); page.close();
     page = await visit(store, { config });
     page.stop(); assert.equal(!!page.card, expected); page.close();
+  }
+});
+
+const campaignStart = Date.parse('2026-11-17T00:00:00+05:30');
+const campaignEnd = Date.parse('2026-11-19T00:00:00+05:30');
+const campaignKey = 'coffeeCampaign20261117Seen';
+
+test('campaign lasts exactly 48 hours and bypasses solves, frequency and recent dismissal once', async () => {
+  assert.equal(campaignEnd - campaignStart, 48 * 60 * 60 * 1000);
+  const store = new Map([['coffeeAsked', true], ['coffeeNudgeAt', campaignStart - 1000], ['coffeeVisitsSinceAsk', 0]]);
+  let page = await visit(store, { now: campaignStart, solves: 0 });
+  assert.equal(page.card, null);
+  page.advance(2000); assert.ok(page.card);
+  assert.equal(store.get(campaignKey), true);
+  assert.equal(store.get('coffeeNudgeAt'), campaignStart - 1000);
+  assert.equal(store.get('coffeeVisitsSinceAsk'), 1);
+  page.card.querySelector('.cam-hint-x').click();
+  page.advance(4000); assert.equal(page.card, null); page.close();
+  page = await visit(store, { now: campaignStart + DAY, solves: 0 });
+  page.advance(4000); page.stop(); assert.equal(page.card, null); page.close();
+});
+
+test('campaign excludes first-time visitors even after two solves', async () => {
+  const store = new Map();
+  const page = await visit(store, { now: campaignStart, solves: 0, returningVisitor: false });
+  page.advance(2000); assert.equal(page.card, null);
+  page.stop(); page.stop(); assert.equal(page.card, null);
+  assert.equal(store.has(campaignKey), false); page.close();
+});
+
+test('campaign retries when blocked without prematurely consuming its one appearance', async () => {
+  const store = new Map();
+  const page = await visit(store, { now: campaignStart, solves: 0, blocked: true });
+  page.advance(4000); assert.equal(page.card, null);
+  assert.equal(store.has(campaignKey), false);
+  page.unblock(); page.advance(2000); assert.ok(page.card);
+  page.start(); assert.equal(page.card, null);
+  page.stop(); assert.equal(page.card, null); page.close();
+});
+
+test('campaign expires in an open tab and ordinary solve-triggered reminders resume', async () => {
+  const store = new Map();
+  const page = await visit(store, { now: campaignEnd - 3000, solves: 2 });
+  page.advance(2000); assert.ok(page.card);
+  page.advance(1000); assert.equal(page.card, null);
+  assert.equal(store.has('coffeeAsked'), false);
+  page.stop(); assert.ok(page.card);
+  assert.equal(store.get('coffeeAsked'), true); page.close();
+});
+
+test('before the campaign and at its end the original rules apply', async () => {
+  for (const now of [campaignStart - 10000, campaignEnd]) {
+    const store = new Map();
+    const page = await visit(store, { now, solves: 0, returningVisitor: false });
+    page.advance(2000); assert.equal(page.card, null);
+    page.stop(); assert.equal(page.card, null);
+    page.stop(); assert.ok(page.card);
+    assert.equal(store.has(campaignKey), false); page.close();
   }
 });
