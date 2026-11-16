@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Customizable Cube Timer, Daily Scrambles &amp; Reconstruction | Tagda Timer</title>
+  <meta name="description" content="See what makes Tagda Timer different: custom themes and layouts, Scramble of the Day leaderboards, solve reconstruction, algorithm training and csTimer import.">
+  <link rel="canonical" href="https://tagdatimer.me/about">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Why Tagda Timer? Build your own speedcubing setup">
+  <meta property="og:description" content="Custom themes and layouts, a shared daily scramble, and a reconstruction workbench to explore your solves. Free in your browser.">
+  <meta property="og:url" content="https://tagdatimer.me/about">
+  <meta property="og:image" content="https://tagdatimer.me/assets/og.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Why Tagda Timer? Build your own speedcubing setup">
+  <meta name="twitter:description" content="Explore custom layouts, Scramble of the Day, reconstruction and algorithm training.">
+  <meta name="twitter:image" content="https://tagdatimer.me/assets/og.png">
+  <meta name="theme-color" content="#07070c">
+  <link rel="icon" href="assets/favicon.ico" sizes="any">
+  <link rel="stylesheet" href="css/fonts.css?v=169">
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #07070c; color: #ececf5; font-family: Inter, system-ui, sans-serif; line-height: 1.75; }
+    a { color: #b5a4ff; text-underline-offset: 4px; }
+    a:focus-visible { outline: 2px solid #b5a4ff; outline-offset: 5px; }
+    .wrap { width: min(1040px, calc(100% - 40px)); margin: auto; }
+    header { padding: 22px 0; border-bottom: 1px solid #262633; }
+    nav { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+    .brand { color: #ececf5; font-weight: 750; text-decoration: none; display: flex; align-items: center; gap: 10px; }
+    .brand img { width: 32px; height: 32px; }
+    .button { display: inline-block; border-radius: 10px; padding: 10px 18px; background: #b5a4ff; color: #141021; font-weight: 650; text-decoration: none; }
+    .hero { padding: 72px 0 48px; max-width: 790px; }
+    .eyebrow { color: #b5a4ff; font-size: .85rem; letter-spacing: .07em; }
+    h1 { font-size: clamp(2.2rem, 5.5vw, 3.7rem); line-height: 1.12; letter-spacing: -.045em; margin: 14px 0 24px; }
+    h2 { font-size: clamp(1.45rem, 3vw, 2rem); line-height: 1.25; letter-spacing: -.025em; margin-top: 0; }
+    h3 { font-size: 1.08rem; margin-bottom: 8px; }
+    p { color: #b9b9cd; margin: 0 0 18px; }
+    .hero p { font-size: 1.08rem; }
+    .jump { display: flex; flex-wrap: wrap; gap: 10px 22px; padding-bottom: 36px; }
+    section.feature { padding: 40px 0; border-top: 1px solid #262633; scroll-margin-top: 20px; }
+    .split { display: grid; grid-template-columns: 1fr 1fr; align-items: center; gap: 36px; }
+    figure { margin: 0; }
+    figure img { width: 100%; height: auto; display: block; border: 1px solid #333342; border-radius: 12px; }
+    figcaption { color: #9292ab; font-size: .8rem; padding-top: 8px; }
+    .cards { display: grid; grid-template-columns: 1fr 1fr; gap: 20px 36px; }
+    ul { padding-left: 22px; color: #b9b9cd; }
+    li { margin-bottom: 8px; }
+    .closing { padding: 40px 0 60px; }
+    footer { padding: 24px 0; border-top: 1px solid #262633; color: #9292ab; font-size: .85rem; }
+    footer a { margin-right: 18px; }
+    @media (max-width: 700px) { .split, .cards { grid-template-columns: 1fr; } .hero { padding-top: 42px; } nav .button { padding: 8px 12px; font-size: .9rem; } }
+  </style>
+</head>
+<body>
+  <header><nav class="wrap" aria-label="Main navigation">
+    <a class="brand" href="./"><img src="assets/logo-96.png" alt="" width="32" height="32">Tagda Timer</a>
+    <a class="button" href="./">Open the timer</a>
+  </nav></header>
+  <main class="wrap">
+    <div class="hero">
+      <span class="eyebrow">FREE ONLINE SPEEDCUBING TIMER</span>
+      <h1>A Rubik's Cube timer you can make your own</h1>
+      <p>Set up a practice space that feels right to you. Tagda Timer combines a customizable cube timer with Scramble of the Day, a solve reconstruction workbench and algorithm training.</p>
+      <p>Keep your session simple, or put the tools you use most within reach. Your times stay in your browser, and you can start solving without an account.</p>
+      <a class="button" href="./">Start solving</a>
+    </div>
+    <nav class="jump" aria-label="Explore features">
+      <a href="#customization">Make it yours</a><a href="#daily">Scramble of the Day</a><a href="#reconstruction">Reconstruction</a><a href="#training">Training tools</a><a href="#switching">Moving from another timer</a>
+    </nav>
+    <section class="feature split" id="customization">
+      <div>
+        <h2>Make the whole practice space yours</h2>
+        <p>Tagda's customization reaches across the workspace. Change the timer font, size and glow, choose an accent colour, and adjust the size of the scramble and statistics.</p>
+        <p>Use an animated background, your own photo or a looping video. Drag panels into a side rail, dock them at the bottom, or leave them floating. Hide the ones you don't use.</p>
+        <p>For quieter practice, Zen mode leaves just the scramble and clock. You can also export your theme to share your setup.</p>
+      </div>
+      <figure><img src="docs/screenshots/appearance.webp" alt="Tagda Timer appearance settings for personalizing the speedcubing workspace" loading="lazy"><figcaption>Appearance controls update your setup as you adjust them.</figcaption></figure>
+    </section>
+    <section class="feature" id="daily">
+      <h2>Take on Scramble of the Day</h2>
+      <p>Scramble of the Day gives everyone the same scramble for each event, with one leaderboard attempt per person. Submit your time to reveal the standings and see how your solve compares.</p>
+      <p>It's a reason to come back for a quick challenge between practice sessions. Sign in with Google to take part, then choose SOTD in the timer's top bar. The challenge resets at midnight India Standard Time.</p>
+    </section>
+    <section class="feature split" id="reconstruction">
+      <div>
+        <h2>Go back through the solve, move by move</h2>
+        <p>Examine the choices you made during an attempt. Open a solve in the reconstruction workbench, enter your moves and explore suggestions for cross, F2L and the last layer.</p>
+        <p>Preview suggestions on the cube, compare routes and replay the reconstruction from its scramble. Save it with the solve so you can return to the same position later.</p>
+        <p>Press Y on desktop or choose Reconstruct this solve from a solve's menu. You enter the moves you made; suggestions help you explore what you could try next time.</p>
+      </div>
+      <figure><img src="docs/screenshots/reconstruct.webp" alt="Tagda Timer solve reconstruction workbench showing a cube and F2L move suggestions" loading="lazy"><figcaption>Explore your solution and alternative moves in the reconstruction workbench.</figcaption></figure>
+    </section>
+    <section class="feature" id="training">
+      <h2>Build a session around what you want to improve</h2>
+      <div class="cards">
+        <div><h3>Algorithm practice</h3><p>Choose the cases you want to drill in the <a href="algs.html">algorithm trainer</a>. Practise OLL, PLL and other sets, with visual cases and scrambles for focused repetition.</p></div>
+        <div><h3>Cross + 1</h3><p>Work on the transition from cross to your first F2L pair with a dedicated training mode.</p></div>
+        <div><h3>Sessions and statistics</h3><p>Keep sessions for different events and goals. Follow your ao5 and ao12 averages, personal bests and longer-term progress.</p></div>
+        <div><h3>Race rooms</h3><p>Practise alongside friends on shared scrambles and compare results across rounds. Online races require sign-in.</p></div>
+      </div>
+    </section>
+    <section class="feature" id="switching">
+      <h2>Thinking of switching from csTimer?</h2>
+      <p>Try Tagda Timer if you want more control over the look and arrangement of your practice space, a shared daily challenge, or reconstruction alongside your timer. You can explore those features before deciding where to keep your regular sessions.</p>
+      <p>To bring your history across, export your data from csTimer and import that file in Tagda Timer's Settings. The importer carries over session names, solve times, scrambles, comments and penalties. Keep your original export as a backup.</p>
+      <h3>Can I use it offline?</h3>
+      <p>After the app has loaded and cached, the timer and core practice tools work offline. Daily leaderboards, race rooms and cloud sync need a connection.</p>
+      <h3>Do I need an account?</h3>
+      <p>You can time solves and use the practice tools without signing in. Sign in with Google for cloud sync, Scramble of the Day and online races. Export backups of any solve history you want to keep.</p>
+      <h3>How do I start a solve?</h3>
+      <p>On a keyboard, hold Space and release to start. Press a key to stop. On a phone, hold and release the timer area, then tap to stop.</p>
+    </section>
+    <div class="closing"><a class="button" href="./">Make Tagda Timer yours</a></div>
+  </main>
+  <footer><div class="wrap"><a href="./">Cube timer</a><a href="algs.html">Algorithm trainer</a>Built by Ishaan.</div></footer>
+</body>
+</html>

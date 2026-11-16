@@ -7,8 +7,8 @@
      double-tap zoom on its own -- so the only thing the lock still did was
      stop people pinch-zooming to read small type. -->
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Tagda Timer — Speedcubing Timer</title>
-<meta name="description" content="A free speedcubing timer for every WCA event: random-state scrambles, ao5 and ao12 stats, an alg trainer, a daily scramble, races and 1v1s. Works offline.">
+<title>Rubik's Cube Timer &amp; Speedcubing Practice | Tagda Timer</title>
+<meta name="description" content="A free Rubik's Cube timer you can make your own. Customize your setup, try Scramble of the Day, reconstruct solves and train algorithms with Tagda Timer.">
 <link rel="canonical" href="https://tagdatimer.me/">
 <!-- The webfonts are served from this origin (css/fonts.css). That removes two
      DNS + TLS handshakes from in front of the first paint, and one variable
@@ -33,16 +33,16 @@
      import hint in Settings over a main.js that has never heard of CubeDesk.
      vercel.json also serves /css/ as `max-age=31536000, immutable`, so a
      stylesheet there will not even be asked about for a year without it. -->
-<link rel="modulepreload" href="js/main.js?v=168">
-<link rel="stylesheet" href="css/fonts.css?v=168">
-<link rel="stylesheet" href="css/tokens.css?v=168">
-<link rel="stylesheet" href="css/base.css?v=168">
-<link rel="stylesheet" href="css/components.css?v=168">
-<link rel="stylesheet" href="css/smart-cube.css?v=168">
-<link rel="stylesheet" href="css/announce.css?v=168">
+<link rel="modulepreload" href="js/main.js?v=169">
+<link rel="stylesheet" href="css/fonts.css?v=169">
+<link rel="stylesheet" href="css/tokens.css?v=169">
+<link rel="stylesheet" href="css/base.css?v=169">
+<link rel="stylesheet" href="css/components.css?v=169">
+<link rel="stylesheet" href="css/smart-cube.css?v=169">
+<link rel="stylesheet" href="css/announce.css?v=169">
 <!-- Phones only: the same query as js/phone.js. A desktop or tablet never
      applies a rule from it, and does not wait on it to paint. -->
-<link rel="stylesheet" href="css/phone.css?v=168" media="(max-width: 640px)">
+<link rel="stylesheet" href="css/phone.css?v=169" media="(max-width: 640px)">
 <link rel="icon" href="assets/favicon.ico" sizes="any">
 <link rel="icon" type="image/png" sizes="32x32" href="assets/logo-32.png">
 <link rel="icon" type="image/png" sizes="192x192" href="assets/logo-192.png">
@@ -50,13 +50,37 @@
 <link rel="manifest" href="site.webmanifest">
 <meta name="theme-color" content="#07070c">
 <meta property="og:type" content="website">
-<meta property="og:title" content="Tagda Timer">
-<meta property="og:description" content="A modern WCA speedcubing timer. Random-state scrambles, stored on your own machine.">
+<meta property="og:title" content="Tagda Timer | A Rubik's Cube timer you can make your own">
+<meta property="og:description" content="Customize your speedcubing setup, take on Scramble of the Day, reconstruct solves and practise algorithms. Free in your browser.">
 <meta property="og:url" content="https://tagdatimer.me/">
 <meta property="og:image" content="https://tagdatimer.me/assets/og.png">
 <meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:description" content="Custom themes and layouts, Scramble of the Day, solve reconstruction and algorithm training. Free in your browser.">
+<meta name="twitter:title" content="Tagda Timer | A Rubik's Cube timer you can make your own">
 <meta name="twitter:image" content="https://tagdatimer.me/assets/og.png">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "Tagda Timer",
+  "alternateName": "TagdaTimer",
+  "url": "https://tagdatimer.me/",
+  "description": "A free, customizable Rubik's Cube timer with Scramble of the Day, solve reconstruction and algorithm training.",
+  "applicationCategory": "SportsApplication",
+  "operatingSystem": "Web browser",
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+}
+</script>
 <style>
+/* Keep the introduction outside the measured clock layout. */
+#timer-intro { position: absolute; top: 100%; margin-top: 42px; width: min(360px, 85vw); text-align: center; color: var(--text-dim); line-height: 1.6; }
+#timer-intro h1 { font-size: .76rem; font-weight: 500; }
+#timer-intro p { font-size: .72rem; }
+#timer-intro a { display: inline-block; padding: 5px 8px; color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
+body:is(.focus, .inspecting, .timing, .holding, .armed, .zen, .sotd, .recon-open) #timer-intro { visibility: hidden; pointer-events: none; }
+body.ph #timer-intro { position: static; order: 8; margin: 24px auto 8px; touch-action: pan-y; }
+@media (max-height: 650px) and (min-width: 641px) { #timer-intro { margin-top: 24px; } }
+
 #boot-error[hidden] { display: none !important; }
 #boot-error {
   position: fixed; inset: 0; z-index: 999; place-items: center;
@@ -570,6 +594,12 @@
              sideways when the script caught up with the markup. -->
         <div id="timer-hint"><span class="hint-fine">tap <kbd>space</kbd>, release to start</span><span class="hint-coarse">tap anywhere, release to start</span></div>
 
+        <section id="timer-intro" aria-label="About Tagda Timer">
+          <h1>A Rubik's Cube timer you can make your own</h1>
+          <p>Custom layouts, daily scrambles and solve reconstruction.</p>
+          <a href="about.html">Why Tagda Timer? Explore the features</a>
+        </section>
+
         <!-- The last solve, one line: how it compares, and its replay when it
              was filmed. One row so the pill landing a second after the stop
              (when the clip is saved) does not move the timer. -->
@@ -813,7 +843,7 @@
   </div>
 </div>
 
-<script type="module" src="js/main.js?v=168"></script>
+<script type="module" src="js/main.js?v=169"></script>
 <script>
 (function () {
   var isFile = location.protocol === 'file:';
