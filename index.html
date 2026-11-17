@@ -72,14 +72,6 @@
 }
 </script>
 <style>
-/* Keep the introduction outside the measured clock layout. */
-#timer-intro { position: absolute; top: 100%; margin-top: 42px; width: min(360px, 85vw); text-align: center; color: var(--text-dim); line-height: 1.6; }
-#timer-intro h1 { font-size: .76rem; font-weight: 500; }
-#timer-intro p { font-size: .72rem; }
-#timer-intro a { display: inline-block; padding: 5px 8px; color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
-body:is(.focus, .inspecting, .timing, .holding, .armed, .zen, .sotd, .recon-open) #timer-intro { visibility: hidden; pointer-events: none; }
-body.ph #timer-intro { position: static; order: 8; margin: 24px auto 8px; touch-action: pan-y; }
-@media (max-height: 650px) and (min-width: 641px) { #timer-intro { margin-top: 24px; } }
 
 #boot-error[hidden] { display: none !important; }
 #boot-error {
@@ -593,12 +585,6 @@ body.ph #timer-intro { position: static; order: 8; margin: 24px auto 8px; touch-
              timer block is centred on its own width, so the whole clock slid
              sideways when the script caught up with the markup. -->
         <div id="timer-hint"><span class="hint-fine">tap <kbd>space</kbd>, release to start</span><span class="hint-coarse">tap anywhere, release to start</span></div>
-
-        <section id="timer-intro" aria-label="About Tagda Timer">
-          <h1>A Rubik's Cube timer you can make your own</h1>
-          <p>Custom layouts, daily scrambles and solve reconstruction.</p>
-          <a href="about.html">Why Tagda Timer? Explore the features</a>
-        </section>
 
         <!-- The last solve, one line: how it compares, and its replay when it
              was filmed. One row so the pill landing a second after the stop
