@@ -614,6 +614,8 @@ async function init() {
 
   // sessions
   app.sessions = await Sessions.all();
+  // Capture this before boot creates a session for a first-time visitor.
+  const returningVisitor = app.sessions.length > 0;
   if (!app.sessions.length) {
     const s = { id: uid(), name: t('Session 1'), event: app.settings.event, createdAt: Date.now(), order: 0 };
     await Sessions.put(s);
@@ -658,7 +660,7 @@ async function init() {
   wireTimer();
   wireReplayUI();
   wireSotdStackmat();
-  wireSupportNudge();
+  wireSupportNudge(returningVisitor);
   wireInput();
   wireScrambleSwipe();
   wireChrome();
@@ -1996,34 +1998,68 @@ function wireReplayUI() {
    Support nudge
 
    A card in the corner that points at the support section of About (Ko-fi,
-   and UPI for India). Everyone who has used the timer before gets it once,
-   then one page load in a hundred. "Used before" is solves already saved
-   when the page loaded, so a brand-new visitor is asked on a later visit,
-   not during their first. Only after a solve, so it never lands on a held
+   and UPI for India). The first ask follows the second saved solve,
+   including on a brand-new visitor's first visit. Reminders default to every
+   ten returning page loads, at least fourteen days apart.
+   Only after a saved solve, so it never lands on a held
    spacebar; never while the replay announcement is still unanswered; out of
    the way while an attempt runs, back after it once more at most.
-   Answered (either button or the cross), the 1-in-100 stays away for a
-   month even if the dice come up again.
+   Visits still accumulate during the quiet period; a due reminder waits until it ends.
    ========================================================= */
 /* Its numbers are config/support (ADMIN.md): the share of page loads that
-   ask, the quiet days after an answer, the times on one load, and whether it
-   shows at all. The defaults are the old constants: 1 %, 30 days, 2. */
+   ask (1 % means every 100 visits), the quiet days after an answer, the times on one load, and whether it
+   shows at all. The defaults are 10 %, 14 days, 1 appearance. */
 const COFFEE_KEY = 'coffeeNudgeAt';
 const COFFEE_ASKED_KEY = 'coffeeAsked';    // the once-for-everyone ask has been shown
+const COFFEE_VISITS_KEY = 'coffeeVisitsSinceAsk';
+// Calendar dates in India: Nov 17 and 18 only. No later deployment is needed.
+const COFFEE_CAMPAIGN_START = Date.parse('2026-11-17T00:00:00+05:30');
+const COFFEE_CAMPAIGN_END = Date.parse('2026-11-19T00:00:00+05:30');
+const COFFEE_CAMPAIGN_KEY = 'coffeeCampaign20261117Seen';
+const supportSolves = new EventTarget();
 
-function wireSupportNudge() {
-  const lucky = Math.random() * 100 < getConfig('support', 'oddsPct');
+function wireSupportNudge(returningVisitor = false) {
   let firstAsk = false;
+  let eligible = false;
+  let answeredAt = 0;
+  let completedSolves = 0;
   let card = null;
   let shown = 0;
   let done = false;
-  const hide = () => { card?.remove(); card = null; };
-  const answer = () => { done = true; hide(); KV.set(COFFEE_KEY, Date.now()).catch(() => {}); };
-  const show = () => {
-    if (done || card || shown >= getConfig('support', 'shows') || !getConfig('support', 'enabled')) return;
+  let campaignSeen = false;
+  let campaignCard = false;
+  const campaignActive = () => Date.now() >= COFFEE_CAMPAIGN_START && Date.now() < COFFEE_CAMPAIGN_END;
+  const hide = () => { card?.remove(); card = null; campaignCard = false; };
+  const answer = () => {
+    const wasCampaign = campaignCard;
+    hide();
+    // This one-off campaign must not reset the usual reminder schedule.
+    if (!wasCampaign) { done = true; KV.set(COFFEE_KEY, Date.now()).catch(() => {}); }
+  };
+  const show = (campaign = false) => {
+    if (card || !getConfig('support', 'enabled')) return;
+    if (campaign) {
+      if (!campaignActive() || !returningVisitor || campaignSeen) return;
+    } else {
+      // First-time visitors receive no donation prompt during the campaign.
+      if (campaignActive() || !eligible || completedSolves < 2 || done || shown >= getConfig('support', 'shows')) return;
+      if (!shown && !firstAsk && Date.now() - answeredAt < getConfig('support', 'quietDays') * 86_400_000) return;
+    }
     if (!timerIdle() || modalOpen() || document.hidden || announcementShowing()) return;
-    shown++;
-    if (firstAsk) { firstAsk = false; KV.set(COFFEE_ASKED_KEY, true).catch(() => {}); }
+    // Reset only when the card actually appears, never when it is blocked.
+    if (campaign) {
+      campaignSeen = true;
+      campaignCard = true;
+      KV.set(COFFEE_CAMPAIGN_KEY, true).catch(() => {});
+    } else if (!shown) {
+      KV.set(COFFEE_VISITS_KEY, 0).catch(() => {});
+      // Ignoring the card also gets a quiet period.
+      KV.set(COFFEE_KEY, Date.now()).catch(() => {});
+    }
+    if (!campaign) {
+      shown++;
+      if (firstAsk) { firstAsk = false; KV.set(COFFEE_ASKED_KEY, true).catch(() => {}); }
+    }
     card = el('div', { class: 'cam-hint coffee-nudge', role: 'status', 'aria-live': 'polite' },
       el('button', { class: 'cam-hint-x', 'aria-label': t('Not now'), title: t('Not now'), html: '&times;', onclick: answer }),
       el('b', { text: t('Enjoying Tagda Timer?') }),
@@ -2034,10 +2070,30 @@ function wireSupportNudge() {
     document.body.append(card);
   };
   // Counted now, during boot, before this load's own first solve can land.
-  Promise.all([KV.get(COFFEE_KEY, 0), KV.get(COFFEE_ASKED_KEY, false), Solves.count()]).then(([at, asked, solves]) => {
-    firstAsk = !asked && !at && solves > 0;
-    if (!firstAsk && (!lucky || Date.now() - at < getConfig('support', 'quietDays') * 86_400_000)) return;
-    timer.addEventListener('stop', () => setTimeout(show, 2000));
+  Promise.all([KV.get(COFFEE_KEY, 0), KV.get(COFFEE_ASKED_KEY, false), Solves.count(), KV.get(COFFEE_VISITS_KEY, 0), KV.get(COFFEE_CAMPAIGN_KEY, false)]).then(([at, asked, solves, savedVisits, seen]) => {
+    completedSolves = solves;
+    answeredAt = at;
+    firstAsk = !asked && !at;
+    const visits = Math.min(Number.MAX_SAFE_INTEGER, (Number.isSafeInteger(savedVisits) && savedVisits > 0 ? savedVisits : 0) + 1);
+    if (!firstAsk) KV.set(COFFEE_VISITS_KEY, visits).catch(() => {});
+    const frequency = getConfig('support', 'oddsPct');
+    eligible = firstAsk || (frequency > 0 && visits >= Math.ceil(100 / frequency));
+    campaignSeen = !!seen;
+    if (campaignActive()) {
+      // Also remove a still-open campaign card at expiry in a long-lived tab.
+      setTimeout(() => { if (campaignCard) hide(); }, COFFEE_CAMPAIGN_END - Date.now());
+      const tryCampaign = () => {
+        if (!campaignActive() || !returningVisitor || campaignSeen) return;
+        show(true);
+        // Another announcement, a panel or a running solve can delay the card.
+        if (!campaignSeen) setTimeout(tryCampaign, 2000);
+      };
+      setTimeout(tryCampaign, 2000);
+    }
+    supportSolves.addEventListener('solve', () => {
+      completedSolves++;
+      setTimeout(show, 2000);
+    });
     timer.addEventListener('state', ({ detail: { state } }) => {
       if (state !== 'idle' && state !== 'cooldown') hide();
     });
@@ -2776,6 +2832,7 @@ async function recordSolve({ timeMs, penalty = 'none', inspectionMs = 0, splits 
     try { await Solves.put(solve, smartCapture); }
     catch (error) { locallySaved = false; console.warn('[db] solve retained for recovery', error); }
   }
+  if (locallySaved) supportSolves.dispatchEvent(new Event('solve'));
   if (smartCapture && smartCapture.context.sessionId !== app.session.id) {
     if (!locallySaved) throw new Error(t('Solve is unsaved. Retry or export recovery.'));
     return;
