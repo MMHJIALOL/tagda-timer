@@ -227,10 +227,10 @@ export const CONFIG = {
     about: 'The “Enjoying Tagda Timer?” card that points at the coffee link in About. Read by the app.',
     keys: {
       enabled: { type: 'bool', def: true, label: 'Shown at all', where: 'app' },
-      oddsPct: { type: 'int', def: 1, min: 0, max: 100, unit: '%', label: 'Page loads that ask', where: 'app',
-        help: 'After the one ask everybody who has solved gets, and the quiet days after an answer.' },
-      quietDays: { type: 'int', def: 30, min: 1, max: 365, unit: 'days', label: 'Quiet after an answer', where: 'app' },
-      shows: { type: 'int', def: 2, min: 0, max: 10, label: 'Times on one page load', where: 'app' },
+      oddsPct: { type: 'int', def: 10, min: 0, max: 100, unit: '%', label: 'Page loads that ask', where: 'app',
+        help: 'Visit frequency after the first ask: 1% means every 100 returning page loads. Due reminders wait for the quiet days to end and a solve to finish.' },
+      quietDays: { type: 'int', def: 14, min: 1, max: 365, unit: 'days', label: 'Days between reminders', where: 'app' },
+      shows: { type: 'int', def: 1, min: 0, max: 10, label: 'Times on one page load', where: 'app' },
     },
   },
   feedback: {

@@ -165,9 +165,9 @@ rules enforce takes effect at once, whatever any tab has cached.
 | `sotd.frozen` | switch | off | | rules | On: no new result on any event today. The board, its chat and replays stay (§18) |
 | `sotd.frozenMessage` | text | empty | 200 characters | app | Shown in place of today's scramble while the board is closed |
 | `support.enabled` | switch | on | | app | The "Enjoying Tagda Timer?" card at all |
-| `support.oddsPct` | % | 1 | 0 to 100 | app | Page loads that ask, after the first ask and the quiet days |
-| `support.quietDays` | days | 30 | 1 to 365 | app | Quiet after somebody answers it |
-| `support.shows` | times | 2 | 0 to 10 | app | Times it may come back on one page load |
+| `support.oddsPct` | % | 10 | 0 to 100 | app | Returning-visit frequency after the first ask: 10% = every 10 page loads, 0 = no repeats. The first ask follows the second saved solve, including on the first visit. Visits accumulate during quiet days; due reminders appear after a saved solve once the quiet period ends. |
+| `support.quietDays` | days | 14 | 1 to 365 | app | Minimum quiet period after a card appears or somebody answers it |
+| `support.shows` | times | 1 | 0 to 10 | app | Times it may come back on one page load |
 | `feedback.url` | https link | the current form | 300 characters | app | The built-in feedback announcement's button (§7) |
 | `feedback.endAt` | date and time | 1 Oct 2026 | | app | When that announcement stops |
 | `feedback.mode` | choice | form | form, inbox, both | app | Where About sends feedback: the form, Send feedback (People › Feedback), or both (§21) |
@@ -1575,3 +1575,7 @@ Installed to a home screen (`admin.webmanifest`), the console's icon shows a cou
 has badges (`navigator.setAppBadge`): open reports and held times, and for an admin unread feedback
 and stuck syncs. Real notifications are phase 6.
 
+
+### Temporary coffee reminder: November 17–18, 2026
+
+Returning visitors (a session existed before this page load) receive the coffee card once per browser during November 17–18 in Asia/Kolkata, without a solve requirement and regardless of the ordinary frequency or quiet period. First-time visitors receive no coffee card during this campaign. The campaign has its own seen marker and does not reset the normal schedule. At 00:00 IST on November 19 it expires, including in open tabs, and the normal solve-triggered reminders resume automatically.
