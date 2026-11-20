@@ -1653,7 +1653,7 @@ function wireTimer() {
     if (FOCUS_STATES.has(st)) stopConfetti();
     // Freeze and reveal the result before replay, network and layout work.
     if (st === 'cooldown') {
-      main.textContent = fmt(timer.elapsed);
+      main.textContent = fmt(Math.round(timer.elapsed));
       main.style.opacity = '';
       display.classList.remove('hidden-digits');
       pace.hidden = true;
@@ -2674,13 +2674,6 @@ async function recordSolve({ timeMs, penalty = 'none', inspectionMs = 0, splits 
     if (app.session.id === smartCapture.context.sessionId && app.scramble?.scramble === smartCapture.context.scramble) nextScramble();
     return;
   }
-  const comparable = resultsFor(app.solves, fmcMoves !== null);
-  const prevBest = bestSingle(comparable);
-  const prevAo5  = bestAvg(comparable, 5).value;
-  const prevAo12 = bestAvg(comparable, 12).value;
-  const prevAo25 = bestAvg(comparable, 25).value;
-  const prevAo100 = bestAvg(comparable, 100).value;
-
   const race = raceCtl();
   const racing = !smartCapture && !!(race?.inRoom && app.scramble?.race);
 
@@ -2787,6 +2780,14 @@ async function recordSolve({ timeMs, penalty = 'none', inspectionMs = 0, splits 
     if (!locallySaved) throw new Error(t('Solve is unsaved. Retry or export recovery.'));
     return;
   }
+  // Start saving before scanning the session for PBs. On a large session those
+  // scans blocked the stopping key's task and kept the frozen digits unpainted.
+  const comparable = resultsFor(app.solves, fmcMoves !== null);
+  const prevBest = bestSingle(comparable);
+  const prevAo5  = bestAvg(comparable, 5).value;
+  const prevAo12 = bestAvg(comparable, 12).value;
+  const prevAo25 = bestAvg(comparable, 25).value;
+  const prevAo100 = bestAvg(comparable, 100).value;
   if (!app.solves.some(s => s.id === solve.id)) app.solves.push(solve);
 
   // Once saved, this list entry must not return if a reload interrupts the

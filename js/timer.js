@@ -288,12 +288,10 @@ export class Timer extends EventTarget {
 
   _loop() {
     cancelAnimationFrame(this._raf);
-    const step = () => {
-      const now = performance.now();
-
+    const step = (frameAt) => {
       if (this.state === 'inspecting' || this.state === 'holding' || this.state === 'ready') {
         if (this.inspectStart && this.inspectionEnabled && this.state !== 'idle') {
-          this.inspectElapsed = now - this.inspectStart;
+          this.inspectElapsed = performance.now() - this.inspectStart;
           const e = this.inspectElapsed;
           if (!this._warned.w1 && e >= WARN_1_MS) { this._warned.w1 = true; this.emit('warn', { at: 8 }); }
           if (!this._warned.w2 && e >= WARN_2_MS) { this._warned.w2 = true; this.emit('warn', { at: 12 }); }
@@ -308,7 +306,13 @@ export class Timer extends EventTarget {
       }
 
       if (this.state === 'running') {
-        this.elapsed = now - this.solveStart;
+        // Earlier animation callbacks (for example the background) can block
+        // this one while a stopping key is already waiting to be delivered.
+        // Reading the clock here would display time AFTER that key's timestamp,
+        // then jump backwards when its handler records the correct result.
+        // All callbacks for a frame share frameAt; only the display uses it.
+        // Start, splits and stop still use the input's exact timestamp.
+        this.elapsed = Math.max(0, frameAt - this.solveStart);
         this.emit('tick', { elapsed: this.elapsed });
         this._raf = requestAnimationFrame(step);
       }

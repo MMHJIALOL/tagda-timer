@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "test:timer": "node --test js/timer.check.mjs",
     "test:cube-playback": "node tools/verify-cube-playback.cjs",
     "test:solve-motion": "node tools/verify-solve-motion.cjs",
     "test:vercel-import": "node tools/verify-vercel-import.cjs",
