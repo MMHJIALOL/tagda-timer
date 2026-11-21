@@ -1,0 +1,16 @@
+{
+  "name": "tagda-smart-cube-test",
+  "account_id": "5f691e34429f2790f6f8e9b9ad601a50",
+  "main": "index.mjs",
+  "compatibility_date": "2026-09-26",
+  "workers_dev": false,
+  "preview_urls": false,
+  "rules": [{ "type": "Text", "globs": ["**/*.html", "**/*.css", "**/*.txt"], "fallthrough": true }],
+  "kv_namespaces": [{ "binding": "REPORTS", "id": "5c1c0e017249449ca558afb0f35f9c8b" }],
+  "ratelimits": [{ "name": "UPLOAD_LIMIT", "namespace_id": "1002", "simple": { "limit": 20, "period": 60 } }],
+  "routes": [
+    { "pattern": "tagdatimer.me/smart-cube", "zone_id": "62303fd9899c94d58ab3bb056b581792" },
+    { "pattern": "tagdatimer.me/smart-cube/*", "zone_id": "62303fd9899c94d58ab3bb056b581792" }
+  ],
+  "observability": { "enabled": false }
+}

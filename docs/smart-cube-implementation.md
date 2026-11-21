@@ -1,5 +1,44 @@
 # Main-timer smart cubes
 
+## GAN i Carry 4 test patch — 22 November 2026
+
+Ten new Smart Cube Lab reports identify GANic4, firmware 1.0. Every decoded
+snapshot has serial zero. The stock driver bootstraps its move counter from
+that zero and recovers old turns before the connection. In report
+`0c52542a4fbf4371991893959dfc2120`, three stale U turns cause a U-prime offset;
+the timer saves the second T-perm only after an extra U. Removing that prefix
+matches all 106 snapshots from the first connection.
+
+The model-specific adapter in `js/gan-carry4.js` establishes the counter from
+the first live move and waits for an independently matching state snapshot
+before publishing the initial state. The tester makes one slow turn and undoes
+it after each connection. Later snapshot positions are inferred only from
+matching turn history, with the original serial retained. Unknown snapshots
+hold turn callbacks for up to three seconds; unresolved contradictions interrupt
+the attempt. Genuine missing move notifications still use the driver's history
+recovery. Other models retain the original driver.
+
+The test worker records build `carry4-state-sync-1` and at most 256 decrypted
+notification packets per connection. These packets contain cube state, turns and
+hardware data; they contain no Bluetooth address or encryption key. The existing
+seven-day expiry and upload protections are unchanged.
+
+Validation covers all ten decoded reports, reconstructed decoder inputs, the
+T-perm through the actual lab UI, high starting counters, serial wrapping,
+600-turn sessions, missing-move recovery, fixed contradiction deadlines and
+capture interruption. The main smart-cube unit/browser/connection suites and
+the worker API/DOM suite pass. These checks do not establish real radio behavior.
+The main-timer source is prepared in this branch; production main-timer assets
+remain unchanged pending the tester's real-cube retest of the patched lab.
+
+The patched lab was deployed at https://tagdatimer.me/smart-cube/ on 22 November
+2026. Cloudflare worker version: `f22b65ea-67b3-4aa9-a4bb-c3b8f6ba4072`.
+The live HTML, JavaScript and CSS match the tested files. The live mobile page
+starts without browser errors, and the earlier report remains readable with
+its original expiry. Main-timer v174 and its protocol bundle were verified
+unchanged. Share the trailing-slash URL; the exact `/smart-cube` route does not
+match query strings, while `/smart-cube/` does.
+
 ## Connection rows — 21 November 2026
 
 The Cube panel (now titled **Your cubes**) and **Settings → Bluetooth cube**

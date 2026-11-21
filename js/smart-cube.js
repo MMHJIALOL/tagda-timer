@@ -184,7 +184,10 @@ export class SmartCubeController {
         }
         if (event.type === 'BATTERY') this.battery = event.batteryLevel;
         this.stream.ingest(event);
-        if (event.type === 'HARDWARE' || event.type === 'BATTERY') this.render();
+        if (event.type === 'STATE_UNCERTAIN') {
+          try { this.preview.set(null); } catch { /* Capture has already been interrupted. */ }
+        }
+        if (['HARDWARE', 'BATTERY', 'STATE_UNCERTAIN'].includes(event.type)) this.render();
       });
       // Subscribe before ANY command: FACELETS can precede command resolution.
       await conn.sendCubeCommand({ type: 'REQUEST_FACELETS' });
@@ -380,6 +383,7 @@ export class SmartCubeController {
     this.message.textContent=!this.allowed?t('Smart cube timing supports standard 3×3 practice only. Switch input in Cube settings.'):
       this.connectionState==='unsupported'?t('Bluetooth is unavailable here. Use Chrome or Edge, or switch input in Cube settings.'):
       !this.connection?t('Connect your cube to begin'):
+      this.connection.protocolPatch && !this.stream?.state?t('Make one slow turn and undo it, then wait for the cube state'):
       this.attemptState==='running'?t('Recording every turn'):
       this.attemptState==='inspection'?t('First turn starts the timer'):
       this.attemptState==='synchronizing'?t('Waiting for matching turns from the cube…'):
