@@ -9,6 +9,8 @@
     "test:vercel-import": "node tools/verify-vercel-import.cjs",
     "test:settings-presets": "node --test js/settings-presets.check.mjs",
     "test:settings-search": "node --test js/settings-search.check.mjs",
+    "test:layout": "node --test js/layout-grid.check.mjs",
+    "test:layout-ui": "node tools/verify-interactive-layout.cjs",
     "test:solve-search": "node --test js/solve-search.check.mjs",
     "test:stats-session": "node --test js/stats-session.check.mjs",
     "test:stats-units": "node --test js/stats-units.check.mjs",

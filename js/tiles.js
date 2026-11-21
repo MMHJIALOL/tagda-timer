@@ -118,6 +118,7 @@ function insertOrdered(host, node, id) {
  * position on every unrelated settings change.
  */
 export function applyTiles(settings) {
+  if (document.body.classList.contains('layout-custom') && tilesEnabled()) return;
   for (const id of TILE_IDS) {
     const node = $(SEL[id]);
     if (!node) continue;
@@ -451,6 +452,7 @@ let settleTimeout = 0;
  * most twice more, and only while something is still moving.
  */
 function settle() {
+  if (document.body.classList.contains('layout-custom')) return;
   for (let i = 0; i < 3; i++) {
     const writes = [measureDock(), placePreview(), measureChip()];
     let changed = false;
@@ -527,6 +529,7 @@ export function initTiles({ settings, save, onPlaced }) {
   let settleTimer = null;
 
   const onDown = (e) => {
+    if (!settings.interactiveResizing || document.body.classList.contains('layout-custom')) return;
     if (!e.isPrimary || e.button !== 0 || !tilesEnabled()) return;
     const grip = e.target.closest('.tile-grip');
     if (!grip) return;

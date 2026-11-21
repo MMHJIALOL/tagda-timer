@@ -77,6 +77,7 @@ const ALIASES = [
   ['Motion', 'animation reduce disable movement accessibility'],
   ['Reduce effects', 'performance graphics animation slow accessibility'],
   ['Panel layout', 'reset widgets location position dock rails'],
+  ['Interactive resizing', 'interactive resize resizing drag drop snap snapping grid widgets timer ao5 ao12 spotify layout editor'],
   ['Theme file', 'appearance import export share save colors colours'],
   ['Edge buffer', 'blind bld shoot sticker speffz'],
   ['Corner buffer', 'blind bld shoot sticker speffz'],

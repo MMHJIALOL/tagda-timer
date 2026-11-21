@@ -30,6 +30,7 @@ import { DEFAULTS, loadSettings, saveSettings, isOwnSettingsWrite, applyTheme, a
 import { chooseInspection, mergeInspection } from './inspection-setting.js';
 import { loadLibraryPrefs } from './alglibrary.js';
 import { initTiles, applyTiles, measureLayout } from './tiles.js';
+import { initInteractiveLayout } from './interactive-layout.js';
 import { SPOTIFY_CLIENT_ID, DEV_MODE_LIMIT, OWNER_NEEDS_PREMIUM } from './spotifyapp.js';
 import { popover, closePopover, popoverOpen } from './popover.js';
 import { trace, traceRecord, BLD_EVENTS, TRACEABLE_EVENTS, DEFAULT_SPEFFZ_MAP,
@@ -1641,6 +1642,7 @@ function wireTimer() {
   const core = $('#timer-core');
   const zone = $('#scramble-zone');
   const placeTimer = () => {
+    if (document.body.classList.contains('layout-custom')) return;
     if (timer.state !== 'idle' && timer.state !== 'cooldown') return;
     const top = Math.max(innerHeight / 2, zone.getBoundingClientRect().bottom + core.offsetHeight / 2 + 12);
     document.documentElement.style.setProperty('--timer-top', `${Math.round(top)}px`);
@@ -4408,7 +4410,7 @@ async function clearSession() {
  * a stray press that recorded a 0.4-second "solve" in the middle of an hour's
  * work would be the worst possible way to lose an attempt.
  */
-const timerInputLive = () => inputMode() === 'timer' && !movesMode()
+const timerInputLive = () => !app.layoutEditor?.editing && inputMode() === 'timer' && !movesMode()
   && !raceCtl()?.locked() && !dailyCtl()?.locked();
 
 /* The virtual cube is only a cube for 2x2 to 7x7. Chosen on any other event it
@@ -4438,7 +4440,7 @@ const competeInputMode = (where) => app.settings[COMPETE_INPUT[where]]
 /* A Stackmat ignores timerInputLive, so the windows that shut the timer have
    to shut the mat too: in the SOTD window after your time is in, a mat solve
    was otherwise an ordinary solve on top of the "already done" line. */
-const stackmatShut = () => !!(raceCtl()?.locked() || dailyCtl()?.locked());
+const stackmatShut = () => !!(app.layoutEditor?.editing || raceCtl()?.locked() || dailyCtl()?.locked());
 
 /** Re-apply the input source only when the one running is not the one there should be. Never mid-solve. */
 function syncInputMode() {
@@ -4583,7 +4585,7 @@ const loadSmartCube = lazy(async () => {
       scramble: app.scramble?.scramble || '', inspection: timer.inspectionEnabled, ownerUid: currentUser()?.uid || null,
       allowed: inputMode() === 'smart' && app.settings.event === '333' && app.settings.mode === 'wca'
         && !competitionTiming() && !competitionOpen() && !raceCtl()?.inRoom && !dailyCtl()?.engaged
-        && !relayOn() && !multiphaseOn() && !app.settings.scramblesOnly && !app.session.virtual && !app.session.race }),
+        && !relayOn() && !multiphaseOn() && !app.settings.scramblesOnly && !app.layoutEditor?.editing && !app.session.virtual && !app.session.race }),
     save: async capture => {
       await recordSolve({ timeMs: capture.measuredDurationMs, penalty: capture.penalty,
         inspectionMs: capture.inspectionMs || 0, smartCapture: capture });
@@ -4729,6 +4731,7 @@ function wireManualEntry() {
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
+    if (app.layoutEditor?.editing) return;
     const parsed = parseTimeInput(input.value);
     if (!parsed) {
       input.classList.remove('bad'); void input.offsetWidth; input.classList.add('bad');
@@ -4793,6 +4796,7 @@ async function wireStackmat() {
   });
 
   stackmat.addEventListener('time', (e) => {
+    if (app.layoutEditor?.editing) return;
     if (timer.state !== 'running' && stackmatShut()) return;
     // The mat starting is the solve starting: going through the Timer is what
     // ends a spacebar inspection with its penalty, and what focus mode, hidden
@@ -4820,6 +4824,7 @@ async function wireStackmat() {
   });
 
   stackmat.addEventListener('solve', (e) => {
+    if (app.layoutEditor?.editing) return;
     // Normally already running from the first 'time' packet; a solve that
     // arrives without one (timer reset mid-solve) still gets recorded.
     if (timer.state !== 'running') {
@@ -5596,7 +5601,7 @@ app.setSetting = (k, v) => {
   if (k === 'inputMode') smartCubeInputRequested = false;
   if (k === 'inspection') chooseInspection(app.settings, v);
   else app.settings[k] = v;
-  const saved = persist({ immediate: k === 'inspection' || ['smartCubeSize','smartCubeHints','smartCubeNet','smartCubeGyro'].includes(k) });
+  const saved = persist({ immediate: k === 'inspection' || ['interactiveResizing','smartCubeSize','smartCubeHints','smartCubeNet','smartCubeGyro'].includes(k) });
   applyAll(k);
   return saved;
 };
@@ -5662,6 +5667,8 @@ function applyAll(changed) {
   // either place has to reach the other one.
   if (!changed || changed === 'metroOpen' || changed === 'metronomeBpm') app.applyMetro?.();
   if (changed === 'metronome') metroExternal(0);   // switched off mid-solve
+  app.layoutEditor?.update();
+  if (timer) timer.cfg.off = !!app.settings.scramblesOnly || !!app.layoutEditor?.editing;
 }
 app.applyAll = () => applyAll();
 
@@ -6187,7 +6194,7 @@ const isTyping = () => {
   // whole keyboard — spacebar included — goes dead.
   return editable && a.offsetParent !== null;
 };
-const modalOpen = () => competitionOpen() || drawerOpen() || paletteOpen() || popoverOpen() || shareOpen() || reconOpen() || xp1Open() || announcementModal() || replayOpen();
+const modalOpen = () => !!app.layoutEditor?.editing || competitionOpen() || drawerOpen() || paletteOpen() || popoverOpen() || shareOpen() || reconOpen() || xp1Open() || announcementModal() || replayOpen();
 
 /* Swipe the scramble on a touch screen, the way csTimer does: left for the
    next one, right for the one before. Only on #scramble-zone, which is outside
@@ -6225,6 +6232,16 @@ function wireScrambleSwipe() {
 }
 
 function wireInput() {
+  // The editor owns keyboard gestures before any timer/input-mode listener.
+  document.addEventListener('keydown', e => {
+    if (!app.layoutEditor?.editing) return;
+    app.layoutEditor.keydown(e);
+    e.stopImmediatePropagation();
+    if (e.code === 'Space' && !e.target.closest('input, textarea, button, select')) e.preventDefault();
+  }, true);
+  document.addEventListener('keyup', e => {
+    if (app.layoutEditor?.editing) e.stopImmediatePropagation();
+  }, true);
   /* Scrambles only: Space deals the next scramble and nothing else hears it.
      First listener on the document, so the virtual cube, the Stackmat and the
      timer below never see the press. The arrows and N still work from the
@@ -6399,7 +6416,9 @@ function wireInput() {
   const phoneOK = (e) => (FOCUS_STATES.has(timer.state)
     ? !e.target.closest('#inspect-cancel, .sheet, .sheet-scrim')
     : phoneShell.tab() === 'timer' && !e.target.closest(PHONE_NOT));
-  const touchOK = (e) => !modalOpen() && (phoneShell?.on()
+  const touchOK = (e) => !modalOpen() && (e.target.closest('#layout-viewport')
+    ? !!e.target.closest('[data-widget="timer"]') && !e.target.closest('button, a, input, select')
+    : phoneShell?.on()
     ? phoneOK(e)
     : (!!e.target.closest('#stage') && !e.target.closest('button, a, input, select, .solve-chip, .panel, #topbar')));
 
@@ -6676,12 +6695,16 @@ function wireChrome() {
   // clickable, and the position survives a reload.
   cubeDrag = makeDraggable($('#panel-cube'), {
     handle: '#cube-grip',
+    enabled: () => !app.layoutEditor,
     get: () => app.settings.cubePos,
     // Where the preview sits decides how far up the rails have to stop, so the
     // rails are re-measured the moment it lands somewhere new.
     set: (pos) => { app.settings.cubePos = pos; persist(); measureLayout(); },
   });
-  app.resetCubePosition = () => { cubeDrag.reset(); toast('Preview back in its corner'); };
+  app.resetCubePosition = () => {
+    if (app.layoutEditor?.active) { app.layoutEditor.resetWidget('cube'); return; }
+    cubeDrag.reset(); toast('Preview back in its corner');
+  };
 
   /* Drag any of the panels by the grip on its top edge. The left rail, the
      right rail and the bar across the bottom light up while one is in the air
@@ -6703,8 +6726,25 @@ function wireChrome() {
     },
   });
 
+  app.layoutEditor = initInteractiveLayout(app, {
+    busy: () => FOCUS_STATES.has(timer.state) || fmcAttempting() || competitionTiming(),
+    beforeEdit: () => { closeDrawer(); closePopover(); timer.abortPress(); },
+    onEditing: editing => {
+      timer.cfg.off = !!app.settings.scramblesOnly || editing;
+      smartCube?.sync();
+    },
+    onLayout: () => {
+      applyTiles(app.settings); applyTheme(app.settings);
+      remeasureHistory(); fitScrambleToLine($('#scramble-text'));
+    },
+    notice: message => toast(message),
+  });
+  timer.cfg.off = !!app.settings.scramblesOnly || app.layoutEditor.editing;
+
   app.resetTiles = () => {
+    if (app.layoutEditor.active) { app.layoutEditor.reset(); return; }
     app.settings.tiles = null;
+    app.settings.widgetLayouts = null;
     persist();
     applyAll();
     toast('Panels back where they started');
@@ -6820,6 +6860,7 @@ function wireMascot() {
   });
   // Scroll over him to resize, which is what everyone tries first.
   box.addEventListener('wheel', (e) => {
+    if (app.layoutEditor?.active) return;
     e.preventDefault();
     app.settings.mascotSize = clampSize(app.settings.mascotSize * (e.deltaY < 0 ? 1.1 : 1 / 1.1));
     persist(); applySize();

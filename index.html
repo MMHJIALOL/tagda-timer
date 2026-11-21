@@ -33,16 +33,17 @@
      import hint in Settings over a main.js that has never heard of CubeDesk.
      vercel.json also serves /css/ as `max-age=31536000, immutable`, so a
      stylesheet there will not even be asked about for a year without it. -->
-<link rel="modulepreload" href="js/main.js?v=173">
-<link rel="stylesheet" href="css/fonts.css?v=173">
-<link rel="stylesheet" href="css/tokens.css?v=173">
-<link rel="stylesheet" href="css/base.css?v=173">
-<link rel="stylesheet" href="css/components.css?v=173">
-<link rel="stylesheet" href="css/smart-cube.css?v=173">
-<link rel="stylesheet" href="css/announce.css?v=173">
+<link rel="modulepreload" href="js/main.js?v=174">
+<link rel="stylesheet" href="css/fonts.css?v=174">
+<link rel="stylesheet" href="css/tokens.css?v=174">
+<link rel="stylesheet" href="css/base.css?v=174">
+<link rel="stylesheet" href="css/components.css?v=174">
+<link rel="stylesheet" href="css/interactive-layout.css?v=174">
+<link rel="stylesheet" href="css/smart-cube.css?v=174">
+<link rel="stylesheet" href="css/announce.css?v=174">
 <!-- Phones only: the same query as js/phone.js. A desktop or tablet never
      applies a rule from it, and does not wait on it to paint. -->
-<link rel="stylesheet" href="css/phone.css?v=173" media="(max-width: 640px)">
+<link rel="stylesheet" href="css/phone.css?v=174" media="(max-width: 640px)">
 <link rel="icon" href="assets/favicon.ico" sizes="any">
 <link rel="icon" type="image/png" sizes="32x32" href="assets/logo-32.png">
 <link rel="icon" type="image/png" sizes="192x192" href="assets/logo-192.png">
@@ -557,11 +558,11 @@
         <!-- The two averages you actually watch mid-session, where you are
              already looking. -->
         <div id="timer-avgs">
-          <span><b>ao5</b><i id="live-ao5">&mdash;</i></span>
+          <span id="timer-ao5"><b>ao5</b><i id="live-ao5">&mdash;</i></span>
           <span class="sep" aria-hidden="true"></span>
-          <span class="a12"><b>ao12</b><i id="live-ao12">&mdash;</i></span>
+          <span class="a12" id="timer-ao12"><b>ao12</b><i id="live-ao12">&mdash;</i></span>
           <!-- What the next ao5 becomes if the coming solve is perfect / a DNF. -->
-          <div id="timer-bpa" hidden><b>bpa</b><i id="live-bpa">&mdash;</i><b>wpa</b><i id="live-wpa">&mdash;</i></div>
+          <div id="timer-bpa" hidden><span id="timer-bpa-value"><b>bpa</b><i id="live-bpa">&mdash;</i></span><span id="timer-wpa-value"><b>wpa</b><i id="live-wpa">&mdash;</i></span></div>
         </div>
 
         <!-- Manual entry. Replaces the spacebar entirely when it is on, so
@@ -829,7 +830,7 @@
   </div>
 </div>
 
-<script type="module" src="js/main.js?v=173"></script>
+<script type="module" src="js/main.js?v=174"></script>
 <script>
 (function () {
   var isFile = location.protocol === 'file:';

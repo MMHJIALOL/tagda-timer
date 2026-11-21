@@ -675,6 +675,7 @@ body.no-hint #timer-hint { visibility: hidden; }
   display: flex; align-items: baseline; justify-content: center; gap: 8px;
 }
 #timer-bpa b { font-size: .6rem; }
+#timer-bpa > span { display: inline-flex; align-items: baseline; gap: 8px; }
 #timer-bpa b + i + b { margin-left: 10px; }
 #timer-avgs #timer-bpa i { font-size: clamp(.8rem, calc(var(--timer-size) * .09), 1.1rem); color: var(--text-dim); }
 #timer-avgs > span { display: flex; align-items: baseline; gap: 10px; }

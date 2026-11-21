@@ -21,3 +21,8 @@ tools/fixtures/smart-cube/gan-i4-*.json
 # Connection UI browser checks and screenshots are source-only.
 docs/smart-cube-connection-*
 tools/verify-smart-cube-connection-ui.cjs
+
+# Interactive layout regression checks are source-only.
+tools/verify-interactive-layout.cjs
+js/layout-grid.check.mjs
+audit-qa

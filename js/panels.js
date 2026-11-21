@@ -662,22 +662,27 @@ export function buildAppearance(app, searchQuery = '') {
       puzzleColors.element,
 
       group(t('Sizes'),
+        el('div', { class: 'hint-note', text: t('A saved custom layout controls widget dimensions. Use Interactive resizing to change those sizes; text size controls still adjust readability.') }),
         row(t('Scramble'), slider(S.scrambleSize, 60, 220, 5, v => set('scrambleSize', v), v => v + '%')),
         row(t('Scramble preview'), slider(S.cubeSize, 50, 260, 5, v => set('cubeSize', v), v => v + '%'),
-          t('the cube in the corner — drag it anywhere')),
+          t('resize and position it with Interactive resizing')),
         row(t('Sidebar width'), slider(S.sidebarWidth, 170, 420, 2, v => set('sidebarWidth', v), v => v + 'px')),
         row(t('Stats text'), slider(S.sidebarText, 70, 160, 5, v => set('sidebarText', v), v => v + '%')),
         row(t('Solve list'), slider(S.timesSize, 70, 160, 5, v => set('timesSize', v), v => v + '%')),
         el('div', { class: 'row' },
           el('div', { class: 'lbl' },
             el('span', { text: t('Preview position') }),
-            el('span', { class: 'sub', text: t('drag the grip to move it, drag the cube to spin it') })),
+            el('span', { class: 'sub', text: t('use Interactive resizing to move it; drag the cube itself to spin it') })),
           el('div', { style: { display: 'flex', gap: '6px' } },
             el('button', { class: 'ghost-btn', text: 'position', onclick: () => app.resetCubePosition?.() }),
             el('button', { class: 'ghost-btn', text: 'angle', onclick: () => app.resetCubeOrbit?.() }))),
       ),
 
       group(t('Layout'),
+        row(t('Interactive resizing'), toggle(!!S.interactiveResizing, v => {
+          if (v) app.layoutEditor?.start();
+          else set('interactiveResizing', false);
+        }), t('Drag and resize every widget on a snapping grid. Done locks your saved layout. Desktop and tablet only.')),
         row(t('Panel style'), chips([
           { value: 'widget', label: t('Widget') },
           { value: 'flat', label: t('Flat') },
@@ -701,10 +706,10 @@ export function buildAppearance(app, searchQuery = '') {
         row(t('Reduce effects'), toggle(S.reduceEffects ?? app.softwareGL, v => set('reduceEffects', v)),
           t('a still background and no glass blur — for slow or software-rendered graphics')),
         el('div', { class: 'hint-note', html:
-          t('Drag the times list, the statistics panel, the now-playing card and the play bar by the grip on their top edge. The <b>left rail</b>, the <b>right rail</b> and the <b>bar across the bottom</b> light up while you are dragging — drop on one and the panel clicks into it. Drop it anywhere else and it stays exactly where you let go. On a phone the panels keep their fixed layout, because there is nowhere to put them.') }),
+          t('Enable Interactive resizing to arrange the timer, scramble, averages, times, stats, Spotify and cube preview. Every move and resize snaps to the grid. Occupied spaces are rejected. Use the width and height fields for precise grid sizes, or arrow keys on a handle; Shift + arrows resizes. Your phone keeps its own layout.') }),
         el('div', { class: 'row' },
           el('div', { class: 'lbl' }, el('span', { text: t('Panel layout') }),
-            el('span', { class: 'sub', text: t('put every panel back in its original rail') })),
+            el('span', { class: 'sub', text: t('restore the default arrangement') })),
           el('button', { class: 'ghost-btn', text: 'reset', onclick: () => app.resetTiles?.() })),
       ),
 

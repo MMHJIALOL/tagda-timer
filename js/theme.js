@@ -264,6 +264,8 @@ export const DEFAULTS = {
      an empty list is a plain list of times. */
   histAvgCols: [5, 12],
   tiles: null,                  // { [tileId]: {dock, pos, w} } once anything has been dragged
+  interactiveResizing: false,    // Show the grid editor; Done locks the saved layout.
+  widgetLayouts: null,           // Separate desktop/tablet maps of {x,y,w,h} in grid cells.
   cubePos: null,                // {x,y} once the preview has been dragged
   cubeOrbit: null,              // {latitude,longitude,distance} once it has been spun
   mascotOpen: false,            // the brand cube, loose on the page
@@ -388,6 +390,7 @@ export function applyTheme(s) {
   st.setProperty('--timer-size', `clamp(3rem, ${(15 * s.timerSize / 100).toFixed(2)}vw, ${(11.5 * s.timerSize / 100).toFixed(2)}rem)`);
   st.setProperty('--timer-glow', `${s.timerGlow}px`);
   st.setProperty('--scramble-scale', (s.scrambleSize / 100).toFixed(3));
+  st.setProperty('--timer-scale', (s.timerSize / 100).toFixed(3));
   st.setProperty('--cube-scale', (s.cubeSize / 100).toFixed(3));
   st.setProperty('--smart-cube-scale', (Math.min(140, Math.max(65, Number(s.smartCubeSize) || 100)) / 100).toFixed(2));
   st.setProperty('--sidebar-w', `${s.sidebarWidth}px`);
