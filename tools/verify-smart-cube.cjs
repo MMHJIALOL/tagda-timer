@@ -182,6 +182,50 @@ const base = process.argv[2] || 'http://localhost:5186';
     });
     assert.deepEqual(boundaries,{automaticallyInspecting:true,startedOnce:true,cancelled:true,restarted:true,plus2:'+2',dnf:'DNF',exactlyOnce:true,frozen:true,rendererIndependent:true,lateInvalidated:true});
     console.log('PASS: automatic inspection, repeated snapshots, cancellation/restart, +2/DNF, exactly-once completion, 500ms journal, frozen session, renderer isolation and late mismatch invalidation');
+    const i4Captures = await page.evaluate(async () => {
+      const {SmartCubeController}=await import('/js/smart-cube.js');
+      const {Timer}=await import('/js/timer.js');
+      const {validateCapture}=await import('/js/smart-cube-core.js');
+      const protocol=await import('/vendor/gan/gan-3.0.2.js');
+      const fixture=await (await fetch('/tools/fixtures/smart-cube/gan-i4-1.json')).json();
+      const results=[];
+      for(const solve of fixture.solves.slice(0,2)) {
+        const host=document.createElement('section');document.body.append(host);
+        const scramble=solve.moves.map(([,move])=>move).reverse().map(move=>move.endsWith("'")?move[0]:move+"'").join(' ');
+        let receive,record;
+        const c=new SmartCubeController({host,timer:new Timer({inspection:false}),
+          context:()=>({sessionId:'i4-recording',event:'333',mode:'wca',scramble,inspection:false,allowed:true}),
+          save:async capture=>{record=capture;},notice:()=>{},switchInput:()=>{}});
+        c.protocol={cubeTimestampLinearFit:protocol.cubeTimestampLinearFit,connectGanCube:async()=>({deviceName:'GANi4_TEST',
+          events$:{subscribe(fn){receive=fn;return {unsubscribe(){receive=null;}};}},
+          async sendCubeCommand({type}) {
+            if(type==='REQUEST_FACELETS')receive({type:'FACELETS',serial:(solve.moves[0][0]+255)%256,facelets:solve.initialFacelets});
+            if(type==='REQUEST_HARDWARE')receive(fixture.hardware);
+          },async disconnect(){} })};
+        try {
+          c.sync();await c.connect();
+          if(c.attemptState!=='armed')throw new Error('Recorded i4 scramble did not arm');
+          receive({type:'GYRO',quaternion:{x:0,y:0,z:0,w:0}});
+          const invalidIgnored=c.deviceInfo.gyroSupported===false;
+          const [,x,y,z,w]=fixture.gyro[0];
+          receive({type:'GYRO',quaternion:{x,y,z,w}});
+          const detected=c.deviceInfo.gyroSupported===true&&c.hardware.gyroSupported===false;
+          for(const [serial,move,cubeTimestamp,localTimestamp] of solve.moves)receive({type:'MOVE',serial,move,cubeTimestamp,localTimestamp});
+          await c.saveTask;
+          validateCapture(record);
+          const result={invalidIgnored,detected,model:record.connections[0].deviceModel,
+            moves:record.moves.length,complete:record.completeness,timingMethod:record.timingMethod,
+            gyroSamples:record.orientation.samples.length,rawGyroSupported:record.connections[0].hardware.gyroSupported};
+          await c.disconnect();
+          result.cleared=c.deviceInfo.gyroSupported===null&&c.latestGyro===null;
+          results.push(result);
+        } finally {c.dispose();host.remove();}
+      }
+      return results;
+    });
+    assert.deepEqual(i4Captures,[82,87].map((moves,i)=>({invalidIgnored:true,detected:true,model:'GAN i4',moves,
+      complete:'complete',timingMethod:i?'receive-clock':'cube-clock-fit',gyroSamples:1,rawGyroSupported:false,cleared:true})));
+    console.log('PASS: recorded i4 solves, recovered-clock fallback, observed gyro capability, preserved hardware evidence and reconnect cleanup');
     assert.equal(soak.saves,200);assert.equal(soak.applied,600);assert.equal(soak.lastMoves,3);assert.equal(soak.listeners,0);assert.ok(soak.p95<100);
     console.log('PASS: 200 capture/connect/disconnect cycles; exact counts, no retained subscriptions; preview p95',soak.p95.toFixed(2),'ms');
     await page.evaluate(()=>{tagdatimer.setSetting('inspection',false);tagdatimer.setSetting('inputMode','timer');});await page.keyboard.press('Space');await page.waitForTimeout(100);await page.keyboard.press('Space');

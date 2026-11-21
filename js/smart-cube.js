@@ -329,7 +329,7 @@ export class SmartCubeController {
     try { this.protocol = await import('../vendor/gan/gan-3.0.2.js'); this.render(); }
     catch { this.notice(t('Bluetooth code could not load. Check the connection and retry.')); }
   }
-  get deviceInfo() { return ganCubeInfo(this.hardware, this.deviceName); }
+  get deviceInfo() { return ganCubeInfo(this.hardware, this.deviceName, !!this.latestGyro); }
   render() {
     if(document.hidden)return;
     this.host.dataset.attempt=this.attemptState;this.host.dataset.connected=String(!!this.connection);

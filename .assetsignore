@@ -15,3 +15,5 @@ sync-test.html
 vercel-mover
 # Local Worker vars (gitignored too, but never served even when present).
 .dev.vars
+# Hardware regression recordings stay in the source checkout.
+tools/fixtures/smart-cube/gan-i4-*.json

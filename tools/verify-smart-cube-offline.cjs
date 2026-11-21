@@ -9,7 +9,9 @@ const {chromium}=require('@playwright/test');
     await page.evaluate(()=>navigator.serviceWorker.ready);
     await page.waitForFunction(()=>navigator.serviceWorker.controller);
     const cached=await page.evaluate(async()=>{
-      const cache=await caches.open('tagda-v9');
+      const name=(await caches.keys()).find(name=>name.startsWith('tagda-v'));
+      if(!name)return false;
+      const cache=await caches.open(name);
       return !!await cache.match('/vendor/gan/gan-3.0.2.js')&&!!await cache.match('/js/smart-cube.js')&&!!await cache.match('/js/smart-cube-scramble.js');
     });assert.equal(cached,true);
     await context.setOffline(true);await page.reload();

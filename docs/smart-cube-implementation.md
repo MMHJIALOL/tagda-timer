@@ -1,5 +1,24 @@
 # Main-timer smart cubes
 
+## GAN i4 release — v172, 21 November 2026
+
+This release is based on the verified v171 production checkout. It adds the
+GAN i4 model label and lets observed valid orientation samples take precedence
+over gan-web-bluetooth 3.0.2's incomplete Gen4 gyro model list. The library's
+original hardware capability flag remains unchanged in saved evidence.
+
+Recorded i4 history arrives as much as 2.004 seconds after its state snapshot,
+so the bounded recovery wait is now three seconds. All 4,116 turns across the
+three uploaded i4 recordings apply without sequence or state errors. All 26
+completed recorded attempts validate. Recovered turns with missing clocks use
+estimated receive timing; missing history still interrupts at the fixed deadline.
+
+The release carries hardware-trace, orientation and browser-controller regression
+checks, plus a version/cache update. The local recording replay page is not part
+of this deployment. No Firebase rules, Worker runtime, bindings or other site
+features change. Physical pairing in the main timer and independent timing
+accuracy remain outside the recorded/simulated checks.
+
 Implemented 9 November 2026. Select **Settings → Timing input → Smart cube (GAN)**.
 This is a local implementation; no site or production database rules were deployed.
 

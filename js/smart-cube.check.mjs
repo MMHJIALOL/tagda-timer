@@ -96,10 +96,11 @@ test('missing history has a fixed deadline; mismatching pending snapshots cannot
   assert.equal(s.synchronized, false);
 });
 
-test('recorded GAN hardware traces preserve turns and flag the i carry E inconsistencies', async () => {
+test('recorded GAN hardware traces preserve recovered i4 turns and flag the i carry E inconsistencies', async () => {
   for (const [name, moveCount, expectedIssues] of [
     ['gan-i3x3s',935,[]], ['gan-i3',668,[]],
     ['gan-icarry-e',479,[['Cube state mismatch',0],['Cube state mismatch',4]]],
+    ['gan-i4-1',842,[]], ['gan-i4-2',968,[]], ['gan-i4-3',2306,[]],
   ]) {
     const fixture = JSON.parse(await readFile(new URL(`../tools/fixtures/smart-cube/${name}.json`, import.meta.url)));
     const accepted = [], issues = [];
@@ -113,12 +114,17 @@ test('recorded GAN hardware traces preserve turns and flag the i carry E inconsi
     assert.deepEqual(issues, expectedIssues, name);
     assert.equal(stream.pendingSnapshots.size, 0);
     for (const solve of fixture.solves) {
-      const raw = solve.moves.map(([serial,move,cubeTimestamp,localTimestamp])=>({ serial,move,cubeTimestamp,localTimestamp,receivedMonotonic:localTimestamp }));
+      const raw = solve.moves.map(([serial,move,cubeTimestamp,localTimestamp,receivedMonotonic=localTimestamp])=>({ serial,move,cubeTimestamp,localTimestamp,receivedMonotonic,
+        recovered:cubeTimestamp==null||localTimestamp==null }));
       const c = { ...makeCapture(), initialFacelets:solve.initialFacelets, ...timeline(raw,cubeTimestampLinearFit) };
       validateCapture(c);
       // The diagnostic page used event-handler elapsed time for one-turn tests;
       // the canonical first-to-last-turn interval is exactly zero for those.
       assert.ok(Math.abs(c.measuredDurationMs-solve.durationMs)<1, name);
+      if (raw.some(m=>m.recovered)) {
+        assert.equal(c.timingMethod, 'receive-clock', name);
+        assert.equal(c.timingQuality, 'estimated', name);
+      }
     }
   }
 });
@@ -129,6 +135,27 @@ test('hardware names identify tested models without inventing gyro support', () 
     {name:'GAN i carry E',hardwareName:'GANicE2',firmware:'2.9',gyroSupported:false});
   assert.equal(ganCubeInfo({},'GANi3x3s').name, 'GANi3x3s');
   assert.equal(ganCubeInfo({},'Unknown GAN').gyroSupported, null);
+  const hardware={hardwareName:'GANi4',softwareVersion:'1.12',gyroSupported:false};
+  assert.deepEqual(ganCubeInfo(hardware,'GANi4_TEST'),
+    {name:'GAN i4',hardwareName:'GANi4',firmware:'1.12',gyroSupported:false});
+  assert.equal(ganCubeInfo({},'GANi4_TEST').name, 'GAN i4');
+  assert.equal(ganCubeInfo({},'GANi40_TEST').name, 'GANi40_TEST');
+  assert.equal(ganCubeInfo(hardware,'GANi4_TEST',true).gyroSupported, true);
+  assert.equal(hardware.gyroSupported, false, 'retain the original library capability flag');
+});
+
+test('recorded i4 orientation is valid despite the library capability flag', async () => {
+  const {normalizeQuaternion,relativeQuaternion}=await import('./smart-cube-gyro.js');
+  for (const name of ['gan-i4-1','gan-i4-2','gan-i4-3']) {
+    const fixture=JSON.parse(await readFile(new URL(`../tools/fixtures/smart-cube/${name}.json`,import.meta.url)));
+    assert.equal(fixture.hardware.gyroSupported,false);
+    assert.ok(fixture.gyro.length>=125);
+    const quaternions=fixture.gyro.map(([,x,y,z,w])=>normalizeQuaternion({x,y,z,w}));
+    assert.ok(quaternions.every(Boolean));
+    const reference=quaternions[0];
+    for (const axis of ['x','y','z']) assert.ok(quaternions.some(q=>Math.abs(relativeQuaternion(reference,q)[axis])>Math.sin(10*Math.PI/180)),`${name}: rotation on ${axis}`);
+    assert.equal(ganCubeInfo(fixture.hardware,'',true).gyroSupported,true);
+  }
 });
 test('200 complete captures validate and deterministic bounded seeks match the original engine', () => {
   for(let n=0;n<200;n++) {

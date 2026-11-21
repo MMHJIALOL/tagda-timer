@@ -7,16 +7,20 @@ export const MAX_MOVES = 4000;
 export const MAX_RAW = 5000;
 export const MAX_BYTES = 1800000;
 // Some GAN firmware delivers a state notification before the matching turns.
-// The i carry E hardware trace includes a 1.59 s delay. Keep the turn stream
-// canonical while allowing a bounded window for that history to arrive.
-export const SNAPSHOT_WAIT_MS = 2000;
-export function ganCubeInfo(hardware = {}, deviceName = '') {
+// Hardware traces include 1.59 s (i carry E) and 2.004 s (i4) recovery delays.
+// Allow three seconds for recovered history, including notification jitter.
+// Keep the turn stream canonical while allowing a bounded recovery window.
+export const SNAPSHOT_WAIT_MS = 3000;
+export function ganCubeInfo(hardware = {}, deviceName = '', gyroObserved = false) {
   const hardwareName = hardware?.hardwareName || '';
   const name = /^GANicE2(?:_|$)/i.test(hardwareName || deviceName) ? 'GAN i carry E'
     : /^GANi30Mc(?:_|$)/i.test(hardwareName || deviceName) ? 'GAN356 i3'
+    : /^GANi4(?:_|$)/i.test(hardwareName || deviceName) ? 'GAN i4'
     : hardwareName || deviceName || 'GAN';
   return { name, hardwareName, firmware: hardware?.softwareVersion || null,
-    gyroSupported: typeof hardware?.gyroSupported === 'boolean' ? hardware.gyroSupported : null };
+    // Gen4's library model list omits the i4, which still sends valid GYRO data.
+    // Actual samples take precedence without rewriting the hardware evidence.
+    gyroSupported: gyroObserved ? true : typeof hardware?.gyroSupported === 'boolean' ? hardware.gyroSupported : null };
 }
 export const turnState = (f, move) => {
   if (!/^[URFDLB][2']?$/.test(move)) throw new Error('Unsupported turn');
