@@ -7,6 +7,7 @@ const normalize = value => String(value || '').normalize('NFD')
 // Attach related words to specific options, so a broad synonym does not
 // accidentally make every option in its section match.
 const ALIASES = [
+  ['Bluetooth cube', 'smart cube connect pair pairing gan wireless device hardware battery bluetooth cubo conectar'],
   ['WCA inspection', 'countdown preparation warmup pre solve 15 seconds penalty'],
   ['Callouts', 'sound audio voice beep warning alert inspection countdown sonido voz pitido aviso'],
   ['Where times come from', 'input manual entry typing keyboard spacebar hardware stackmat microphone aux virtual cube'],

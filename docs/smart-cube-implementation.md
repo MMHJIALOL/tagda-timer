@@ -1,5 +1,34 @@
 # Main-timer smart cubes
 
+## Connection rows — 21 November 2026
+
+The Cube panel (now titled **Your cubes**) and **Settings → Bluetooth cube**
+share a highlighted connection row. Smart cubes have moved out of the general
+timing-input chips. Both rows connect through the existing GAN controller and
+show the device name, battery, Configure and Disconnect. A connected device on
+another timing input offers **Use cube**. Pairing changes the timing input only
+after an initial cube state is received; cancelling keeps the previous input.
+Disconnecting through either row returns smart cube input to the keyboard.
+
+Opening a row prepares the protocol before enabling Connect cube, so the click
+opens the browser chooser with user activation intact. Connection state,
+hardware labels and battery updates reach both panels without a redraw.
+Drawer cleanup removes connection listeners and cancels stale gear rendering.
+
+Local hardware test: open `http://127.0.0.1:5388/` in Chrome or Edge, choose
+**Cube → Connect cube** or **Settings → Bluetooth cube → Connect cube**, then
+select the GAN cube in the native Bluetooth picker. Close the drawer, apply the
+displayed 3×3 scramble and solve. This URL serves the real timer and protocol;
+`smart-cube-placement-demo.html` remains a simulated UI study.
+
+Validation: `npm run test:smart-cube-connection-ui` checks both entry points,
+chooser activation, cancellation, automatic input selection, device/battery
+updates, Configure, Use cube, Disconnect, search, subscription cleanup, phone
+widths and an unsupported browser. Browser pairing is mocked in this check.
+`test:smart-cube`, `test:smart-cube-ui` and `test:smart-cube-demo` cover the existing
+turn recording, recovery, replay and responsive behavior. Physical pairing is
+left for the user's hardware test. This UI ships as release v173.
+
 ## GAN i4 release — v172, 21 November 2026
 
 This release is based on the verified v171 production checkout. It adds the

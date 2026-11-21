@@ -344,6 +344,12 @@ export class SmartCubeController {
       this.reportedConnection = connected;
       this.host.dispatchEvent(new CustomEvent('smart-cube-connection-change', { bubbles:true, detail:{connected} }));
     }
+    const connectionStatus = JSON.stringify([this.connectionState, !!this.protocol, !!this.connection,
+      this.deviceInfo.name, this.battery, this.preferences().inputMode]);
+    if (this.reportedStatus !== connectionStatus) {
+      this.reportedStatus = connectionStatus;
+      this.host.dispatchEvent(new CustomEvent('smart-cube-status-change', { bubbles:true }));
+    }
     this.armButton.disabled=this.attemptState!=='scramble matched'||!this.allowed;this.armButton.hidden=this.armButton.disabled;
     this.cancelButton.disabled=!this.active;this.cancelButton.hidden=!this.active;
     highlightScramble(this.scrambleHost, this.guide, this.allowed && !!this.guide);

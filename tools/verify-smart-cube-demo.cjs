@@ -61,7 +61,7 @@ const os = require('node:os');
     console.log('PASS: saved gyro seeking and toggle, four checked phases, Sune/T-perm matches and full reconstruction');
 
     await frame.locator('#btn-settings').click();
-    const smartGroup = frame.locator('#drawer-body .group').filter({has:frame.getByRole('heading',{name:'Smart cube',exact:true})});
+    const smartGroup = frame.locator('#drawer-body .group').filter({has:frame.getByRole('heading',{name:'Bluetooth cube',exact:true})});
     await smartGroup.getByRole('button',{name:'Configure',exact:true}).click();
     await frame.getByRole('heading',{name:'Smart cube',exact:true}).waitFor();
     const size = frame.getByRole('slider',{name:'Cube size',exact:true});
@@ -168,7 +168,8 @@ const os = require('node:os');
     await frame.getByRole('slider',{name:'Cube size',exact:true}).waitFor();
     await frame.evaluate(()=>smartCubeDemo.controller.disconnect());
     await frame.getByRole('searchbox',{name:'Search settings',exact:true}).waitFor();
-    assert.equal(await frame.locator('#drawer-body .group').filter({has:frame.getByRole('heading',{name:'Smart cube',exact:true})}).isVisible(),false);
+    assert.equal(await frame.locator('#drawer-body .smart-device-row').isVisible(),true);
+    assert.equal(await frame.locator('#drawer-body .smart-device-row').getByRole('button',{name:'Configure',exact:true}).isVisible(),false);
     assert.deepEqual(errors,[]);
     console.log('PASS: smart-cube preferences hide on disconnect; no uncaught browser errors');
   } finally { await browser.close(); }

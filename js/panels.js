@@ -149,6 +149,12 @@ function chips(options, value, onChange) {
     });
     wrap.append(c);
   }
+  wrap.setValue = value => {
+    [...wrap.querySelectorAll('button.chip')].forEach((button, index) => {
+      button.classList.toggle('on', (options[index].value ?? options[index]) === value);
+    });
+    place(wrap.querySelector('.chip.on'), true);
+  };
   new ResizeObserver(() => place(wrap.querySelector('.chip.on'), true)).observe(wrap);
   return wrap;
 }
@@ -1093,6 +1099,73 @@ function puzzleColorControls(app) {
   return { element, dispose: () => { disposed = true; revision++; } };
 }
 
+// The same real Bluetooth connection controls in Settings and Your cubes.
+function bluetoothCubeRow(app) {
+  let disposed = false, preparing = true, failure = '';
+  const icon = el('span', { class:'smart-device-icon', 'aria-hidden':'true', html:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="m7 7 10 10-5 4V3l5 4L7 17"/></svg>' });
+  const name = el('span', { class:'smart-device-name', text:t('Connect smart cube') });
+  const detail = el('span', { class:'sub', text:t('Pair a GAN cube via Bluetooth · standard 3×3 practice') });
+  const status = el('span', { class:'smart-device-state', role:'status', 'aria-live':'polite' });
+  const connect = el('button', { type:'button', class:'smart-device-connect', text:t('Connect cube'), disabled:true });
+  const configure = el('button', { type:'button', class:'ghost-btn sm', text:t('Configure'), hidden:true,
+    onclick:() => app.openSmartCubeSettings() });
+  const disconnect = el('button', { type:'button', class:'ghost-btn sm', text:t('Disconnect'), hidden:true,
+    onclick:() => run(() => app.disconnectSmartCube()) });
+  const actions = el('div', { class:'smart-device-actions' }, connect, configure, disconnect);
+  const element = el('div', { class:'row smart-device-row', dataset:{searchLabel:'Bluetooth cube'} },
+    icon, el('div', { class:'lbl' }, name, detail, status), actions);
+
+  function refresh() {
+    if (disposed) return;
+    const controller = app.smartCubeController?.();
+    const state = controller?.connectionState;
+    const connected = state === 'connected';
+    const attached = !!controller?.connection;
+    const busy = ['requesting permission','connecting','reading initial state'].includes(state);
+    const unsupported = !navigator.bluetooth || !isSecureContext || state === 'unsupported';
+    element.dataset.connected = String(connected);
+    element.setAttribute('aria-busy', String(preparing || busy));
+    name.textContent = connected ? controller.deviceInfo.name : t('Connect smart cube');
+    detail.textContent = unsupported ? t('Bluetooth needs Chrome or Edge on localhost or HTTPS.') :
+      connected ? [controller.battery == null ? t('Bluetooth connected') : t('{n}% battery', {n:controller.battery}),
+        app.settings.inputMode === 'smart' ? t('Smart cube input') : t('Another timing input is selected')].join(' · ') :
+      t('Pair a GAN cube via Bluetooth · standard 3×3 practice');
+    status.textContent = failure || (preparing ? t('Preparing Bluetooth…') : unsupported ? t('Bluetooth unavailable') :
+      connected ? t('Connected') : busy ? t(state === 'requesting permission' ? 'Choose your cube in the Bluetooth picker…' : 'Connecting…') :
+      state === 'chooser cancelled' ? t('Pairing cancelled. You can try again.') :
+      ['connection error','permission denied','initial state missing'].includes(state) ? t(state) : t('Not connected'));
+    connect.hidden = attached && (!connected || app.settings.inputMode === 'smart');
+    connect.textContent = t(connected ? 'Use cube' : failure ? 'Retry' : 'Connect cube');
+    connect.disabled = preparing || busy || unsupported || (!controller?.protocol && !failure);
+    configure.hidden = !connected;
+    disconnect.hidden = !attached;
+    disconnect.disabled = false;
+  }
+  function run(action) {
+    failure = '';
+    try { Promise.resolve(action()).catch(error => { if (!disposed) { failure = error.message; refresh(); } }); }
+    catch (error) { failure = error.message; }
+    refresh();
+  }
+  function prepare() {
+    preparing = true; failure = ''; refresh();
+    Promise.resolve().then(() => app.prepareSmartCube()).then(controller => {
+      if (!controller.protocol) throw new Error(t('Bluetooth code could not load. Retry the connection.'));
+    }).catch(error => { if (!disposed) failure = error.message; }).finally(() => {
+      preparing = false; refresh();
+    });
+  }
+  connect.addEventListener('click', () => {
+    if (failure) { prepare(); return; }
+    // Keep this synchronous: the controller opens the native Bluetooth picker.
+    run(() => app.smartCubeController()?.connection ? app.setSetting('inputMode', 'smart') : app.connectSmartCube());
+  });
+  document.addEventListener('smart-cube-status-change', refresh);
+  prepare();
+  return { element, dispose:() => { disposed = true; document.removeEventListener('smart-cube-status-change', refresh); } };
+}
+
 export function buildSmartCubeSettings(app) {
   return body => {
     const controller = app.smartCubeController?.();
@@ -1146,12 +1219,18 @@ export function buildSettings(app, searchQuery = '') {
     const health = buildDataHealthRow(() => openDataHealth(app));
     const S = app.settings;
     const set = (k, v) => app.setSetting(k, v);
-    const smartSettings = group(t('Smart cube'), row(t('Cube preview'),
-      el('button', { class:'ghost-btn', text:t('Configure'), onclick:() => openDrawer('Settings', buildSmartCubeSettings(app)) }),
-      t('size, rear stickers and device controls')));
-    const syncSmartSettings = () => { smartSettings.hidden = app.smartCubeController?.()?.connectionState !== 'connected'; };
-    syncSmartSettings();
-    document.addEventListener('smart-cube-connection-change', syncSmartSettings);
+    const bluetooth = bluetoothCubeRow(app);
+    const timingInputs = chips([
+      { value:'timer', label:t('Keyboard') },
+      { value:'manual', label:t('Type them') },
+      { value:'stackmat', label:t('Stackmat (aux)') },
+      { value:'virtual', label:t('Virtual cube') },
+    ], S.inputMode || 'timer', value => {
+      set('inputMode', value);
+      openDrawer('Settings', buildSettings(app, searchQuery));
+    });
+    const syncTimingInput = () => timingInputs.setValue(S.inputMode || 'timer');
+    document.addEventListener('smart-cube-status-change', syncTimingInput);
 
     /* "Confirm misfires" and how short a misfire is. The slider is greyed out
        while the toggle is off, and the toggle's own line reads its value. */
@@ -1191,17 +1270,7 @@ export function buildSettings(app, searchQuery = '') {
       ),
 
       group(t('Timing input'),
-        row(t('Where times come from'), chips([
-          { value: 'timer', label: t('Keyboard') },
-          { value: 'manual', label: t('Type them') },
-          { value: 'stackmat', label: t('Stackmat (aux)') },
-          { value: 'virtual', label: t('Virtual cube') },
-          { value: 'smart', label: t('Smart cube (GAN)') },
-        ], S.inputMode || 'timer', (v) => {
-          set('inputMode', v);
-          // The note under this row is different for every mode, so redraw.
-          openDrawer('Settings', buildSettings(app, searchQuery));
-        }),
+        row(t('Where times come from'), timingInputs,
           t('the spacebar, a time you type in, a Stackmat, or a cube you turn with the keyboard')),
         S.inputMode === 'virtual'
           ? el('div', { class: 'hint-note', html:
@@ -1227,7 +1296,7 @@ export function buildSettings(app, searchQuery = '') {
             t('<b>Bluetooth smart timers are not supported.</b> Every model (GAN, QiYi, MoYu) speaks its own encrypted protocol, and shipping an implementation that has never been near the hardware would just be a button that fails silently. The aux route above works with any Stackmat, which is what the Bluetooth timers emulate anyway.') }),
       ),
 
-      smartSettings,
+      group(t('Bluetooth cube'), bluetooth.element),
 
       group(t('Timer'),
         row(t('Solve animations'), toggle(S.solveAnimations !== false, v => {
@@ -1440,7 +1509,7 @@ export function buildSettings(app, searchQuery = '') {
       ),
     );
     mountSettingsSearch(body, { query: searchQuery, onQuery: value => { searchQuery = value; } });
-    return () => { document.removeEventListener('smart-cube-connection-change', syncSmartSettings); health.dispose(); disposeAccountRow(); };
+    return () => { bluetooth.dispose(); document.removeEventListener('smart-cube-status-change', syncTimingInput); health.dispose(); disposeAccountRow(); };
   };
 }
 
@@ -1534,122 +1603,131 @@ function gearForm(draft, seeds, saveLabel, after) {
 }
 
 export function buildGear(app) {
-  return async (body) => {
-    const redraw = () => openDrawer('Gear', buildGear(app), { wide: true });
+  return (body) => {
+    const bluetooth = bluetoothCubeRow(app);
+    body.append(group(t('Bluetooth cube'), bluetooth.element));
+    let disposed = false;
+    const build = async () => {
+      const redraw = () => openDrawer('Your cubes', buildGear(app), { wide: true });
 
-    const seeds = await loadSeeds();
-    let owned = [];
-    try { owned = await Gear.all(); }
-    catch (err) {
-      console.warn('[gear] collection unavailable', err);
-      body.append(el('div', { class: 'hint-note', text:
-        t('Your gear could not be read from this browser’s storage.') }));
-      return;
-    }
-    const activeId = app.gear?.activeId ?? null;
-
-    body.append(el('div', { class: 'hint-note', html:
-      t('The cube you mark <b>active</b> is tagged onto every solve you record from then on. Past solves are left alone — they were done on whatever they were done on, and back-filling them would invent the answer the statistics are supposed to give you. Once you own a cube, the trend chart in <b>Statistics</b> can be filtered to it, with a dashed line wherever you logged a change.') }));
-
-    /* The log for one cube, redrawn on its own so adding an entry does not
-       tear down and rebuild every card in the drawer. */
-    async function renderLog(g, host) {
-      host.innerHTML = '';
-      let log = [];
-      try { log = await GearLog.byGear(g.id); }
-      catch (err) { console.warn('[gear] log unavailable', err); return; }
-
-      const kind = select(Object.entries(LOG_KINDS).map(([value, label]) => ({ value, label })), 'lubed', () => {});
-      const text = el('input', { class: 'inp', placeholder: t('what changed (optional)') });
-      host.append(el('div', { class: 'row gear-log-add' }, kind, text, el('button', {
-        class: 'ghost-btn', text: t('log it'),
-        onclick: async () => {
-          await GearLog.put(newLogEntry(g.id, { kind: kind.value, text: text.value.trim() }));
-          text.value = '';
-          renderLog(g, host);
-        },
-      })));
-
-      for (const e of log) {
-        host.append(el('div', { class: 'row gear-log-row' },
-          el('div', { class: 'lbl' },
-            el('span', { text: `${t(LOG_KINDS[e.kind] || e.kind)}${e.text ? ' — ' + e.text : ''}` }),
-            el('span', { class: 'sub', text: fmtDate(e.at) })),
-          el('button', {
-            class: 'chip', text: 'remove',
-            onclick: async () => { await GearLog.del(e.id); renderLog(g, host); },
-          })));
+      const seeds = await loadSeeds();
+      if (disposed) return;
+      let owned = [];
+      try { owned = await Gear.all(); }
+      catch (err) {
+        console.warn('[gear] collection unavailable', err);
+        body.append(el('div', { class: 'hint-note', text:
+          t('Your gear could not be read from this browser’s storage.') }));
+        return;
       }
-    }
+      if (disposed) return;
+      const activeId = app.gear?.activeId ?? null;
 
-    function editCube(g) {
-      openDrawer(t('Gear — {cube}', { cube: gearLabel(g) }), (b) => {
-        b.append(
-          el('div', { class: 'row' }, el('div', { class: 'lbl' }),
-            el('button', { class: 'ghost-btn', text: t('back to gear'), onclick: redraw })),
-          // Renaming the cube you are on has to move the topbar label with it.
-          gearForm({ ...g }, seeds, t('Save changes'), (saved) => {
-            if (app.gear?.activeId === saved.id) app.setGearLabel?.(gearLabel(saved));
-            redraw();
-          }),
-        );
-      }, { wide: true });
-    }
+      body.append(el('div', { class: 'hint-note', html:
+        t('The cube you mark <b>active</b> is tagged onto every solve you record from then on. Past solves are left alone — they were done on whatever they were done on, and back-filling them would invent the answer the statistics are supposed to give you. Once you own a cube, the trend chart in <b>Statistics</b> can be filtered to it, with a dashed line wherever you logged a change.') }));
 
-    const cards = el('div', { class: 'gear-list' });
-    if (!owned.length) cards.append(el('div', { class: 'sub', text: t('No cubes yet. Add one below.') }));
+      /* The log for one cube, redrawn on its own so adding an entry does not
+         tear down and rebuild every card in the drawer. */
+      async function renderLog(g, host) {
+        host.innerHTML = '';
+        let log = [];
+        try { log = await GearLog.byGear(g.id); }
+        catch (err) { console.warn('[gear] log unavailable', err); return; }
 
-    for (const g of owned) {
-      const isActive = g.id === activeId;
-      const bits = [
-        EVENTS[g.event]?.short || g.event,
-        [g.brand, g.model].filter(Boolean).join(' '),
-        g.tension ? t('tension {v}', { v: g.tension }) : '',
-        [g.lubeBrand, g.lube].filter(Boolean).join(' '),
-      ].filter(Boolean).join(' · ');
+        const kind = select(Object.entries(LOG_KINDS).map(([value, label]) => ({ value, label })), 'lubed', () => {});
+        const text = el('input', { class: 'inp', placeholder: t('what changed (optional)') });
+        host.append(el('div', { class: 'row gear-log-add' }, kind, text, el('button', {
+          class: 'ghost-btn', text: t('log it'),
+          onclick: async () => {
+            await GearLog.put(newLogEntry(g.id, { kind: kind.value, text: text.value.trim() }));
+            text.value = '';
+            renderLog(g, host);
+          },
+        })));
 
-      const logHost = el('div', { class: 'gear-log' });
-      cards.append(el('div', { class: 'group gear-card' },
-        el('div', { class: 'row' },
-          el('div', { class: 'lbl' },
-            el('span', { text: gearLabel(g) + (isActive ? t('  ·  active') : '') }),
-            el('span', { class: 'sub', text: bits })),
-          el('div', { class: 'chips' },
+        for (const e of log) {
+          host.append(el('div', { class: 'row gear-log-row' },
+            el('div', { class: 'lbl' },
+              el('span', { text: `${t(LOG_KINDS[e.kind] || e.kind)}${e.text ? ' — ' + e.text : ''}` }),
+              el('span', { class: 'sub', text: fmtDate(e.at) })),
             el('button', {
-              class: `chip ${isActive ? 'on' : ''}`,
-              text: isActive ? 'active' : t('make active'),
-              onclick: async () => {
-                const next = isActive ? null : g.id;
-                await setActiveGearId(next);
-                app.gear = { ...(app.gear || {}), activeId: next };
-                app.setGearLabel?.(next ? gearLabel(g) : null);
-                toast(next ? t('Solves are now tagged {cube}', { cube: gearLabel(g) }) : t('Solves are no longer tagged'),
-                  { kind: 'good' });
-                redraw();
-              },
-            }),
-            el('button', { class: 'chip', text: 'edit', onclick: () => editCube(g) }),
-            el('button', {
-              class: 'chip', text: 'delete',
-              onclick: async () => {
-                if (!await confirmToast(`Delete ${gearLabel(g)} and its log?`, 'delete')) return;
-                await Gear.del(g.id);
-                if (app.gear?.activeId === g.id) { app.gear.activeId = null; app.setGearLabel?.(null); }
-                /* The solves keep their cubeId. They really were done on it,
-                   and a filter that quietly forgets that is worse than one
-                   that offers a cube you no longer own. */
-                toast('Cube deleted — the solves it recorded are untouched');
-                redraw();
-              },
-            }),
-          )),
-        g.notes ? el('div', { class: 'sub', text: g.notes }) : null,
-        logHost));
-      renderLog(g, logHost);
-    }
+              class: 'chip', text: 'remove',
+              onclick: async () => { await GearLog.del(e.id); renderLog(g, host); },
+            })));
+        }
+      }
 
-    body.append(group(t('Your cubes'), cards));
-    body.append(gearForm(newGear({}), seeds, t('Add a cube'), redraw));
+      function editCube(g) {
+        openDrawer(t('Gear — {cube}', { cube: gearLabel(g) }), (b) => {
+          b.append(
+            el('div', { class: 'row' }, el('div', { class: 'lbl' }),
+              el('button', { class: 'ghost-btn', text: t('back to gear'), onclick: redraw })),
+            // Renaming the cube you are on has to move the topbar label with it.
+            gearForm({ ...g }, seeds, t('Save changes'), (saved) => {
+              if (app.gear?.activeId === saved.id) app.setGearLabel?.(gearLabel(saved));
+              redraw();
+            }),
+          );
+        }, { wide: true });
+      }
+
+      const cards = el('div', { class: 'gear-list' });
+      if (!owned.length) cards.append(el('div', { class: 'sub', text: t('No cubes yet. Add one below.') }));
+
+      for (const g of owned) {
+        const isActive = g.id === activeId;
+        const bits = [
+          EVENTS[g.event]?.short || g.event,
+          [g.brand, g.model].filter(Boolean).join(' '),
+          g.tension ? t('tension {v}', { v: g.tension }) : '',
+          [g.lubeBrand, g.lube].filter(Boolean).join(' '),
+        ].filter(Boolean).join(' · ');
+
+        const logHost = el('div', { class: 'gear-log' });
+        cards.append(el('div', { class: 'group gear-card' },
+          el('div', { class: 'row' },
+            el('div', { class: 'lbl' },
+              el('span', { text: gearLabel(g) + (isActive ? t('  ·  active') : '') }),
+              el('span', { class: 'sub', text: bits })),
+            el('div', { class: 'chips' },
+              el('button', {
+                class: `chip ${isActive ? 'on' : ''}`,
+                text: isActive ? 'active' : t('make active'),
+                onclick: async () => {
+                  const next = isActive ? null : g.id;
+                  await setActiveGearId(next);
+                  app.gear = { ...(app.gear || {}), activeId: next };
+                  app.setGearLabel?.(next ? gearLabel(g) : null);
+                  toast(next ? t('Solves are now tagged {cube}', { cube: gearLabel(g) }) : t('Solves are no longer tagged'),
+                    { kind: 'good' });
+                  redraw();
+                },
+              }),
+              el('button', { class: 'chip', text: 'edit', onclick: () => editCube(g) }),
+              el('button', {
+                class: 'chip', text: 'delete',
+                onclick: async () => {
+                  if (!await confirmToast(`Delete ${gearLabel(g)} and its log?`, 'delete')) return;
+                  await Gear.del(g.id);
+                  if (app.gear?.activeId === g.id) { app.gear.activeId = null; app.setGearLabel?.(null); }
+                  /* The solves keep their cubeId. They really were done on it,
+                     and a filter that quietly forgets that is worse than one
+                     that offers a cube you no longer own. */
+                  toast('Cube deleted — the solves it recorded are untouched');
+                  redraw();
+                },
+              }),
+            )),
+          g.notes ? el('div', { class: 'sub', text: g.notes }) : null,
+          logHost));
+        renderLog(g, logHost);
+      }
+
+      body.append(group(t('Your cubes'), cards));
+      body.append(gearForm(newGear({}), seeds, t('Add a cube'), redraw));
+    };
+    build().catch(error => { if (!disposed) toast(error.message, {kind:'bad'}); });
+    return () => { disposed = true; bluetooth.dispose(); };
   };
 }
 

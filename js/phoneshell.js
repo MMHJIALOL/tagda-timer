@@ -422,7 +422,7 @@ function openEventSheet() {
       { label: t('Scrambles'), value: mode.name, chevron: true, keep: true, onSelect: openModeSheet },
       // The top bar's label reads "Cube" until one is marked active; here that is "None".
       { label: t('Cube'), value: A.gear?.activeId ? ($('#gear-label')?.textContent || '') : t('None'), chevron: true,
-        onSelect: () => X.openPanel('Gear', 'buildGear', { wide: true }) },
+        onSelect: () => X.openPanel('Your cubes', 'buildGear', { wide: true }) },
     ], () => sheet);
     const counts = A.sessionCounts || new Map();
     const sessions = sheetRows([
@@ -877,7 +877,7 @@ function renderMore() {
   const cs = getComputedStyle(document.documentElement);
   const swatches = el('span', { class: 'ph-swatches', 'aria-hidden': 'true' },
     ...['--accent', '--accent-2', '--surface'].map(v => el('i', { style: `background:${cs.getPropertyValue(v).trim()}` })));
-  const input = { timer: t('Touch'), manual: t('Type them'), stackmat: t('Stackmat (aux)'), virtual: t('Virtual cube') }[S.inputMode || 'timer'] || t('Touch');
+  const input = { timer: t('Touch'), manual: t('Type them'), stackmat: t('Stackmat (aux)'), virtual: t('Virtual cube'), smart:t('Smart cube') }[S.inputMode || 'timer'] || t('Touch');
   const gear = A.gear?.activeId ? ($('#gear-label')?.textContent || '') : t('None');
   const row = (icon, label, value, onclick) => el('button', { class: 'ph-row', type: 'button', onclick },
     el('span', { class: 'ph-row-ico', html: icon, 'aria-hidden': 'true' }),
@@ -892,7 +892,7 @@ function renderMore() {
       row(I.keyboard, t('Timing input'), input, () => openSettingsAt(t('Timing input'))),
       row(I.gear, t('Settings'), null, () => X.click('#btn-settings'))),
     group(
-      row(I.recon, t('Your cubes'), gear, () => X.openPanel('Gear', 'buildGear', { wide: true })),
+      row(I.recon, t('Your cubes'), gear, () => X.openPanel('Your cubes', 'buildGear', { wide: true })),
       row(I.spotify, t('Spotify'), X.spotifyLinked() ? t('Linked') : t('Not linked'), () => X.click('#btn-spotify'))),
     group(
       row(I.download, t('Import and export'), null, () => openSettingsAt(t('Data'))),

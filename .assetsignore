@@ -17,3 +17,7 @@ vercel-mover
 .dev.vars
 # Hardware regression recordings stay in the source checkout.
 tools/fixtures/smart-cube/gan-i4-*.json
+
+# Connection UI browser checks and screenshots are source-only.
+docs/smart-cube-connection-*
+tools/verify-smart-cube-connection-ui.cjs

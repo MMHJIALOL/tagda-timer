@@ -1911,7 +1911,7 @@ const ANN_OPEN = {
   appearance: () => openPanel('Appearance', 'buildAppearance', undefined, app),
   settings: () => openPanel('Settings', 'buildSettings', undefined, app),
   spotify: () => openPanel('Spotify', 'buildSpotify', undefined, app),
-  gear: () => openPanel('Gear', 'buildGear', { wide: true }, app),
+  gear: () => openPanel('Your cubes', 'buildGear', { wide: true }, app),
   about: () => openPanel('About', 'buildAbout', undefined, app),
 };
 /** Each one's button, for a card to point at. */
@@ -4596,6 +4596,35 @@ const loadSmartCube = lazy(async () => {
   return smartCube;
 });
 app.smartCubeController = () => smartCube;
+// Warm the protocol when a connection row opens. The Connect click can then
+// call requestDevice immediately, while its browser activation is still live.
+app.prepareSmartCube = async () => {
+  const controller = await loadSmartCube();
+  if (!controller.protocol) await controller.load();
+  return controller;
+};
+let smartCubeInputRequested = false;
+document.addEventListener('smart-cube-connection-change', event => {
+  if (!smartCubeInputRequested || !event.detail.connected) return;
+  smartCubeInputRequested = false;
+  if (app.settings.inputMode !== 'smart') app.setSetting('inputMode', 'smart');
+});
+app.connectSmartCube = () => {
+  if (!smartCube?.protocol) return Promise.reject(new Error(t('Bluetooth is still loading. Try again.')));
+  smartCubeInputRequested = true;
+  return smartCube.connect().finally(() => {
+    // FACELETS can arrive after the initial command resolves. Keep the intent
+    // until that verified state arrives, or until pairing has failed/cancelled.
+    if (!smartCube.connection || smartCube.connectionState === 'connected') smartCubeInputRequested = false;
+  });
+};
+app.disconnectSmartCube = () => {
+  if (!smartCube) return;
+  smartCubeInputRequested = false;
+  const pending = smartCube.disconnect();
+  if (app.settings.inputMode === 'smart') smartCube.switchInput();
+  return pending;
+};
 app.openSmartCubeSettings = () => openPanel('Settings', 'buildSmartCubeSettings', undefined, app);
 app.openSmartAnalysis = async solve => {
   try {
@@ -5564,6 +5593,7 @@ app.applySettingsPreset = async (id) => {
 };
 
 app.setSetting = (k, v) => {
+  if (k === 'inputMode') smartCubeInputRequested = false;
   if (k === 'inspection') chooseInspection(app.settings, v);
   else app.settings[k] = v;
   const saved = persist({ immediate: k === 'inspection' || ['smartCubeSize','smartCubeHints','smartCubeNet','smartCubeGyro'].includes(k) });
@@ -6534,7 +6564,7 @@ function wireChrome() {
   }));
   $('#btn-xp1').addEventListener('click', () => openXp1());
   $('#btn-stats').addEventListener('click', () => openPanel('Statistics', 'buildStats', { wide: true }, app));
-  $('#btn-gear').addEventListener('click', () => openPanel('Gear', 'buildGear', { wide: true }, app));
+  $('#btn-gear').addEventListener('click', () => openPanel('Your cubes', 'buildGear', { wide: true }, app));
   $('#btn-theme').addEventListener('click', () => openPanel('Appearance', 'buildAppearance', undefined, app));
   $('#btn-settings').addEventListener('click', () => openPanel('Settings', 'buildSettings', undefined, app));
   $('#btn-spotify').addEventListener('click', () => openPanel('Spotify', 'buildSpotify', undefined, app));

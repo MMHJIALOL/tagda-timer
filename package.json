@@ -18,6 +18,7 @@
     "test:subsets": "node tools/verify-subsets.mjs",
     "build:smart-cube": "node tools/build-smart-cube.mjs",
     "test:smart-cube": "node --test js/smart-cube.check.mjs",
+    "test:smart-cube-connection-ui": "node tools/verify-smart-cube-connection-ui.cjs",
     "test:smart-cube-ui": "node tools/verify-smart-cube.cjs",
     "test:smart-cube-demo": "node tools/verify-smart-cube-demo.cjs",
     "test:smart-cube-sync": "node tools/verify-smart-cube-sync.mjs",
