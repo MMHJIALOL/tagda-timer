@@ -23,6 +23,14 @@ suite, connection UI suite and offline recording suite pass. Physical completed
 solve testing of the new cube remains pending; the release does not claim that
 every GAN model or firmware has been physically verified.
 
+Deployed main-timer v175, Cloudflare version
+`41d3608f-9495-4073-91c3-322c5a5d6b9f`, from commit `578114d`.
+Live version, controller, panels, core, protocol bundle and service worker match
+the tested files. The live main-controller browser test also passes with mocked
+BLE transport. The existing AdSense verification tag remains singular, the lab
+continues serving sync 2, and the raw fixtures/lab worker source return 404 from
+the main asset deployment. No database rules or stored user data changed.
+
 ## i Carry 4 raw-packet retest — 23 November 2026
 
 Three new reports from 22 November, 23:03–23:26 IST, identify the first patch
