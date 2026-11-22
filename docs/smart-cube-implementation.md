@@ -1,5 +1,28 @@
 # Main-timer smart cubes
 
+## GAN i Carry 4 main-timer release — 23 November 2026
+
+Version 175 adds the corrected GANic4 adapter to the main timer. It retains the
+existing GAN Gen2/3/4 connections and identifies GANic4 separately from GANi4.
+Both pairing rows explain the slow-turn-and-undo setup while waiting for the
+first confirmed state. The device settings label the model as early support.
+Setup turns remain in stream evidence but cannot enter a timed solve. Hardware
+calibration still requires the existing physical-solved confirmation.
+
+The release is based on production v174, commit `d87d77e`. The live AdSense
+account meta tag is preserved. The service-worker cache and asset version change
+together, including the self-contained Bluetooth bundle. The separate lab worker
+and hardware fixtures are excluded from main-site static assets.
+
+`test:gan-carry4-main` exercises real controller pairing from Settings, initial
+matching scramble/inspection, setup-turn exclusion, native browser timers,
+counter wrap, exact captured moves, model metadata, calibration cancellation,
+keyboard fallback, persistent reload and replay at a 390-pixel viewport. The 25
+smart-cube unit tests, actual raw-packet Chrome replay, existing main-cube browser
+suite, connection UI suite and offline recording suite pass. Physical completed
+solve testing of the new cube remains pending; the release does not claim that
+every GAN model or firmware has been physically verified.
+
 ## i Carry 4 raw-packet retest — 23 November 2026
 
 Three new reports from 22 November, 23:03–23:26 IST, identify the first patch
@@ -24,7 +47,7 @@ byte-for-byte comparison, only decoded i4 events.
 native timers. All 40 turns are emitted in sequence, with no state discrepancies,
 invented history requests or adapter-driven disconnects. These captures contain
 turn exercises rather than completed solves, so the real-cube solve test remains
-open. Main-timer rollout remains pending that validation.
+open. Version 175 subsequently enabled the adapter as early support in the main timer.
 
 All three captures end at the facelets for R-prime from solved. This is reported
 by the cube itself and agrees with the received turns. The owner recalls an older

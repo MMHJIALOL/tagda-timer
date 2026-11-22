@@ -22,6 +22,7 @@
     "test:smart-cube": "node --test js/smart-cube.check.mjs js/gan-carry4.check.mjs",
     "test:gan-carry4": "node --test js/gan-carry4.check.mjs",
     "test:gan-carry4-browser": "node tools/verify-gan-carry4-browser.mjs",
+    "test:gan-carry4-main": "node tools/verify-gan-carry4-main.mjs",
     "test:smart-cube-connection-ui": "node tools/verify-smart-cube-connection-ui.cjs",
     "test:smart-cube-ui": "node tools/verify-smart-cube.cjs",
     "test:smart-cube-demo": "node tools/verify-smart-cube-demo.cjs",

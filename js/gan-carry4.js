@@ -102,7 +102,8 @@ export class Carry4State {
     this.serial = serial; this.remember(serial, this.state);
     // Hold turns behind an unconfirmed snapshot. A possibly solved turn cannot
     // finish a timer while contradictory or ahead-of-turn evidence is pending.
-    if (this.ready && !this.pending.size) this.publish(move); else this.queued.push(move);
+    if (this.ready && !this.pending.size) this.publish(move);
+    else this.queued.push(this.ready ? move : { ...move, connectionSetup: true });
     for (const [facelets, pending] of this.pending) {
       const match = this.history.findLast(p => p.state === facelets);
       if (match) { this.pending.delete(facelets); this.queued.push(this.normalized(pending.event, match.serial)); }

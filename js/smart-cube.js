@@ -235,6 +235,12 @@ export class SmartCubeController {
     try { this.preview.turn?.(raw.move,before,after); } catch { /* Rendering cannot own capture. */ }
     this.sync();
     if (!this.allowed) return;
+    if (raw.connectionSetup) {
+      this.interrupt('Cube connection setup');
+      this.guide?.synchronize(after);
+      this.match(false);
+      return;
+    }
     if (!this.active && this.attemptState !== 'armed') {
       this.guide?.observe(raw.move, before, after);
       this.recoveryGuide?.observe(raw.move, before, after);

@@ -28,3 +28,9 @@ tools/verify-smart-cube-connection-ui.cjs
 tools/verify-interactive-layout.cjs
 js/layout-grid.check.mjs
 audit-qa
+
+# Lab routes are served by their own Worker; hardware evidence stays local.
+tools/smart-cube-worker
+tools/verify-gan-carry4-browser.mjs
+tools/verify-gan-carry4-main.mjs
+js/gan-carry4.check.mjs
