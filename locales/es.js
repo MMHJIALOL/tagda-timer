@@ -3928,4 +3928,6 @@ export const es = {
   "Scramble, timing & phase corrections": "Mezcla, cronometraje y corrección de fases",
   "Annotation saved": "Anotación guardada",
   "Click a phase to jump to its final turn.": "Pulsa una fase para ir a su último giro.",
+  "Drag any border or corner to resize. Drag inside a widget to move it.": "Arrastra cualquier borde o esquina para cambiar el tamaño. Arrastra el interior de un widget para moverlo.",
+  "Starting layout restored.": "Se ha restaurado la disposición inicial.",
 };

@@ -1382,6 +1382,7 @@ function showScramble(s, silent = false) {
   rememberCompetitionScramble(s);
   const ev = eventOf(app.settings.event);
   const node = $('#scramble-text');
+  node.scrollTop = 0;
 
   /* A race hold puts prose where the notation goes, and prose must not be
      typeset as notation: no monospace line-fitting, no word spacing meant to
@@ -3242,6 +3243,8 @@ function renderStats() {
     $('#timer-bpa').hidden = !bw;
     if (bw) { $('#live-bpa').textContent = f(bw.bpa); $('#live-wpa').textContent = f(bw.wpa); }
   }
+  app.layoutStatsReady = true;
+  app.layoutEditor?.refresh();
 
   // Session bests are O(n x len) to compute, so only when they are on screen.
   if ($('#panel-stats')?.dataset.collapsed === 'false') {
@@ -6728,6 +6731,7 @@ function wireChrome() {
 
   app.layoutEditor = initInteractiveLayout(app, {
     busy: () => FOCUS_STATES.has(timer.state) || fmcAttempting() || competitionTiming(),
+    ready: () => !!app.layoutStatsReady,
     beforeEdit: () => { closeDrawer(); closePopover(); timer.abortPress(); },
     onEditing: editing => {
       timer.cfg.off = !!app.settings.scramblesOnly || editing;
