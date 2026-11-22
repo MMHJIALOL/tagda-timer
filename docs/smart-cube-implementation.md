@@ -1,5 +1,48 @@
 # Main-timer smart cubes
 
+## i Carry 4 raw-packet retest — 23 November 2026
+
+Three new reports from 22 November, 23:03–23:26 IST, identify the first patch
+build: `4c7c2ad9973b4369951d441f4f3eb5df`,
+`3560c634aeff448da3fa18e63182fa00`, and
+`b10c8727dc3c47f6a9b9157d6fb72ec2`. They contain 40 live turn packets and 278
+state packets, but no decoded events or completed test solves. Native browser
+setTimeout/clearTimeout methods were stored on the adapter and invoked with the
+adapter as their receiver. Chrome throws Illegal invocation, preventing decoded
+events from reaching the page. The earlier Node-based tests did not expose this
+browser restriction. Default timer callbacks now call the native methods through
+arrow functions. The Chrome regression fails on build 1 and passes on build 2.
+
+All 278 state packets decode into physically valid 8-corner/12-edge states using
+the same Gen4 bit layout as the i4 driver. All state counters are zero. The i4
+recordings have advancing counters and contain gyro events; these i Carry 4
+recordings contain no gyro packets. This establishes shared state/turn decoding,
+not the identity of the Bluetooth IC. There are no captured raw i4 packets for a
+byte-for-byte comparison, only decoded i4 events.
+
+`tools/verify-gan-carry4-browser.mjs` replays the actual packets in Chrome with
+native timers. All 40 turns are emitted in sequence, with no state discrepancies,
+invented history requests or adapter-driven disconnects. These captures contain
+turn exercises rather than completed solves, so the real-cube solve test remains
+open. Main-timer rollout remains pending that validation.
+
+All three captures end at the facelets for R-prime from solved. This is reported
+by the cube itself and agrees with the received turns. The owner recalls an older
+R2 D2 display offset before the fixes but cannot confirm the latest physical
+ending position. These observations do not establish that calibration is needed;
+do not automatically reset the hardware state.
+
+Build `carry4-state-sync-2` also restricts packet diagnostics to recognized
+state/turn/hardware types. Build 1 captured 0xFF address notifications; existing
+build-1 reports can contain those bytes. The new raw regression fixture excludes
+0xFF and unrelated packet types, and build 2 does not log them.
+
+Build 2 was deployed to https://tagdatimer.me/smart-cube/ on 23 November 2026,
+worker version `ba9451b7-e3db-4c65-aa75-9700efe8bd3f`. Live HTML/JavaScript match
+the tested artifacts. Chrome page startup has no errors; the mobile page fits
+390 pixels. Main timer v174 remains unchanged. Validation: 25 smart-cube unit
+tests, six worker tests, and the real-packet Chrome replay pass.
+
 ## GAN i Carry 4 test patch — 22 November 2026
 
 Ten new Smart Cube Lab reports identify GANic4, firmware 1.0. Every decoded
@@ -18,10 +61,10 @@ hold turn callbacks for up to three seconds; unresolved contradictions interrupt
 the attempt. Genuine missing move notifications still use the driver's history
 recovery. Other models retain the original driver.
 
-The test worker records build `carry4-state-sync-1` and at most 256 decrypted
-notification packets per connection. These packets contain cube state, turns and
-hardware data; they contain no Bluetooth address or encryption key. The existing
-seven-day expiry and upload protections are unchanged.
+The first test worker recorded build `carry4-state-sync-1` and at most 256 decrypted
+notification packets per connection. See the raw-packet retest above for the
+browser correction and narrower diagnostics in build 2. The existing seven-day
+expiry and upload protections are unchanged.
 
 Validation covers all ten decoded reports, reconstructed decoder inputs, the
 T-perm through the actual lab UI, high starting counters, serial wrapping,

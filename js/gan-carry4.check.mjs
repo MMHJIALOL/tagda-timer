@@ -64,6 +64,22 @@ test('only actual GANic4 advertisements receive this adapter and model label',()
   assert.equal(ganCubeInfo({},'GANi4_D48A').name,'GAN i4');
 });
 
+test('diagnostics exclude address and unrecognized packet types',async()=>{
+  const events=[];
+  const conn={deviceName:'GANic4_TEST',driver:new GanGen4ProtocolDriver(),events$:new Subject()};
+  conn.events$.subscribe(e=>events.push(e));
+  patchGanCarry4Connection(conn,{diagnostics:true});
+  try {
+    for(const header of [0xFF,0xF5,0xF6]){
+      const message=new Uint8Array(20);message.set([header,7,0,1,2,3,4,5,6]);
+      await conn.driver.handleStateEvent(conn,message);
+    }
+    assert.equal(events.length,0);
+    await conn.driver.handleStateEvent(conn,packet({type:'FACELETS',facelets:SOLVED}));
+    assert.equal(events.filter(e=>e.type==='PROTOCOL_PACKET').length,1);
+  } finally {conn.events$.next({type:'DISCONNECT'});}
+});
+
 test('Gen4 decoder bootstraps at the first live counter, verifies state, and reconnects at high counters',async()=>{
   for(const serial of [4,199,255,256,700]){
     const c=connection();

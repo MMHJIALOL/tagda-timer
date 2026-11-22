@@ -4,11 +4,14 @@
 import { applyTurn as turnState } from './gan-facelets.js';
 
 export const isGanCarry4 = name => /^GANic4(?:_|$)/i.test(name || '');
-export const CARRY4_PATCH = 'carry4-state-sync-1';
+export const CARRY4_PATCH = 'carry4-state-sync-2';
 export const CARRY4_WAIT_MS = 3000;
+// 0xFF includes a device address. Keep diagnostics to state/turn/hardware fields
+// understood by the decoder rather than recording arbitrary notifications.
+const DIAGNOSTIC_TYPES = new Set([0x01, 0xD1, 0xED, 0xFA, 0xFC, 0xFD, 0xFE, 0xEF, 0xEC, 0xEA]);
 
 export class Carry4State {
-  constructor(emit, { schedule = setTimeout, cancel = clearTimeout, clock = () => performance.now(), onReset = () => {} } = {}) {
+  constructor(emit, { schedule = (fn, ms) => setTimeout(fn, ms), cancel = id => clearTimeout(id), clock = () => performance.now(), onReset = () => {} } = {}) {
     Object.assign(this, { emit, schedule, cancel, clock, onReset });
     this.history = []; this.pending = new Map(); this.queued = [];
   }
@@ -126,7 +129,7 @@ export function patchGanCarry4Connection(connection, { diagnostics = false, cloc
   // A zero snapshot counter must never request history from an unrelated cycle.
   driver.checkIfMoveMissed = async () => {};
   driver.handleStateEvent = async (conn, message) => {
-    if (diagnostics && packets++ < 256) connection.events$.next({
+    if (diagnostics && DIAGNOSTIC_TYPES.has(message[0]) && packets++ < 256) connection.events$.next({
       type: 'PROTOCOL_PACKET', protocolPatch: CARRY4_PATCH, timestamp: performance.now(),
       // Decrypted cube notifications contain turns/state, never the MAC or keys.
       bytes: Array.from(message)

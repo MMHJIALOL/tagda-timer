@@ -31,7 +31,7 @@ let resetInProgress = false;
 
 function freshReport() {
   return {
-    schemaVersion: 1, source: 'tagda-smart-cube-test', libraryVersion: '3.0.2', testBuild: 'carry4-state-sync-1',
+    schemaVersion: 1, source: 'tagda-smart-cube-test', libraryVersion: '3.0.2', testBuild: 'carry4-state-sync-2',
     startedAt: Date.now(), model: '', notes: '', hardware: {}, deviceName: '',
     browser: { userAgent: navigator.userAgent, language: navigator.language, secureContext: isSecureContext },
     capture: { gyroSampleIntervalMs: 200, gyroTestSampleIntervalMs: 20, gyroTestDurationMs: GYRO_TEST_MS, maxEvents: MAX_EVENTS, bluetoothAddressIncluded: false },
