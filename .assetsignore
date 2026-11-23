@@ -26,3 +26,8 @@ tools/verify-smart-cube-connection-ui.cjs
 tools/verify-interactive-layout.cjs
 js/layout-grid.check.mjs
 audit-qa
+# Replay durability checks use disposable profiles and do not ship.
+js/replay-store.check.mjs
+js/replay-journal.check.mjs
+tools/verify-replay-storage.cjs
+tools/verify-replay-durability.cjs

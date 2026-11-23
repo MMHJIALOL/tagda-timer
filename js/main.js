@@ -2671,6 +2671,7 @@ async function onSolveFinished(res) {
        public anyway, so a second go at it gives nothing away. Submitting it
        instead is how a 0.62 landed at the top of the board. */
     if (switched || sotd === 'discard') {
+      clip?.discard?.();
       if (!switched) daily.releaseMisfire();
       if (sotd === 'discard') {
         toast(switched ? t('Misfire — switched to your backup scramble')
@@ -2705,7 +2706,7 @@ async function onSolveFinished(res) {
     pendingMisfire = confirmToast(t('{time} — misfire? Discard it?', { time: fmt(res.timeMs) }), t('discard'), { timeout: 5000 });
     const discard = await pendingMisfire;
     pendingMisfire = null;
-    if (discard) { timer.reset(); nextScramble(); return; }
+    if (discard) { clip?.discard?.(); timer.reset(); nextScramble(); return; }
   }
 
   await recordSolve({

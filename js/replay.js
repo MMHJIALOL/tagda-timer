@@ -83,7 +83,8 @@ import { t } from './i18n.js';
    =========================================================== */
 
 import { el, fmt, fmtLive } from './util.js';
-import { tx, wrap } from './db.js';
+import { replayStore, replayRequest as wrap } from './replay-store.js';
+import { replayJournal, commitJournaledReplay, inspectLegacyChunks } from './replay-journal.js';
 import { toast, confirmToast } from './toast.js';
 import { featureOff } from './audience.js';
 
@@ -150,6 +151,9 @@ const watchers = new Set();              // the settings preview, told about eve
 let rec = null;                          // the attempt being filmed
 const ids = new Set();                   // solve ids with a clip, so menus can ask synchronously
 const saving = new Map();                // solve id -> its save, for a replay opened before it lands
+const unsaved = new Map();               // usable Blobs retained until their final commit succeeds
+const captures = new Map();              // accepted recordings, for explicit discard/delete
+let saveError = null;
 let active = 0;                          // recorders running, for the top bar's red dot
 const listeners = new Set();
 
@@ -160,102 +164,46 @@ function emit(what) {
   for (const fn of listeners) { try { fn(what); } catch (err) { console.warn('[replay] listener', err); } }
 }
 export const replayStatus = () => ({ enabled, live: !!cam, recording: active > 0 });
+export const replaySaveStatus = () => ({ pending: saving.size, unsaved: unsaved.size, error: saveError?.message || '' });
 
 /* ---------------- storage ---------------- */
 
-let dbP = null;
-function rdb() {
-  return dbP ??= new Promise((resolve, reject) => {
-    const q = indexedDB.open('tagdatimer-replays', 1);
-    q.onupgradeneeded = () => {
-      // Metadata apart from the video, so counting and pruning never touch a blob.
-      q.result.createObjectStore('meta', { keyPath: 'id' });
-      q.result.createObjectStore('video');
-    };
-    q.onsuccess = () => {
-      const db = q.result;
-      // A later version of this file must never be kept waiting by this tab.
-      db.onversionchange = () => { db.close(); dbP = null; };
-      resolve(db);
-    };
-    q.onerror = () => { dbP = null; reject(q.error); };
+async function putClip(meta, blob, { recover = false } = {}) {
+  // Detach ordinary-sized clips from IDB-backed source Blob references before
+  // writing another database. Larger clips keep their independently durable
+  // journal until the destination has committed as well.
+  if (blob.size <= 64 * 1024 * 1024) {
+    let deadline;
+    try {
+      const data = await Promise.race([blob.arrayBuffer(), new Promise((_, reject) => {
+        deadline = setTimeout(() => reject(new DOMException('Recording bytes could not be read; recovery copy retained', 'TimeoutError')), 15000);
+      })]);
+      blob = new Blob([data], { type: blob.type });
+    } finally { clearTimeout(deadline); }
+  }
+  return replayStore.run('readwrite', async tr => {
+    if (recover) {
+      const [existing, video] = await Promise.all([wrap(tr.objectStore('meta').get(meta.id)), wrap(tr.objectStore('video').get(meta.id))]);
+      if (existing && video) return false;
+    }
+    tr.objectStore('meta').put(meta);
+    tr.objectStore('video').put(blob, meta.id);
+    return true;
   });
 }
 
-/* An attempt's footage, written as it is filmed (CHUNK_MS at a time) rather
-   than held in memory until the stop: a ten-minute multi-blind clip at Full
-   HD was ~375 MB of page memory before. Its own database, not a store in the
-   one above, for the reason in the header: no version bump. Keyed
-   [recording, index]; `at` is when the recording started, so chunks a
-   reloaded or crashed tab left behind can be told from another tab's live
-   ones (orphanChunks). */
-const CHUNK_MS = 2000;
-let chunkDbP = null;
-function chunkDb() {
-  return chunkDbP ??= new Promise((resolve, reject) => {
-    const q = indexedDB.open('tagdatimer-replay-chunks', 1);
-    q.onupgradeneeded = () => q.result.createObjectStore('chunks');
-    q.onsuccess = () => {
-      const db = q.result;
-      db.onversionchange = () => { db.close(); chunkDbP = null; };
-      resolve(db);
-    };
-    q.onerror = () => { chunkDbP = null; reject(q.error); };
-  });
-}
-const chunkRange = (key) => IDBKeyRange.bound([key, 0], [key, Infinity]);
+const allClipMeta = () => replayStore.run('readonly', tr => wrap(tr.objectStore('meta').getAll()), ['meta']);
+export const listReplays = async () => (await allClipMeta()).sort((a, b) => b.at - a.at);
 
-async function putChunk(key, index, at, blob) {
-  const tr = (await chunkDb()).transaction('chunks', 'readwrite');
-  tr.objectStore('chunks').put({ blob, at }, [key, index]);
-  await settled(tr);
-}
-
-/** index -> Blob for one recording. Blobs read back are on disk, not in memory. */
-async function readChunks(key) {
-  const tr = (await chunkDb()).transaction('chunks');
-  const [keys, values] = await Promise.all([
-    wrap(tr.objectStore('chunks').getAllKeys(chunkRange(key))),
-    wrap(tr.objectStore('chunks').getAll(chunkRange(key))),
-  ]);
-  return new Map(keys.map((k, i) => [k[1], values[i].blob]));
-}
-
-async function dropChunks(key) {
-  const tr = (await chunkDb()).transaction('chunks', 'readwrite');
-  tr.objectStore('chunks').delete(chunkRange(key));
-  await settled(tr);
-}
-
-/** Chunks from a recording that started longer ago than any clip can run: a tab reloaded mid-attempt. */
-async function orphanChunks() {
-  const tr = (await chunkDb()).transaction('chunks', 'readwrite');
-  const before = Date.now() - MAX_MS - 5 * 60000;
-  const req = tr.objectStore('chunks').openCursor();
-  req.onsuccess = () => {
-    const c = req.result;
-    if (!c) return;
-    if (!(c.value?.at > before)) c.delete();
-    c.continue();
-  };
-  await settled(tr);
-}
-
-async function txn(mode = 'readonly') {
-  return (await rdb()).transaction(['meta', 'video'], mode);
-}
-
-const settled = (tr) => new Promise((res, rej) => {
-  tr.oncomplete = () => res();
-  tr.onerror = () => rej(tr.error);
-  tr.onabort = () => rej(tr.error || new DOMException('Transaction aborted', 'AbortError'));
-});
-
-async function putClip(meta, blob) {
-  const tr = await txn('readwrite');
-  tr.objectStore('meta').put(meta);
-  tr.objectStore('video').put(blob, meta.id);
-  await settled(tr);
+/** Rebuild the menu index without treating a failed read as an empty library. */
+export async function refreshReplays() {
+  const keys = await replayStore.run('readonly', tr => wrap(tr.objectStore('meta').getAllKeys()), ['meta']);
+  ids.clear();
+  keys.forEach(id => ids.add(id));
+  for (const id of saving.keys()) ids.add(id);
+  for (const id of unsaved.keys()) ids.add(id);
+  emit({ type: 'saved' });
+  return keys.length;
 }
 
 export const keepCount = () => [50, 200, 1000].includes(+S().webcamKeep) ? +S().webcamKeep : KEEP_DEFAULT;
@@ -269,32 +217,33 @@ async function prune(room = 0) {
     const est = await navigator.storage?.estimate?.();
     if (est?.quota) limit = Math.min(limit, est.quota * 0.5);
   } catch { /* no estimate: the count and the per-clip budget still hold */ }
-  const tr = await txn('readwrite');
-  const all = (await wrap(tr.objectStore('meta').getAll())).sort((a, b) => b.at - a.at);
-  let bytes = room + all.reduce((n, m) => n + (m.bytes || 0), 0);
-  const loose = all.filter(m => !m.pinned);
-  let count = loose.length;
-  const gone = [];
-  for (let i = loose.length - 1; i >= 1 && (count > keepCount() || bytes > limit); i--) {
-    const m = loose[i];
-    tr.objectStore('meta').delete(m.id);
-    tr.objectStore('video').delete(m.id);
-    ids.delete(m.id);
-    gone.push(m.id);
-    count--;
-    bytes -= m.bytes || 0;
-  }
-  await settled(tr);
+  const gone = await replayStore.run('readwrite', async tr => {
+    const all = (await wrap(tr.objectStore('meta').getAll())).sort((a, b) => b.at - a.at);
+    let bytes = room + all.reduce((n, m) => n + (m.bytes || 0), 0);
+    const loose = all.filter(m => !m.pinned);
+    let count = loose.length;
+    const removed = [];
+    for (let i = loose.length - 1; i >= 1 && (count > keepCount() || bytes > limit); i--) {
+      const m = loose[i];
+      tr.objectStore('meta').delete(m.id);
+      tr.objectStore('video').delete(m.id);
+      removed.push(m.id);
+      count--;
+      bytes -= m.bytes || 0;
+    }
+    return removed;
+  });
+  gone.forEach(id => ids.delete(id));
   if (gone.length) emit({ type: 'removed', ids: gone });
 }
 
 /** One field or two on a clip's metadata, if the clip is still there. */
 async function patchMeta(id, patch) {
-  const tr = await txn('readwrite');
-  const m = await wrap(tr.objectStore('meta').get(id));
-  if (m) tr.objectStore('meta').put({ ...m, ...patch });
-  await settled(tr);
-  return !!m;
+  return replayStore.run('readwrite', async tr => {
+    const m = await wrap(tr.objectStore('meta').get(id));
+    if (m) tr.objectStore('meta').put({ ...m, ...patch });
+    return !!m;
+  });
 }
 
 /** Pinned clips are never pruned. A PB single's is pinned when it is saved. */
@@ -305,44 +254,38 @@ export async function setPinned(id, pinned) {
 }
 
 export async function deleteClip(id) {
-  const tr = await txn('readwrite');
-  tr.objectStore('meta').delete(id);
-  tr.objectStore('video').delete(id);
-  await settled(tr);
+  const capture = captures.get(id);
+  if (capture) await discardCapture(capture);
+  unsaved.delete(id);
+  for (const entry of await replayJournal.list()) if (entry.meta?.id === id) await replayJournal.remove(entry.id);
+  await replayStore.run('readwrite', tr => {
+    tr.objectStore('meta').delete(id);
+    tr.objectStore('video').delete(id);
+  });
   ids.delete(id);
   emit({ type: 'removed', ids: [id] });
 }
 
 export async function loadClip(id) {
+  if (unsaved.has(id)) return unsaved.get(id);
   await saving.get(id);
-  const tr = await txn();
-  const [meta, blob] = await Promise.all([
+  if (unsaved.has(id)) return unsaved.get(id);
+  const [meta, blob] = await replayStore.run('readonly', tr => Promise.all([
     wrap(tr.objectStore('meta').get(id)), wrap(tr.objectStore('video').get(id)),
-  ]);
+  ]));
   return meta && blob ? { meta, blob } : null;
 }
 
 /** A clip's metadata alone (no video read), or null. */
 export async function clipMeta(id) {
+  if (unsaved.has(id)) return unsaved.get(id).meta;
   await saving.get(id);
-  return (await wrap((await txn()).objectStore('meta').get(id))) || null;
-}
-
-/** Clips whose solve has since been deleted. Run once at boot, so an undo in the same sitting still finds its clip. */
-async function sweep() {
-  const keys = [...ids].filter(id => !saving.has(id));
-  if (!keys.length) return;
-  const solves = await tx('solves');
-  const counts = await Promise.all(keys.map(id => wrap(solves.count(id))));
-  const gone = keys.filter((_, i) => !counts[i]);
-  if (!gone.length) return;
-  const tr = await txn('readwrite');
-  for (const id of gone) { tr.objectStore('meta').delete(id); tr.objectStore('video').delete(id); ids.delete(id); }
-  await settled(tr);
+  if (unsaved.has(id)) return unsaved.get(id).meta;
+  return (await replayStore.run('readonly', tr => wrap(tr.objectStore('meta').get(id)), ['meta'])) || null;
 }
 
 export async function replayUsage() {
-  const all = await wrap((await txn()).objectStore('meta').getAll());
+  const all = await allClipMeta();
   return {
     count: all.length,
     pinned: all.filter(m => m.pinned).length,
@@ -354,13 +297,47 @@ export async function clearReplays() {
   pauseFinish();
   dropFinish();
   finishQueue.length = 0;
-  const tr = await txn('readwrite');
-  tr.objectStore('meta').clear();
-  tr.objectStore('video').clear();
-  await settled(tr);
+  await Promise.all([...captures.values()].map(discardCapture));
+  await replayJournal.clear();
+  unsaved.clear();
+  await replayStore.run('readwrite', tr => {
+    tr.objectStore('meta').clear();
+    tr.objectStore('video').clear();
+  });
   const gone = [...ids];
   ids.clear();
   emit({ type: 'removed', ids: gone });
+}
+
+/** A read-only scan. A failed store is reported separately from an empty one. */
+export async function scanReplayRecovery() {
+  const [journal, legacy] = await Promise.allSettled([replayJournal.list(), inspectLegacyChunks()]);
+  const byKey = new Map();
+  if (journal.status === 'fulfilled') for (const row of journal.value) if (row.chunks) {
+    byKey.set(row.id, { ...row, complete: !!(row.finished && row.expectedChunks === row.chunks),
+      active: !row.finished && Date.now() - row.updatedAt < MAX_MS + 60000 });
+  }
+  for (const row of unsaved.values()) byKey.set(row.key, { id: row.key, at: row.meta.at, meta: row.meta,
+    bytes: row.blob.size, complete: true, memory: true, playable: true });
+  const recordings = [...byKey.values(), ...(legacy.status === 'fulfilled' ? legacy.value : [])].sort((a, b) => b.at - a.at);
+  return { recordings, errors: [journal, legacy].filter(r => r.status === 'rejected').map(r => r.reason?.message || 'Storage unavailable') };
+}
+
+export async function readRecoveryRecording(candidate) {
+  if (candidate.legacy) return candidate;
+  const memory = [...unsaved.values()].find(row => row.key === candidate.id);
+  return memory ? { ...memory, complete: true, playable: true } : replayJournal.read(candidate.id);
+}
+
+export async function recoverRecording(candidate) {
+  const got = await readRecoveryRecording(candidate);
+  if (!got?.complete || !got.meta?.id || got.meta.partial) throw new Error(t('Only surviving footage is available. Download it as a partial recording.'));
+  const meta = { ...got.meta, bytes: got.blob.size, mime: got.blob.type || got.meta.mime };
+  await commitJournaledReplay({ journal: replayJournal, id: candidate.id, meta, blob: got.blob,
+    write: (meta, blob) => putClip(meta, blob, { recover: true }) });
+  unsaved.delete(got.meta.id); captures.delete(got.meta.id); saveError = null; ids.add(got.meta.id);
+  emit({ type: 'saved', id: got.meta.id });
+  return got.meta.id;
 }
 
 /* ---------------- converting for smooth seeking ---------------- */
@@ -445,13 +422,13 @@ async function runFinish() {
     const pause = finishing.pause = new AbortController();
     if (!(await finishing.job.run(pause.signal))) return;              // paused for an attempt: resumes from here
     const out = await finishing.job.result();
-    const tr = await txn('readwrite');
-    const m = await wrap(tr.objectStore('meta').get(id));
-    if (m) {
-      tr.objectStore('meta').put({ ...m, conv: 1, mime: out.blob.type, bytes: out.blob.size, frames: out.frames });
-      tr.objectStore('video').put(out.blob, id);
-    }
-    await settled(tr);
+    await replayStore.run('readwrite', async tr => {
+      const m = await wrap(tr.objectStore('meta').get(id));
+      if (m) {
+        tr.objectStore('meta').put({ ...m, conv: 1, mime: out.blob.type, bytes: out.blob.size, frames: out.frames });
+        tr.objectStore('video').put(out.blob, id);
+      }
+    });
     done();
     emit({ type: 'converted', id });
   } catch (err) {
@@ -473,7 +450,10 @@ async function runFinish() {
  * never run at once. Resolves whether or not there turns out to be a clip.
  */
 export async function clipReady(id, ms = 90_000) {
-  await saving.get(id);
+  // Sharing/export needs the filmed Blob, not acknowledgement from a separate
+  // final database. The independent journal and memory fallback protect it.
+  if (captures.has(id)) await captures.get(id).done;
+  if (!unsaved.has(id)) await saving.get(id);
   const pending = () => finishQueue.includes(id) || finishing?.id === id;
   if (!pending()) return;
   await new Promise((resolve) => {
@@ -977,50 +957,83 @@ function startRecorder(r, c) {
      only until its write lands, or for good if the write fails (storage
      full), so nothing is lost either way. */
   const key = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, at = Date.now();
+  r.journalKey = key;
   const held = [];
   let count = 0, chain = Promise.resolve();
+  const chunkFailure = err => {
+    if (!r.chunkFailed) {
+      console.warn('[replay] recording retained in memory', err);
+      toast(t('Recording storage failed. Keep this tab open and use Recover recordings to download a copy.'), { kind: 'bad', hold: true });
+    }
+    r.chunkFailed = true; saveError = err; emit({ type: 'storage' });
+  };
+  r.describe = meta => {
+    r.replayMeta = meta;
+    chain = chain.then(() => replayJournal.describe(key, at, { meta })).catch(chunkFailure);
+  };
+  r.discard = async () => {
+    r.dropped = true; stopRecorder(r); await chain; await replayJournal.remove(key);
+  };
   mr.ondataavailable = (e) => {
     if (!e.data?.size) return;
     const i = count++;
     held[i] = e.data;
     if (r.dropped) return;
-    chain = chain.then(() => putChunk(key, i, at, e.data)).then(() => { held[i] = null; }, (err) => {
-      if (!r.chunkFailed) console.warn('[replay] keeping the clip in memory, could not write it', err);
-      r.chunkFailed = true;
-    });
+    chain = chain.then(async () => {
+      if (r.chunkFailed || r.dropped) return;
+      await replayJournal.append(key, i, at, e.data); held[i] = null;
+    }).catch(chunkFailure);
   };
   // On disk, a clip is put back together from Blobs that point at it, so
   // even a long one is never read into memory to be saved.
   const assemble = async () => {
     await chain;
     if (r.dropped || !count) return null;
-    const stored = held.some((b, i) => i < count && !b) ? await readChunks(key) : new Map();
+    await replayJournal.describe(key, at, { finished: true, expectedChunks: count,
+      ...(r.replayMeta ? { meta: { ...r.replayMeta, ...(r.interrupted ? { partial: true } : {}) } } : {}) }).catch(chunkFailure);
+    // Read persisted pieces without deleting their rows. The independent copy
+    // remains available across reloads until putClip actually commits.
+    const stored = held.some((b, i) => i < count && !b) ? await replayJournal.read(key) : null;
+    if (held.some((b, i) => i < count && !b) && stored?.complete) {
+      // Failed chunks, if any, are kept in held and must be merged below.
+      if (!held.some(Boolean)) return stored.blob;
+    }
+    const persisted = held.some((b, i) => i < count && !b)
+      ? await replayJournal.parts(key) : new Map();
     const parts = [];
     for (let i = 0; i < count; i++) {
-      const b = held[i] || stored.get(i);
+      const b = held[i] || persisted.get(i);
       if (!b) throw new Error(`chunk ${i} of ${count} missing`);
       parts.push(b);
     }
     return new Blob(parts, { type: mr.mimeType || MIME });
   };
   mr.onstop = () => {
+    r.finished = true;
+    if (!r.over) r.interrupted = true;
     clearTimeout(r.cap);
     active = Math.max(0, active - 1);
     emit({ type: 'state' });
     assemble().then(r.resolve, (err) => {
+      saveError = err;
       console.warn('[replay] could not put the clip together', err);
+      toast(t('Recording could not be assembled. Keep this tab open and use Recover recordings.'), { kind: 'bad', hold: true });
+      emit({ type: 'storage' });
       r.resolve(null);
-    }).finally(() => {
-      // The Blob keeps what it needs alive; the rows themselves can go now.
-      chain.then(() => dropChunks(key)).catch(() => {});
     });
     rest();                                 // the clip is filmed: the camera can go
   };
-  mr.onerror = (e) => console.warn('[replay] recorder', e.error || e);
+  mr.onerror = e => {
+    r.interrupted = true;
+    saveError = e.error || new Error('Recording interrupted');
+    console.warn('[replay] recorder', e.error || e);
+    toast(t('Recording interrupted. Use Recover recordings to keep any surviving footage.'), { kind: 'bad', hold: true });
+    emit({ type: 'storage' });
+  };
   r.cam = c;
   // Video time 0, on the timer's clock. See the header for why this and not 'start'.
   r.t0 = performance.now() - c.lat - 500 / c.fps;
-  try { mr.start(CHUNK_MS); } catch (err) { r.resolve(null); return failed(err); }
+  try { mr.start(2000); } catch (err) { r.resolve(null); return failed(err); }
   r.mr = mr;
   active++;
   emit({ type: 'state' });
@@ -1034,6 +1047,7 @@ function drop() {
   r.over = r.dropped = true;
   stopRecorder(r);
   r.resolve(null);
+  r.discard?.().catch(err => console.warn('[replay] discarded recording cleanup', err));
   if (!r.mr) rest();                        // no recorder to stop, so nothing else will
 }
 
@@ -1075,27 +1089,47 @@ export function takeClip(res) {
   r.start ??= timer.solveStart;
   r.stop = r.start + res.timeMs;
   setTimeout(() => stopRecorder(r), TAIL_MS);
-  return { keep: (solve, opts) => keep(r, solve, opts) };
+  return { keep: (solve, opts) => keep(r, solve, opts), discard: () => discardCapture(r) };
+}
+
+async function discardCapture(r) {
+  r.dropped = true;
+  await r.discard?.();
+  if (r.solveId) { unsaved.delete(r.solveId); captures.delete(r.solveId); }
 }
 
 /** `pb`: this solve is a new best single, so its clip is pinned. */
 function keep(r, solve, { pb = false } = {}) {
   r.pb = pb;
+  r.solveId = solve.id;
+  captures.set(solve.id, r);
+  r.describe?.(recordingMeta(r, solve));
   ids.add(solve.id);
   const p = r.done.then(async (blob) => {
-    if (!blob) { ids.delete(solve.id); return; }
+    if (!blob) {
+      ids.delete(solve.id);
+      if (!r.dropped) throw new Error('Recording produced no complete video; check Recover recordings');
+      return;
+    }
     await save(r, solve, blob);
   }).catch((err) => {
-    ids.delete(solve.id);
+    if (!unsaved.has(solve.id)) ids.delete(solve.id);
+    saveError = err;
     console.warn('[replay] could not save', err);
-    toast(t('Could not save the replay'), { kind: 'bad' });
-  }).finally(() => saving.delete(solve.id));
+    toast(t('Replay not saved. Keep this tab open and use Recover recordings to save a copy.'), { kind: 'bad', hold: true });
+    emit({ type: 'storage' });
+  }).finally(() => {
+    saving.delete(solve.id);
+    if (!unsaved.has(solve.id)) captures.delete(solve.id);
+    emit({ type: 'storage' });
+  });
   saving.set(solve.id, p);
+  emit({ type: 'storage' });
 }
 
-async function save(r, solve, blob) {
-  const meta = {
-    id: solve.id, at: Date.now(), bytes: blob.size, mime: blob.type,
+function recordingMeta(r, solve, blob) {
+  return {
+    id: solve.id, at: solve.createdAt || Date.now(), bytes: blob?.size || 0, mime: blob?.type || r.mr?.mimeType || MIME,
     // Milliseconds of video time. The clock in the player is drawn from these.
     insp: r.insp == null ? null : r.insp - r.t0,
     start: r.start - r.t0,
@@ -1104,18 +1138,32 @@ async function save(r, solve, blob) {
     splits: r.res.splits || [],
     cam: r.cam.label, w: r.cam.w, h: r.cam.h, fps: r.cam.fps, lat: r.cam.lat,
     sound: !!r.sound, mic: r.mic || '',
-    pinned: !!r.pb, pb: !!r.pb,
+    pinned: !!r.pb, pb: !!r.pb, ...(r.interrupted ? { partial: true } : {}),
   };
+}
+
+async function save(r, solve, blob) {
+  if (r.dropped) return;
+  const meta = recordingMeta(r, solve, blob);
+  unsaved.set(solve.id, { meta, blob, key: r.journalKey });
+  // Re-assert final metadata even if its earlier write failed. Failure keeps
+  // both the Blob in memory and whatever journal chunks already committed.
+  await replayJournal.describe(r.journalKey, meta.at, { meta }).catch(err => console.warn('[replay] recovery metadata', err));
   try {
-    await putClip(meta, blob);
+    await commitJournaledReplay({ journal: replayJournal, id: r.journalKey, meta, blob,
+      write: (m, b) => r.dropped ? Promise.reject(new DOMException('Recording discarded', 'AbortError')) : putClip(m, b) });
   } catch (err) {
     if (err?.name !== 'QuotaExceededError') throw err;
     await prune(blob.size * 2);
-    await putClip(meta, blob);
+    await commitJournaledReplay({ journal: replayJournal, id: r.journalKey, meta, blob,
+      write: (m, b) => r.dropped ? Promise.reject(new DOMException('Recording discarded', 'AbortError')) : putClip(m, b) });
   }
+  unsaved.delete(solve.id); saveError = null;
+  if (r.dropped) return;
+  ids.add(solve.id);
   emit({ type: 'saved', id: solve.id });
-  await prune();
-  queueFinish(solve.id);
+  // Maintenance cannot turn an acknowledged save into an apparent failure.
+  prune().catch(err => console.warn('[replay] cleanup failed; saved clip retained', err));
 }
 
 /* ---------------- switching it on and off ---------------- */
@@ -1178,21 +1226,17 @@ let lastKeep = false;
 export function initReplay(appRef, tm) {
   app = appRef;
   watchTimer(tm);
-  rdb().then(db => wrap(db.transaction('meta').objectStore('meta').getAllKeys()))
-    .then((keys) => {
-      keys.forEach(k => ids.add(k));
-      if (keys.length) emit({ type: 'saved' });
-      // Off the boot path: it reads the solves store once per clip. Then any
-      // clip a closed tab never got round to converting joins the queue.
-      setTimeout(async () => {
-        await sweep().catch(err => console.warn('[replay] sweep', err));
-        // Only where replays have been used: nobody else needs the database made.
-        if (keys.length || S().webcamReplay) await orphanChunks().catch(err => console.warn('[replay] leftover chunks', err));
-        const all = await txn().then(tr => wrap(tr.objectStore('meta').getAll())).catch(() => []);
-        all.filter(m => !m.conv).sort((a, b) => b.at - a.at).forEach(m => queueFinish(m.id, false));
-      }, 8000);
-    })
-    .catch(err => console.warn('[replay] could not open the replay store', err));
+  addEventListener('beforeunload', event => {
+    if (!saving.size && !unsaved.size && !active) return;
+    event.preventDefault(); event.returnValue = '';
+  });
+  // Loading never prunes missing solves or unfinished recordings. Background
+  // conversion is paused: preserve the recorder's original until this fix has
+  // proved stable across browsers. Export conversion remains available.
+  refreshReplays().catch(err => {
+    console.warn('[replay] could not read saved replays', err);
+    toast(t('Replay storage is unavailable. Keep this tab open and use Recover recordings.'), { kind: 'bad', hold: true });
+  });
 
   const ready = navigator.permissions?.query({ name: 'camera' }).then((st) => {
     perm = st.state;

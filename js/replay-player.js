@@ -121,7 +121,7 @@ export async function openPlayer(solve) {
   const id = typeof solve === 'string' ? solve : solve?.id;
   if (!id) return;
   dlg?.close();
-  const got = await loadClip(id).catch((err) => { console.warn('[replay] load', err); return null; });
+  const got = await loadClip(id);
   if (!got) { forgetReplay(id); toast(t('That replay is gone')); return; }
   const sv = typeof solve === 'object' ? solve : null;
   const camName = got.meta.cam || '';
@@ -239,6 +239,7 @@ function show({ id, m, blob, sv, timeMs, pen, camName, adj, shared = null, compe
     el('div', { class: 'rp-title' },
       el('b', { text: final + (pen === '+2' ? ' +2' : pen === 'DNF' ? ' DNF' : '') }),
       pinChip,
+      m.partial ? el('span', { class: 'rp-who', text: t('Interrupted footage') }) : null,
       competition && m.status !== 'ready' ? el('span', { class: 'rp-who', text: t('Interrupted footage') }) : null,
       shared ? el('span', { class: 'rp-who', text: shared.name || 'Cuber' }) : null,
       el('span', { text: [fmtDate(m.at), camName && cameraName(camName)].filter(Boolean).join(' · ') })),

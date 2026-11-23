@@ -33,12 +33,13 @@ import { DEFAULT_SPEFFZ_MAP, DEFAULT_BLD, CORNER_STICKER_KEYS, EDGE_STICKER_KEYS
          pieceName, samePiece, diagnose } from './bldtrace.js';
 import { FACES } from './cube3.js';
 import { mountSettingsSearch } from './settings-search.js';
+import { buildReplayLibrary } from './replay-library.js';
 import { searchSolves } from './solve-search.js';
 import { ACTIONS, MAX_KEYS, actionById, resolve, assign, reset, reservedWhy, keyOf, labelOf as keyLabelOf, keybindStore } from './keybinds.js';
 import { newsSection } from './news.js';
 import { feedbackSection } from './send-feedback.js';
 import { enableReplay, enableSound, requestCamera, attachPreview, onCamerasChanged, listCameras, listMics, cameraName,
-         replayUsage, clearReplays, hasReplay, openReplay, keepCount, replaySupported, replayOff, fullHdSupport } from './replay.js';
+         replayUsage, refreshReplays, replaySaveStatus, onReplayChange, clearReplays, hasReplay, openReplay, keepCount, replaySupported, replayOff, fullHdSupport } from './replay.js';
 
 /* ---------------- drawer shell ---------------- */
 
@@ -226,7 +227,7 @@ export function webcamControls(app, { onWatch = null, compact = false } = {}) {
   const render = () => {
     // Switched off from the admin console: no switch to flip, only why.
     if (replayOff()) {
-      box.replaceChildren(...[el('div', { class: 'hint-note', role: 'status', text: replayOff() }),
+      box.replaceChildren(...[el('div', { class: 'hint-note', role: 'status', text: replayOff() }), savedReplayControls(app),
         onWatch ? el('button', { class: 'btn primary full', text: t('Watch the last solve  (W)'), onclick: onWatch }) : null].filter(Boolean));
       return;
     }
@@ -240,7 +241,9 @@ export function webcamControls(app, { onWatch = null, compact = false } = {}) {
       ? row(t('Film my solves'), sw, t('kept on this device. Nothing is uploaded unless you share a Scramble of the Day replay'))
       : row(t('Webcam replay'), sw,
         t('films every attempt so you can watch it back with the clock running, and save it as a video. Kept on this device: nothing is uploaded unless you share a Scramble of the Day replay')));
+    const saved = savedReplayControls(app);
     if (!on) {
+      box.append(saved);
       if (!replaySupported()) box.append(el('div', { class: 'hint-note', text: t('This browser cannot record video.') }));
       return;
     }
@@ -345,22 +348,6 @@ export function webcamControls(app, { onWatch = null, compact = false } = {}) {
     const video = el('video', { class: 'rp-preview-video', playsinline: true, autoplay: true, 'aria-label': t('Camera preview') });
     const status = el('div', { class: 'rp-preview-status' });
     const soundStatus = el('div', { class: 'rp-preview-status rp-sound-status' });
-    const usage = el('span', { class: 'sub' });
-    const wipe = el('button', { class: 'ghost-btn sm danger', text: t('Delete all'), disabled: true, onclick: async () => {
-      if (!(await confirmToast(t('Delete every saved replay on this device, kept ones too?'), t('Delete'), { timeout: 8000 }))) return;
-      await clearReplays();
-      showUsage();
-      toast(t('Replays deleted'));
-    } });
-    const showUsage = () => replayUsage().then(({ count, pinned, bytes }) => {
-      const mb = (bytes / 1048576).toFixed(bytes < 10485760 ? 1 : 0);
-      usage.textContent = !count ? t('none yet')
-        : pinned ? t('{n} saved · {k} kept for good · {mb} MB', { n: count, k: pinned, mb })
-        : t('{n} saved · {mb} MB', { n: count, mb });
-      wipe.disabled = !count;
-    }, () => { usage.textContent = ''; });
-    showUsage();
-
     // Native append() would print a null as the word "null"; el() skips them, this has to too.
     box.append(...[
       el('div', { class: `rp-preview ${compact ? 'compact' : ''}` }, video, status, soundStatus),
@@ -373,7 +360,7 @@ export function webcamControls(app, { onWatch = null, compact = false } = {}) {
           : t('off, it switches off after every solve and when you leave the tab, and wakes on your next press. Turn this on if you solve without inspection, so the clip catches the very start')),
       row(t('Keep'), chips([50, 200, 1000].map(n => ({ value: n, label: String(n) })), keepCount(), v => set('webcamKeep', +v)),
         compact ? t('PB singles are always kept') : t('the most recent replays to hold on to. PB singles, and any you keep from the player, are never cleared out')),
-      el('div', { class: 'row' }, el('div', { class: 'lbl' }, el('span', { text: t('Saved replays') }), usage), wipe),
+      saved,
       shareRow,
       shareSoundRow,
       onWatch ? el('button', { class: 'btn primary full', text: t('Watch the last solve  (W)'), onclick: onWatch }) : null,
@@ -383,6 +370,53 @@ export function webcamControls(app, { onWatch = null, compact = false } = {}) {
   render();
   return box;
 }
+
+function savedReplayControls(app) {
+  const usage = el('span', { class: 'sub', role: 'status', text: t('Checking saved replays…') });
+  const browse = el('button', { class: 'ghost-btn sm', text: t('Browse saved replays'), onclick: () => {
+    openDrawer('Saved replays', buildReplayLibrary(app, () => openDrawer('Camera', body => body.append(webcamControls(app)))));
+  } });
+  const recover = el('button', { class: 'ghost-btn sm', text: t('Recover recordings'), onclick: () => {
+    openDrawer('Recover recordings', buildReplayLibrary(app, () => openDrawer('Camera', body => body.append(webcamControls(app))), { recovery: true }));
+  } });
+  const retry = el('button', { class: 'ghost-btn sm', text: t('Retry loading'), onclick: async () => {
+    retry.disabled = true;
+    usage.textContent = t('Checking saved replays…');
+    try { await refreshReplays(); await showUsage(); }
+    catch { failed(); }
+    finally { retry.disabled = false; }
+  } });
+  const wipe = el('button', { class: 'ghost-btn sm danger', text: t('Delete all'), disabled: true, onclick: async () => {
+    if (!(await confirmToast(t('Delete every saved replay on this device, kept ones too?'), t('Delete'), { timeout: 8000 }))) return;
+    try { await clearReplays(); await showUsage(); toast(t('Replays deleted')); }
+    catch { failed(); }
+  } });
+  const failed = () => {
+    usage.textContent = t('Saved replay storage is unavailable. Keep this tab open and use Recover recordings.');
+    wipe.disabled = true;
+  };
+  const showUsage = () => replayUsage().then(({ count, pinned, bytes }) => {
+    const mb = (bytes / 1048576).toFixed(bytes < 10485760 ? 1 : 0);
+    usage.textContent = !count ? t('none yet')
+      : pinned ? t('{n} saved · {k} kept for good · {mb} MB', { n: count, k: pinned, mb })
+      : t('{n} saved · {mb} MB', { n: count, mb });
+    wipe.disabled = !count;
+  }, failed);
+  const note = el('span', { class: 'sub', role: 'status' });
+  const result = el('div', { class: 'row', dataset: { searchLabel: 'Saved replays recovery recordings unsaved videos' } },
+    el('div', { class: 'lbl' }, el('span', { text: t('Saved replays') }), usage, note),
+    el('div', { class: 'sd-actions' }, browse, recover, retry, wipe));
+  let placed = false;
+  const off = onReplayChange(() => {
+    if (result.isConnected) placed = true; else if (placed) { off(); return; }
+    const state = replaySaveStatus();
+    note.textContent = state.unsaved || state.error ? t('Recording needs attention. Keep this tab open and use Recover recordings.')
+      : state.pending ? t('Saving recording…') : '';
+  });
+  showUsage();
+  return result;
+}
+
 
 /* =========================================================
    APPEARANCE

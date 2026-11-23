@@ -553,6 +553,27 @@ Clips stay **on this device only**, in their own database, never synced. Keep th
 **50, 200 or 1000**; a **PB single's clip is kept for good**, and so is any you mark
 **Keep forever** in the player. A misfire you discard is never saved.
 
+**Camera → Browse saved replays** shows recordings from every session, including
+older solves outside the recent sidebar. These controls work with recording off.
+**Camera → Recover recordings → Find recoverable recordings** checks this browser
+for unfinished recordings. Complete recordings with saved solve details can be
+restored; partial or older unlinked fragments can be downloaded separately. The
+scan does not turn on the camera, upload footage, or delete the recovery copy.
+It cannot recreate files already removed by site-data clearing or older cleanup.
+
+New recordings keep an independent local copy until the final video transaction
+commits. A failed save leaves that copy available for recovery and downloading;
+a warning asks you to keep the tab open if footage is still held in memory.
+SOTD sharing can use that footage without waiting for the final local database.
+A cloud copy exists only after the upload succeeds. Background re-encoding is
+paused in this hotfix; original clips and video exports remain available.
+
+Replay regression checks: `npm run test:replay-storage`. With `serve.py` running,
+`npm run test:replay-ui -- http://localhost:5188` and
+`npm run test:replay-durability -- http://localhost:5188` exercise disposable
+Chromium and Firefox profiles, including failed saves, reload and recovery.
+
+
 The one exception is yours to make: **Scramble of the Day replays**. After you submit the day's
 attempt, **Share replay** under the board uploads a copy of its clip (720p at most, sound only
 if you tick *Include sound*), and everyone else who has done that day's scramble can watch it

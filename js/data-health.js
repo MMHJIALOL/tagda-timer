@@ -180,7 +180,9 @@ export function buildDataHealth({ back, account }) {
     });
     import('./replay.js').then(m => m.replayUsage()).then(info => {
       if (!disposed && info.count) media.textContent = t('Local replay videos: {n} · {size}. Video files are excluded from the JSON backup.', { n: info.count, size: size(info.bytes) });
-    }).catch(() => {});
+    }).catch(() => {
+      if (!disposed) media.textContent = t('Saved replay storage is unavailable. Keep this tab open and use Recover recordings.');
+    });
     render();
     return () => { disposed = true; off.forEach(fn => fn()); exportListeners.delete(onExport); };
   };
