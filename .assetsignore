@@ -31,3 +31,4 @@ js/replay-store.check.mjs
 js/replay-journal.check.mjs
 tools/verify-replay-storage.cjs
 tools/verify-replay-durability.cjs
+tools/verify-replay-seeking.cjs

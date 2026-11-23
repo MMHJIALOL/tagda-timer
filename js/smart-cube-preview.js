@@ -99,13 +99,17 @@ export class SmartPreview {
     this.queuedTurns=(this.queuedTurns||0)+1;
     this.nextTurn={move,before,after};
   }
-  set(state) {
+  set(state, { instant = false } = {}) {
     if(this.disposed)return;
+    if(instant){this.nextTurn=null;this.queuedTurns=0;this.animatingUntil=0;}
     this.state=state;
     if(!this.pending&&!this.disposed)this.pending=requestAnimationFrame(()=>{this.pending=0;this.paint();this.frame++;});
   }
   applyState(state) {
     const model=this.view.player.experimentalModel;
+    // The renderer's catch-up rotation is independent of pause/timestamp.
+    // Clear it too, or a scrub can show part of the previous turn on a new state.
+    model.catchUpMove.set({move:null,amount:0});
     model.alg.set('');model.setupTransformation.set(faceletsTransformation(this.kpuzzle,state));
     this.view.player.pause?.();
     this.view.player.jumpToStart?.();

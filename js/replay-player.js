@@ -15,10 +15,10 @@ import { t } from './i18n.js';
    (sotd-replays.js), which is the same player without the parts that are
    only yours to use (keep, delete, clock delay, Save video).
 
-   Every seek goes through seekTo(), which keeps one in flight and only the
-   newest waiting: a burst of arrow presses or a dragged scrubber used to pile
-   seeks onto a decoder that was still busy with the last one, and the picture
-   stuttered behind the clock.
+   Every seek goes through seekTo(), which pauses decoding playback, keeps one
+   seek in flight and only the newest waiting, then resumes once the pointer
+   is released and that position lands. Old frame callbacks cannot move the
+   scrubber back while it is waiting for the requested frame.
 
    Frame times come from the clip itself: stored with it once it is converted
    (replay.js), or read out of the recorder's WebM before then (webmFrames).
@@ -273,6 +273,8 @@ function show({ id, m, blob, sv, timeMs, pen, camName, adj, shared = null, compe
   let shown = 0;                  // media time of the frame on screen, in seconds
   let last = '';
   let dragging = false;
+  let pointer = null;
+  let aim = null, want = null, seeking = false, resumeAfterSeek = false;
   const render = (sec) => {
     sec = snap(sec);
     shown = sec;
@@ -285,7 +287,7 @@ function show({ id, m, blob, sv, timeMs, pen, camName, adj, shared = null, compe
       penEl.textContent = k.pen || '';
       clock.className = `rp-clock ${k.kind === 'late' ? 'insp late' : k.kind}`;
     }
-    if (!dragging) seek.value = String(sec);
+    if (!dragging && aim == null) seek.value = String(sec);
   };
 
   const dur = () => (Number.isFinite(video.duration) && video.duration > 0 ? video.duration
@@ -322,63 +324,105 @@ function show({ id, m, blob, sv, timeMs, pen, camName, adj, shared = null, compe
      more than a couple of frames past where the video says it is gets the
      video's own time instead. */
   const onFrame = (now, md) => {
-    sawFrame = true;
-    if (!(frames && video.paused)) {
-      const ahead = md.mediaTime - video.currentTime > 2.5 / fps;
-      render(ahead ? video.currentTime : md.mediaTime);
+    if (aim == null && !dragging && !video.seeking) {
+      sawFrame = true;
+      if (!(frames && video.paused)) {
+        const ahead = md.mediaTime - video.currentTime > 2.5 / fps;
+        render(ahead ? video.currentTime : md.mediaTime);
+      }
     }
     vfc = video.requestVideoFrameCallback(onFrame);
   };
-  const loop = () => { render(video.currentTime); if (!video.paused) raf = requestAnimationFrame(loop); };
+  const loop = () => {
+    if (aim == null && !dragging && !video.seeking) render(video.currentTime);
+    if (!video.paused) raf = requestAnimationFrame(loop);
+  };
   if (rvfc) vfc = video.requestVideoFrameCallback(onFrame);
-  video.addEventListener('play', () => { playBtn.innerHTML = ICON.pause; if (!rvfc) loop(); });
-  video.addEventListener('pause', () => { playBtn.innerHTML = ICON.play; render(rvfc && sawFrame ? shown : video.currentTime); });
+  video.addEventListener('play', () => { playBtn.innerHTML = ICON.pause; if (!rvfc) { cancelAnimationFrame(raf); loop(); } });
+  video.addEventListener('pause', () => {
+    playBtn.innerHTML = resumeAfterSeek ? ICON.pause : ICON.play;
+    cancelAnimationFrame(raf);
+    if (aim == null && !dragging) render(rvfc && sawFrame ? shown : video.currentTime);
+  });
   video.addEventListener('ended', () => { playBtn.innerHTML = ICON.play; });
 
   /* ---- seeking: one at a time, newest wins ---- */
-  let want = null;                // where to go once the seek in flight lands
-  let aim = null;                 // where the last seek asked to go, until it lands
-  const seekTo = (sec) => {
-    sec = clamp(sec, 0, dur());
-    aim = sec;
-    if (video.seeking) { want = sec; return; }
+  const resume = () => {
+    if (dragging || seeking || aim != null || !resumeAfterSeek || ac.signal.aborted) return;
+    resumeAfterSeek = false;
+    video.play().catch(() => {});
+  };
+  const sendSeek = () => {
+    if (want == null || !video.readyState) return;
+    const sec = clamp(want, 0, dur());
+    want = null;
+    seeking = true;
     video.currentTime = sec;
   };
-  video.addEventListener('seeking', () => { sawFrame = false; });
+  const seekTo = (sec) => {
+    sec = clamp(sec, 0, dur());
+    aim = want = sec;
+    if (!dragging) seek.value = String(sec);
+    if (!video.paused) { resumeAfterSeek = true; video.pause(); }
+    if (!seeking && !video.seeking) sendSeek();
+  };
+  video.addEventListener('seeking', () => { seeking = true; sawFrame = false; });
   video.addEventListener('seeked', () => {
-    if (want != null) { const s = want; want = null; video.currentTime = s; return; }
+    seeking = false;
+    if (want != null && Math.abs(want - video.currentTime) > 1e-5) { sendSeek(); return; }
+    want = null;
     aim = null;
-    if (frames && video.paused) { render(video.currentTime); return; }
-    // A paused seek does present a frame, but not every browser reports it.
-    setTimeout(() => { if (!sawFrame) render(video.currentTime); }, 150);
+    render(video.currentTime);
+    resume();
   });
-  video.addEventListener('loadedmetadata', () => { seek.max = String(dur()); paintMarks(); fit(); render(0); });
+  video.addEventListener('loadedmetadata', () => {
+    seek.max = String(dur()); paintMarks(); fit();
+    if (want != null) sendSeek(); else render(video.currentTime);
+  });
   video.addEventListener('durationchange', () => { seek.max = String(dur()); paintMarks(); });
   video.addEventListener('error', () => {
     stage.replaceChildren(el('p', { class: 'rp-err', text: t('This browser cannot play this clip') }));
   });
 
   /* ---- controls ---- */
-  seek.addEventListener('pointerdown', () => { dragging = true; });
-  addEventListener('pointerup', () => { dragging = false; }, { signal: ac.signal });
-  seek.addEventListener('input', () => { seekTo(+seek.value); render(+seek.value); });
+  seek.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    dragging = true;
+    pointer = e.pointerId;
+    resumeAfterSeek ||= !video.paused;
+    video.pause();
+  });
+  const endScrub = (e) => {
+    if (!dragging || (e?.pointerId != null && e.pointerId !== pointer)) return;
+    dragging = false;
+    pointer = null;
+    if (aim == null) render(video.currentTime);
+    resume();
+  };
+  for (const type of ['pointerup', 'pointercancel']) addEventListener(type, endScrub, { signal: ac.signal });
+  seek.addEventListener('lostpointercapture', endScrub);
+  addEventListener('blur', () => endScrub(), { signal: ac.signal });
+  seek.addEventListener('input', () => seekTo(+seek.value));
 
   const togglePlay = () => {
+    if (resumeAfterSeek) { resumeAfterSeek = false; playBtn.innerHTML = ICON.play; return; }
     if (video.paused || video.ended) {
       if (video.ended || video.currentTime >= dur() - 0.05) seekTo(0);
-      video.play().catch(() => {});
+      if (aim != null || dragging) { resumeAfterSeek = true; playBtn.innerHTML = ICON.pause; }
+      else video.play().catch(() => {});
     } else video.pause();
   };
   /* A hair past the frame's own time, so rounding cannot land on the one
      before. Without frame times (an MP4 recorded by Safari, until it is
      converted), a frame's worth either way is the best that can be done. */
   const step = (n) => {
+    resumeAfterSeek = false;
+    playBtn.innerHTML = ICON.play;
     video.pause();
     const from = aim ?? (rvfc && sawFrame ? shown : video.currentTime);
     if (frames) {
       const i = clamp(frameIndex(from) + n, 0, frames.length - 1);
       seekTo(frames[i] + 1e-4);
-      render(frames[i]);
     } else {
       seekTo(from + n / fps + 0.001);
     }
@@ -487,6 +531,7 @@ function show({ id, m, blob, sv, timeMs, pen, camName, adj, shared = null, compe
   }
   function chooseCrop(layout) {
     if (cropUI || making) return;
+    resumeAfterSeek = false;
     const vw = video.videoWidth, vh = video.videoHeight;
     if (!vw || !vh) return makeVideo(layout);
     video.pause();
@@ -574,6 +619,7 @@ function show({ id, m, blob, sv, timeMs, pen, camName, adj, shared = null, compe
     const release = holdFinish();
     const onClose = () => job.abort();
     ac.signal.addEventListener('abort', onClose);
+    resumeAfterSeek = false;
     video.pause();
     saveBtn.disabled = true;
     const label = layout === 'reel' ? t('Making the reel…') : t('Making the video…');

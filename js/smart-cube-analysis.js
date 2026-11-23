@@ -93,7 +93,7 @@ export async function openSmartAnalysis(solve,{details,notice}) {
       rows[previous]?.classList.remove('on');rows[index]?.classList.add('on');
       const state=seekState(capture,index,points);
       if(playing&&index===previous+1)preview.turn(capture.moves[index].move,visibleState,state);
-      preview.set(state);visibleState=state;
+      preview.set(state,{instant:!playing});visibleState=state;
       const row=rows[index];
       if(row&&!movePane.hidden){
         const bounds=movePane.getBoundingClientRect(),target=row.getBoundingClientRect();
@@ -102,12 +102,13 @@ export async function openSmartAnalysis(solve,{details,notice}) {
       }
     };
     const seekTime=at=>{let lo=0,hi=capture.moves.length;while(lo<hi){const mid=(lo+hi)>>>1;if(capture.moves[mid].timeMs<=at)lo=mid+1;else hi=mid;}seek(lo-1,at);};
-    const stop=()=>{playing=false;cancelAnimationFrame(raf);play.innerHTML=icon('play');play.setAttribute('aria-label',t('Play'));play.title=t('Play');};
+    const stop=()=>{playing=false;cancelAnimationFrame(raf);preview.set(visibleState,{instant:true});play.innerHTML=icon('play');play.setAttribute('aria-label',t('Play'));play.title=t('Play');};
     const tick=now=>{if(!playing||!dialog.open)return;const at=Math.min(duration,originMs+(now-originTime)*speed);seekTime(at);if(at>=duration)stop();else raf=requestAnimationFrame(tick);};
     const play=btn('Play',()=>{if(playing)return stop();if(atMs>=duration)seek(-1,0);playing=true;originTime=performance.now();originMs=atMs;play.innerHTML=icon('pause');play.setAttribute('aria-label',t('Pause'));play.title=t('Pause');raf=requestAnimationFrame(tick);},'sa-play-btn','play');
     const speeds=select('Playback speed',[[.25,'0.25×'],[.5,'0.5×'],[1,'1×'],[2,'2×']],'1');speeds.onchange=()=>{speed=Number(speeds.value);originTime=performance.now();originMs=atMs;};
     const transport=n('div',null,'sa-transport');transport.append(btn('Restart',()=>{stop();seek(-1,0);},'sa-icon-btn','restart'),btn('Previous turn',()=>{stop();seek(index-1);},'sa-icon-btn','previous'),play,btn('Next turn',()=>{stop();seek(index+1);},'sa-icon-btn','next'));
     controls.append(readout,slider,markerBand,markers,transport,speeds);slider.oninput=()=>{stop();seekTime(Number(slider.value));};
+    slider.addEventListener('pointerdown',event=>{if(event.button===0)stop();});
     replay.append(replayTop,stage,gyroControl,controls);
 
     const tabs=n('div',null,'sa-tabs');tabs.setAttribute('role','tablist');tabs.setAttribute('aria-label',t('Analysis sections'));
