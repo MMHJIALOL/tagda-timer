@@ -280,8 +280,9 @@ body.ph #scramble-wrap {
   display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center;
   column-gap: 8px; row-gap: 4px;
 }
+body.ph .scramble-header { display: contents; }
 body.ph #scramble-text {
-  grid-column: 1 / -1;
+  grid-column: 1 / -1; grid-row: 2;
   padding: 0 2px; border: 0; border-radius: 0; background: none;
   font-size: calc(15.5px * var(--scramble-scale));
   font-weight: 600; line-height: 1.5; word-spacing: .08em; letter-spacing: 0;
@@ -293,9 +294,9 @@ body.ph #scramble-text.long { font-size: calc(13px * var(--scramble-scale)); }
 body.ph #scramble-text.multiline { font-size: calc(12px * var(--scramble-scale)); line-height: 1.4; text-align: left; text-wrap: initial; }
 body.ph #scramble-text.race-hold { font-family: var(--font-ui); font-size: 14px; color: var(--text-dim); }
 body.ph #scramble-tools {
-  grid-column: 1; justify-self: start;
+  grid-column: 1; grid-row: 1; justify-self: start;
   position: static; transform: none; opacity: 1;
-  display: flex; gap: 0; margin: 0 0 0 -6px; color: var(--text-dim);
+  display: flex; gap: 0; padding: 0; margin: 0 0 0 -6px; color: var(--text-dim);
 }
 /* Previous, next, copy, your own: the order the card reads them in. */
 body.ph #btn-prev-scramble { order: 1; }
@@ -310,7 +311,7 @@ body.ph #scramble-tools .ghost-btn svg { width: 19px; height: 19px; stroke-width
 body.ph #scramble-tools .ghost-btn:active { background: color-mix(in srgb, var(--text) 8%, transparent); }
 
 .ph-net {
-  grid-column: 2; justify-self: end;
+  grid-column: 2; grid-row: 1; justify-self: end;
   padding: 4px; border-radius: 10px;
   background: color-mix(in srgb, var(--bg) 70%, transparent); border: 1px solid var(--border);
 }

@@ -60,12 +60,12 @@ body[data-input="virtual"] .layout-content #timer-display {
 .layout-content #scramble-zone > * { flex-shrink: 0; }
 .layout-content #scramble-wrap { max-width: 100%; min-height: 0; }
 .layout-content .scramble {
-  overflow-wrap: anywhere;
+  align-content: safe center; overflow-wrap: anywhere;
 }
 .layout-content #scramble-tools { opacity: 1; flex: none; }
 @container widget (max-width: 600px) {
   .layout-content #scramble-wrap {
-    width: 100%; height: calc(100cqh - 24px); padding: 0;
+    width: 100%; height: calc(100cqh - 6px); padding: 0;
     flex-direction: column; align-items: stretch; gap: 4px;
   }
   .layout-content #scramble-tools { position: static; transform: none; justify-content: center; }
@@ -73,6 +73,11 @@ body[data-input="virtual"] .layout-content #timer-display {
     flex: 1 1 0; width: 100%; min-height: 0; margin: 0; padding: 0 8px; overflow: auto;
     font-size: min(calc(clamp(1.15rem, 2.45vw, 1.95rem) * var(--scramble-scale)), max(12px, calc((100cqh - 60px) / 1.8)));
   }
+}
+@container widget (max-width: 400px) {
+  .layout-content .scramble-header { grid-template-columns: 1fr; gap: 2px; }
+  .layout-content .scramble-header .scramble-label,
+  .layout-content #scramble-tools { grid-column: 1; justify-self: center; }
 }
 .layout-content #panel-cube {
   position: relative !important; inset: auto !important;

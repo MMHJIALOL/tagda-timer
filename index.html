@@ -33,17 +33,17 @@
      import hint in Settings over a main.js that has never heard of CubeDesk.
      vercel.json also serves /css/ as `max-age=31536000, immutable`, so a
      stylesheet there will not even be asked about for a year without it. -->
-<link rel="modulepreload" href="js/main.js?v=180">
-<link rel="stylesheet" href="css/fonts.css?v=180">
-<link rel="stylesheet" href="css/tokens.css?v=180">
-<link rel="stylesheet" href="css/base.css?v=180">
-<link rel="stylesheet" href="css/components.css?v=180">
-<link rel="stylesheet" href="css/interactive-layout.css?v=180">
-<link rel="stylesheet" href="css/smart-cube.css?v=180">
-<link rel="stylesheet" href="css/announce.css?v=180">
+<link rel="modulepreload" href="js/main.js?v=181">
+<link rel="stylesheet" href="css/fonts.css?v=181">
+<link rel="stylesheet" href="css/tokens.css?v=181">
+<link rel="stylesheet" href="css/base.css?v=181">
+<link rel="stylesheet" href="css/components.css?v=181">
+<link rel="stylesheet" href="css/interactive-layout.css?v=181">
+<link rel="stylesheet" href="css/smart-cube.css?v=181">
+<link rel="stylesheet" href="css/announce.css?v=181">
 <!-- Phones only: the same query as js/phone.js. A desktop or tablet never
      applies a rule from it, and does not wait on it to paint. -->
-<link rel="stylesheet" href="css/phone.css?v=180" media="(max-width: 640px)">
+<link rel="stylesheet" href="css/phone.css?v=181" media="(max-width: 640px)">
 <link rel="icon" href="assets/favicon.ico" sizes="any">
 <link rel="icon" type="image/png" sizes="32x32" href="assets/logo-32.png">
 <link rel="icon" type="image/png" sizes="192x192" href="assets/logo-192.png">
@@ -294,7 +294,6 @@
   <!-- ---------- SCRAMBLE ---------- -->
 
   <section id="scramble-zone" class="fade-layer">
-    <div class="scramble-label">Scramble</div>
     <!-- The relay rail: one chip per puzzle in a relay, standing where
          the single scramble line normally starts. Only ever filled on a relay
          session, and the one part of this zone that survives focus mode -- see
@@ -302,21 +301,24 @@
          thing the clock cannot tell you. -->
     <div id="relay-rail" hidden></div>
     <div id="scramble-wrap">
-      <div id="scramble-text" class="scramble warming" tabindex="-1">Warming up scrambler&hellip;</div>
-      <div id="scramble-tools">
-        <button class="ghost-btn" id="btn-prev-scramble" title="Previous scramble">
-          <svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg>
-        </button>
-        <button class="ghost-btn" id="btn-copy-scramble" title="Copy scramble  (Ctrl+C)">
-          <svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/></svg>
-        </button>
-        <button class="ghost-btn" id="btn-custom-scramble" title="Enter your own scrambles  (X)">
-          <svg viewBox="0 0 24 24"><path d="M4 6h11M4 12h7M4 18h11M17 9v9M13.5 12.5L17 9l3.5 3.5"/></svg>
-        </button>
-        <button class="ghost-btn" id="btn-next-scramble" title="New scramble  (N)">
-          <svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
-        </button>
+      <div class="scramble-header">
+        <div class="scramble-label">Scramble</div>
+        <div id="scramble-tools" role="group" aria-label="Scramble controls">
+          <button class="ghost-btn" id="btn-prev-scramble" title="Previous scramble">
+            <svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg>
+          </button>
+          <button class="ghost-btn" id="btn-copy-scramble" title="Copy scramble  (Ctrl+C)">
+            <svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/></svg>
+          </button>
+          <button class="ghost-btn" id="btn-custom-scramble" title="Enter your own scrambles  (X)">
+            <svg viewBox="0 0 24 24"><path d="M4 6h11M4 12h7M4 18h11M17 9v9M13.5 12.5L17 9l3.5 3.5"/></svg>
+          </button>
+          <button class="ghost-btn" id="btn-next-scramble" title="New scramble  (N)">
+            <svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
+          </button>
+        </div>
       </div>
+      <div id="scramble-text" class="scramble warming" tabindex="-1">Warming up scrambler&hellip;</div>
     </div>
     <!-- What Spotify says is playing. Off unless album theming is linked and
          the setting is on -- the timer screen is meant to be empty. -->
@@ -830,7 +832,7 @@
   </div>
 </div>
 
-<script type="module" src="js/main.js?v=180"></script>
+<script type="module" src="js/main.js?v=181"></script>
 <script>
 (function () {
   var isFile = location.protocol === 'file:';
