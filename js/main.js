@@ -2899,7 +2899,7 @@ async function recordSolve({ timeMs, penalty = 'none', inspectionMs = 0, splits 
   // You have just finished a solve, so you are looking at the timer, not at row
   // four thousand. Folding the times strip back to its top page keeps recording
   // a solve cheap however far back you had scrolled to read old ones.
-  resetHistoryWindow();
+  resetHistoryWindow({ preserveRows: true });
 
   showDelta(solve, prevBest);
   renderAll();
@@ -3379,11 +3379,13 @@ function histOrder() {
   });
 }
 
-/** Back to the top window — a different session is a different list. */
-function resetHistoryWindow() {
+/** A new solve keeps its existing rows; changing sessions starts a new list. */
+function resetHistoryWindow({ preserveRows = false } = {}) {
   histShown = HIST_PAGE;
-  histIds = [];
-  histSigs = [];
+  if (!preserveRows) {
+    histIds = [];
+    histSigs = [];
+  }
   const list = $('#hist-list');
   if (list) list.scrollTop = 0;
 }

@@ -555,6 +555,7 @@
   padding: 0 calc(var(--pad) * 0.5);
 }
 
+/* Saving, syncing and refitting columns must not fade the times out and back in. */
 .solve-chip {
   display: grid; grid-template-columns: var(--hist-grid); align-items: center; gap: var(--hist-gap);
   padding: 5px 8px; border-radius: 7px;
@@ -563,9 +564,7 @@
   color: var(--text); cursor: pointer; user-select: none;
   border: 1px solid transparent;
   transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
-  animation: chipIn 380ms var(--ease-back);
 }
-@keyframes chipIn { from { opacity: 0; transform: translateX(-10px); } to { opacity: 1; transform: none; } }
 .solve-chip:hover { background: color-mix(in srgb, var(--text) 9%, transparent); border-color: var(--border); }
 .solve-chip .idx { font-size: .68rem; color: var(--text-faint); font-weight: 600; text-align: right; }
 /* Clipped rather than allowed to run under the averages: on the narrowest

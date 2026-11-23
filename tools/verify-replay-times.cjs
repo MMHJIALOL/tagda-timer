@@ -1,20 +1,24 @@
 const assert = require('node:assert/strict');
-const { chromium } = require('@playwright/test');
+const { chromium, firefox } = require('@playwright/test');
 const base = process.argv[2] || 'http://127.0.0.1:5186';
+const engine = process.argv[3] === 'firefox' ? firefox : chromium;
 
 (async () => {
-  const browser = await chromium.launch({
+  const browser = await engine.launch({
     headless: true,
-    args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'],
+    ...(engine === chromium
+      ? { args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'] }
+      : { firefoxUserPrefs: { 'media.navigator.streams.fake': true, 'media.navigator.permission.disabled': true } }),
   });
   try {
     const context = await browser.newContext({
-      serviceWorkers: 'block', permissions: ['camera', 'microphone'],
+      serviceWorkers: 'block', ...(engine === chromium ? { permissions: ['camera', 'microphone'] } : {}),
       viewport: { width: 1440, height: 1000 },
     });
     await context.route('**/announcements.json*', route => route.fulfill({ body: 'null' }));
     await context.route('**/config.json*', route => route.fulfill({ body: 'null' }));
     const page = await context.newPage();
+    await page.emulateMedia({ reducedMotion: 'no-preference' });
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     await page.goto(base, { waitUntil: 'domcontentloaded' });
@@ -23,10 +27,10 @@ const base = process.argv[2] || 'http://127.0.0.1:5186';
       document.querySelectorAll('.an-dlg[open]').forEach(dialog => dialog.dispatchEvent(new Event('cancel', { cancelable: true })));
       for (const [key, value] of Object.entries({
         inspection: false, holdTime: 0, confirmShortSolves: false, soundOnPB: false,
-        motion: 'full', reduceEffects: false, webcamKeepOn: true,
+        motion: 'full', reduceEffects: false, webcamKeepOn: false, focusMode: true,
       })) tagdatimer.setSetting(key, value);
       const { Solves } = await import('/js/db.js');
-      tagdatimer.solves = Array.from({ length: 90 }, (_, index) => ({
+      tagdatimer.solves = Array.from({ length: 4353 }, (_, index) => ({
         id: `replay-times-${index}`, sessionId: tagdatimer.session.id,
         timeMs: 10000 + index, penalty: 'none', createdAt: Date.now() + index,
         event: '333', scramble: tagdatimer.scramble.scramble,
@@ -36,6 +40,13 @@ const base = process.argv[2] || 'http://127.0.0.1:5186';
       const replay = await import('/js/replay.js');
       window.replayEvents = [];
       replay.onReplayChange(event => replayEvents.push(event));
+      window.historyAnimationEvents = [];
+      document.querySelector('#hist-list').addEventListener('animationstart', event => {
+        if (!event.target.matches('.solve-chip')) return;
+        const fades = event.target.getAnimations().some(animation =>
+          animation.effect.getKeyframes().some(frame => frame.opacity != null && Number(frame.opacity) < 1));
+        if (fades) historyAnimationEvents.push(event.target.dataset.solveId);
+      });
       if (!(await replay.enableReplay())) throw new Error('Fake camera did not open');
       tagdatimer.setSetting('webcamReplay', true);
       window.snapshotTimes = () => {
@@ -66,7 +77,15 @@ const base = process.argv[2] || 'http://127.0.0.1:5186';
     await page.locator('.hist-cols [data-sort="time"]').click();
     await page.waitForTimeout(450);
 
-    const recordSolve = async (label, { failSave = false } = {}) => {
+    const recordSolve = async (label, { failSave = false, slowSolveSave = false } = {}) => {
+      if (slowSolveSave) await page.evaluate(async () => {
+        const { Solves } = await import('/js/db.js');
+        window.originalSolvePut = Solves.put;
+        Solves.put = async (...args) => {
+          await new Promise(resolve => setTimeout(resolve, 650));
+          return originalSolvePut(...args);
+        };
+      });
       if (failSave) await page.evaluate(async () => {
         const { replayStore } = await import('/js/replay-store.js');
         window.originalReplayRun = replayStore.run;
@@ -86,6 +105,10 @@ const base = process.argv[2] || 'http://127.0.0.1:5186';
         throw error;
       });
       await page.waitForTimeout(250);
+      await page.evaluate(() => {
+        window.historyAnimationEvents = [];
+        window.rowsBeforeStop = [...document.querySelectorAll('#hist-list .solve-chip')];
+      });
       await page.keyboard.press('Space');
       await page.waitForFunction(n => tagdatimer.solves.length === n &&
         [...document.querySelectorAll('#hist-list .idx')].some(node => node.textContent === String(n)), count + 1);
@@ -104,6 +127,17 @@ const base = process.argv[2] || 'http://127.0.0.1:5186';
       }, { id, failSave });
       if (failSave) await page.evaluate(async () => {
         (await import('/js/replay-store.js')).replayStore.run = originalReplayRun;
+      });
+      // Observe camera shutdown and delayed updates too, not just the saved event.
+      await page.waitForTimeout(700);
+      assert.deepEqual(await page.evaluate(() => historyAnimationEvents), [],
+        `${label}: finishing a solve must not fade the times list out and back in`);
+      if (['solve-order camera save', 'delayed solve save', 'paged camera save'].includes(label)) {
+        const reused = await page.evaluate(() => rowsBeforeStop.filter(row => row.isConnected).length);
+        assert.ok(reused >= 74, `Only ${reused}/80 existing rows survived recording a solve`);
+      }
+      if (slowSolveSave) await page.evaluate(async () => {
+        (await import('/js/db.js')).Solves.put = originalSolvePut;
       });
       assert.deepEqual(await page.evaluate(() => checkTimesSnapshot()), {
         rowsPreserved: true, headingsPreserved: true, scrollPreserved: true, focusPreserved: true, heightsPreserved: true,
@@ -145,6 +179,17 @@ const base = process.argv[2] || 'http://127.0.0.1:5186';
     await page.locator('.hist-cols [data-sort="time"]').click();
     const ordinaryId = await recordSolve('solve-order camera save');
     await page.evaluate(async id => (await import('/js/replay.js')).deleteClip(id), ordinaryId);
+    const delayedId = await recordSolve('delayed solve save', { slowSolveSave: true });
+    await page.evaluate(async id => (await import('/js/replay.js')).deleteClip(id), delayedId);
+    await page.evaluate(() => {
+      const list = document.querySelector('#hist-list');
+      list.scrollTop = list.scrollHeight;
+      list.dispatchEvent(new Event('scroll'));
+    });
+    await page.waitForFunction(() => document.querySelectorAll('#hist-list .solve-chip').length > 80);
+    const pagedId = await recordSolve('paged camera save');
+    assert.equal(await page.locator('#hist-list .solve-chip').count(), 80);
+    await page.evaluate(async id => (await import('/js/replay.js')).deleteClip(id), pagedId);
     const failedId = await recordSolve('recoverable camera save failure', { failSave: true });
     await page.evaluate(async id => {
       const replay = await import('/js/replay.js');
@@ -170,6 +215,22 @@ const base = process.argv[2] || 'http://127.0.0.1:5186';
     await page.waitForFunction(() => document.querySelector('.replay-dlg[open] video')?.readyState >= 1);
     await page.evaluate(() => document.querySelector('.replay-dlg').close());
     console.log('PASS: replay button still opens a playable recording');
+
+    // Camera-off solves must follow the same steady update path.
+    const count = await page.evaluate(() => {
+      tagdatimer.setSetting('webcamReplay', false);
+      document.activeElement?.blur();
+      historyAnimationEvents = [];
+      return tagdatimer.solves.length;
+    });
+    await page.keyboard.press('Space');
+    await page.waitForFunction(() => document.body.classList.contains('timing'));
+    await page.waitForTimeout(250);
+    await page.keyboard.press('Space');
+    await page.waitForFunction(n => tagdatimer.solves.length === n, count + 1);
+    await page.waitForTimeout(1500);
+    assert.deepEqual(await page.evaluate(() => historyAnimationEvents), []);
+    console.log(`PASS (${engine.name()}): camera-off parity and no list re-entry throughout camera shutdown`);
     assert.deepEqual(errors, []);
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });
