@@ -1845,8 +1845,8 @@ body.inspecting #last-replay, body.focus #last-replay { display: none; }
 
 /* A filmed solve in the times list: a small play button after its time. */
 .chip-replay {
-  display: inline-grid; place-items: center; width: 17px; height: 17px; margin-left: 6px; padding: 0;
-  vertical-align: -3px; border: 0; border-radius: 5px; cursor: pointer;
+  display: inline-grid; place-items: center; width: 17px; height: min(17px, 1em); margin-left: 6px; padding: 0;
+  vertical-align: middle; border: 0; border-radius: 5px; cursor: pointer;
   color: var(--accent); background: color-mix(in srgb, var(--accent) 15%, transparent);
 }
 .chip-replay svg { width: 9px; height: 9px; fill: currentColor; stroke: none; }

@@ -1121,6 +1121,8 @@ function keep(r, solve, { pb = false } = {}) {
   }).finally(() => {
     saving.delete(solve.id);
     if (!unsaved.has(solve.id)) captures.delete(solve.id);
+    // Clear an optimistic play button only when no playable recording remains.
+    if (!ids.has(solve.id)) emit({ type: 'removed', ids: [solve.id] });
     emit({ type: 'storage' });
   });
   saving.set(solve.id, p);

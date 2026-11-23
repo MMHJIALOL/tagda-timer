@@ -6,6 +6,7 @@
     "test:replay-storage": "node --test js/replay-store.check.mjs js/replay-journal.check.mjs",
     "test:replay-ui": "node tools/verify-replay-storage.cjs",
     "test:replay-durability": "node tools/verify-replay-durability.cjs",
+    "test:replay-times": "node tools/verify-replay-times.cjs",
     "test:timer": "node --test js/timer.check.mjs",
     "test:cube-playback": "node tools/verify-cube-playback.cjs",
     "test:solve-motion": "node tools/verify-solve-motion.cjs",

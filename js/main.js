@@ -1989,7 +1989,7 @@ function wireReplayUI() {
       return syncCameraButton();
     }
     syncReplayPill();
-    if (e.type === 'saved' || e.type === 'removed') renderHistory();
+    if (e.type === 'saved' || e.type === 'removed') syncHistoryReplays();
   });
   timer.addEventListener('state', () => {
     syncReplayPill();
@@ -3427,7 +3427,28 @@ function historyRowData(i) {
 }
 
 const rowSig = (d) =>
-  `${d.cls}|${d.idx}|${d.time}|${d.replay ? 1 : 0}|` + d.avgs.map(a => `${a.n}:${a.text}:${a.best ? 1 : 0}`).join(',');
+  `${d.cls}|${d.idx}|${d.time}|` + d.avgs.map(a => `${a.n}:${a.text}:${a.best ? 1 : 0}`).join(',');
+
+function historyReplayButton(id) {
+  return el('button', {
+    class: 'chip-replay', title: t('Watch replay'), 'aria-label': t('Watch replay'),
+    html: '<svg viewBox="0 0 24 24"><path d="M8 5.5v13l10.5-6.5z"/></svg>',
+    onclick: (e) => { e.stopPropagation(); openReplay(app.solves.find(s => s.id === id) || id); },
+  });
+}
+
+/* Replay availability changes independently of solve results. Patch just the
+   play buttons so saving or pruning a clip never rebuilds the list or restarts
+   its rows' entry animations, including sorted and Competition history. */
+function syncHistoryReplays() {
+  for (const chip of $('#hist-list')?.querySelectorAll('.solve-chip') || []) {
+    const id = chip.dataset.solveId;
+    const button = chip.querySelector('.chip-replay');
+    if (hasReplay(id)) {
+      if (!button) chip.querySelector('.t').append(historyReplayButton(id));
+    } else button?.remove();
+  }
+}
 
 /** One row. `i` is the index into app.solves, so #1 is always #1. */
 function historyChip(i, data, grouped = false) {
@@ -3482,14 +3503,8 @@ function historyChip(i, data, grouped = false) {
   }));
   /* Filmed: a play button right after the time, inside its own (flexible)
      column, so no row changes shape. Its click stops here, not at the menu. */
-  if (d.replay) {
-    timeCell.append(el('button', {
-      class: 'chip-replay', title: t('Watch replay'), 'aria-label': t('Watch replay'),
-      html: '<svg viewBox="0 0 24 24"><path d="M8 5.5v13l10.5-6.5z"/></svg>',
-      onclick: (e) => { e.stopPropagation(); openReplay(d.solve); },
-    }));
-  }
-  const chip = el('div', { class: `${d.cls}${grouped ? ' competition-set-attempt' : ''}`, role: 'listitem' },
+  if (d.replay) timeCell.append(historyReplayButton(d.solve.id));
+  const chip = el('div', { class: `${d.cls}${grouped ? ' competition-set-attempt' : ''}`, role: 'listitem', dataset: { solveId: d.solve.id } },
     el('span', { class: 'idx', text: d.idx }),
     timeCell,
     ...cells,
