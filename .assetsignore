@@ -32,3 +32,13 @@ js/replay-journal.check.mjs
 tools/verify-replay-storage.cjs
 tools/verify-replay-durability.cjs
 tools/verify-replay-seeking.cjs
+
+# i Carry 4 hardware evidence and lab source are source-only.
+tools/fixtures/smart-cube/gan-icarry4*.json
+tools/fixtures/smart-cube/gan-carry4-ble.mjs
+tools/smart-cube-worker
+tools/verify-gan-carry4-browser.mjs
+tools/verify-gan-carry4-main.mjs
+tools/verify-gan-carry4-disconnect.mjs
+tools/verify-gan-carry4-upgrade.mjs
+js/gan-carry4.check.mjs

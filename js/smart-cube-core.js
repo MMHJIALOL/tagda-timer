@@ -15,6 +15,7 @@ export function ganCubeInfo(hardware = {}, deviceName = '', gyroObserved = false
   const hardwareName = hardware?.hardwareName || '';
   const name = /^GANicE2(?:_|$)/i.test(hardwareName || deviceName) ? 'GAN i carry E'
     : /^GANi30Mc(?:_|$)/i.test(hardwareName || deviceName) ? 'GAN356 i3'
+    : /^GANic4(?:_|$)/i.test(hardwareName || deviceName) ? 'GAN i Carry 4'
     : /^GANi4(?:_|$)/i.test(hardwareName || deviceName) ? 'GAN i4'
     : hardwareName || deviceName || 'GAN';
   return { name, hardwareName, firmware: hardware?.softwareVersion || null,
@@ -172,6 +173,10 @@ export class SmartStream {
     this.lastEvent = raw;
     if (this.raw.length === MAX_RAW) this.raw.shift();
     if (event.type !== 'GYRO') this.raw.push(raw);
+    if (event.type === 'STATE_UNCERTAIN') {
+      this.state = null; this.pendingSnapshots.clear();
+      this.issue(event.reason || 'Cube state mismatch', raw); return raw;
+    }
     if (event.type === 'MOVE') {
       if (!Number.isInteger(event.serial) || event.serial < 0 || event.serial > 255) { this.state = null; this.pendingSnapshots.clear(); this.issue('Invalid move sequence'); return; }
       const diff = this.serial == null ? 1 : (event.serial - this.serial + 256) % 256;
