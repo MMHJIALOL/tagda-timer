@@ -122,7 +122,21 @@ Five sources, one at a time, chosen in Settings → Timing input:
 - **Virtual cube**: csTimer's keyboard cube. Every key on the letter block is one turn
   (`I`/`K` are R/R', `J`/`F` are U/U', and so on, mapped by physical key so it works on
   any layout). The first real turn starts the clock and a solved cube stops it. The cube
-  sits in the middle of the screen with the clock on the right.
+  shares a responsive layout with the clock: side by side when the timer
+  column is wide enough, stacked in narrower columns, and compact on short
+  phones. The settings links have their own row below the cube.
+  **Adjust view** and **Cube settings** are text shortcuts to two sections of
+  Settings. The view section contains the Angle, Height, Tilt and Size slider
+  bar; the cube section contains orientation and keyboard bindings. The timer
+  itself only shows the two text shortcuts. These settings appear only in
+  Virtual cube mode.
+  Open **Cube settings** below it (or **Settings → Virtual cube**) to remap
+  individual moves, select a keyboard preset, change size, viewing height,
+  viewing angle and screen tilt, or choose any of the 24 top/front starting
+  orientations. Changes save automatically. Arrow keys adjust the camera
+  without making a turn; dragging also saves the resulting view. **Reset view**
+  and **Reset keys** restore those controls independently. Starting orientation
+  follows the trainer by default and changes an active solve only on its next reset.
 - **Smart cube (GAN)**: standard 3×3 practice with first-turn-to-solved timing.
   Completed scramble moves turn green; a wrong turn shows corrective moves.
   Click a saved time for move playback and solve analysis. While connected,

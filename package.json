@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "test:virtual-cube": "node --test js/vcube.check.mjs",
     "test:replay-storage": "node --test js/replay-store.check.mjs js/replay-journal.check.mjs",
     "test:replay-ui": "node tools/verify-replay-storage.cjs",
     "test:replay-durability": "node tools/verify-replay-durability.cjs",

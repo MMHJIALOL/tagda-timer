@@ -33,6 +33,7 @@ import { DEFAULT_SPEFFZ_MAP, DEFAULT_BLD, CORNER_STICKER_KEYS, EDGE_STICKER_KEYS
          pieceName, samePiece, diagnose } from './bldtrace.js';
 import { FACES } from './cube3.js';
 import { mountSettingsSearch } from './settings-search.js';
+import { buildVirtualCubeControls } from './vcube-controls.js';
 import { buildReplayLibrary } from './replay-library.js';
 import { searchSolves } from './solve-search.js';
 import { ACTIONS, MAX_KEYS, actionById, resolve, assign, reset, reservedWhy, keyOf, labelOf as keyLabelOf, keybindStore } from './keybinds.js';
@@ -1256,6 +1257,24 @@ export function buildSmartCubeSettings(app) {
   };
 }
 
+export function buildVirtualCubeSettings(app, initialSection = 'view') {
+  return body => {
+    if (app.settings.inputMode !== 'virtual' || !virtualSize(app.settings.event)) return;
+    const view = buildVirtualCubeControls(app, { group, row, select }, 'view');
+    const cube = buildVirtualCubeControls(app, { group, row, select }, 'cube');
+    const tabs = el('div', { class: 'vcube-settings-tabs', role: 'group', 'aria-label': t('Virtual cube settings sections') });
+    const show = section => {
+      view.hidden = section !== 'view'; cube.hidden = section !== 'cube';
+      for (const button of tabs.children) button.setAttribute('aria-pressed', String(button.dataset.section === section));
+    };
+    for (const [section, label] of [['view', 'Adjust view'], ['cube', 'Cube settings']]) tabs.append(el('button', {
+      type: 'button', text: label, dataset: { section }, onclick: () => show(section),
+    }));
+    show(initialSection === 'cube' ? 'cube' : 'view');
+    body.append(tabs, view, cube);
+  };
+}
+
 export function buildSettings(app, searchQuery = '') {
   return (body) => {
     const health = buildDataHealthRow(() => openDataHealth(app));
@@ -1316,7 +1335,7 @@ export function buildSettings(app, searchQuery = '') {
           t('the spacebar, a time you type in, a Stackmat, or a cube you turn with the keyboard')),
         S.inputMode === 'virtual'
           ? el('div', { class: 'hint-note', html:
-              t('Turn the cube with csTimer&rsquo;s keys: <b>I K</b> R, <b>D E</b> L, <b>J F</b> U, <b>S L</b> D, <b>H G</b> F, <b>W O</b> B, <b>U M</b> r, <b>V R</b> l, <b>5 X</b> M, <b>T B</b> x, <b>; A</b> y, <b>P Q</b> z (full list under <b>?</b>). The first turn starts the clock and a solved cube stops it; <b>Space</b> starts inspection, <b>Esc</b> resets. While it is on, those letters are turns, not shortcuts &mdash; the rest are in <b>Ctrl+K</b>. For 2x2 to 7x7 only') +
+              t('Turn the cube with your saved keys under <b>Virtual cube</b> below. The first turn starts the clock and a solved cube stops it; <b>Space</b> starts inspection, <b>Esc</b> resets. Arrow keys change the camera. While it is on, mapped keys turn the cube instead of opening shortcuts. For 2x2 to 7x7 only') +
               (virtualSize(S.event) ? '' : t(' &mdash; this event stays on the spacebar')) +
               t(', and its solves go in a &ldquo;Virtual&rdquo; session per event so they never mix with your real averages.') })
           : null,
@@ -1339,6 +1358,12 @@ export function buildSettings(app, searchQuery = '') {
       ),
 
       group(t('Bluetooth cube'), bluetooth.element),
+
+      S.inputMode === 'virtual' && virtualSize(S.event)
+        ? group(t('Virtual cube'), row(t('Cube controls'),
+            el('button', { class: 'ghost-btn', type: 'button', text: 'Open cube settings', onclick: () => app.openVirtualCubeSettings() }),
+            t('view, size, starting orientation and keyboard bindings')))
+        : null,
 
       group(t('Timer'),
         row(t('Solve animations'), toggle(S.solveAnimations !== false, v => {
@@ -2938,7 +2963,7 @@ const FIXED_SHORTCUTS = [
   ]],
   // Only while Settings > Timing input is t("Virtual cube"); these letters then
   // turn the cube instead of doing what the lists above say.
-  [t('Virtual cube'), [
+  [t('Virtual cube (default keys)'), [
     ['I  K', t("R  /  R'")], ['D  E', t("L  /  L'")], ['J  F', t("U  /  U'")], ['S  L', t("D  /  D'")],
     ['H  G', t("F  /  F'")], ['W  O', t("B  /  B'")], ['U  M', t("r  /  r'")], ['V  R', t("l  /  l'")],
     [t(',  C'), t("u  /  u'")], [t('Z  /'), t("d  /  d'")], [t('5  6  X  .'), t("M  /  M'")],

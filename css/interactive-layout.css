@@ -90,6 +90,7 @@ body[data-input="virtual"] .layout-content #timer-display {
 .layout-content #panel-cube .view-toggle { position: static; transform: none; opacity: 1; flex: none; }
 .layout-content #cube-close { top: 2px; right: 2px; }
 .layout-content #vcube-wrap { width: 100%; height: 100%; aspect-ratio: auto; }
+.layout-content #vcube-frame { height: 100%; aspect-ratio: auto; }
 .layout-content #smart-cube-wrap { width: 100%; height: 100%; max-width: none; max-height: none; overflow: auto; }
 .layout-content #metro, .layout-content #mascot {
   position: relative !important; inset: auto !important; width: 100% !important; height: 100% !important; max-width: none;

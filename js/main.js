@@ -18,6 +18,7 @@ import { Timer, INSPECT_MS } from './timer.js';
 import { createSolveMotion } from './solve-motion.js';
 import { Background, softwareGL } from './bg.js';
 import { CubeView } from './cube.js';
+import { virtualOrientation, virtualView } from './vcube-settings.js';
 import { makeDraggable } from './drag.js';
 import { flash, shockwave, confetti, stopConfetti, chime, callout, beep, setCalloutMode } from './fx.js';
 import { mountMetro, metroExternal } from './metro.js';
@@ -4557,6 +4558,7 @@ function applyInputView() {
   updateHint();
   syncStackmatButtons();
   $('#vcube-wrap').hidden = mode !== 'virtual';
+  if (mode !== 'virtual' && drawerOpen() && $('#drawer .vcube-settings')) closeDrawer();
   $('#smart-cube-wrap').hidden = mode !== 'smart';
   if (mode === 'smart') loadSmartCube().then(c => c.sync()).catch(err => toast(err.message, { kind: 'bad' }));
   else smartCube?.sync();
@@ -4666,7 +4668,7 @@ let vcube = null, vcubeReq = null;
 const loadVcube = () => {
   if (vcubeReq) return vcubeReq;
   const req = vcubeReq = makeVcube().then((v) => {
-    if (vcubeReq === req) vcube = v; else v.view.release();   // left before it was ready
+    if (vcubeReq === req) vcube = v; else v.release();   // left before it was ready
     return v;
   }, (err) => { if (vcubeReq === req) vcubeReq = null; throw err; });
   return req;
@@ -4674,7 +4676,7 @@ const loadVcube = () => {
 function dropVcube() {
   if (!vcubeReq) return;
   vcubeReq = null;
-  vcube?.view.release();
+  vcube?.release();
   vcube = null;
 }
 const makeVcube = async () => {
@@ -4686,7 +4688,36 @@ const makeVcube = async () => {
   view.colors = app.settings.cubeColors;
   // The preview is static on purpose (tempo 0); this one has to show each turn.
   view.player.setAttribute('tempo-scale', '4');
-  return new VirtualCube(view, timer);
+  const controller = new VirtualCube(view, timer);
+  controller.configure(app.settings);
+  const cameraEvents = new AbortController();
+  let press = null, captureDelay;
+  view.host.addEventListener('pointerdown', e => { press = [e.clientX, e.clientY]; }, { signal: cameraEvents.signal });
+  window.addEventListener('pointerup', e => {
+    if (!press) return;
+    const dragged = Math.hypot(e.clientX - press[0], e.clientY - press[1]) > 4;
+    press = null;
+    if (!dragged) return;
+    clearTimeout(captureDelay);
+    captureDelay = setTimeout(() => app.captureVirtualView(), 650);
+  }, { signal: cameraEvents.signal });
+  controller.disposeCamera = () => { clearTimeout(captureDelay); cameraEvents.abort(); };
+  return controller;
+};
+
+app.openVirtualCubeSettings = (section = 'cube') => {
+  if (!virtualLive()) return;
+  return openPanel('Settings', 'buildVirtualCubeSettings', undefined, app, section);
+};
+app.captureVirtualView = async () => {
+  if (!vcube || !virtualLive()) return;
+  const target = vcube;
+  const orbit = await target.view.getOrbit();
+  if (!orbit || vcube !== target || !virtualLive()) return;
+  const longitude = ((orbit.longitude + 180) % 360 + 360) % 360 - 180;
+  await app.setSetting('virtualCamera', {
+    latitude: Math.round(Math.max(-85, Math.min(85, orbit.latitude))), longitude: Math.round(longitude),
+  });
 };
 
 /** Put the scramble on screen onto the virtual cube. */
@@ -4697,9 +4728,10 @@ function resetVcube() {
   vcube.reset({
     puzzle: ev.puzzle,
     n: virtualSize(app.settings.event),
-    orientation: previewOrientation(modeOf(app.settings.mode), ev),
+    orientation: virtualOrientation(app.settings, previewOrientation(modeOf(app.settings.mode), ev)),
     scramble: s && !s.hold ? s.scramble : '',
   });
+  vcube.configure(app.settings);
 }
 
 /**
@@ -5622,7 +5654,7 @@ app.setSetting = (k, v) => {
   if (k === 'inputMode') smartCubeInputRequested = false;
   if (k === 'inspection') chooseInspection(app.settings, v);
   else app.settings[k] = v;
-  const saved = persist({ immediate: k === 'inspection' || ['interactiveResizing','smartCubeSize','smartCubeHints','smartCubeNet','smartCubeGyro'].includes(k) });
+  const saved = persist({ immediate: k === 'inspection' || String(k).startsWith('virtual') || ['interactiveResizing','smartCubeSize','smartCubeHints','smartCubeNet','smartCubeGyro'].includes(k) });
   applyAll(k);
   return saved;
 };
@@ -5656,6 +5688,8 @@ function applyAll(changed) {
   if (changed === 'scramblesOnly') { timer?.reset(); measureLayout(); }
   if (changed === 'showBpa') renderStats();
   if (changed === 'hintFacelets') cube.setHints(app.settings.hintFacelets);
+  if (!changed || String(changed).startsWith('virtual')) vcube?.configure(app.settings);
+  if (changed === 'virtualOrientation' && timer?.state === 'idle') resetVcube();
   if (!changed || changed === 'showCube') syncPreviewCube();
   if (!changed || ['smartCubeSize','smartCubeHints','smartCubeNet','smartCubeGyro'].includes(changed)) smartCube?.configurePreview();
   if (!changed || changed === 'cubeColors') {
@@ -6282,12 +6316,20 @@ function wireInput() {
 
   /* The virtual cube owns the letter block while it is on screen: a key csTimer
      turns a face with is a turn here, and never also a shortcut. Modifier
-     chords, Shift (so ? still opens this list) and the unmapped keys — digits,
-     Delete, the arrows — go on to the shortcut handler as usual. */
+     chords and Shift go on to shortcuts. Arrow keys adjust the camera;
+     controls in the Settings links keep their native keyboard behaviour. */
   let vSpace = false;
   document.addEventListener('keydown', (e) => {
-    if (!vcube || !virtualLive() || isTyping() || modalOpen()) return;
+    if (!vcube || !virtualLive() || isTyping() || modalOpen() || e.target.closest('#vcube-tools')) return;
     if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if (!e.shiftKey && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.code)) {
+      e.preventDefault(); e.stopImmediatePropagation();
+      const view = virtualView(app.settings);
+      const latitude = Math.max(-85, Math.min(85, view.latitude + (e.code === 'ArrowUp' ? 5 : e.code === 'ArrowDown' ? -5 : 0)));
+      const longitude = ((view.longitude + (e.code === 'ArrowRight' ? 5 : e.code === 'ArrowLeft' ? -5 : 0) + 540) % 360) - 180;
+      app.setSetting('virtualCamera', { latitude, longitude });
+      return;
+    }
     if (e.code === 'Escape') {
       // Nothing to reset, or a solve already recorded: Esc means what it always did.
       if (!vcube.armed || (timer.state === 'idle' && !vcube.moved)) return;
@@ -6607,6 +6649,9 @@ function wireChrome() {
   $('#btn-gear').addEventListener('click', () => openPanel('Your cubes', 'buildGear', { wide: true }, app));
   $('#btn-theme').addEventListener('click', () => openPanel('Appearance', 'buildAppearance', undefined, app));
   $('#btn-settings').addEventListener('click', () => openPanel('Settings', 'buildSettings', undefined, app));
+  $('#btn-vcube-angle')?.addEventListener('click', () => app.openVirtualCubeSettings('view'));
+  $('#btn-vcube-settings')?.addEventListener('click', () => app.openVirtualCubeSettings('cube'));
+  $('#vcube-tools')?.addEventListener('keydown', e => e.stopPropagation());
   $('#btn-spotify').addEventListener('click', () => openPanel('Spotify', 'buildSpotify', undefined, app));
   $('#btn-race').addEventListener('click', () => openPanel('Race', 'buildRace', undefined, app));
   $('#btn-daily').addEventListener('click', () => openSotd());

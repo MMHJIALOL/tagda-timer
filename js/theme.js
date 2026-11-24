@@ -1,4 +1,5 @@
 import { updatePuzzleColors } from './puzzle-colors.js';
+import { VIRTUAL_DEFAULTS } from './vcube-settings.js';
 import { t } from './i18n.js';
 /* ===========================================================
    Tagda Timer — settings model + live theme application
@@ -190,6 +191,7 @@ export const DEFAULTS = {
   stackmatMicLabel: '',         // its name, for finding it again when the id changes
   sotdInput: '',                // the Scramble of the Day's own: '' = follow inputMode | 'stackmat' | 'timer'
   virtualReturnSession: null,   // the session to go back to when the virtual cube is switched off
+  ...VIRTUAL_DEFAULTS,
   relaySplitEach: false,        // off: one stop records the whole relay
   /* 0/1 = off. 2-6 splits every solve into that many phases: the split key
      (same one that ends the solve) advances to the next phase instead, the

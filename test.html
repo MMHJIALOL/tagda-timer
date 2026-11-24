@@ -3173,7 +3173,7 @@ section('virtual cube');
   const N = await import('./js/cubenet.js');
   const same = (a, b, n) => JSON.stringify(N.faceletsFor(a, n)) === JSON.stringify(N.faceletsFor(b, n));
   check('I is R, K is R\'', V.movesFor('KeyI', 3)[0] === 'R' && V.movesFor('KeyK', 3)[0] === "R'");
-  check('a key off the map is not a turn', V.movesFor('Digit2', 3) === null && V.movesFor('Backspace', 3) === null);
+  check('a key off the map is not a turn', V.movesFor('Digit3', 3) === null && V.movesFor('Backspace', 3) === null);
   check('a solved cube is solved', V.isSolved('', 3) && V.isSolved("R R'", 4));
   check('rotations never unsolve it', V.isSolved('x y2 z\'', 5));
   check('a scramble is not solved', !V.isSolved("R U R' U'", 3));

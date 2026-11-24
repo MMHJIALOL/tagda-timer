@@ -11,34 +11,30 @@ import { t } from './i18n.js';
    =========================================================== */
 
 import { faceletsFor } from './cubenet.js';
+import { DEFAULT_KEYMAP, virtualKeymap, virtualView } from './vcube-settings.js';
 
 /**
  * csTimer's default layout, by physical key rather than by character, so it is
  * the same turns on AZERTY, with caps lock on, or with a non-Latin layout.
  */
-export const KEYMAP = {
-  KeyI: 'R',  KeyK: "R'",  KeyD: 'L',  KeyE: "L'",
-  KeyJ: 'U',  KeyF: "U'",  KeyS: 'D',  KeyL: "D'",
-  KeyH: 'F',  KeyG: "F'",  KeyW: 'B',  KeyO: "B'",
-  KeyU: 'Rw', KeyM: "Rw'", KeyV: 'Lw', KeyR: "Lw'",
-  Comma: 'Uw', KeyC: "Uw'", KeyZ: 'Dw', Slash: "Dw'",
-  Digit5: 'M', Digit6: 'M', KeyX: "M'", Period: "M'",
-  KeyT: 'x',  KeyY: 'x',  KeyB: "x'", KeyN: "x'",
-  Semicolon: 'y', KeyA: "y'", KeyP: 'z', KeyQ: "z'",
-};
+export const KEYMAP = DEFAULT_KEYMAP;
 
 /* A 2x2 has no inner layer, so a two-layer turn is the whole cube. */
 const WIDE_ON_2 = { Rw: 'x', "Rw'": "x'", Lw: "x'", "Lw'": 'x', Uw: 'y', "Uw'": "y'", Dw: "y'", "Dw'": 'y' };
 /* M on a big cube is every inner layer: the whole cube, minus both outer faces.
    Spelled out so the drawing and the simulator cannot disagree about it. */
-const SLICE_AS = { M: ['R', "L'", "x'"], "M'": ["R'", 'L', 'x'] };
+const SLICE_AS = {
+  M: ['R', "L'", "x'"], "M'": ["R'", 'L', 'x'],
+  E: ['U', "D'", "y'"], "E'": ["U'", 'D', 'y'],
+  S: ["F'", 'B', 'z'], "S'": ['F', "B'", "z'"],
+};
 
 /** The moves a key makes on an n-cube, [] for a key that does nothing there, null if unmapped. */
-export function movesFor(code, n) {
-  const m = KEYMAP[code];
+export function movesFor(code, n, map = KEYMAP) {
+  const m = map[code];
   if (!m) return null;
   if (n === 2 && WIDE_ON_2[m]) return [WIDE_ON_2[m]];
-  if (m[0] === 'M' && n !== 3) return n === 2 ? [] : SLICE_AS[m];
+  if (/^[MES]/.test(m) && n !== 3) return n === 2 ? [] : SLICE_AS[m];
   return [m];
 }
 
@@ -99,6 +95,20 @@ export class VirtualCube {
     this.last = null;
     this.moves = [];
     this.armed = false;      // a scramble is on the cube and it has not been solved yet
+    this.keymap = KEYMAP;
+  }
+
+  configure(settings) {
+    this.keymap = virtualKeymap(settings);
+    const { tilt, ...orbit } = virtualView(settings);
+    this.map = viewMap(orbit);
+    this.view.setOrbit(orbit);
+    if (this.view.host?.style) this.view.host.style.transform = `rotate(${tilt}deg)`;
+  }
+
+  release() {
+    this.disposeCamera?.();
+    this.view.release?.();
   }
 
   get moved() { return this.moves.length > 0; }
@@ -130,7 +140,7 @@ export class VirtualCube {
    * let it through to the shortcuts.
    */
   key(code, repeat = false) {
-    const toks = movesFor(code, this.last?.n || 3);
+    const toks = movesFor(code, this.last?.n || 3, this.keymap);
     if (!toks) return false;
     // A held key is one turn. Between a solve and the next scramble arriving,
     // swallow too: never start a clock on a cube that is already solved.

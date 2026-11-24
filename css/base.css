@@ -510,26 +510,123 @@ body.zen #learn-bar { display: none; }
 }
 
 /* ---------------- virtual cube ----------------
-   csTimer's arrangement: the cube sits dead centre of the screen and the clock
-   is parked against the right edge of the centre column, out of its way. */
-#vcube-wrap { width: min(56vh, 46%); aspect-ratio: 1; flex: none; }
+   The cube, its links and the clock reserve their own space. The available
+   timer column, rather than the window width, decides when they stack. */
+#vcube-wrap { display: grid; grid-template-rows: minmax(0, 1fr) auto; gap: 12px; width: 100%; min-width: 0; min-height: 0; }
+#vcube-frame { width: 100%; aspect-ratio: 1; min-width: 0; min-height: 0; overflow: hidden; }
 #vcube-holder, #vcube-holder twisty-player { width: 100%; height: 100%; }
+#vcube-holder { transform-origin: center; }
+#vcube-tools { position: relative; z-index: 2; width: max-content; max-width: calc(100vw - 32px); min-width: 0; justify-self: center; }
+.vcube-tool-buttons { display: flex; flex-wrap: wrap; justify-content: center; column-gap: 1.25rem; row-gap: .25rem; }
+.vcube-tool-buttons > button { white-space: nowrap; }
+.vcube-text-link { padding: .35rem 0; border: 0; border-radius: 0; background: transparent; color: var(--text-dim); font-size: .875rem; cursor: pointer; }
+.vcube-text-link:hover { color: var(--text); text-decoration: underline; text-underline-offset: .2em; }
+body.timing #vcube-tools { visibility: hidden; }
+.vcube-angle-bar { margin: .5rem 0 1rem; padding: .65rem; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); }
+.vcube-settings-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .25rem; padding: .25rem; border-radius: 12px; background: var(--surface); }
+.vcube-settings-tabs > button { padding: .65rem .5rem; border-radius: 9px; color: var(--text-dim); font-size: .875rem; }
+.vcube-settings-tabs > button[aria-pressed="true"] { background: var(--accent-tint); color: var(--accent-text); }
+.vcube-settings-tabs > button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.vcube-view-tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .25rem; }
+.vcube-view-tab { padding: .4rem .2rem; border-radius: 8px; color: var(--text-dim); font-size: .875rem; }
+.vcube-view-tab[aria-pressed="true"] { background: var(--accent-tint); color: var(--accent-text); }
+.vcube-bar-range { display: flex; align-items: center; gap: .5rem; margin-top: .6rem; }
+.vcube-bar-range input { min-width: 0; flex: 1; accent-color: var(--accent); }
+.vcube-bar-value { min-width: 3.25rem; text-align: right; font-size: .875rem; font-variant-numeric: tabular-nums; }
+.vcube-bar-reset { padding: .35rem; color: var(--text-dim); font-size: .875rem; }
+#vcube-tools button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+#vcube-wrap { position: relative; }
+.vcube-actions { display: flex; gap: .5rem; flex-wrap: wrap; justify-content: flex-end; }
+.vcube-bindings { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem 1rem; }
+.vcube-binding { display: flex; align-items: center; justify-content: space-between; gap: .5rem; min-width: 0; }
+.vcube-binding > span { font-family: var(--font-mono, monospace); font-size: .875rem; }
+.vcube-key { min-width: 5.5rem; min-height: 2.25rem; font-size: .875rem; }
+.vcube-key[aria-pressed="true"] { outline: 2px solid var(--accent); outline-offset: 2px; }
+.vcube-binding-status:empty { display: none; }
+.vcube-help { font-size: .875rem; color: var(--text-dim); line-height: 1.5; margin: .5rem 0; }
+.vcube-settings .row > .lbl { font-size: .875rem; }
+/* Keep the cube visible while its live controls are open. */
+body[data-input="virtual"]:has(#drawer:not([hidden]) .vcube-settings:not(.settings-search-hidden)) #scrim {
+  backdrop-filter: none; -webkit-backdrop-filter: none; background: rgb(0 0 0 / .12);
+}
+@media (max-width: 400px) { .vcube-bindings { column-gap: .5rem; } .vcube-key { min-width: 4.5rem; } }
 body[data-input="virtual"] #panel-cube { display: none; }
-body[data-input="virtual"] #timer-display { font-size: min(var(--timer-size), 5.5vw); }
+body[data-input="virtual"]:not(.layout-custom) #app { overflow-y: auto; }
+body[data-input="virtual"]:not(.layout-custom) #stage { min-height: min-content; }
+body[data-input="virtual"]:not(.layout-custom) #timer-zone {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(8rem, .38fr);
+  align-items: center; align-content: center; justify-items: center;
+  gap: clamp(16px, 2vw, 32px); padding-block: 16px;
+  min-height: min-content; container: virtual-stage / inline-size;
+}
+body[data-input="virtual"]:not(.layout-custom) #vcube-wrap {
+  grid-area: 1 / 1; position: relative; inset: auto; transform: none;
+  width: min(100%, 52dvh, 560px); aspect-ratio: auto;
+}
+body[data-input="virtual"]:not(.layout-custom) #timer-core {
+  grid-area: 1 / 2; position: relative; inset: auto; transform: none;
+  width: 100%; max-width: 100%; min-width: 0; padding: 0;
+  align-items: center; gap: 10px; text-align: center;
+}
+body[data-input="virtual"]:not(.layout-custom) :is(#timer-display, #inspect-num) {
+  font-size: min(var(--timer-size), clamp(28px, 6cqw, 68px)); max-width: 100%;
+}
+body[data-input="virtual"]:not(.layout-custom) #timer-core #inspect-readout:not([hidden]) {
+  position: relative; inset: auto; transform: none; width: 100%; max-width: 100%;
+}
+body[data-input="virtual"].inspecting:not(.layout-custom) #timer-display { display: none; }
+body[data-input="virtual"]:not(.layout-custom) #timer-hint {
+  max-width: 30ch; height: auto; text-align: center; text-wrap: balance; line-height: 1.5;
+}
+body[data-input="virtual"]:not(.layout-custom) :is(#timer-avgs, #last-row) {
+  position: relative; inset: auto; transform: none; max-width: 100%; height: auto;
+  flex-wrap: wrap; justify-content: center;
+}
 @media (min-width: 861px) {
-  body[data-input="virtual"] #vcube-wrap {
-    position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  body[data-input="virtual"]:not(.layout-custom):has(#drawer:not([hidden]) .vcube-settings) #stage {
+    padding-inline-end: max(0px, calc(440px - var(--sidebar-w) - var(--gap)));
   }
-  body[data-input="virtual"] #timer-core {
-    position: absolute; left: auto; right: 0; top: 50%; transform: translateY(-50%);
-    align-items: flex-end; max-width: 27%;
+  body[data-input="virtual"]:not(.layout-custom):has(#drawer:not([hidden]) .vcube-settings) :is(#stage[data-right="off"], #stage[data-sidebar="off"]) {
+    padding-inline-end: 440px;
   }
-  body[data-input="virtual"] #timer-hint { text-align: right; text-wrap: balance; }
+}
+@container virtual-stage (max-width: 620px) {
+  body[data-input="virtual"]:not(.layout-custom) #vcube-wrap {
+    grid-area: 1 / 1 / 2 / -1; width: min(100%, 40dvh, 460px);
+  }
+  body[data-input="virtual"]:not(.layout-custom) #timer-core { grid-area: 2 / 1 / 3 / -1; }
+  body[data-input="virtual"]:not(.layout-custom) :is(#timer-display, #inspect-num) {
+    font-size: min(var(--timer-size), clamp(32px, 13cqw, 72px));
+  }
 }
 @media (max-width: 860px) {
-  #vcube-wrap { width: min(80vw, 40vh); }
-  body[data-input="virtual"] #timer-core,
-  body[data-input="virtual"] #inspect-readout { position: relative; left: auto; top: auto; transform: none; }
+  body[data-input="virtual"]:not(.layout-custom) #stage { grid-template-rows: minmax(min-content, 1fr) auto; }
+}
+@media (max-width: 640px) {
+  body.ph[data-input="virtual"]:not(.layout-custom) #timer-zone { width: 100%; padding-block: 12px; gap: 16px; }
+  body.ph[data-input="virtual"]:not(.layout-custom) #vcube-wrap { width: min(100%, 32dvh, 320px); }
+  body.ph[data-input="virtual"]:not(.layout-custom) #timer-core { padding: 0; gap: 8px; }
+  body.ph[data-input="virtual"]:not(.layout-custom) #timer-hint { max-width: 100%; margin-top: 0; }
+  body.ph[data-input="virtual"]:not(.layout-custom) #last-actions.empty { display: none; }
+}
+/* Short phones keep the clock beside the cube so it stays above the dock. */
+@media (max-width: 640px) and (max-height: 700px) {
+  body.ph[data-input="virtual"]:not(.layout-custom) #timer-zone {
+    grid-template-columns: minmax(0, 1fr) minmax(104px, .75fr); gap: 12px;
+  }
+  body.ph[data-input="virtual"]:not(.layout-custom) #vcube-wrap { display: contents; }
+  body.ph[data-input="virtual"]:not(.layout-custom) #vcube-frame { grid-area: 1 / 1; }
+  body.ph[data-input="virtual"]:not(.layout-custom) #vcube-tools { grid-area: 2 / 1 / 3 / -1; }
+  body.ph[data-input="virtual"]:not(.layout-custom) #timer-core { grid-area: 1 / 2; }
+  body.ph[data-input="virtual"]:not(.layout-custom) :is(#timer-display, #inspect-num) {
+    font-size: min(var(--timer-size), clamp(28px, 10cqw, 48px));
+  }
+  body.ph[data-input="virtual"]:not(.layout-custom) #last-actions { gap: 4px; margin-top: 4px; }
+  body.ph[data-input="virtual"]:not(.layout-custom) #last-actions .ph-pill { height: 34px; min-height: 34px; min-width: 34px; padding-inline: 6px; }
+  body.ph[data-input="virtual"]:not(.layout-custom) #last-actions .ph-pill:has(svg) { width: 34px; padding: 0; justify-content: center; }
+  body.ph[data-input="virtual"]:not(.layout-custom) #last-actions .ph-pill > span {
+    position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%);
+  }
 }
 
 #timer-display {
