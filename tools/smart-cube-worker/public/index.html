@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Smart Cube Lab · Tagda Timer</title>
+  <meta name="robots" content="noindex,nofollow">
+  <link rel="icon" href="/assets/favicon.ico">
+  <link rel="stylesheet" href="/smart-cube/style.css?v=4">
+  <script type="module" src="/smart-cube/app.js?v=4"></script>
+</head>
+<body>
+  <main>
+    <header>
+      <a class="brand" href="/">TAGDA <span>TIMER</span></a>
+      <span class="pill">HARDWARE TESTING</span>
+    </header>
+    <section class="intro">
+      <div><p class="eyebrow">THE SMART CUBE LAB</p><h1>Every turn.<br><span>Accounted for.</span></h1>
+      <p class="lede">Connect your GAN cube, do a few solves, and help us bring smart cubes to Tagda.</p></div>
+      <div class="retention"><span class="retention-icon">7<span>d</span></span><div><strong>Temporary cloud reports</strong><p>Test data uploads automatically to Cloudflare. It is deleted 7 days after you start the test. Anyone with your report link can view it.</p></div></div>
+    </section>
+    <div id="notice" class="notice" role="status" hidden></div>
+    <div id="capture-controls" class="setup card">
+      <label>Cube model <input id="model" maxlength="120" placeholder="e.g. GAN i Carry 2" autocomplete="off"></label>
+      <label class="mac-field">Bluetooth address <span class="optional">if prompted</span><input id="mac" maxlength="17" placeholder="AA:BB:CC:DD:EE:FF" autocomplete="off"></label>
+      <button id="connect" class="primary">Connect cube <span aria-hidden="true">↗</span></button>
+      <button id="new-test" class="quiet">New test</button>
+      <p class="setup-help">Use Chrome or Edge on a computer, or Chrome on Android. Close CubeStation and other connected cube tabs. Test one cube at a time. For GAN i Carry 4, make one slow turn and undo it after connecting, then wait for the sticker net.</p>
+    </div>
+    <div class="workspace">
+      <section class="card cube-card">
+        <div class="card-heading"><h2>Live cube</h2><span id="connection" class="badge">Disconnected</span></div>
+        <div id="cube-net" class="cube-net" aria-label="Cube sticker state"></div>
+        <div class="cube-footer"><span id="cube-state">Waiting for cube state</span><button id="refresh" class="text-button" disabled>Read state</button></div>
+        <dl class="hardware"><div><dt>Device</dt><dd id="device">—</dd></div><div><dt>Firmware</dt><dd id="firmware">—</dd></div><div><dt>Battery</dt><dd id="battery">—</dd></div><div><dt>Sequence gaps</dt><dd id="gaps">0</dd></div></dl>
+      </section>
+      <section class="card timer-card">
+        <div class="card-heading"><h2>Solve test</h2><span id="timer-status" class="badge">Idle</span></div>
+        <p id="timer" class="timer">0.000</p>
+        <div class="metrics"><div><strong id="move-count">0</strong><span>quarter turns</span></div><div><strong id="tps">—</strong><span>turns / second</span></div><div><strong id="event-count">0</strong><span>events captured</span></div></div>
+        <div id="solve-controls" class="timer-actions"><button id="arm" class="primary" disabled>Arm next solve</button><button id="cancel" class="quiet" disabled>Cancel solve</button></div>
+        <p id="timer-help" class="help">Scramble your cube, then arm the timer. Your first turn starts it. Solving the cube stops it.</p>
+        <div id="solve-list" class="solve-list"><p class="empty">Your test solves will appear here.</p></div>
+      </section>
+    </div>
+    <section class="card gyro-card" aria-labelledby="gyro-title">
+      <div class="card-heading"><h2 id="gyro-title">Gyroscope test</h2><span id="gyro-status" class="badge" role="status">Connect a cube</span></div>
+      <div class="gyro-layout">
+        <div class="gyro-preview">
+          <div class="gyro-scene" role="img" aria-label="Live cube orientation preview"><div id="gyro-cube" class="gyro-cube"><div class="gyro-face gyro-f">F</div><div class="gyro-face gyro-b">B</div><div class="gyro-face gyro-r">R</div><div class="gyro-face gyro-l">L</div><div class="gyro-face gyro-u">U</div><div class="gyro-face gyro-d">D</div></div></div>
+          <p class="small">Orientation guide · rotate the whole cube</p>
+        </div>
+        <div class="gyro-info">
+          <p id="gyro-help" class="help">Connect a cube, then rotate it in your hands without turning any faces. Cubes with a gyroscope will move the preview.</p>
+          <dl class="gyro-metrics"><div><dt>Valid samples</dt><dd id="gyro-samples">0</dd></div><div><dt>Receive rate</dt><dd id="gyro-rate">—</dd></div><div><dt>Invalid samples</dt><dd id="gyro-invalid">0</dd></div></dl>
+          <div id="gyro-controls" class="gyro-actions"><button id="start-gyro" class="primary" disabled>Start 12-second test</button><button id="center-gyro" class="quiet" disabled>Re-center view</button></div>
+          <progress id="gyro-progress" max="12000" value="0" aria-label="Gyroscope test progress" hidden></progress>
+          <p id="gyro-result" class="small" role="status">The test checks rotation on three axes, then asks you to hold still. Results and orientation samples are included in your report.</p>
+          <details class="gyro-details"><summary>Sensor readings</summary><p id="gyro-quaternion" class="small">Waiting for an orientation sample.</p><p class="small">The preview starts from your first sample. Re-centering changes only the view. A completed test records observed movement; it does not certify sensor accuracy.</p></details>
+        </div>
+      </div>
+    </section>
+    <section class="card steps" id="test-steps"><p class="eyebrow">A QUICK TEST</p><ol><li><b>Connect</b><span>Start solved. Check that the colours match.</span></li><li><b>Turn & solve</b><span>Do slow turns, then a few fast solves.</span></li><li><b>Reconnect & rotate</b><span>Reconnect, then run the gyroscope test if supported.</span></li><li><b>Finish</b><span>Add notes and check that cloud saving succeeded.</span></li></ol></section>
+    <div class="bottom-grid">
+      <section class="card report-card">
+        <div class="card-heading"><h2>Your test report</h2><span id="cloud-badge" class="badge">Ready</span></div>
+        <p id="cloud-status" class="help" role="status">Cloud saving starts when you connect. Keep this page open during the test.</p>
+        <label for="notes">Anything we should know?</label><textarea id="notes" maxlength="2000" rows="3" placeholder="Missed turns, a wrong colour, connection trouble…"></textarea>
+        <div class="report-actions"><button id="upload" class="primary">Save now</button><button id="download" class="quiet">Download JSON</button></div>
+        <div id="share-box" hidden><label for="report-link">Report link</label><div class="link-row"><input id="report-link" readonly><button id="copy" class="quiet">Copy</button></div><p id="expiry" class="small"></p></div>
+        <p class="small">Reports include cube information, full turn events, timing, sampled orientation, browser details, and your notes. Bluetooth addresses stay in this tab. Downloaded files stay where you save them.</p>
+      </section>
+      <section class="card events-card">
+        <div class="card-heading"><h2>Event stream</h2><span class="small">Latest 80</span></div>
+        <div id="events" class="event-stream" aria-label="Recent cube events"><p class="empty">Waiting for the first event.</p></div>
+      </section>
+    </div>
+    <section class="card contact-card" aria-labelledby="contact-title">
+      <div class="contact-copy"><p class="eyebrow">NEED A HAND?</p><h2 id="contact-title">Contact me</h2><p class="help">Something not working? Message me on Instagram with your cube model and what went wrong.</p></div>
+      <a class="contact-link" href="https://www.instagram.com/cubingngagng/" target="_blank" rel="noopener noreferrer" aria-label="Contact @cubingngagng on Instagram">@cubingngagng <span aria-hidden="true">↗</span></a>
+    </section>
+    <footer><span>TAGDA TIMER / SMART CUBE LAB</span><span>Test build · i Carry 4 sync 2 · <a href="/smart-cube/licenses.txt">Licenses</a></span></footer>
+  </main>
+</body>
+</html>

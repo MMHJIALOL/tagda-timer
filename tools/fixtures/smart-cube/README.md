@@ -1,5 +1,22 @@
 # GAN hardware recordings
 
+`gan-icarry4-raw.json` contains real decrypted notifications from three first-patch
+retests: 40 live turns and 278 state packets, plus hardware/battery responses.
+Relative receive times and reconnect boundaries are retained. Address-bearing
+0xFF and unrelated packets are excluded. The Chrome test uses native browser
+timers and reproduces the first patch's Illegal invocation failure before the
+callback binding fix. The 40 turns match the normalized state history after the
+fix; these reports do not contain completed physical solve tests.
+
+`gan-icarry4.json` preserves ten GANic4 firmware 1.0 sessions: 651 decoded turns
+and 1,614 snapshots, all reporting snapshot serial zero. Browser details, notes,
+device suffixes and wall-clock dates are omitted. Times are relative to each
+session. These recordings reproduce the stale three-U prefix and the T-perm
+ending with a false U-prime offset. The regression test reconstructs Gen4 input
+packets from the decoded cubie/turn fields; these are synthetic packets, not
+captured BLE bytes. New patch-build lab reports capture up to 256 decrypted
+notification packets for checking the physical connection separately.
+
 These fixtures contain decoded turn/state notifications and completed test
 attempts from the owner's November 2026 Smart Cube Lab uploads:
 

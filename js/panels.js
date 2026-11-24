@@ -1161,16 +1161,18 @@ function bluetoothCubeRow(app) {
     const state = controller?.connectionState;
     const connected = state === 'connected';
     const attached = !!controller?.connection;
+    const warmingUp = attached && controller.connection.protocolPatch && !controller.stream?.state;
     const busy = ['requesting permission','connecting','reading initial state'].includes(state);
     const unsupported = !navigator.bluetooth || !isSecureContext || state === 'unsupported';
     element.dataset.connected = String(connected);
     element.setAttribute('aria-busy', String(preparing || busy));
-    name.textContent = connected ? controller.deviceInfo.name : t('Connect smart cube');
+    name.textContent = connected || warmingUp ? controller.deviceInfo.name : t('Connect smart cube');
     detail.textContent = unsupported ? t('Bluetooth needs Chrome or Edge on localhost or HTTPS.') :
       connected ? [controller.battery == null ? t('Bluetooth connected') : t('{n}% battery', {n:controller.battery}),
         app.settings.inputMode === 'smart' ? t('Smart cube input') : t('Another timing input is selected')].join(' · ') :
       t('Pair a GAN cube via Bluetooth · standard 3×3 practice');
     status.textContent = failure || (preparing ? t('Preparing Bluetooth…') : unsupported ? t('Bluetooth unavailable') :
+      warmingUp ? t('Make one slow turn and undo it, then wait for the cube state') :
       connected ? t('Connected') : busy ? t(state === 'requesting permission' ? 'Choose your cube in the Bluetooth picker…' : 'Connecting…') :
       state === 'chooser cancelled' ? t('Pairing cancelled. You can try again.') :
       ['connection error','permission denied','initial state missing'].includes(state) ? t(state) : t('Not connected'));
@@ -1236,6 +1238,7 @@ export function buildSmartCubeSettings(app) {
         el('p', { text:[controller.deviceInfo.hardwareName,
           controller.deviceInfo.firmware ? t('Firmware {version}', { version:controller.deviceInfo.firmware }) : '',
           controller.deviceInfo.gyroSupported === false ? t('No gyroscope · turn tracking is available') : ''].filter(Boolean).join(' · ') })),
+      ...(controller.connection?.protocolPatch ? [el('p', { class:'sub', text:t('i Carry 4 · Early support. Check that the preview matches your cube before solving.') })] : []),
       group(t('Cube preview'),
         row(t('Cube size'), size, t('fits the available space on every screen')),
         row(t('Show rear stickers'), rear, t('see the colours on the hidden faces')),

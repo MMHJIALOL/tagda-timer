@@ -1,0 +1,12 @@
+{
+  "name": "tagda-smart-cube-test",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "node --test test.mjs",
+    "deploy": "npm run build && npx wrangler deploy --config wrangler.json"
+  },
+  "dependencies": { "gan-web-bluetooth": "3.0.2" },
+  "devDependencies": { "esbuild": "0.25.12" }
+}
