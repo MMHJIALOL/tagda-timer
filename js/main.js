@@ -26,6 +26,8 @@ import { keepAwake } from './wakelock.js';
 import { initReplay, syncReplay, takeClip, hasReplay, openReplay, replayOpen, replayEnabled,
          onReplayChange, replayStatus, replaySupported, replayOff, setStackmatMic } from './replay.js';
 import { summarize, eff, DNF, isMoveResult, resultsFor, bestSingle, bestAvg, currentAvg, trimmedIndices, byCase, sessionBests, rollingSeries, statWindow, STAT_LABELS, goalProgress, bpaWpa } from './stats.js';
+import { AVG_MIN, historyAverages, statisticsAverages, recordAverages } from './average-settings.js';
+import { averageHeading, editAverage, setAverageEditing } from './average-editor.js';
 import { renderMiniTrend } from './charts.js';
 import { DEFAULTS, loadSettings, saveSettings, isOwnSettingsWrite, applyTheme, applyBackground, themeColors, setAlbumTint, paintBackgroundColors, liquidGlassOK, TEXT_COLOR_KEYS } from './theme.js';
 import { chooseInspection, mergeInspection } from './inspection-setting.js';
@@ -2846,10 +2848,7 @@ async function recordSolve({ timeMs, penalty = 'none', inspectionMs = 0, splits 
   // scans blocked the stopping key's task and kept the frozen digits unpainted.
   const comparable = resultsFor(app.solves, fmcMoves !== null);
   const prevBest = bestSingle(comparable);
-  const prevAo5  = bestAvg(comparable, 5).value;
-  const prevAo12 = bestAvg(comparable, 12).value;
-  const prevAo25 = bestAvg(comparable, 25).value;
-  const prevAo100 = bestAvg(comparable, 100).value;
+  const averageRecords = recordAverages(app.settings).map(n => [n, bestAvg(comparable, n).value]);
   if (!app.solves.some(s => s.id === solve.id)) app.solves.push(solve);
 
   // Once saved, this list entry must not return if a reload interrupts the
@@ -2864,18 +2863,15 @@ async function recordSolve({ timeMs, penalty = 'none', inspectionMs = 0, splits 
   // below, which are what the sound used to wait behind.
   comparable.push(solve);
   const nowBest = bestSingle(comparable);
-  const nowAo5  = bestAvg(comparable, 5).value;
-  const nowAo12 = bestAvg(comparable, 12).value;
-  const nowAo25 = bestAvg(comparable, 25).value;
-  const nowAo100 = bestAvg(comparable, 100).value;
   const beat = (prev, now) => prev !== null && now !== null && now < prev;
 
-  let pb = null;
-  if (beat(prevBest, nowBest) && eff(solve) === nowBest) pb = ['single', nowBest];
-  else if (beat(prevAo5, nowAo5)) pb = ['ao5', nowAo5];
-  else if (beat(prevAo12, nowAo12)) pb = ['ao12', nowAo12];
-  else if (beat(prevAo25, nowAo25)) pb = ['ao25', nowAo25];
-  else if (beat(prevAo100, nowAo100)) pb = ['ao100', nowAo100];
+  const pbs = [];
+  if (beat(prevBest, nowBest) && eff(solve) === nowBest) pbs.push(['single', nowBest]);
+  for (const [n, previous] of averageRecords) {
+    const value = bestAvg(comparable, n).value;
+    if (beat(previous, value)) pbs.push([`ao${n}`, value]);
+  }
+  const pb = pbs[0];
   if (pb && app.settings.soundOnPB) chime();
   // Its replay, if this attempt was filmed. A new best single's is kept for good.
   clip?.keep(solve, { pb: pb?.[0] === 'single' });
@@ -2911,7 +2907,7 @@ async function recordSolve({ timeMs, penalty = 'none', inspectionMs = 0, splits 
   if (goalHit !== null) {
     const g = app.session.goal;
     celebratePB(g.stat, goalHit, `Goal hit: sub-${goalTarget(g.value)} ${g.stat}!`);
-  } else if (pb) celebratePB(...pb);
+  } else if (pb) celebratePB(...pb, undefined, pbs);
   /* Only a Competition attempt waits for the next scramble, so the set has
      saved it before the next attempt. Anything else must not: a typed time
      or an FMC submit would sit behind a big-cube or Square-1 scrambler. */
@@ -3132,7 +3128,7 @@ function editSession(anchor, s) {
   name.select();
 }
 
-function celebratePB(kind, value, title) {
+function celebratePB(kind, value, title, records = [[kind, value]]) {
   const c = themeColors();
   const intensity = kind === 'single' ? 1 : kind === 'ao5' ? 0.7 : 0.5;
   const motion = app.settings.motion;
@@ -3146,7 +3142,11 @@ function celebratePB(kind, value, title) {
         power: 0.7 + intensity * 0.5 });
     flash(c.gold);
   }
-  const label = title || (kind === 'single' ? t('New personal best!') : `Best ${kind} of the session!`);
+  const averages = records.filter(([key]) => key !== 'single').map(([key]) => key);
+  const label = title || [
+    records.some(([key]) => key === 'single') ? t('New personal best!') : '',
+    averages.length ? `Best ${averages.join(', ')} of the session!` : '',
+  ].filter(Boolean).join(' ');
   toast(label, { kind: 'good', hold: true });
   const d = $('#timer-display');
 
@@ -3156,7 +3156,8 @@ function celebratePB(kind, value, title) {
   ticker.className = 'pb-marquee' + (motion === 'off' ? ' still' : '');
   ticker.setAttribute('aria-hidden', 'true');
   const line = document.createElement('span');
-  line.textContent = `${t(title ? 'goal' : 'best')} ${kind} · ${fmtNow(value)}`;
+  line.textContent = title ? `${t('goal')} ${kind} · ${fmtNow(value)}`
+    : records.map(([key, result]) => `${t('best')} ${key} · ${fmtNow(result)}`).join('  ·  ');
   ticker.append(line);
   d.append(ticker);
   setTimeout(() => ticker.remove(), 5000);
@@ -3191,14 +3192,41 @@ function renderAll() {
 app.renderAll = renderAll;
 
 let lastStats = {};
+function renderStatsAverageHeadings() {
+  const sizes = statisticsAverages(app.settings);
+  $$('#stat-grid .stat[data-avg-slot], #bests-grid .bst[data-avg-slot]').forEach(cell => {
+    const slot = Number(cell.dataset.avgSlot), n = sizes[slot];
+    const key = `ao${n}`;
+    const best = cell.classList.contains('bst');
+    const heading = cell.querySelector(best ? 'span' : '.stat-k');
+    const field = best ? 'b' : 'k';
+    if (cell.dataset[field] === key && heading.querySelector('.avg-heading, input')) return;
+    cell.dataset[field] = key;
+    if (!best) delete lastStats[key];
+    heading.replaceChildren(averageHeading(n, () => editAverage(heading, n, {
+      getValues: () => statisticsAverages(app.settings),
+      onCommit: value => {
+        const next = statisticsAverages(app.settings);
+        next[slot] = value;
+        app.setSetting('statsAvgCols', next);
+      },
+    }), { best }));
+  });
+}
+
 function renderStats() {
   const solves = statsSolves();
   const st = summarize(solves);
   const f = fmtNow;
-  const map = { best: st.best, ao5: st.ao5, ao12: st.ao12, ao50: st.ao50, ao100: st.ao100, mean: st.mean, mo3: st.mo3 };
+  renderStatsAverageHeadings();
+  const map = { best: st.best, mean: st.mean, mo3: st.mo3 };
+  for (const cell of $$('#stat-grid .stat[data-avg-slot]')) {
+    const n = Number(cell.dataset.k.slice(2));
+    map[cell.dataset.k] = currentAvg(solves, n);
+  }
 
   for (const [k, v] of Object.entries(map)) {
-    const node = $('#s-' + k);
+    const node = document.querySelector(`#stat-grid .stat[data-k="${k}"] .stat-v`);
     if (!node) continue;
     const txt = f(v);
     if (node.textContent !== txt) {
@@ -3223,11 +3251,14 @@ function renderStats() {
 
   /* Collapsed peek. Two rows: the three averages you watch while a session is
      running, and the three that say how the session has gone. */
-  $('#peek-ao5').textContent  = f(st.ao5);
-  $('#peek-ao12').textContent = f(st.ao12);
+  const sizes = statisticsAverages(app.settings);
+  for (const [id, slot] of [['peek-ao5', 0], ['peek-ao12', 1], ['peek-ao50', 2]]) {
+    const node = $('#' + id), n = sizes[slot];
+    node.textContent = f(currentAvg(solves, n));
+    node.parentElement.querySelector('b').textContent = `ao${n}`;
+  }
   $('#peek-mo3').textContent  = f(st.mo3);
   $('#peek-best').textContent = f(st.best);
-  $('#peek-ao50').textContent = f(st.ao50);
   $('#peek-mean').textContent = f(st.mean);
 
   // ...and the two of them again under the timer, where you are already looking.
@@ -3245,15 +3276,15 @@ function renderStats() {
     $('#timer-bpa').hidden = !bw;
     if (bw) { $('#live-bpa').textContent = f(bw.bpa); $('#live-wpa').textContent = f(bw.wpa); }
   }
+
   app.layoutStatsReady = true;
   app.layoutEditor?.refresh();
 
   // Session bests are O(n x len) to compute, so only when they are on screen.
   if ($('#panel-stats')?.dataset.collapsed === 'false') {
-    const b = sessionBests(solves);
-    for (const k of ['single', 'mo3', 'ao5', 'ao12', 'ao50', 'ao100']) {
-      const node = $('#b-' + k);
-      if (node) node.textContent = f(b[k]);
+    const b = sessionBests(solves, sizes.slice(0, 4));
+    for (const cell of $$('#bests-grid .bst[data-b]')) {
+      cell.querySelector('b').textContent = f(b[cell.dataset.b]);
     }
   }
 }
@@ -3282,8 +3313,6 @@ let histSigs = [];
    render; it is a setting now, edited from the column heading, so the column
    next to your times can be the average you are actually chasing. Capped at
    three because the fourth has nowhere to go in a sidebar this wide. */
-const AVG_MIN = 3, AVG_MAX = 1000, AVG_COLS_MAX = 3;
-
 function avgCols() {
   /* A Fewest Moves round is a mean of 3 (WCA 9b4a), so that is the column
      worth having beside the attempts — and the only one. A rolling ao12 of
@@ -3293,15 +3322,7 @@ function avgCols() {
      ao3 the list already knows how to compute IS the mean of 3; only its
      name has to change, which avgHeading() does. */
   if (movesStats()) return [3];
-  const raw = Array.isArray(app.settings?.histAvgCols) ? app.settings.histAvgCols : [5, 12];
-  const out = [];
-  for (const v of raw) {
-    const n = Math.round(Number(v));
-    if (!Number.isFinite(n) || n < AVG_MIN || n > AVG_MAX) continue;
-    if (!out.includes(n)) out.push(n);                  // two ao5 columns say nothing twice
-    if (out.length === AVG_COLS_MAX) break;
-  }
-  return out;
+  return historyAverages(app.settings);
 }
 
 /* How many of them the panel is wide enough to draw. A phone's times list, and
@@ -3311,7 +3332,7 @@ function avgCols() {
    breakpoint, because the panel's width is a setting as well as a screen size.
    The columns you chose are untouched: this only decides how many of them fit
    right now, and the rest come back when there is room. */
-let histFit = AVG_COLS_MAX;
+let histFit = 3;
 const HIST_MIN_TIME = 58;                  // px — "1:03.45" at the default scale
 
 /** The average columns actually on screen. */
@@ -3866,51 +3887,14 @@ function avgHeading(n) {
  * quietly rounded into one.
  */
 function editAvgColumn(cell, n) {
-  if (cell.querySelector('input')) return;
-  const input = el('input', {
-    type: 'number', class: 'col-num', min: String(AVG_MIN), max: String(AVG_MAX),
-    step: '1', value: String(n), 'aria-label': t('Average of how many solves'),
-    title: t('Any average from {a} to {b}', { a: AVG_MIN, b: AVG_MAX }),
+  editAverage(cell, n, {
+    getValues: avgCols,
+    onCommit: value => {
+      // Keep the chosen sort attached to the column that was edited.
+      if (histSort === `avg${n}`) histSort = `avg${value}`;
+      app.setSetting('histAvgCols', avgCols().map(c => c === n ? value : c));
+    },
   });
-  const prev = [...cell.childNodes];
-  cell.replaceChildren(input);
-  input.focus();
-  input.select();
-
-  let done = false;
-  const cancel = () => { if (!done) { done = true; cell.replaceChildren(...prev); } };
-  const commit = () => {
-    if (done) return;
-    const v = Math.round(Number(input.value));
-    if (!Number.isFinite(v) || v < AVG_MIN || v > AVG_MAX) {
-      toast(t('An average is between {a} and {b} solves.', { a: AVG_MIN, b: AVG_MAX }), { kind: 'warn' });
-      cancel();
-      return;
-    }
-    const cols = avgCols();
-    if (v !== n && cols.includes(v)) {
-      toast(t('ao{n} is already one of the columns.', { n: v }), { kind: 'warn' });
-      cancel();
-      return;
-    }
-    done = true;
-    if (v === n) { cell.replaceChildren(...prev); return; }
-    app.settings.histAvgCols = cols.map(c => (c === n ? v : c));
-    persist();
-    // Sorting by a column that no longer exists would leave the list in an
-    // order nothing on screen explains.
-    if (histSort === `avg${n}`) histSort = `avg${v}`;
-    resetHistoryWindow();
-    renderHistory();
-  };
-
-  input.addEventListener('keydown', (e) => {
-    e.stopPropagation();                                 // not a timer shortcut
-    if (e.key === 'Enter') { e.preventDefault(); commit(); }
-    else if (e.key === 'Escape') { e.preventDefault(); cancel(); }
-  });
-  input.addEventListener('click', e => e.stopPropagation());
-  input.addEventListener('blur', commit);
 }
 
 /* Which columns the heading row is currently showing, so a render only rebuilds
@@ -5654,7 +5638,7 @@ app.setSetting = (k, v) => {
   if (k === 'inputMode') smartCubeInputRequested = false;
   if (k === 'inspection') chooseInspection(app.settings, v);
   else app.settings[k] = v;
-  const saved = persist({ immediate: k === 'inspection' || String(k).startsWith('virtual') || ['interactiveResizing','smartCubeSize','smartCubeHints','smartCubeNet','smartCubeGyro'].includes(k) });
+  const saved = persist({ immediate: k === 'inspection' || String(k).startsWith('virtual') || ['histAvgCols','statsAvgCols','interactiveResizing','smartCubeSize','smartCubeHints','smartCubeNet','smartCubeGyro'].includes(k) });
   applyAll(k);
   return saved;
 };
@@ -5687,6 +5671,8 @@ function applyAll(changed) {
   if (!changed || changed === 'callouts') setCalloutMode(app.settings.callouts);
   if (changed === 'scramblesOnly') { timer?.reset(); measureLayout(); }
   if (changed === 'showBpa') renderStats();
+  if (changed === 'statsAvgCols') renderStats();
+  if (changed === 'histAvgCols') { resetHistoryWindow(); renderHistory(); }
   if (changed === 'hintFacelets') cube.setHints(app.settings.hintFacelets);
   if (!changed || String(changed).startsWith('virtual')) vcube?.configure(app.settings);
   if (changed === 'virtualOrientation' && timer?.state === 'idle') resetVcube();
@@ -6690,6 +6676,7 @@ function wireChrome() {
   const statsPanel = $('#panel-stats');
   const statsToggle = $('#stats-toggle');
   const applyStatsCollapsed = (collapsed) => {
+    if (collapsed) setAverageEditing(statsPanel, false);
     statsPanel.dataset.collapsed = String(collapsed);
     statsToggle.setAttribute('aria-expanded', String(!collapsed));
     statsToggle.title = collapsed ? t('Show statistics') : t('Hide statistics');
@@ -6702,23 +6689,34 @@ function wireChrome() {
     if (!collapsed) renderStats();
   });
   app.expandStats = () => { applyStatsCollapsed(false); app.setSetting('statsCollapsed', false); renderStats(); };
+  $('#stats-edit-toggle').addEventListener('click', () => {
+    const editing = statsPanel.dataset.avgEditing !== 'true';
+    if (editing) app.expandStats();
+    setAverageEditing(statsPanel, editing);
+  });
   // Restoring defaults can change `statsCollapsed` without going through the
   // toggle, and the panel's own data attribute is what the CSS reads.
   app.syncStatsCollapsed = () => applyStatsCollapsed(app.settings.statsCollapsed !== false);
   // Every statistic opens the solves behind it — times, scrambles, and a copy
   // button for pasting the lot somewhere else.
   $$('.stat[data-k]').forEach((cell) => {
-    const k = cell.dataset.k;
     cell.title = t('See the solves behind this');
-    cell.addEventListener('click', () => openPanel(STAT_LABELS[k] || k, 'buildStatDetail', { wide: true }, app, k));
+    cell.addEventListener('click', () => {
+      if (cell.querySelector('input')) return;
+      const k = cell.dataset.k;
+      openPanel(STAT_LABELS[k] || k, 'buildStatDetail', { wide: true }, app, k);
+    });
   });
   /* And the session bests, which until now were figures you could read but not
      open — so the fastest ao5 of a session was the one average there was no way
      to share a card of. Same drawer, same share button, `best-` window. */
   $$('.bst[data-b]').forEach((cell) => {
-    const k = 'best-' + cell.dataset.b;
     cell.title = t('See the solves behind this — and share it');
-    cell.addEventListener('click', () => openPanel(STAT_LABELS[k] || k, 'buildStatDetail', { wide: true }, app, k));
+    cell.addEventListener('click', () => {
+      if (cell.querySelector('input')) return;
+      const k = 'best-' + cell.dataset.b;
+      openPanel(STAT_LABELS[k] || k, 'buildStatDetail', { wide: true }, app, k);
+    });
   });
 
   $('#mini-chart-btn')?.addEventListener('click', () =>

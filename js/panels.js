@@ -12,9 +12,11 @@ import { $, el, fmt, fmtResult, fmtDate, download, parseScrambleList, copy } fro
 import { PRESETS, TIMER_FONTS, SCRAMBLE_FONTS, UI_FONTS, DEFAULTS, exportTheme, importTheme,
          parseGradient, buildGradient, albumTint, liquidGlassOK, themeColors, TEXT_COLOR_KEYS } from './theme.js';
 import { SHADER_NAMES } from './bg.js';
-import { summarize, byCase, eff, DNF, isMoveResult, bestAvg, bpaWpa, statWindow, bldSummary, relaySummary,
+import { summarize, byCase, eff, DNF, isMoveResult, bestAvg, currentAvg, bpaWpa, statWindow, bldSummary, relaySummary,
          groupStats, byHourOfDay, bySittingPosition, MIN_GROUP, SITTING_GAP_MS,
          consistencySeries, CONS_SPREAD, sessionReport } from './stats.js';
+import { statisticsAverages } from './average-settings.js';
+import { averageHeading, editAverage, averageEditToggle, setAverageEditing } from './average-editor.js';
 import { renderTrend, renderHistogram, renderHeatmap, renderCaseBars, renderGroupBars, renderConsistency } from './charts.js';
 import { MODES, EVENTS, EVENT_ORDER, eventOf, virtualSize, relayLegEvents, relayLabel, RELAY_MAX } from './events.js';
 import { setFor } from './scramble.js';
@@ -1801,6 +1803,12 @@ export function buildGear(app) {
 export function buildStats(app) {
   return (body) => {
     let disposed = false, revision = 0, cubeId = '';
+    let editing = false, summary;
+    const averageToggle = averageEditToggle(() => {
+      editing = !editing;
+      setAverageEditing(summary, editing);
+    });
+
     let scopedSolves = app.solves;
     let scopeName = app.session.name;
     let selectedSession = app.session.id;
@@ -1921,9 +1929,25 @@ export function buildStats(app) {
 
       const moves = solves.some(isMoveResult);
       const f = v => fmtResult(v, moves);
+      const averageSizes = statisticsAverages(app.settings);
+      const averageCells = averageSizes.map((n, slot) => {
+        const best = bestAvg(solves, n).value;
+        const node = cell(`ao${n}`, f(currentAvg(solves, n)), best !== null ? t('best ') + f(best) : '');
+        node.dataset.avgSize = String(n);
+        const heading = node.querySelector('.bs-k');
+        heading.replaceChildren(averageHeading(n, () => editAverage(heading, n, {
+          getValues: () => statisticsAverages(app.settings),
+          onCommit: value => {
+            const next = statisticsAverages(app.settings);
+            next[slot] = value;
+            app.setSetting('statsAvgCols', next);
+            render();
+          },
+        })));
+        return node;
+      });
 
-      body.append(
-        group(scopeName,
+      summary = group(scopeName,
           el('div', { class: 'big-stats' },
             cell('solves', String(st.count), `${st.dnfCount} DNF · ${st.plus2Count} +2`),
             cell('best', f(st.best)),
@@ -1932,23 +1956,22 @@ export function buildStats(app) {
             cell('median', f(st.median)),
             cell(t('std dev'), f(st.stdev)),
             cell('mo3', f(st.mo3)),
-            cell('ao5', f(st.ao5), st.bestAo5 ? t('best ') + f(st.bestAo5) : ''),
+            ...averageCells,
             ...(() => {
               const bw = app.settings.showBpa !== false && bpaWpa(solves);
               return bw ? [cell('bpa / wpa', `${f(bw.bpa)} / ${f(bw.wpa)}`, t('next ao5 if the 5th is perfect / a DNF'))] : [];
             })(),
-            cell('ao12', f(st.ao12), st.bestAo12 ? t('best ') + f(st.bestAo12) : ''),
-            cell('ao50', f(st.ao50)),
-            cell('ao100', f(st.ao100)),
-            cell('ao1000', f(solves.length >= 1000 ? bestAvg(solves, 1000).value : null)),
           ),
           solves.length ? el('div', { class: 'sd-actions' },
             el('button', { class: 'btn primary', text: t('Copy selected stats'),
-              onclick: () => app.copyToast(sessionReport(solves), 'Session stats') }),
+              onclick: () => app.copyToast(sessionReport(solves, new Date(), averageSizes), 'Session stats') }),
             el('button', { class: 'btn', text: t('Download selected stats (.txt)'),
-              onclick: () => download(`${scopeName.replace(/\W+/g, '-')}-stats.txt`, sessionReport(solves), 'text/plain') }),
-          ) : null),
-      );
+              onclick: () => download(`${scopeName.replace(/\W+/g, '-')}-stats.txt`, sessionReport(solves, new Date(), averageSizes), 'text/plain') }),
+          ) : null);
+      summary.classList.add('stats-average-group');
+      summary.prepend(averageToggle);
+      setAverageEditing(summary, editing);
+      body.append(summary);
 
       body.append(searchCard(solves, cell, f));
 

@@ -265,6 +265,7 @@ export const DEFAULTS = {
      order. Any window from 3 upwards, edited from the column heading itself;
      an empty list is a plain list of times. */
   histAvgCols: [5, 12],
+  statsAvgCols: [5, 12, 50, 100, 1000],
   tiles: null,                  // { [tileId]: {dock, pos, w} } once anything has been dragged
   interactiveResizing: false,    // Show the grid editor; Done locks the saved layout.
   widgetLayouts: null,           // Separate desktop/tablet maps of {x,y,w,h} in grid cells.

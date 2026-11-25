@@ -206,7 +206,7 @@
      spans the width -- a gap in the middle of the block with nothing to be.
      It takes the whole row too, so the two full-width rows read as the pair
      they are and the tiles above stay a clean three-by-two. */
-  .stat[data-k="ao100"] { grid-column: 1 / -1; }
+  .stat[data-avg-slot="3"] { grid-column: 1 / -1; }
 }
 .stat {
   display: flex; flex-direction: column; gap: 2px;
@@ -545,6 +545,41 @@
 .col-num::-webkit-outer-spin-button, .col-num::-webkit-inner-spin-button {
   -webkit-appearance: none; margin: 0;
 }
+
+/* The same pencil editor in the Stats tile and the Statistics drawer. */
+.avg-heading { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.avg-edit, .avg-edit-toggle {
+  display: inline-flex; align-items: center; justify-content: center;
+  flex: none; min-width: 22px; min-height: 22px; padding: 2px;
+  border: 0; border-radius: 4px; background: none;
+  color: var(--text-dim); font-size: .8rem; line-height: 1; cursor: pointer;
+}
+.avg-edit:hover, .avg-edit:focus-visible,
+.avg-edit-toggle:hover, .avg-edit-toggle:focus-visible, .avg-edit-toggle[aria-pressed="true"] {
+  color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.stat-k:has(.avg-heading), .bs-k:has(.avg-heading) { line-height: 22px; }
+.stat-k .col-num, .bs-k .col-num { width: 80px; max-width: 100%; text-align: left; font-size: .75rem; }
+@media (pointer: coarse) { .avg-edit { min-width: 28px; min-height: 28px; } }
+
+#panel-stats:not([data-avg-editing="true"]) .avg-edit,
+.stats-average-group:not([data-avg-editing="true"]) .avg-edit { display: none; }
+#stats-edit-toggle {
+  position: absolute; z-index: 1;
+  top: calc(var(--pad) - 3px); right: calc(var(--pad) - 4px);
+  min-width: 24px; min-height: 24px;
+}
+#stats-toggle { min-height: 22px; }
+#stats-toggle > .chev { margin-right: 28px; }
+#panel-stats[data-avg-editing="true"] .bests-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+#panel-stats .bst > span:has(.avg-heading) { overflow: visible; }
+#panel-stats .bst .avg-heading { gap: 2px; }
+#panel-stats .bst .avg-heading > span { flex: 1; }
+#panel-stats .bst .col-num { width: 100%; font-size: .65rem; text-align: left; }
+.stats-average-group { position: relative; }
+.stats-average-group > h3 { padding-right: 30px; min-height: 18px; }
+.stats-average-group > .avg-edit-toggle { position: absolute; top: -3px; right: 0; }
+@media (pointer: coarse) { .avg-edit-toggle { min-width: 28px; min-height: 28px; } }
 
 #hist-list {
   flex: 1; min-height: 0; overflow-y: auto;
