@@ -1183,6 +1183,8 @@ body.fmc #stackmat-bar { display: none !important; }
    mean of 3 (WCA 9b4a). A rolling ao12 of move counts is not a statistic
    anybody keeps, and a column of them invites reading the session as a speed
    session that happens to be printed in the wrong unit. */
+body.fmc .stat[data-avg-slot],
+body.fmc .bst[data-avg-slot],
 body.fmc .stat[data-k="ao5"],
 body.fmc .stat[data-k="ao12"],
 body.fmc .stat[data-k="ao50"],

@@ -403,7 +403,7 @@ function countedSigma(e, from, to, trim) {
  * and best mo3/aoN with the σ of the solves each one counts, the session
  * average and mean, then every time with its scramble.
  */
-export function sessionReport(solves, date = new Date()) {
+export function sessionReport(solves, date = new Date(), averageSizes = [5, 12, 50, 100, 1000]) {
   const moves = solves.some(isMoveResult);
   const f = v => fmtResult(v, moves);
   const e = solves.map(eff);
@@ -422,7 +422,7 @@ export function sessionReport(solves, date = new Date()) {
     '',
   ];
 
-  for (const n of [3, 5, 12, 50, 100, 1000]) {
+  for (const n of [...new Set([3, ...averageSizes])].sort((a, b) => a - b)) {
     if (N < n) break;
     const mean = n === 3, trim = mean ? 0 : trimCount(n);
     const at = (i) => mean ? meanOfRange(e, i, i + n) : averageOfRange(e, i, i + n);
@@ -460,9 +460,9 @@ export function sessionReport(solves, date = new Date()) {
  * on every single solve, whereas these are only ever read by the expanded
  * stats panel.
  */
-export function sessionBests(solves) {
+export function sessionBests(solves, averageSizes = [5, 12, 50, 100]) {
   const out = {};
-  for (const n of [5, 12, 50, 100]) {
+  for (const n of averageSizes) {
     out['ao' + n] = solves.length >= n ? bestAvg(solves, n).value : null;
   }
   out.single = bestSingle(solves);

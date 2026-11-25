@@ -7,6 +7,8 @@ import * as charts from './charts.js';
 import * as util from './util.js';
 import { t } from './i18n.js';
 import { filterByCube } from './gear.js';
+import { statisticsAverages } from './average-settings.js';
+import { averageHeading, editAverage, averageEditToggle, setAverageEditing } from './average-editor.js';
 import { searchSolves } from './solve-search.js';
 import { eventOf } from './events.js';
 
@@ -20,7 +22,10 @@ const solve = (id, sessionId, createdAt, timeMs, extra = {}) =>
   ({ id, sessionId, createdAt, timeMs, penalty: 'none', scramble: 'R U', ...extra });
 
 function mount() {
-  const dom = new JSDOM('<div id="body"></div>');
+  const dom = new JSDOM('<div id="body"></div><div id="toasts"></div>');
+  const errors = [];
+  dom.window.addEventListener('error', event => errors.push(event.error));
+  dom.window.Element.prototype.animate = () => ({ cancel() {} });
   globalThis.document = dom.window.document;
   const body = document.getElementById('body');
   const sessions = [{ id: 'a', name: 'Current' }, { id: 'b', name: 'Practice' }, { id: 'empty', name: 'Empty' }];
@@ -33,10 +38,11 @@ function mount() {
     session: sessions[0], sessions, solves: current, settings: {},
     allSolves: async () => all,
     copyToast: text => { copied = text; },
+    setSetting: (key, value) => { app.settings[key] = value; },
   };
   const db = { bySession: async id => all.filter(s => s.sessionId === id), createdTimes: async () => [] };
   const bindings = {
-    ...util, ...stats, ...charts, t, filterByCube, Solves: db, searchSolves, eventOf,
+    ...util, ...stats, ...charts, t, filterByCube, statisticsAverages, averageHeading, editAverage, averageEditToggle, setAverageEditing, Solves: db, searchSolves, eventOf,
     solveRow: (app, s, i, gi) => util.el('div', { class: 'sd-row', 'data-id': s.id, text: `${i} #${gi + 1}` }),
     group: (title, ...kids) => util.el('div', { class: 'group' }, util.el('h3', { text: title }), ...kids),
     Gear: { all: async () => [{ id: 'cube', name: 'Cube' }] },
@@ -64,7 +70,7 @@ function mount() {
     input.dispatchEvent(new dom.window.Event('input'));
   };
   const found = () => [...body.querySelectorAll('#solve-search .sd-row')].map(r => r.dataset.id);
-  return { app, all, db, body, rendered, dispose, pick, change, search, found, copied: () => copied };
+  return { app, all, db, body, rendered, dispose, pick, change, search, found, errors, copied: () => copied };
 }
 
 test('defaults to current session; all sessions update stats, charts and exports chronologically', async () => {
@@ -172,5 +178,47 @@ test('search finds solves by time, penalty and solve number, and keeps its query
   assert.deepEqual(h.found(), ['a1', 'b1']);
   h.search('');
   assert.equal(card().querySelector('.solve-search-results').hidden, true);
+  h.dispose();
+});
+
+test('editing an average updates current and best values and the selected-session export', async () => {
+  const h = mount();
+  for (let i = 0; i < 15; i++) h.all.push(solve(`extra-${i}`, 'b', 50 + i, 15000 + i * 100));
+  assert.equal(h.body.querySelector('.stats-average-group').dataset.avgEditing, 'false');
+  h.body.querySelector('.avg-edit-toggle').click();
+  assert.equal(h.body.querySelector('.stats-average-group').dataset.avgEditing, 'true');
+  h.change('Statistics session', '');
+  await tick();
+  const edit = (from, value, key = 'Enter') => {
+    h.body.querySelector(`[data-avg-size="${from}"] .avg-edit`).click();
+    const input = h.body.querySelector('[data-avg-size] input');
+    input.value = value;
+    input.dispatchEvent(new document.defaultView.KeyboardEvent('keydown', { key, bubbles: true }));
+  };
+  edit(12, '10');
+  assert.equal(h.body.querySelector('.stats-average-group').dataset.avgEditing, 'true');
+  assert.equal(h.body.querySelector('.avg-edit-toggle').getAttribute('aria-pressed'), 'true');
+  assert.deepEqual(h.app.settings.statsAvgCols, [5, 10, 50, 100, 1000]);
+  const selected = h.all.toSorted((a, b) => a.createdAt - b.createdAt);
+  const cell = h.body.querySelector('[data-avg-size="10"]');
+  assert.equal(cell.querySelector('.bs-v').textContent, util.fmtResult(stats.currentAvg(selected, 10), false));
+  assert.equal(cell.querySelector('.bs-sub').textContent, 'best ' + util.fmtResult(stats.bestAvg(selected, 10).value, false));
+  [...h.body.querySelectorAll('button')].find(b => b.textContent === 'Copy selected stats').click();
+  assert.match(h.copied(), /avg of 10\n/);
+  assert.doesNotMatch(h.copied(), /avg of 12\n/);
+  edit(10, '8', 'Escape');
+  assert.equal(h.body.querySelector('[data-avg-size="10"] input'), null);
+  assert.deepEqual(h.app.settings.statsAvgCols, [5, 10, 50, 100, 1000]);
+  for (const value of ['5', '', '2', '1001', '10.5']) {
+    edit(10, value);
+    assert.deepEqual(h.app.settings.statsAvgCols, [5, 10, 50, 100, 1000]);
+  }
+  h.body.querySelector('[data-avg-size="10"] .avg-edit').click();
+  h.body.querySelector('[data-avg-size="10"] input').value = '11';
+  h.body.querySelector('.avg-edit-toggle').click();
+  assert.equal(h.app.settings.statsAvgCols[1], 11);
+  assert.equal(h.body.querySelector('.stats-average-group').dataset.avgEditing, 'false');
+  assert.equal(h.body.querySelector('[data-avg-size] input'), null);
+  assert.deepEqual(h.errors, []);
   h.dispose();
 });
