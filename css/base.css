@@ -202,7 +202,8 @@ body.focus.relay #scramble-zone > *:not(#relay-rail) {
 body.inspecting #timer-display { opacity: 0; }
 
 #topbar, .panel, .fade-layer, #creator-chip {
-  transition: opacity 420ms var(--ease) 40ms, filter 420ms var(--ease) 40ms, transform 460ms var(--ease-back) 40ms;
+  /* Return promptly after a solve; the next scramble is already waiting. */
+  transition: opacity 140ms var(--ease), filter 140ms var(--ease), transform 160ms var(--ease);
 }
 
 /* =================== TOP BAR =================== */

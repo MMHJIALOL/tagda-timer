@@ -18,10 +18,19 @@ const engine = process.argv[3] === 'firefox' ? firefox : chromium;
     await page.evaluate(async () => {
       document.querySelectorAll('.an-dlg[open]').forEach(d => d.dispatchEvent(new Event('cancel', { cancelable: true })));
       for (const [k, v] of Object.entries({ inspection: false, holdTime: 0, confirmShortSolves: false, soundOnPB: false })) tagdatimer.setSetting(k, v);
+      tagdatimer.setSetting('motion', 'full');
+      // Record even effects that finish before the browser assertion runs.
+      window.scrambleEffects = [];
+      const animate = Element.prototype.animate;
+      Element.prototype.animate = function(frames, options) {
+        if (this.closest('#scramble-text')) scrambleEffects.push(frames);
+        return animate.call(this, frames, options);
+      };
     });
     const client = engine === chromium ? await context.newCDPSession(page) : null;
     await client?.send('Emulation.setCPUThrottlingRate', { rate: 6 });
     for (let i = 0; i < 5; i++) {
+      const solvedScramble = await page.evaluate(() => tagdatimer.scramble.scramble);
       await page.keyboard.press('Space');
       await page.waitForFunction(() => document.body.classList.contains('timing'));
       await page.waitForTimeout(150);
@@ -33,11 +42,29 @@ const engine = process.argv[3] === 'firefox' ? firefox : chromium;
       assert.equal(await page.locator('#time-main').textContent(), stopped);
       await page.keyboard.up('Space');
       await page.waitForFunction(n => tagdatimer.solves.length === n, i + 1);
+      assert.equal(await page.evaluate(() => tagdatimer.solves.at(-1).scramble), solvedScramble);
       await page.waitForTimeout(100);
       assert.equal(await page.locator('#time-main').textContent(), stopped);
     }
     console.log(`PASS (${engine.name()}): 5 keyboard cycles${client ? ' at 6x CPU slowdown' : ''}; result freezes on keydown and held keys never restart`);
     await client?.send('Emulation.setCPUThrottlingRate', { rate: 1 });
+    await page.waitForFunction(() => scrambleEffects.length > 0);
+    const reveal = await page.evaluate(() => {
+      const panel = getComputedStyle(document.querySelector('#scramble-zone'));
+      return {
+        obscuresMoves: scrambleEffects.some(frames => frames.some(frame =>
+          (frame.opacity !== undefined && Number(frame.opacity) < 1) ||
+          (frame.filter && frame.filter !== 'none'))),
+        durations: panel.transitionDuration.split(',').map(value => parseFloat(value) * 1000),
+        delays: panel.transitionDelay.split(',').map(value => parseFloat(value)),
+        textMatches: document.querySelector('#scramble-text').textContent === tagdatimer.scramble.scramble,
+      };
+    });
+    assert.equal(reveal.obscuresMoves, false, 'ready scrambles must not wait behind a blur or opacity stagger');
+    assert.ok(reveal.durations.every(ms => ms <= 160), 'panels must return within 160ms');
+    assert.ok(reveal.delays.every(delay => delay === 0), 'panel return must start immediately');
+    assert.equal(reveal.textMatches, true);
+    console.log('PASS: next scramble stays readable throughout its motion, panels return without delay, and solves retain the correct scramble');
     await page.evaluate(() => {
       document.dispatchEvent(new KeyboardEvent('keydown', { code: 'Space', key: ' ', repeat: true, bubbles: true }));
       document.dispatchEvent(new KeyboardEvent('keyup', { code: 'Space', key: ' ', bubbles: true }));
